@@ -1,12 +1,11 @@
-<div class="animate-fade-in flex flex-col gap-4">
-    <!-- Filtros de ejercicios (arriba de la gráfica) -->
-    <div class="bg-neutral-900 border border-transparent rounded-xl p-5 flex flex-col gap-4 neon-border metallic-border">
-        <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase text-center pb-3 border-b border-neutral-800 neon-title">Ejercicios</h3>
-        <div class="flex flex-wrap gap-2" id="exercise-filters">
+<div class="animate-fade-in flex flex-col gap-3">
+    <div class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border">
+        <h3 class="text-xs font-black tracking-[0.2em] text-burgundy-400 uppercase text-center pb-2 border-b border-neutral-800 neon-title">Ejercicios</h3>
+        <div class="flex flex-col gap-2" id="exercise-filters">
             {% for ej in ejercicios_grupo %}
             <button
                 onclick="toggleExercise('{{ ej }}')"
-                class="filter-btn bg-matte-950 border border-neutral-800 hover:border-neutral-700 text-neutral-300 text-sm font-bold py-3 px-4 rounded-lg transition-all tracking-wide flex items-center justify-between"
+                class="filter-btn w-full bg-matte-950 border border-neutral-800 hover:border-neutral-700 text-neutral-300 text-sm font-bold py-2.5 px-3 rounded-lg transition-all tracking-wide flex items-center justify-between"
             >
                 <span>{{ ej }}</span>
                 <span class="text-neutral-600">→</span>

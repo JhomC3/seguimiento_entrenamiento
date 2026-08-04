@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 from fastapi import FastAPI, Form, Query, Request
@@ -15,40 +15,35 @@ from src.charts import (
 )
 from src.database import (
     backup_db,
-    delete_session,
     get_categories,
     get_exercises_catalog,
-    get_session_sets,
-    init_db,
+    get_sets_by_fecha,
     insert_exercise,
 )
 from src.training_service import (
-    fecha_from_db,
-    get_session_detail,
-    get_sessions_page,
-    insert_manual_session,
+    calculate_cycle_week,
+    day_from_date,
+    fecha_to_db,
     parse_cycle_start,
-    update_session,
+    parse_form_date,
+    save_session,
 )
 
-SESSIONS_PER_PAGE = 20
+MONTHS_ABBR = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+NAV_DAYS_BACK = 13
+NAV_DAYS_FORWARD = 2
+FUTURE_MAX_DAYS = 2
 
 app = FastAPI(title="Gym Tracker")
 templates = Jinja2Templates(directory="templates")
 
-CICLO_START_ISO = parse_cycle_start(CICLO_START).strftime("%Y-%m-%d")
+CICLO_START_DATE = parse_cycle_start(CICLO_START)
 
-def get_db_status():
-    if not os.path.exists(DB_PATH):
-        return {"has_data": False, "count": 0, "weeks": 0}
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        count = conn.execute("SELECT COUNT(*) FROM training_sets").fetchone()[0]
-        weeks = conn.execute("SELECT MAX(semana) FROM training_sets").fetchone()[0]
-        conn.close()
-        return {"has_data": count > 0, "count": count, "weeks": weeks or 0}
-    except Exception:
-        return {"has_data": False, "count": 0, "weeks": 0}
+def _today_iso() -> str:
+    return date.today().strftime("%Y-%m-%d")
+
+def _muscle_names() -> list[str]:
+    return sorted({m for c in MUSCLE_CATEGORIES for m in c["muscles"]})
 
 def get_filters():
     if not os.path.exists(DB_PATH):
@@ -88,36 +83,109 @@ def _chart_html(filter_type: str, filter_value: str | None = None, title: str = 
         return fig.to_html(include_plotlyjs=False, full_html=False, config={"displayModeBar": False})
     return "<div class='flex items-center justify-center h-[300px] text-neutral-500 text-xs'>Sin datos</div>"
 
-def _sessions_list_html(request: Request, page: int = 1):
-    sessions, total, page = get_sessions_page(DB_PATH, page, SESSIONS_PER_PAGE)
-    total_pages = max(1, -(-total // SESSIONS_PER_PAGE))
+def _fechas_con_datos() -> set[str]:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        rows = conn.execute("SELECT DISTINCT fecha FROM training_sets").fetchall()
+    finally:
+        conn.close()
+    out = set()
+    for (f,) in rows:
+        try:
+            out.add(datetime.strptime(f, "%d/%m/%y").date().strftime("%Y-%m-%d"))
+        except ValueError:
+            continue
+    return out
+
+def _navigator_html(request: Request, fecha_iso: str) -> str:
+    selected = parse_form_date(fecha_iso)
+    today = date.today()
+    max_future = today + timedelta(days=FUTURE_MAX_DAYS)
+    start = selected - timedelta(days=NAV_DAYS_BACK)
+    end = selected + timedelta(days=NAV_DAYS_FORWARD)
+    if end > max_future:
+        end = max_future
+    if end < start:
+        end = start
+    data_dates = _fechas_con_datos()
+    dates = []
+    d = start
+    while d <= end:
+        iso = d.strftime("%Y-%m-%d")
+        dates.append({
+            "iso": iso,
+            "label": f"{d.day} {MONTHS_ABBR[d.month - 1]}",
+            "has_data": iso in data_dates,
+            "selected": d == selected,
+            "is_today": d == today,
+        })
+        d += timedelta(days=1)
+    prev_fecha = (start - timedelta(days=1)).strftime("%Y-%m-%d")
+    next_fecha = (end + timedelta(days=1)).strftime("%Y-%m-%d") if end < max_future else None
     return templates.TemplateResponse(
         request=request,
-        name="sessions_list.html",
-        context={"sessions": sessions, "page": page, "total_pages": total_pages, "total": total},
+        name="date_navigator.html",
+        context={
+            "dates": dates,
+            "prev_fecha": prev_fecha,
+            "next_fecha": next_fecha,
+            "selected_iso": selected.strftime("%Y-%m-%d"),
+        },
     ).body.decode()
 
-def _form_context(*, form_sets=None, form_fecha=None, error=None, success=None, edit=None):
-    return {
-        "catalog": get_exercises_catalog(DB_PATH),
-        "categories": MUSCLE_CATEGORIES,
-        "ciclo_start_iso": CICLO_START_ISO,
-        "muscle_names": sorted({m for c in MUSCLE_CATEGORIES for m in c["muscles"]}),
-        "form_sets": form_sets or [{"ejercicio": "", "kg": "", "reps": "", "rir": ""}],
-        "form_fecha": form_fecha,
-        "error": error,
-        "success": success,
-        "edit": edit,
-    }
-
-def _form_html(request: Request, **kwargs):
+def _editor_html(request: Request, fecha_iso: str, *, rows: list[dict] | None = None, error: str | None = None, success: str | None = None, force_editable: bool = False) -> str:
+    fecha = parse_form_date(fecha_iso)
+    today = date.today()
+    readonly = (fecha < today) and not force_editable
+    if rows is None:
+        rows = [dict(r) for r in get_sets_by_fecha(DB_PATH, fecha_to_db(fecha))]
+    display_rows = []
+    for r in rows:
+        kg = r.get("kg")
+        reps = r.get("reps")
+        rir = r.get("rir")
+        rm = None
+        try:
+            if kg not in (None, "") and reps not in (None, ""):
+                ri = float(rir) if rir not in (None, "") else 0.0
+                rm = round(float(kg) * (1 + 0.0333 * (float(reps) + 1 + ri)), 1)
+        except (TypeError, ValueError):
+            rm = None
+        display_rows.append({
+            "ejercicio": r.get("ejercicio", ""),
+            "kg": "" if kg is None else kg,
+            "reps": "" if reps is None else reps,
+            "rir": "" if rir is None else rir,
+            "rm": rm,
+        })
+    if not display_rows:
+        display_rows = [{"ejercicio": "", "kg": "", "reps": "", "rir": "", "rm": None}]
+    semana = calculate_cycle_week(fecha, CICLO_START_DATE)
+    dia = day_from_date(fecha)
     return templates.TemplateResponse(
         request=request,
-        name="training_form.html",
-        context=_form_context(**kwargs),
+        name="session_editor.html",
+        context={
+            "fecha_iso": fecha_iso,
+            "fecha_db": fecha_to_db(fecha),
+            "semana": semana,
+            "dia": dia,
+            "rows": display_rows,
+            "readonly": readonly,
+            "error": error,
+            "success": success,
+            "catalog": get_exercises_catalog(DB_PATH),
+        },
     ).body.decode()
 
-def _build_sets_from_form(ejercicios: list[str], kgs: list[str], reps: list[str], rirs: list[str]):
+def _exercise_form_html(request: Request, *, error: str | None = None, success: str | None = None) -> str:
+    return templates.TemplateResponse(
+        request=request,
+        name="exercise_create_form.html",
+        context={"categories": MUSCLE_CATEGORIES, "muscle_names": _muscle_names(), "error": error, "success": success},
+    ).body.decode()
+
+def _build_sets_from_form(ejercicios: list[str], kgs: list[str], reps: list[str], rirs: list[str]) -> list[dict]:
     sets = []
     for i, ejercicio in enumerate(ejercicios):
         sets.append({
@@ -130,87 +198,36 @@ def _build_sets_from_form(ejercicios: list[str], kgs: list[str], reps: list[str]
 
 @app.get("/", response_class=HTMLResponse)
 async def read_index(request: Request):
-    status = get_db_status()
     ejercicios_list, grupos_list = get_filters()
     categories = get_categories(DB_PATH) or MUSCLE_CATEGORIES
-    chart_html = _chart_html("systemic", title="Rendimiento Global – Todo el Cuerpo") if status["has_data"] else ""
-    sessions_html = _sessions_list_html(request, 1)
-    form_html = _form_html(request)
-
+    fecha = _today_iso()
     return templates.TemplateResponse(
         request=request,
         name="index.html",
         context={
-            "has_data": status["has_data"],
-            "count": status["count"],
-            "weeks": status["weeks"],
             "grupos_list": grupos_list,
             "ejercicios_list": ejercicios_list,
             "ejercicios_grupo": ejercicios_list,
             "muscle_categories": categories,
-            "systemic_chart_html": chart_html,
-            "form_html": form_html,
-            "sessions_html": sessions_html,
+            "systemic_chart_html": _chart_html("systemic", title="Rendimiento Global – Todo el Cuerpo"),
+            "navigator_html": _navigator_html(request, fecha),
+            "editor_html": _editor_html(request, fecha),
+            "exercise_form_html": _exercise_form_html(request),
         }
     )
 
-@app.post("/entrenamiento", response_class=HTMLResponse)
-async def create_entrenamiento(
-    request: Request,
-    fecha: str = Form(...),
-    ejercicio: list[str] = Form(default=[]),
-    kg: list[str] = Form(default=[]),
-    reps: list[str] = Form(default=[]),
-    rir: list[str] = Form(default=[]),
-):
-    sets = _build_sets_from_form(ejercicio, kg, reps, rir)
-    try:
-        insert_manual_session(DB_PATH, fecha, sets)
-        form_html = _form_html(request, success="Entrenamiento guardado correctamente.")
-        oob = f'<div id="sessions-list" hx-swap-oob="innerHTML">{_sessions_list_html(request, 1)}</div>'
-        return HTMLResponse(content=f'<div id="training-form" hx-swap-oob="outerHTML">{form_html}</div>{oob}')
-    except ValueError as e:
-        form_html = _form_html(request, form_sets=sets, form_fecha=fecha, error=str(e))
-        return HTMLResponse(content=f'<div id="training-form" hx-swap-oob="outerHTML">{form_html}</div>')
-
-@app.get("/entrenamiento/form", response_class=HTMLResponse)
-async def entrenamiento_form(request: Request):
-    return HTMLResponse(content=f'<div id="training-form" hx-swap-oob="outerHTML">{_form_html(request)}</div>')
-
-@app.get("/entrenamientos", response_class=HTMLResponse)
-async def entrenamientos_list(request: Request, pagina: int = Query(1)):
-    return HTMLResponse(content=_sessions_list_html(request, pagina))
-
-@app.get("/entrenamiento/session", response_class=HTMLResponse)
-async def entrenamiento_session(request: Request, semana: int = Query(...), dia: str = Query(...), fecha: str = Query(...)):
-    sets = get_session_detail(DB_PATH, semana, dia, fecha)
-    return templates.TemplateResponse(
-        request=request,
-        name="session_detail.html",
-        context={"sets": sets, "semana": semana, "dia": dia, "fecha": fecha},
+@app.get("/fecha", response_class=HTMLResponse)
+async def fecha_view(request: Request, fecha: str = Query(default=None)):
+    if not fecha:
+        fecha = _today_iso()
+    return HTMLResponse(
+        f'<div id="date-navigator" hx-swap-oob="outerHTML">{_navigator_html(request, fecha)}</div>'
+        f'<div id="session-editor" hx-swap-oob="outerHTML">{_editor_html(request, fecha)}</div>'
     )
 
-@app.get("/entrenamiento/session/edit", response_class=HTMLResponse)
-async def entrenamiento_session_edit(request: Request, semana: int = Query(...), dia: str = Query(...), fecha: str = Query(...)):
-    rows = get_session_sets(DB_PATH, semana, dia, fecha)
-    form_sets = [
-        {"ejercicio": r["ejercicio"], "kg": r["kg"], "reps": r["reps"], "rir": r["rir"]}
-        for r in rows
-    ]
-    form_html = _form_html(
-        request,
-        form_sets=form_sets,
-        form_fecha=fecha_from_db(fecha).strftime("%Y-%m-%d"),
-        edit={"semana": semana, "dia": dia, "fecha": fecha},
-    )
-    return HTMLResponse(content=f'<div id="training-form" hx-swap-oob="outerHTML">{form_html}</div>')
-
-@app.post("/entrenamiento/session/update", response_class=HTMLResponse)
-async def entrenamiento_session_update(
+@app.post("/entrenamiento/session/save", response_class=HTMLResponse)
+async def entrenamiento_session_save(
     request: Request,
-    old_semana: int = Form(...),
-    old_dia: str = Form(...),
-    old_fecha: str = Form(...),
     fecha: str = Form(...),
     ejercicio: list[str] = Form(default=[]),
     kg: list[str] = Form(default=[]),
@@ -220,40 +237,16 @@ async def entrenamiento_session_update(
     sets = _build_sets_from_form(ejercicio, kg, reps, rir)
     try:
         backup_db(DB_PATH)
-        update_session(DB_PATH, old_semana, old_dia, old_fecha, fecha, sets)
-        form_html = _form_html(request, success="Entrenamiento actualizado correctamente.")
-        oob = f'<div id="sessions-list" hx-swap-oob="innerHTML">{_sessions_list_html(request, 1)}</div>'
-        return HTMLResponse(content=f'<div id="training-form" hx-swap-oob="outerHTML">{form_html}</div>{oob}')
-    except ValueError as e:
-        form_html = _form_html(
-            request, form_sets=sets, form_fecha=fecha,
-            edit={"semana": old_semana, "dia": old_dia, "fecha": old_fecha},
-            error=str(e),
+        save_session(DB_PATH, fecha, sets)
+        return HTMLResponse(
+            f'<div id="date-navigator" hx-swap-oob="outerHTML">{_navigator_html(request, fecha)}</div>'
+            f'<div id="session-editor" hx-swap-oob="outerHTML">{_editor_html(request, fecha, success="Entrenamiento guardado.")}</div>'
         )
-        return HTMLResponse(content=f'<div id="training-form" hx-swap-oob="outerHTML">{form_html}</div>')
-
-@app.post("/entrenamiento/session/delete", response_class=HTMLResponse)
-async def entrenamiento_session_delete(
-    request: Request,
-    semana: int = Query(...),
-    dia: str = Query(...),
-    fecha: str = Query(...),
-):
-    backup_db(DB_PATH)
-    delete_session(DB_PATH, semana, dia, fecha)
-    oob_sessions = f'<div id="sessions-list" hx-swap-oob="innerHTML">{_sessions_list_html(request, 1)}</div>'
-    oob_detail = ('<div id="session-detail" hx-swap-oob="innerHTML">'
-                  '<div class="rounded-lg bg-emerald-950/40 border border-emerald-800 text-emerald-300 text-xs px-3 py-2">'
-                  'Entrenamiento eliminado.</div></div>')
-    return HTMLResponse(content=oob_sessions + oob_detail)
-
-@app.get("/ejercicio/nuevo/form", response_class=HTMLResponse)
-async def ejercicio_nuevo_form(request: Request):
-    return templates.TemplateResponse(
-        request=request,
-        name="exercise_create_form.html",
-        context={"categories": MUSCLE_CATEGORIES, "muscle_names": sorted({m for c in MUSCLE_CATEGORIES for m in c["muscles"]})},
-    )
+    except ValueError as e:
+        return HTMLResponse(
+            f'<div id="session-editor" hx-swap-oob="outerHTML">'
+            f'{_editor_html(request, fecha, rows=sets, error=str(e), force_editable=True)}</div>'
+        )
 
 @app.post("/ejercicio/nuevo", response_class=HTMLResponse)
 async def ejercicio_nuevo(
@@ -274,22 +267,9 @@ async def ejercicio_nuevo(
     elif any(e.lower() == ejercicio.lower() for e in get_exercises_catalog(DB_PATH)):
         error = f"El ejercicio '{ejercicio}' ya existe en el catálogo."
     if error:
-        return templates.TemplateResponse(
-            request=request,
-            name="exercise_create_form.html",
-            context={
-                "categories": MUSCLE_CATEGORIES,
-                "muscle_names": sorted({m for c in MUSCLE_CATEGORIES for m in c["muscles"]}),
-                "error": error,
-            },
-        )
+        return HTMLResponse(content=_exercise_form_html(request, error=error))
     insert_exercise(DB_PATH, ejercicio, grupo_muscular, categoria)
-    form_html = _form_html(request, success=f"Ejercicio '{ejercicio}' creado.")
-    oob = (
-        f'<div id="exercise-create-container" hx-swap-oob="innerHTML"></div>'
-        f'<div id="training-form" hx-swap-oob="outerHTML">{form_html}</div>'
-    )
-    return HTMLResponse(content=oob)
+    return HTMLResponse(content=_exercise_form_html(request, success=f"Ejercicio '{ejercicio}' creado."))
 
 @app.get("/exportar/csv", response_class=Response)
 async def export_csv():

@@ -40,10 +40,10 @@ Eres un ingeniero de software senior experto en Python, especializado en anális
   - `charts.py`: Gráficos Plotly y agregaciones de datos por ejercicio/grupo.
 - `templates/`: Plantillas Jinja2 del frontend.
   - `base.html`: Layout base (estilos, htmx, Plotly).
-  - `index.html`: Pantalla principal (formulario de entrenamiento, categorías, gráfica, historial).
-  - `training_form.html`: Formulario de registro/edición de entrenamiento.
-  - `sessions_list.html` + `session_detail.html`: Historial de sesiones (parciales).
-  - `exercise_create_form.html`: Alta de ejercicios nuevos (parcial).
+  - `index.html`: Pantalla principal (sidebar con categorías/ejercicios, navegador de fechas, editor de sesión, gráfica).
+  - `date_navigator.html`: Navegador horizontal de fechas (con marcador de días con datos).
+  - `session_editor.html`: Editor de la sesión del día seleccionado (lectura/edición según fecha).
+  - `exercise_create_form.html`: Alta de ejercicios nuevos en el sidebar (parcial).
   - `exercise_list.html` / `exercise_detail.html`: Navegación por ejercicio (parciales).
 - `data/`: Contiene `gym.db` y `data/backups/` (copias automáticas antes de operaciones destructivas).
 - `tests/`: Pruebas unitarias e integración.
@@ -84,12 +84,9 @@ La base `data/gym.db` tiene dos tablas:
 ## 7. Arquitectura del Dashboard (FastAPI + htmx)
 La app `app.py` sirve HTML renderizado con Jinja2 y usa htmx para actualizaciones parciales:
 
-- **`GET /`** → index con formulario de entrenamiento, categorías musculares, gráfica global (PFR sistémico) e historial de sesiones.
-- **`POST /entrenamiento`** → inserta una sesión manual (fecha + series). Respuesta OOB: formulario limpio + historial actualizado.
-- **`GET /entrenamientos`** → historial paginado de sesiones (parcial).
-- **`GET /entrenamiento/session`** → detalle de una sesión (tabla de series con RM/RMₐ).
-- **`GET /entrenamiento/session/edit`** / **`POST /entrenamiento/session/update`** → editar sesión manual (hace backup previo).
-- **`POST /entrenamiento/session/delete`** → eliminar sesión (hace backup previo, confirmación en UI).
+- **`GET /`** → index con sidebar (categorías/ejercicios/nuevo ejercicio), navegador de fechas, editor de sesión del día y gráfica global (PFR sistémico).
+- **`GET /fecha`** → navegador de fechas + editor de sesión para la fecha indicada (respuesta OOB). Fechas pasadas = solo lectura con botón ✏️; hoy/futuro = editable.
+- **`POST /entrenamiento/session/save`** → reemplaza en una transacción todas las series de la fecha (vacío = borra la sesión). Hace backup previo en `data/backups/`.
 - **`POST /ejercicio/nuevo`** → alta de ejercicio con grupo muscular y categoría (rechaza duplicados).
 - **`GET /exportar/csv`** → exporta `training_sets` a CSV.
 - **`GET /select`** → lista de ejercicios del grupo (`grupo=""` para global) con gráfica OOB.
@@ -97,9 +94,9 @@ La app `app.py` sirve HTML renderizado con Jinja2 y usa htmx para actualizacione
 - **`GET /ejercicio`** → tablas de detalle (raw + resumen por sesión) con gráfica OOB del ejercicio.
 
 **Flujo frontend (en `index.html`):**
-1. El usuario registra el entrenamiento del día en `training_form.html` (fecha, ejercicio, kg, reps, RIR; series dinámicas con JS local).
-2. El historial `#sessions-list` muestra todas las sesiones (Google + manuales, con badge de origen), con detalle expandible.
-3. Las categorías musculares se construyen desde la DB (`ejercicios.categoria`); los ejercicios nuevos aparecen automáticamente.
+1. El sidebar contiene: formulario de nuevo ejercicio, categorías musculares con sus músculos, y la lista de ejercicios del grupo seleccionado (cargada vía `/select`).
+2. El navegador `#date-navigator` muestra la fecha seleccionada, ~13 días hacia atrás y máximo 2 hacia adelante; scroll horizontal, flechas y un `<input type="date">` permiten ir a cualquier fecha. Los días con entrenamiento muestran un punto de marcador.
+3. `#session-editor` muestra la tabla compacta `# | Ejercicio | Peso | Reps | RIR | RMₐ` de la fecha seleccionada. Hoy/futuro: filas editables (botones +Serie / eliminar / Guardar). Pasado: solo lectura con botón ✏️ Editar.
 4. Seleccionar un ejercicio carga `exercise_detail.html` en `#history-section` y actualiza la gráfica unificada.
 
 ## 8. Reglas de Codificación (Coding Standards)

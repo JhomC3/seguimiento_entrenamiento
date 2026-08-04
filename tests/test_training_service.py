@@ -3,11 +3,12 @@ from datetime import date
 
 import pytest
 
-from src.database import delete_session, init_db
+from src.database import delete_session, get_sets_by_fecha, init_db
 from src.training_service import (
     calculate_cycle_week,
     day_from_date,
     insert_manual_session,
+    save_session,
     update_session,
     get_sessions_page,
     get_session_detail,
@@ -141,3 +142,68 @@ def test_delete_session(db):
     count = conn.execute("SELECT COUNT(*) FROM training_sets").fetchone()[0]
     conn.close()
     assert count == 0
+
+def test_get_sets_by_fecha(db):
+    insert_manual_session(db, "2026-02-10", [
+        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
+    ])
+    rows = get_sets_by_fecha(db, "10/2/26")
+    assert len(rows) == 1
+    assert rows[0]["ejercicio"] == "Press"
+    assert rows[0]["origen"] == "manual"
+
+def test_save_session_replaces_rows(db):
+    insert_manual_session(db, "2026-02-10", [
+        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
+    ])
+    result = save_session(db, "2026-02-10", [
+        {"ejercicio": "Press", "kg": 90, "reps": 6, "rir": 2},
+        {"ejercicio": "Press", "kg": 85, "reps": 8, "rir": None},
+    ])
+    assert result["semana"] == 1
+    assert result["dia"] == "MARTES"
+    conn = sqlite3.connect(db)
+    rows = conn.execute("SELECT set_orden, ejercicio, kg, reps, rir, origen FROM training_sets ORDER BY set_orden").fetchall()
+    conn.close()
+    assert len(rows) == 2
+    assert rows[0] == (1, "Press", 90.0, 6.0, 2.0, "manual")
+    assert rows[1] == (2, "Press", 85.0, 8.0, None, "manual")
+
+def test_save_session_empty_deletes(db):
+    insert_manual_session(db, "2026-02-10", [
+        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
+    ])
+    save_session(db, "2026-02-10", [])
+    conn = sqlite3.connect(db)
+    count = conn.execute("SELECT COUNT(*) FROM training_sets").fetchone()[0]
+    conn.close()
+    assert count == 0
+
+def test_save_session_invalid_keeps_data(db):
+    insert_manual_session(db, "2026-02-10", [
+        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
+    ])
+    with pytest.raises(ValueError):
+        save_session(db, "2026-02-10", [
+            {"ejercicio": "No Existe", "kg": 80, "reps": 8, "rir": None},
+        ])
+    conn = sqlite3.connect(db)
+    count = conn.execute("SELECT COUNT(*) FROM training_sets").fetchone()[0]
+    conn.close()
+    assert count == 1
+
+def test_save_session_replaces_google_rows_by_fecha(db):
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) "
+        "VALUES (1, 'MARTES', '10/2/26', 1, 'Press', 8, 80, 1, 'google')"
+    )
+    conn.commit()
+    conn.close()
+    save_session(db, "2026-02-10", [
+        {"ejercicio": "Press", "kg": 95, "reps": 5, "rir": 2},
+    ])
+    conn = sqlite3.connect(db)
+    rows = conn.execute("SELECT kg, origen FROM training_sets").fetchall()
+    conn.close()
+    assert rows == [(95.0, "manual")]

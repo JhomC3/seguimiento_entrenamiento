@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-5xl mx-auto px-4 py-8 flex flex-col gap-8">
+<div class="max-w-7xl mx-auto px-4 py-8 flex flex-col gap-8">
     <!-- Header -->
     <header class="flex items-center justify-between border-b border-neutral-800 pb-4">
         <div class="flex items-center gap-3">
@@ -12,59 +12,63 @@
         </div>
     </header>
 
-    <!-- Categorías de Músculos: Empuje / Tirón / Pierna / Core -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {% for cat in muscle_categories %}
-        <div class="bg-neutral-900 border border-transparent rounded-xl p-5 flex flex-col gap-3 neon-border metallic-border">
-            <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase text-center pb-3 border-b border-neutral-800 neon-title">{{ cat.name }}</h3>
-            {% for muscle in cat.muscles %}
-                {% if muscle in grupos_list %}
-                <button
-                    id="cat-btn-{{ muscle }}"
-                    onclick="toggleCategory('{{ muscle }}')"
-                    class="category-btn bg-matte-950 border border-neutral-800 hover:border-neutral-700 text-neutral-300 text-sm font-bold py-2.5 px-3.5 rounded-lg transition-all text-left tracking-wide focus:outline-none focus-visible:outline-none focus:ring-0 active:outline-none"
-                >
-                    {{ muscle }}
-                </button>
-                {% endif %}
-            {% endfor %}
-        </div>
-        {% endfor %}
+    <div class="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6 items-start">
+        <!-- Panel lateral izquierdo -->
+        <aside class="flex flex-col gap-4 lg:sticky lg:top-6">
+            <!-- Nuevo ejercicio -->
+            <div id="exercise-create">
+                {{ exercise_form_html | safe }}
+            </div>
+
+            <!-- Categorías de Músculos: Empuje / Tirón / Pierna / Core -->
+            <div class="flex flex-col gap-4">
+                {% for cat in muscle_categories %}
+                <div class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-2.5 neon-border metallic-border">
+                    <h3 class="text-xs font-black tracking-[0.2em] text-burgundy-400 uppercase text-center pb-2 border-b border-neutral-800 neon-title">{{ cat.name }}</h3>
+                    {% for muscle in cat.muscles %}
+                        {% if muscle in grupos_list %}
+                        <button
+                            id="cat-btn-{{ muscle }}"
+                            onclick="toggleCategory('{{ muscle }}')"
+                            class="category-btn w-full bg-matte-950 border border-neutral-800 hover:border-neutral-700 text-neutral-300 text-sm font-bold py-2 px-3 rounded-lg transition-all text-left tracking-wide focus:outline-none focus-visible:outline-none focus:ring-0 active:outline-none"
+                        >
+                            {{ muscle }}
+                        </button>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Ejercicios (loaded dynamically) -->
+            <section id="exercise-section" class="flex flex-col gap-4">
+                {% include "exercise_list.html" %}
+            </section>
+        </aside>
+
+        <!-- Contenido principal -->
+        <main class="flex flex-col gap-6 min-w-0">
+            <!-- Navegador de fechas -->
+            <section id="date-navigator">
+                {{ navigator_html | safe }}
+            </section>
+
+            <!-- Editor de sesión -->
+            <section id="session-editor">
+                {{ editor_html | safe }}
+            </section>
+
+            <!-- Gráfica Única -->
+            <div id="unified-chart-container" class="bg-neutral-900 border border-transparent rounded-xl p-5 neon-border metallic-border">
+                <div id="unified-chart">
+                    {{ systemic_chart_html | safe }}
+                </div>
+            </div>
+
+            <!-- Detalle y Tabla (loaded dynamically abajo de la gráfica) -->
+            <section id="history-section" class="flex flex-col gap-4"></section>
+        </main>
     </div>
-
-    <!-- Entrenamiento del día (formulario manual) -->
-    <section class="flex flex-col gap-3">
-        {{ form_html | safe }}
-        <div id="exercise-create-container"></div>
-    </section>
-
-    <!-- Ejercicios (loaded dynamically) -->
-    <section id="exercise-section" class="flex flex-col gap-4">
-        {% include "exercise_list.html" %}
-    </section>
-
-    <!-- Gráfica Única (abajo de los ejercicios) -->
-    <div id="unified-chart-container" class="bg-neutral-900 border border-transparent rounded-xl p-5 neon-border metallic-border">
-        <div id="unified-chart">
-            {% if has_data and systemic_chart_html %}
-                {{ systemic_chart_html | safe }}
-            {% else %}
-                <div class="flex items-center justify-center h-[300px] text-neutral-500 text-xs">Sin datos</div>
-            {% endif %}
-        </div>
-    </div>
-
-    <!-- Historial de entrenamientos por sesión -->
-    <section class="bg-neutral-900 border border-transparent rounded-xl p-5 flex flex-col gap-4 neon-border metallic-border">
-        <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase text-center pb-3 border-b border-neutral-800 neon-title">Entrenamientos anteriores</h3>
-        <div id="sessions-list" class="flex flex-col gap-2">
-            {{ sessions_html | safe }}
-        </div>
-        <div id="session-detail" class="flex flex-col gap-2"></div>
-    </section>
-
-    <!-- Detalle y Tabla (loaded dynamically abajo de la gráfica) -->
-    <section id="history-section" class="flex flex-col gap-4"></section>
 </div>
 
 <script>
@@ -104,13 +108,11 @@
             currentExercise = null;
             highlightExerciseBtn(null);
             
-            // Revert to group chart and clear history section
             htmx.ajax('GET', `/grupo/reset?grupo=${encodeURIComponent(currentCategory)}`, '#history-section');
         } else {
             currentExercise = exercise;
             highlightExerciseBtn(exercise);
             
-            // Load tables and update unified chart with OOB
             htmx.ajax('GET', `/ejercicio?ejercicio=${encodeURIComponent(exercise)}`, '#history-section');
         }
     }
@@ -142,6 +144,17 @@
         
         htmx.ajax('GET', '/select', '#exercise-section');
     }
+
+    document.addEventListener('htmx:afterRequest', function(event) {
+        const elt = event.detail.elt;
+        if (elt && elt.id === 'exercise-create-form' && event.detail.successful) {
+            if (currentCategory) {
+                htmx.ajax('GET', `/select?grupo=${encodeURIComponent(currentCategory)}`, '#exercise-section');
+            } else {
+                htmx.ajax('GET', '/select', '#exercise-section');
+            }
+        }
+    });
 
     // Esc listener
     document.addEventListener('keydown', function(event) {

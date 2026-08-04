@@ -137,6 +137,31 @@ def insert_exercise(db_path: str, ejercicio: str, grupo_muscular: str, categoria
 def _parse_fecha(fecha: str) -> datetime:
     return datetime.strptime(fecha, "%d/%m/%y")
 
+def get_sets_by_fecha(db_path: str, fecha: str) -> list[dict]:
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute("""
+            SELECT ejercicio, set_orden, reps, kg, rir, origen
+            FROM training_sets
+            WHERE fecha = ?
+            ORDER BY set_orden
+        """, (fecha,)).fetchall()
+    finally:
+        conn.close()
+    return [
+        {"ejercicio": r[0], "set_orden": r[1], "reps": r[2], "kg": r[3], "rir": r[4], "origen": r[5]}
+        for r in rows
+    ]
+
+def delete_session_by_fecha(db_path: str, fecha: str) -> int:
+    conn = sqlite3.connect(db_path)
+    try:
+        with conn:
+            cur = conn.execute("DELETE FROM training_sets WHERE fecha = ?", (fecha,))
+        return cur.rowcount
+    finally:
+        conn.close()
+
 def get_training_sessions(db_path: str) -> list[dict]:
     if not os.path.exists(db_path):
         return []

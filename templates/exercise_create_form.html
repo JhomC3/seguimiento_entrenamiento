@@ -1,32 +1,35 @@
-<div class="border border-neutral-800 rounded-xl bg-matte-950 p-4 flex flex-col gap-3 animate-fade-in">
+<div class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border animate-fade-in">
     <h4 class="text-xs font-black tracking-widest text-burgundy-400 uppercase">Nuevo ejercicio</h4>
 
     {% if error %}
     <div class="rounded-lg bg-red-950/40 border border-red-800 text-red-300 text-xs px-3 py-2">{{ error }}</div>
     {% endif %}
+    {% if success %}
+    <div class="rounded-lg bg-emerald-950/40 border border-emerald-800 text-emerald-300 text-xs px-3 py-2">{{ success }}</div>
+    {% endif %}
 
-    <form hx-post="/ejercicio/nuevo" hx-target="#exercise-create-container" hx-swap="innerHTML" class="grid grid-cols-1 md:grid-cols-4 gap-2">
+    <form id="exercise-create-form" hx-post="/ejercicio/nuevo" hx-target="#exercise-create" hx-swap="outerHTML" class="flex flex-col gap-2">
         <input
             name="ejercicio" required placeholder="Nombre del ejercicio"
-            class="bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600 focus:border-burgundy-700 focus:outline-none"
+            class="bg-matte-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600 focus:border-burgundy-700 focus:outline-none"
         >
         <input
             name="grupo_muscular" required placeholder="Grupo muscular (ej: Pectoral)" list="muscle-list"
-            class="bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600 focus:border-burgundy-700 focus:outline-none"
+            class="bg-matte-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600 focus:border-burgundy-700 focus:outline-none"
         >
         <datalist id="muscle-list">
             {% for m in muscle_names %}<option value="{{ m }}">{% endfor %}
         </datalist>
         <select
             name="categoria" required
-            class="bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-200 focus:border-burgundy-700 focus:outline-none"
+            class="bg-matte-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-200 focus:border-burgundy-700 focus:outline-none"
         >
             <option value="">— Categoría —</option>
             {% for c in categories %}<option value="{{ c.name }}">{{ c.name }}</option>{% endfor %}
         </select>
         <button
             type="submit"
-            class="bg-burgundy-700 hover:bg-burgundy-600 text-white text-xs rounded-lg transition-all uppercase tracking-widest font-black"
-        >Crear</button>
+            class="h-9 bg-burgundy-700 hover:bg-burgundy-600 text-white text-xs rounded-lg transition-all uppercase tracking-widest font-black"
+        >Crear ejercicio</button>
     </form>
 </div>

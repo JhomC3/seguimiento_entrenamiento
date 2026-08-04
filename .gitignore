@@ -17,3 +17,6 @@ data/*.db
 
 # Sistema
 .DS_Store
+
+# Backups locales de la DB
+data/backups/

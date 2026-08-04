@@ -111,6 +111,27 @@ def update_session(db_path: str, old_semana: int, old_dia: str, old_fecha: str, 
         conn.close()
     return {"semana": semana, "dia": dia, "fecha": fecha_db}
 
+def save_session(db_path: str, fecha_iso: str, sets: list[dict]) -> dict:
+    fecha = parse_form_date(fecha_iso)
+    cycle_start = parse_cycle_start()
+    cleaned = validate_sets(db_path, sets) if sets else []
+    semana = calculate_cycle_week(fecha, cycle_start)
+    dia = day_from_date(fecha)
+    fecha_db = fecha_to_db(fecha)
+    conn = sqlite3.connect(db_path)
+    try:
+        with conn:
+            conn.execute("DELETE FROM training_sets WHERE fecha = ?", (fecha_db,))
+            for idx, s in enumerate(cleaned, start=1):
+                conn.execute(
+                    "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual')",
+                    (semana, dia, fecha_db, idx, s["ejercicio"], s["reps"], s["kg"], s["rir"]),
+                )
+    finally:
+        conn.close()
+    return {"semana": semana, "dia": dia, "fecha": fecha_db}
+
 def get_sessions_page(db_path: str, page: int = 1, limit: int = 20) -> tuple[list[dict], int, int]:
     sessions = get_training_sessions(db_path)
     total = len(sessions)
