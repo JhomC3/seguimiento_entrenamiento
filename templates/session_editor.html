@@ -34,7 +34,7 @@
                 </thead>
                 <tbody class="divide-y divide-neutral-800/40" id="set-rows">
                     {% for r in rows %}
-                    <tr class="set-row group {% if not readonly %}hover:bg-white/[0.04]{% endif %}">
+                    <tr class="set-row group transition-colors duration-150 {% if not readonly %}hover:bg-white/[0.04]{% endif %}">
                         <td class="set-num py-0.5 px-1.5 text-neutral-600 font-bold text-center">{{ loop.index }}</td>
                         <td class="py-0.5 px-1.5">
                             <select
@@ -73,7 +73,7 @@
                         </td>
                         <td class="py-0.5 px-1.5 text-center font-bold text-burgundy-300 whitespace-nowrap">{{ "%.1f"|format(r.rm) if r.rm is not none else "—" }}</td>
                         <td class="py-0.5 px-1.5">
-                            <div class="row-actions flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity" {% if readonly %}hidden{% endif %}>
+                            <div class="row-actions flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity duration-150" {% if readonly %}hidden{% endif %}>
                                 <button type="button" onclick="removeRow(this)" class="row-btn" title="Eliminar fila">−</button>
                                 <button type="button" onclick="addRowAfter(this)" class="row-btn" title="Agregar fila">+</button>
                             </div>
@@ -93,8 +93,8 @@
             <button
                 type="button"
                 hx-get="/fecha/editor?fecha={{ fecha_iso }}"
-                hx-target="#session-editor"
-                hx-swap="outerHTML"
+                hx-target="#session-editor-wrap"
+                hx-swap="innerHTML"
                 class="h-8 px-4 bg-black hover:bg-neutral-900 text-neutral-300 border border-neutral-800 text-xs rounded-lg transition-all uppercase tracking-widest font-black"
             >Cancelar</button>
             {% endif %}

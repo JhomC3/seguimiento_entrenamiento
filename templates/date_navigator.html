@@ -8,8 +8,8 @@
                 type="button"
                 data-iso="{{ d.iso }}"
                 hx-get="/fecha/editor?fecha={{ d.iso }}"
-                hx-target="#session-editor"
-                hx-swap="outerHTML"
+                hx-target="#session-editor-wrap"
+                hx-swap="innerHTML"
                 onclick="selectDate(this, '{{ d.iso }}')"
                 class="date-num {% if d.selected %}selected{% endif %}"
                 title="{{ d.iso }}"
@@ -44,7 +44,7 @@
         if (!iso) return;
         currentIso = iso;
         document.querySelectorAll('.date-num.selected').forEach(b => b.classList.remove('selected'));
-        htmx.ajax('GET', `/fecha/editor?fecha=${iso}`, { target: '#session-editor', swap: 'outerHTML' });
+        htmx.ajax('GET', `/fecha/editor?fecha=${iso}`, { target: '#session-editor-wrap', swap: 'innerHTML' });
         const btn = document.querySelector(`.date-num[data-iso="${iso}"]`);
         if (btn) {
             btn.classList.add('selected');
