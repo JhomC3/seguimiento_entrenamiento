@@ -111,10 +111,15 @@ def update_session(db_path: str, old_semana: int, old_dia: str, old_fecha: str, 
         conn.close()
     return {"semana": semana, "dia": dia, "fecha": fecha_db}
 
+def _is_empty_row(s: dict) -> bool:
+    return not any(str(s.get(k, "")).strip() for k in ("ejercicio", "kg", "reps", "rir"))
+
 def save_session(db_path: str, fecha_iso: str, sets: list[dict]) -> dict:
     fecha = parse_form_date(fecha_iso)
+    if fecha > date.today():
+        raise ValueError("No se pueden registrar entrenamientos futuros.")
     cycle_start = parse_cycle_start()
-    cleaned = validate_sets(db_path, sets) if sets else []
+    cleaned = validate_sets(db_path, [s for s in sets if not _is_empty_row(s)]) if sets else []
     semana = calculate_cycle_week(fecha, cycle_start)
     dia = day_from_date(fecha)
     fecha_db = fecha_to_db(fecha)

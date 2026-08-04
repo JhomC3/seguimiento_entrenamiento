@@ -156,10 +156,15 @@
         }
         if (elt && elt.id === 'session-form' && event.detail.successful) {
             const rows = document.querySelectorAll('#session-editor #set-rows .set-row');
+            const filled = Array.from(rows).filter(row => {
+                const sel = row.querySelector('.ej-select');
+                const hasValues = Array.from(row.querySelectorAll('input')).some(i => i.value.trim() !== '');
+                return (sel && sel.value) || hasValues;
+            });
             const btn = document.querySelector(`.date-num[data-iso="${currentIso}"]`);
             if (btn) {
                 const dot = btn.querySelector('.date-dot');
-                if (rows.length > 0) {
+                if (filled.length > 0) {
                     if (!dot) btn.insertAdjacentHTML('beforeend', '<span class="date-dot"></span>');
                 } else if (dot) {
                     dot.remove();

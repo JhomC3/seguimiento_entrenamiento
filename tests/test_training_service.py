@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -207,3 +207,25 @@ def test_save_session_replaces_google_rows_by_fecha(db):
     rows = conn.execute("SELECT kg, origen FROM training_sets").fetchall()
     conn.close()
     assert rows == [(95.0, "manual")]
+
+def test_save_session_filters_empty_rows(db):
+    save_session(db, "2026-02-10", [
+        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
+        {"ejercicio": "", "kg": "", "reps": "", "rir": ""},
+        {"ejercicio": "", "kg": "", "reps": "", "rir": ""},
+    ])
+    conn = sqlite3.connect(db)
+    rows = conn.execute("SELECT set_orden, kg FROM training_sets").fetchall()
+    conn.close()
+    assert rows == [(1, 80.0)]
+
+def test_save_session_rejects_future_date(db):
+    futuro = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
+    with pytest.raises(ValueError):
+        save_session(db, futuro, [
+            {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
+        ])
+    conn = sqlite3.connect(db)
+    count = conn.execute("SELECT COUNT(*) FROM training_sets").fetchone()[0]
+    conn.close()
+    assert count == 0

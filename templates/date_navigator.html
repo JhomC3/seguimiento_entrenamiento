@@ -20,13 +20,7 @@
             {% endfor %}
         </div>
 
-        <input
-            type="date"
-            value="{{ selected_iso }}"
-            onchange="jumpDate(this.value)"
-            class="date-input"
-            title="Ir a una fecha"
-        >
+        <button type="button" onclick="jumpDate('{{ today_iso }}')" class="today-btn" title="Ir a hoy">HOY</button>
 
         <button type="button" onclick="scrollDates(1)" class="nav-arrow" title="Próximas fechas">→</button>
     </div>

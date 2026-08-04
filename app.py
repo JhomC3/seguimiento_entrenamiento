@@ -34,6 +34,8 @@ def _end_of_next_month(d: date) -> date:
     next_month = (d.month + 1) % 12 + 1
     return date(next_year, next_month, 1) - timedelta(days=1)
 
+MAX_ROWS = 21
+
 app = FastAPI(title="Gym Tracker")
 templates = Jinja2Templates(directory="templates")
 
@@ -118,17 +120,19 @@ def _navigator_html(request: Request, fecha_iso: str) -> str:
         context={
             "dates": dates,
             "selected_iso": selected.strftime("%Y-%m-%d"),
+            "today_iso": date.today().strftime("%Y-%m-%d"),
         },
     ).body.decode()
 
 def _editor_html(request: Request, fecha_iso: str, *, rows: list[dict] | None = None, error: str | None = None, success: str | None = None, force_editable: bool = False) -> str:
     fecha = parse_form_date(fecha_iso)
     today = date.today()
-    readonly = (fecha < today) and not force_editable
+    is_future = fecha > today
+    readonly = (fecha != today) and not force_editable
     if rows is None:
         rows = [dict(r) for r in get_sets_by_fecha(DB_PATH, fecha_to_db(fecha))]
     display_rows = []
-    for r in rows:
+    for r in rows[:MAX_ROWS]:
         kg = r.get("kg")
         reps = r.get("reps")
         rir = r.get("rir")
@@ -146,8 +150,8 @@ def _editor_html(request: Request, fecha_iso: str, *, rows: list[dict] | None = 
             "rir": "" if rir is None else rir,
             "rm": rm,
         })
-    if not display_rows:
-        display_rows = [{"ejercicio": "", "kg": "", "reps": "", "rir": "", "rm": None}]
+    while len(display_rows) < MAX_ROWS:
+        display_rows.append({"ejercicio": "", "kg": "", "reps": "", "rir": "", "rm": None})
     semana = calculate_cycle_week(fecha, CICLO_START_DATE)
     dia = day_from_date(fecha)
     return templates.TemplateResponse(
@@ -160,6 +164,7 @@ def _editor_html(request: Request, fecha_iso: str, *, rows: list[dict] | None = 
             "dia": dia,
             "rows": display_rows,
             "readonly": readonly,
+            "is_future": is_future,
             "error": error,
             "success": success,
             "catalog": get_exercises_catalog(DB_PATH),
