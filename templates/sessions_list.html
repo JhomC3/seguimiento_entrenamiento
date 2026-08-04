@@ -1,0 +1,46 @@
+{% for s in sessions %}
+<div class="flex items-center justify-between gap-3 border border-neutral-800 rounded-lg bg-matte-950 px-4 py-3 hover:border-neutral-700 transition-all">
+    <div class="flex flex-col gap-1">
+        <div class="flex flex-wrap items-center gap-2">
+            <span class="text-sm font-bold text-white">{{ s.fecha }}</span>
+            <span class="text-xs text-neutral-500 uppercase">{{ s.dia }}</span>
+            <span class="text-xs text-neutral-500">Sem {{ s.semana }}</span>
+            {% if s.manual_sets %}
+            <span class="text-[10px] uppercase tracking-wider font-black text-burgundy-400 border border-burgundy-700 rounded px-1.5 py-0.5">manual</span>
+            {% endif %}
+            {% if s.google_sets %}
+            <span class="text-[10px] uppercase tracking-wider font-black text-neutral-400 border border-neutral-700 rounded px-1.5 py-0.5">google</span>
+            {% endif %}
+        </div>
+        <div class="text-xs text-neutral-500">{{ s.n_ejercicios }} ejercicios · {{ s.n_series }} series</div>
+    </div>
+    <button
+        hx-get="/entrenamiento/session?semana={{ s.semana }}&dia={{ s.dia }}&fecha={{ s.fecha | urlencode }}"
+        hx-target="#session-detail"
+        hx-swap="innerHTML"
+        class="text-xs font-bold text-neutral-300 hover:text-burgundy-400 border border-neutral-700 hover:border-burgundy-700 rounded-lg px-3 py-2 transition-all whitespace-nowrap"
+    >Detalle</button>
+</div>
+{% endfor %}
+
+{% if total_pages > 1 %}
+<div class="flex items-center justify-between pt-2">
+    {% if page > 1 %}
+    <button
+        hx-get="/entrenamientos?pagina={{ page - 1 }}"
+        hx-target="#sessions-list"
+        hx-swap="innerHTML"
+        class="text-xs font-bold text-neutral-300 hover:text-burgundy-400 border border-neutral-700 hover:border-burgundy-700 rounded-lg px-3 py-2 transition-all"
+    >← Anterior</button>
+    {% else %}<span></span>{% endif %}
+    <span class="text-xs text-neutral-500">Página {{ page }} de {{ total_pages }} · {{ total }} sesiones</span>
+    {% if page < total_pages %}
+    <button
+        hx-get="/entrenamientos?pagina={{ page + 1 }}"
+        hx-target="#sessions-list"
+        hx-swap="innerHTML"
+        class="text-xs font-bold text-neutral-300 hover:text-burgundy-400 border border-neutral-700 hover:border-burgundy-700 rounded-lg px-3 py-2 transition-all"
+    >Siguiente →</button>
+    {% else %}<span></span>{% endif %}
+</div>
+{% endif %}

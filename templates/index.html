@@ -3,19 +3,12 @@
 <div class="max-w-5xl mx-auto px-4 py-8 flex flex-col gap-8">
     <!-- Header -->
     <header class="flex items-center justify-between border-b border-neutral-800 pb-4">
-        <div>
+        <div class="flex items-center gap-3">
             <h1 class="text-xl font-black tracking-[0.2em] text-white uppercase">Gym Tracker</h1>
-        </div>
-        <div id="sync-container" class="flex items-center gap-2">
-            <button 
-                id="sync-btn"
-                hx-post="/sync"
-                hx-target="#sync-container"
-                onclick="startSync()"
-                class="w-36 h-10 bg-neutral-900 hover:bg-burgundy-700 hover:text-white hover:border-burgundy-700 text-neutral-400 border border-neutral-700 text-xs rounded transition-all uppercase tracking-widest font-black flex items-center justify-center focus:outline-none"
-            >
-                <span id="sync-text">Sincronizar</span>
-            </button>
+            <a
+                href="/exportar/csv"
+                class="text-[10px] font-bold text-neutral-500 hover:text-burgundy-400 border border-neutral-800 hover:border-burgundy-700 rounded px-2 py-1 transition-all uppercase tracking-widest"
+            >Exportar CSV</a>
         </div>
     </header>
 
@@ -39,6 +32,12 @@
         {% endfor %}
     </div>
 
+    <!-- Entrenamiento del día (formulario manual) -->
+    <section class="flex flex-col gap-3">
+        {{ form_html | safe }}
+        <div id="exercise-create-container"></div>
+    </section>
+
     <!-- Ejercicios (loaded dynamically) -->
     <section id="exercise-section" class="flex flex-col gap-4">
         {% include "exercise_list.html" %}
@@ -54,6 +53,15 @@
             {% endif %}
         </div>
     </div>
+
+    <!-- Historial de entrenamientos por sesión -->
+    <section class="bg-neutral-900 border border-transparent rounded-xl p-5 flex flex-col gap-4 neon-border metallic-border">
+        <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase text-center pb-3 border-b border-neutral-800 neon-title">Entrenamientos anteriores</h3>
+        <div id="sessions-list" class="flex flex-col gap-2">
+            {{ sessions_html | safe }}
+        </div>
+        <div id="session-detail" class="flex flex-col gap-2"></div>
+    </section>
 
     <!-- Detalle y Tabla (loaded dynamically abajo de la gráfica) -->
     <section id="history-section" class="flex flex-col gap-4"></section>
@@ -133,15 +141,6 @@
         if (historySec) historySec.innerHTML = '';
         
         htmx.ajax('GET', '/select', '#exercise-section');
-    }
-
-    function startSync() {
-        const btn = document.getElementById('sync-btn');
-        const text = document.getElementById('sync-text');
-        if (btn && text) {
-            text.textContent = 'Sincronizando...';
-            btn.classList.add('opacity-50', 'pointer-events-none');
-        }
     }
 
     // Esc listener
