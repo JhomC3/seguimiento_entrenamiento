@@ -223,11 +223,14 @@
             border-radius: 6px;
         }
 
-        /* Avisos (éxito/error): translúcidos, centrados, ajustados al texto */
+        /* Avisos (éxito/error): superpuestos, translúcidos, centrados, ajustados al texto */
         .notice {
+            position: absolute;
+            top: 52px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 20;
             width: fit-content;
-            margin-left: auto;
-            margin-right: auto;
             border-radius: 8px;
             padding: 6px 14px;
             font-size: 11px;

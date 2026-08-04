@@ -1,4 +1,4 @@
-<div id="session-editor" class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border">
+<div id="session-editor" class="relative bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border">
     <div class="flex items-center justify-between">
         <div class="flex items-baseline gap-2">
             <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title">{{ dia }} {{ fecha_db }}</h3>
@@ -40,7 +40,7 @@
                 </thead>
                 <tbody class="divide-y divide-neutral-800/40" id="set-rows">
                     {% for r in rows %}
-                    <tr class="set-row group">
+                    <tr class="set-row group {% if not readonly %}hover:bg-white/[0.04]{% endif %}">
                         <td class="set-num py-0.5 px-1.5 text-neutral-600 font-bold text-center">{{ loop.index }}</td>
                         <td class="py-0.5 px-1.5">
                             <select
@@ -80,8 +80,8 @@
                         <td class="py-0.5 px-1.5 text-center font-bold text-burgundy-300 whitespace-nowrap">{{ "%.1f"|format(r.rm) if r.rm is not none else "—" }}</td>
                         <td class="py-0.5 px-1.5">
                             <div class="row-actions flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity" {% if readonly %}hidden{% endif %}>
-                                <button type="button" onclick="addRowAfter(this)" class="row-btn" title="Agregar fila">+</button>
                                 <button type="button" onclick="removeRow(this)" class="row-btn" title="Eliminar fila">−</button>
+                                <button type="button" onclick="addRowAfter(this)" class="row-btn" title="Agregar fila">+</button>
                             </div>
                         </td>
                     </tr>
@@ -90,7 +90,7 @@
             </table>
         </div>
 
-        <div id="edit-actions" class="flex gap-2" {% if readonly %}hidden{% endif %}>
+        <div id="edit-actions" class="h-8 flex items-center gap-2 {% if readonly %}invisible{% endif %}">
             <button
                 type="submit"
                 class="h-8 px-5 bg-black hover:bg-neutral-900 text-white border border-neutral-800 text-xs rounded-lg transition-all uppercase tracking-widest font-black"
@@ -118,7 +118,7 @@
             pencil.classList.remove('off');
             pencil.classList.add('on');
         }
-        document.getElementById('edit-actions').hidden = false;
+        document.getElementById('edit-actions').classList.remove('invisible');
     }
 
     function addRowAfter(btn) {

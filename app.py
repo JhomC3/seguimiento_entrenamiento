@@ -122,10 +122,10 @@ def _navigator_html(request: Request, fecha_iso: str) -> str:
         },
     ).body.decode()
 
-def _editor_html(request: Request, fecha_iso: str, *, rows: list[dict] | None = None, error: str | None = None, success: str | None = None, force_editable: bool = False) -> str:
+def _editor_html(request: Request, fecha_iso: str, *, rows: list[dict] | None = None, error: str | None = None, success: str | None = None, force_editable: bool = False, force_readonly: bool = False) -> str:
     fecha = parse_form_date(fecha_iso)
     today = date.today()
-    readonly = (fecha < today) and not force_editable
+    readonly = (force_readonly or fecha < today) and not force_editable
     if rows is None:
         rows = [dict(r) for r in get_sets_by_fecha(DB_PATH, fecha_to_db(fecha))]
     data_rows = [
@@ -227,9 +227,10 @@ async def entrenamiento_session_save(
     try:
         backup_db(DB_PATH)
         save_session(DB_PATH, fecha, sets)
+        saved_rows = get_sets_by_fecha(DB_PATH, fecha_to_db(parse_form_date(fecha)))
         return HTMLResponse(
             f'<div id="session-editor" hx-swap-oob="outerHTML">'
-            f'{_editor_html(request, fecha, success="Entrenamiento guardado.")}</div>'
+            f'{_editor_html(request, fecha, success="Entrenamiento guardado.", force_readonly=len(saved_rows) > 0)}</div>'
         )
     except ValueError as e:
         return HTMLResponse(
