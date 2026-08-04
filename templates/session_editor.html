@@ -25,7 +25,7 @@
 
     <form id="session-form" hx-post="/entrenamiento/session/save" hx-swap="none" class="flex flex-col gap-3">
         <input type="hidden" name="fecha" value="{{ fecha_iso }}">
-        <div class="overflow-x-auto min-h-[300px]">
+        <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse text-xs">
                 <thead>
                     <tr>
@@ -51,10 +51,6 @@
                                 {% if r.ejercicio %}<option value="{{ r.ejercicio }}" selected>{{ r.ejercicio }}</option>{% endif %}
                                 {% for ej in catalog %}{% if ej != r.ejercicio %}<option value="{{ ej }}">{{ ej }}</option>{% endif %}{% endfor %}
                             </select>
-                            <div class="row-actions flex gap-1 mt-0.5" {% if readonly %}hidden{% endif %}>
-                                <button type="button" onclick="removeRow(this)" class="row-btn" aria-label="Eliminar fila">−</button>
-                                <button type="button" onclick="addRowAfter(this)" class="row-btn" aria-label="Agregar fila">+</button>
-                            </div>
                         </td>
                         <td class="py-0.5 px-1.5">
                             <input
@@ -90,7 +86,7 @@
         <div id="edit-actions" class="flex gap-2" {% if readonly %}hidden{% endif %}>
             <button
                 type="submit"
-                class="h-8 px-5 bg-black hover:bg-neutral-900 text-white border border-neutral-800 text-xs rounded-lg transition-all uppercase tracking-widest font-black"
+                class="h-8 px-5 bg-burgundy-700 hover:bg-burgundy-600 text-white text-xs rounded-lg transition-all uppercase tracking-widest font-black"
             >Guardar</button>
             {% if readonly %}
             <button
@@ -98,7 +94,7 @@
                 hx-get="/fecha/editor?fecha={{ fecha_iso }}"
                 hx-target="#session-editor"
                 hx-swap="outerHTML"
-                class="h-8 px-4 bg-black hover:bg-neutral-900 text-neutral-300 border border-neutral-800 text-xs rounded-lg transition-all uppercase tracking-widest font-black"
+                class="h-8 px-4 bg-matte-950 hover:bg-neutral-800 text-neutral-400 border border-neutral-700 text-xs rounded-lg transition-all uppercase tracking-widest font-black"
             >Cancelar</button>
             {% endif %}
         </div>
@@ -109,32 +105,11 @@
     function enableEdit() {
         const form = document.getElementById('session-form');
         form.querySelectorAll('input, select').forEach(el => { el.disabled = false; });
-        form.querySelectorAll('.row-actions').forEach(el => { el.hidden = false; });
         const pencil = document.querySelector('#session-editor .edit-toggle');
         if (pencil) {
             pencil.classList.remove('off');
             pencil.classList.add('on');
         }
         document.getElementById('edit-actions').hidden = false;
-    }
-
-    function addRowAfter(btn) {
-        const row = btn.closest('.set-row');
-        const clone = row.cloneNode(true);
-        clone.querySelector('.ej-select').value = '';
-        clone.querySelectorAll('input').forEach(input => { input.value = ''; });
-        row.after(clone);
-        renumberRows();
-    }
-
-    function removeRow(btn) {
-        btn.closest('.set-row').remove();
-        renumberRows();
-    }
-
-    function renumberRows() {
-        document.querySelectorAll('#set-rows .set-row').forEach((row, i) => {
-            row.querySelector('.set-num').textContent = i + 1;
-        });
     }
 </script>
