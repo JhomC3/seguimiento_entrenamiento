@@ -14,67 +14,99 @@ Eres un ingeniero de software senior experto en Python, especializado en anális
   - `jinja2` (Templates HTML servidor-side)
   - `pandas` (Manipulación de datos)
   - `plotly` (Visualizaciones y gráficos interactivos)
-  - `requests` (Extracción de Google Sheets)
+  - `requests` (Importación única de Google Sheets)
   - `pytest` (Testing)
-- **Frontend:** HTML + **htmx** (AJAX incremental y actualización OOB de la gráfica unificada) + CSS (Tailwind, vía CDN).
+- **Frontend:** HTML + **htmx** (AJAX incremental y actualización OOB) + CSS (Tailwind, vía CDN).
 - El proyecto también incluye un `run-agent.sh` + `litellm_config.yaml` para levantar un proxy LiteLLM y ejecutar este agente con modelos Gemini. No es parte del dashboard en sí.
 
-## 3. Estructura de Directorios Clave
+## 3. Arquitectura de Datos: SQLite como Única Fuente de Verdad
+- **SQLite (`data/gym.db`) es la única fuente de verdad.** El dashboard lee y escribe exclusivamente en SQLite.
+- Google Sheets **no** forma parte del runtime. Solo se usa para una **importación única** opcional:
+  ```bash
+  uv run python scripts/import_google_sheets.py
+  ```
+  El script reemplaza en una sola transacción las filas `origen='google'` y nunca toca las `origen='manual'`.
+- El sync manual (`POST /sync`) fue eliminado del dashboard. No reintroducir sincronización automática con Google Sheets.
+
+## 4. Estructura de Directorios Clave
 - `app.py`: Entrada de la aplicación FastAPI (rutas del dashboard).
-- `config.py`: Constantes globales, URLs de descarga y `DB_PATH`.
+- `config.py`: Constantes globales (`DB_PATH`, `CICLO_START`, categorías musculares).
+- `scripts/import_google_sheets.py`: Importación única desde Google Sheets.
 - `src/`: Lógica central del sistema.
-  - `fetcher.py`: Extracción HTTP de Google Sheets.
-  - `parser.py`: Limpieza y transformación de CSV.
-  - `database.py`: Operaciones SQLite (creación de tablas y carga).
+  - `fetcher.py` + `parser.py`: Solo usados por el script de importación.
+  - `database.py`: Operaciones SQLite (init no destructivo, migraciones, queries).
+  - `training_service.py`: Lógica de negocio (semana por calendario, validación, inserción/edición de sesiones).
   - `metrics_engine.py`: Motor de métricas (RM ajustado, PFR, rendimiento relativo).
   - `charts.py`: Gráficos Plotly y agregaciones de datos por ejercicio/grupo.
 - `templates/`: Plantillas Jinja2 del frontend.
   - `base.html`: Layout base (estilos, htmx, Plotly).
-  - `index.html`: Pantalla principal con categorías musculares y gráfica unificada.
-  - `exercise_list.html`: Lista de ejercicios (parcial).
-  - `exercise_detail.html`: Tabla de series/sesiones por ejercicio (parcial).
-- `data/`: Contiene la base de datos local SQLite `gym.db`.
+  - `index.html`: Pantalla principal (formulario de entrenamiento, categorías, gráfica, historial).
+  - `training_form.html`: Formulario de registro/edición de entrenamiento.
+  - `sessions_list.html` + `session_detail.html`: Historial de sesiones (parciales).
+  - `exercise_create_form.html`: Alta de ejercicios nuevos (parcial).
+  - `exercise_list.html` / `exercise_detail.html`: Navegación por ejercicio (parciales).
+- `data/`: Contiene `gym.db` y `data/backups/` (copias automáticas antes de operaciones destructivas).
 - `tests/`: Pruebas unitarias e integración.
 - `assets/body_map.svg`: Mapa corporal (recurso visual).
 
-## 4. Modelo de Datos (SQLite)
+## 5. Modelo de Datos (SQLite)
 La base `data/gym.db` tiene dos tablas:
 
 **`ejercicios`**
 - `id` INTEGER PK
 - `grupo_muscular` TEXT NOT NULL
 - `ejercicio` TEXT NOT NULL UNIQUE
+- `categoria` TEXT (EMPUJE / TIRON / PIERNA / CORE)
+- `origen` TEXT NOT NULL DEFAULT 'google' ('google' | 'manual')
 
 **`training_sets`**
 - `id` INTEGER PK
 - `semana` INTEGER NOT NULL
 - `dia` TEXT NOT NULL
-- `fecha` TEXT
+- `fecha` TEXT (formato `d/m/yy`)
 - `set_orden` INTEGER NOT NULL
 - `ejercicio` TEXT NOT NULL
 - `reps` REAL
 - `kg` REAL
 - `rir` REAL
+- `origen` TEXT NOT NULL DEFAULT 'google' ('google' | 'manual')
 
-## 5. Arquitectura del Dashboard (FastAPI + htmx)
+**Migración:** `init_db()` es no destructivo: crea tablas/índices si faltan, hace `ALTER TABLE ADD COLUMN` para columnas nuevas y hace backfill de `categoria` desde `MUSCLE_CATEGORIES`. Nunca borra datos.
+
+## 6. Semana por Calendario
+- La semana de un entrenamiento manual se calcula contra el inicio del ciclo (`CICLO_START` en `config.py`, por defecto `10/02/2026`):
+  ```python
+  semana = max(1, (fecha - ciclo_inicio).days // 7 + 1)
+  ```
+- `10/02/2026` → semana 1. `18/02/2026` → semana 2. Fechas previas al ciclo → semana 1.
+- El formulario muestra la fecha actual por defecto, con `<input type="date">` (calendario y escritura manual).
+
+## 7. Arquitectura del Dashboard (FastAPI + htmx)
 La app `app.py` sirve HTML renderizado con Jinja2 y usa htmx para actualizaciones parciales:
 
-- **`GET /`** → index con categorías musculares y gráfica global (PFR sistémico).
-- **`POST /sync`** → re-descarga Google Sheets, repuebla la DB y recarga.
+- **`GET /`** → index con formulario de entrenamiento, categorías musculares, gráfica global (PFR sistémico) e historial de sesiones.
+- **`POST /entrenamiento`** → inserta una sesión manual (fecha + series). Respuesta OOB: formulario limpio + historial actualizado.
+- **`GET /entrenamientos`** → historial paginado de sesiones (parcial).
+- **`GET /entrenamiento/session`** → detalle de una sesión (tabla de series con RM/RMₐ).
+- **`GET /entrenamiento/session/edit`** / **`POST /entrenamiento/session/update`** → editar sesión manual (hace backup previo).
+- **`POST /entrenamiento/session/delete`** → eliminar sesión (hace backup previo, confirmación en UI).
+- **`POST /ejercicio/nuevo`** → alta de ejercicio con grupo muscular y categoría (rechaza duplicados).
+- **`GET /exportar/csv`** → exporta `training_sets` a CSV.
 - **`GET /select`** → lista de ejercicios del grupo (`grupo=""` para global) con gráfica OOB.
 - **`GET /grupo/reset`** → actualiza la gráfica con el rendimiento del grupo (PFR del grupo muscular).
 - **`GET /ejercicio`** → tablas de detalle (raw + resumen por sesión) con gráfica OOB del ejercicio.
 
 **Flujo frontend (en `index.html`):**
-1. El usuario selecciona un grupo muscular (Empuje / Tirón / Pierna / Core).
-2. `#exercise-section` se actualiza con `exercise_list.html` vía htmx.
-3. La gráfica única `#unified-chart` se refresca mediante `hx-swap-oob="innerHTML"` en la misma respuesta.
+1. El usuario registra el entrenamiento del día en `training_form.html` (fecha, ejercicio, kg, reps, RIR; series dinámicas con JS local).
+2. El historial `#sessions-list` muestra todas las sesiones (Google + manuales, con badge de origen), con detalle expandible.
+3. Las categorías musculares se construyen desde la DB (`ejercicios.categoria`); los ejercicios nuevos aparecen automáticamente.
 4. Seleccionar un ejercicio carga `exercise_detail.html` en `#history-section` y actualiza la gráfica unificada.
 
-## 6. Reglas de Codificación (Coding Standards)
+## 8. Reglas de Codificación (Coding Standards)
 - **Tipado Estricto:** Usa anotaciones de tipo (Type Hints) en todas las firmas de funciones en `src/`.
 - **Manejo de Errores:** Nunca uses excepciones genéricas (`except:`). Captura errores específicos y regístralos o elévalos adecuadamente. En `app.py`, las funciones auxiliares de lectura DB (`get_db_status`, `get_filters`, etc.) usan `try/except Exception` y devuelven valores seguros.
-- **Estructura del Parser:**
+- **Validación de datos manuales:** centralizada en `src/training_service.py` (`validate_sets`). Kg/reps positivos, RIR opcional no negativo, ejercicio debe existir en catálogo. Inserción siempre transaccional.
+- **Estructura del Parser (solo importación):**
   - La hoja `ciclo_16` tiene columnas repetitivas por semana (Ejercicio, Reps, Kg, RIR). El parser debe procesarlas de forma iterativa y limpia.
   - Los datos faltantes (campos vacíos) deben ser mapeados a `None` o `float('nan')` en Pandas, y guardarse como `NULL` en SQLite.
 - **Motor de Métricas:**
@@ -83,12 +115,12 @@ La app `app.py` sirve HTML renderizado con Jinja2 y usa htmx para actualizacione
   - Puedes extender `metrics_engine.py` para nuevas métricas, manteniendo los mismos patrones (DataFrame + filtros `systemic`/`muscle_group`/`exercise`).
 - **SQL Seguro:** Usa consultas parametrizadas (`?`) en SQLite para evitar cualquier vulnerabilidad, incluso si los datos provienen de tu propia hoja.
 
-## 7. Estética del Frontend
+## 9. Estética del Frontend
 - Mantén la identidad visual actual: fondo oscuro (`bg-matte-950`/`bg-neutral-900`), acento borgoña **`burgundy-700` / `burgundy-400`** (`#9b1b30`/`#e56d88`), toques "neón" (`neon-border`, `neon-title`).
 - Las gráficas Plotly usan `plot_bgcolor`/`paper_bgcolor` transparentes para integrarse con el tema oscuro.
-- Respeta el patrón de fracciones de template (`exercise_list.html`, `exercise_detail.html`) y la gráfica única con `hx-swap-oob`.
+- Respeta el patrón de fracciones de template y la actualización vía `hx-swap-oob`.
 
-## 8. Control de Calidad y Pruebas
+## 10. Control de Calidad y Pruebas
 Antes de dar por completada una tarea, debes:
 1. Validar que las pruebas pasen ejecutando:
    ```bash
