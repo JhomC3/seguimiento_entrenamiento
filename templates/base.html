@@ -39,6 +39,9 @@
         }
     </script>
     <style>
+        :root {
+            color-scheme: dark;
+        }
         body {
             background-color: #0a0a0a;
         }
@@ -195,19 +198,20 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 28px;
-            height: 28px;
+            width: 34px;
+            height: 34px;
             border-radius: 9999px;
             background: rgba(255, 255, 255, 0.04);
             border: 1px solid rgba(255, 255, 255, 0.06);
             backdrop-filter: blur(8px);
             -webkit-backdrop-filter: blur(8px);
-            transition: color .15s, background .15s;
+            transition: color .15s, background .15s, box-shadow .15s;
             cursor: pointer;
         }
         .edit-toggle.on {
             color: #ffffff;
-            background: rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.14);
+            box-shadow: 0 0 12px rgba(255, 255, 255, 0.25);
         }
         .edit-toggle.off {
             color: rgba(255, 255, 255, 0.35);

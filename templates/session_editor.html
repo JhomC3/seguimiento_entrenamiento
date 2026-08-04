@@ -29,22 +29,22 @@
             <table class="w-full text-left border-collapse text-xs">
                 <thead>
                     <tr>
-                        <th class="w-8 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-center">#</th>
-                        <th class="py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Ejercicio</th>
-                        <th class="w-16 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Peso</th>
-                        <th class="w-16 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Reps</th>
-                        <th class="w-16 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">RIR</th>
-                        <th class="w-20 py-1 px-1.5 font-bold text-burgundy-400 uppercase tracking-wider text-center">RMₐ</th>
+                        <th class="w-8 py-0.5 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-center">#</th>
+                        <th class="py-0.5 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Ejercicio</th>
+                        <th class="w-20 py-0.5 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Peso</th>
+                        <th class="w-20 py-0.5 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Reps</th>
+                        <th class="w-20 py-0.5 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">RIR</th>
+                        <th class="w-24 py-0.5 px-1.5 font-bold text-burgundy-400 uppercase tracking-wider text-center">RMₐ</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-800/40" id="set-rows">
                     {% for r in rows %}
                     <tr class="set-row">
-                        <td class="set-num py-1 px-1.5 text-neutral-600 font-bold text-center">{{ loop.index }}</td>
-                        <td class="py-1 px-1.5">
+                        <td class="set-num py-0.5 px-1.5 text-neutral-600 font-bold text-center">{{ loop.index }}</td>
+                        <td class="py-0.5 px-1.5">
                             <select
                                 name="ejercicio"
-                                class="ej-select w-full appearance-none bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 disabled:text-neutral-400 disabled:bg-white/[0.02] focus:outline-none transition-colors"
+                                class="ej-select w-full appearance-none bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                                 {% if readonly %}disabled{% endif %}
                             >
                                 <option value="">— Ejercicio —</option>
@@ -52,31 +52,31 @@
                                 {% for ej in catalog %}{% if ej != r.ejercicio %}<option value="{{ ej }}">{{ ej }}</option>{% endif %}{% endfor %}
                             </select>
                         </td>
-                        <td class="py-1 px-1.5">
+                        <td class="py-0.5 px-1.5">
                             <input
-                                name="kg" type="number" step="0.5" min="0" placeholder="kg"
+                                name="kg" type="number" step="0.1" min="0" placeholder="kg"
                                 value="{{ r.kg }}"
-                                class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-400 disabled:bg-white/[0.02] focus:outline-none transition-colors"
+                                class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                                 {% if readonly %}disabled{% endif %}
                             >
                         </td>
-                        <td class="py-1 px-1.5">
+                        <td class="py-0.5 px-1.5">
                             <input
-                                name="reps" type="number" step="0.5" min="0" placeholder="reps"
+                                name="reps" type="number" step="1" min="0" placeholder="reps"
                                 value="{{ r.reps }}"
-                                class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-400 disabled:bg-white/[0.02] focus:outline-none transition-colors"
+                                class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                                 {% if readonly %}disabled{% endif %}
                             >
                         </td>
-                        <td class="py-1 px-1.5">
+                        <td class="py-0.5 px-1.5">
                             <input
-                                name="rir" type="number" step="0.5" min="0" placeholder="RIR"
+                                name="rir" type="number" step="0.1" min="0" placeholder="RIR"
                                 value="{{ r.rir }}"
-                                class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-400 disabled:bg-white/[0.02] focus:outline-none transition-colors"
+                                class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                                 {% if readonly %}disabled{% endif %}
                             >
                         </td>
-                        <td class="py-1 px-1.5 text-center font-bold text-burgundy-300 whitespace-nowrap">{{ "%.1f"|format(r.rm) if r.rm is not none else "—" }}</td>
+                        <td class="py-0.5 px-1.5 text-center font-bold text-burgundy-300 whitespace-nowrap">{{ "%.1f"|format(r.rm) if r.rm is not none else "—" }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
