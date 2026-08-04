@@ -116,8 +116,6 @@ def _is_empty_row(s: dict) -> bool:
 
 def save_session(db_path: str, fecha_iso: str, sets: list[dict]) -> dict:
     fecha = parse_form_date(fecha_iso)
-    if fecha > date.today():
-        raise ValueError("No se pueden registrar entrenamientos futuros.")
     cycle_start = parse_cycle_start()
     cleaned = validate_sets(db_path, [s for s in sets if not _is_empty_row(s)]) if sets else []
     semana = calculate_cycle_week(fecha, cycle_start)

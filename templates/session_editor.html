@@ -5,13 +5,11 @@
             <p class="text-xs text-neutral-500 mt-1">Semana {{ semana }}{% if readonly %} · solo lectura{% else %} · editable{% endif %}</p>
         </div>
         <div id="view-actions" class="flex gap-2" {% if not readonly %}hidden{% endif %}>
-            {% if not is_future %}
             <button
                 type="button"
                 onclick="enableEdit()"
-                class="text-xs font-bold text-neutral-300 hover:text-burgundy-400 border border-neutral-700 hover:border-burgundy-700 rounded-lg px-3 py-2 transition-all"
-            >✏️ Editar</button>
-            {% endif %}
+                class="text-neutral-400 hover:text-neutral-200 text-sm transition-colors"
+            >✏️</button>
         </div>
     </div>
 

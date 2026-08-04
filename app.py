@@ -127,8 +127,7 @@ def _navigator_html(request: Request, fecha_iso: str) -> str:
 def _editor_html(request: Request, fecha_iso: str, *, rows: list[dict] | None = None, error: str | None = None, success: str | None = None, force_editable: bool = False) -> str:
     fecha = parse_form_date(fecha_iso)
     today = date.today()
-    is_future = fecha > today
-    readonly = (fecha != today) and not force_editable
+    readonly = (fecha < today) and not force_editable
     if rows is None:
         rows = [dict(r) for r in get_sets_by_fecha(DB_PATH, fecha_to_db(fecha))]
     display_rows = []
@@ -164,7 +163,6 @@ def _editor_html(request: Request, fecha_iso: str, *, rows: list[dict] | None = 
             "dia": dia,
             "rows": display_rows,
             "readonly": readonly,
-            "is_future": is_future,
             "error": error,
             "success": success,
             "catalog": get_exercises_catalog(DB_PATH),

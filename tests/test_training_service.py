@@ -219,13 +219,12 @@ def test_save_session_filters_empty_rows(db):
     conn.close()
     assert rows == [(1, 80.0)]
 
-def test_save_session_rejects_future_date(db):
+def test_save_session_allows_future_date(db):
     futuro = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
-    with pytest.raises(ValueError):
-        save_session(db, futuro, [
-            {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
-        ])
+    save_session(db, futuro, [
+        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
+    ])
     conn = sqlite3.connect(db)
     count = conn.execute("SELECT COUNT(*) FROM training_sets").fetchone()[0]
     conn.close()
-    assert count == 0
+    assert count == 1
