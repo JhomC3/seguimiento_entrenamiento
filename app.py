@@ -29,10 +29,10 @@ from src.training_service import (
     save_session,
 )
 
-MONTHS_ABBR = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
-NAV_DAYS_BACK = 13
-WINDOW_DAYS = 16
-PAGE_STEP = 14
+def _end_of_next_month(d: date) -> date:
+    next_year = d.year + (d.month + 1) // 12
+    next_month = (d.month + 1) % 12 + 1
+    return date(next_year, next_month, 1) - timedelta(days=1)
 
 app = FastAPI(title="Gym Tracker")
 templates = Jinja2Templates(directory="templates")
@@ -97,30 +97,27 @@ def _fechas_con_datos() -> set[str]:
             continue
     return out
 
-def _navigator_html(request: Request, fecha_iso: str, shift: int = 0) -> str:
+def _navigator_html(request: Request, fecha_iso: str) -> str:
     selected = parse_form_date(fecha_iso)
-    start = selected - timedelta(days=NAV_DAYS_BACK) + timedelta(days=shift)
     data_dates = _fechas_con_datos()
     dates = []
-    for i in range(WINDOW_DAYS):
-        d = start + timedelta(days=i)
+    d = CICLO_START_DATE
+    end = _end_of_next_month(date.today())
+    while d <= end:
         iso = d.strftime("%Y-%m-%d")
-        label = f"{d.day}/{d.month}" if d.day == 1 else str(d.day)
         dates.append({
             "iso": iso,
-            "label": label,
+            "label": f"{d.day}/{d.month}" if d.day == 1 else str(d.day),
             "has_data": iso in data_dates,
             "selected": d == selected,
         })
+        d += timedelta(days=1)
     return templates.TemplateResponse(
         request=request,
         name="date_navigator.html",
         context={
             "dates": dates,
             "selected_iso": selected.strftime("%Y-%m-%d"),
-            "shift": shift,
-            "shift_prev": shift - PAGE_STEP,
-            "shift_next": shift + PAGE_STEP,
         },
     ).body.decode()
 
@@ -207,14 +204,9 @@ async def read_index(request: Request):
         }
     )
 
-@app.get("/fecha", response_class=HTMLResponse)
-async def fecha_view(request: Request, fecha: str = Query(default=None), shift: int = Query(0)):
-    if not fecha:
-        fecha = _today_iso()
-    return HTMLResponse(
-        f'<div id="date-navigator" hx-swap-oob="outerHTML">{_navigator_html(request, fecha, shift)}</div>'
-        f'<div id="session-editor" hx-swap-oob="outerHTML">{_editor_html(request, fecha)}</div>'
-    )
+@app.get("/fecha/editor", response_class=HTMLResponse)
+async def fecha_editor(request: Request, fecha: str = Query(...)):
+    return HTMLResponse(content=_editor_html(request, fecha))
 
 @app.post("/entrenamiento/session/save", response_class=HTMLResponse)
 async def entrenamiento_session_save(
@@ -230,8 +222,8 @@ async def entrenamiento_session_save(
         backup_db(DB_PATH)
         save_session(DB_PATH, fecha, sets)
         return HTMLResponse(
-            f'<div id="date-navigator" hx-swap-oob="outerHTML">{_navigator_html(request, fecha)}</div>'
-            f'<div id="session-editor" hx-swap-oob="outerHTML">{_editor_html(request, fecha, success="Entrenamiento guardado.")}</div>'
+            f'<div id="session-editor" hx-swap-oob="outerHTML">'
+            f'{_editor_html(request, fecha, success="Entrenamiento guardado.")}</div>'
         )
     except ValueError as e:
         return HTMLResponse(

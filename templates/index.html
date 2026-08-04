@@ -154,6 +154,18 @@
                 htmx.ajax('GET', '/select', '#exercise-section');
             }
         }
+        if (elt && elt.id === 'session-form' && event.detail.successful) {
+            const rows = document.querySelectorAll('#session-editor #set-rows .set-row');
+            const btn = document.querySelector(`.date-num[data-iso="${currentIso}"]`);
+            if (btn) {
+                const dot = btn.querySelector('.date-dot');
+                if (rows.length > 0) {
+                    if (!dot) btn.insertAdjacentHTML('beforeend', '<span class="date-dot"></span>');
+                } else if (dot) {
+                    dot.remove();
+                }
+            }
+        }
     });
 
     // Esc listener

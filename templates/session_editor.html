@@ -1,4 +1,4 @@
-<div id="session-editor" class="bg-neutral-900 border border-transparent rounded-xl p-5 flex flex-col gap-4 neon-border metallic-border animate-fade-in">
+<div id="session-editor" class="bg-neutral-900 border border-transparent rounded-xl p-5 flex flex-col gap-4 neon-border metallic-border">
     <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-neutral-800">
         <div>
             <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title">Sesión {{ dia }} {{ fecha_db }}</h3>
@@ -103,8 +103,9 @@
             {% if readonly %}
             <button
                 type="button"
-                hx-get="/fecha?fecha={{ fecha_iso }}"
-                hx-swap="none"
+                hx-get="/fecha/editor?fecha={{ fecha_iso }}"
+                hx-target="#session-editor"
+                hx-swap="outerHTML"
                 class="h-9 px-4 bg-matte-950 hover:bg-neutral-800 text-neutral-400 border border-neutral-700 text-xs rounded-lg transition-all uppercase tracking-widest font-black"
             >Cancelar</button>
             {% endif %}

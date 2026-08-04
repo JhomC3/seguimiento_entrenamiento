@@ -1,17 +1,16 @@
-<div id="date-navigator" class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border animate-fade-in">
+<div id="date-navigator" class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border">
     <div class="flex items-center gap-2">
-        <button
-            hx-get="/fecha?fecha={{ selected_iso }}&shift={{ shift_prev }}"
-            hx-swap="none"
-            class="nav-arrow"
-            title="Fechas anteriores"
-        >←</button>
+        <button type="button" onclick="scrollDates(-1)" class="nav-arrow" title="Fechas anteriores">←</button>
 
-        <div class="flex items-center gap-0.5 overflow-x-auto flex-1 min-w-0 no-scrollbar">
+        <div id="date-strip" class="flex items-center gap-0.5 overflow-x-auto flex-1 min-w-0 no-scrollbar">
             {% for d in dates %}
             <button
-                hx-get="/fecha?fecha={{ d.iso }}&shift=0"
-                hx-swap="none"
+                type="button"
+                data-iso="{{ d.iso }}"
+                hx-get="/fecha/editor?fecha={{ d.iso }}"
+                hx-target="#session-editor"
+                hx-swap="outerHTML"
+                onclick="selectDate(this, '{{ d.iso }}')"
                 class="date-num {% if d.selected %}selected{% endif %}"
                 title="{{ d.iso }}"
             >
@@ -23,21 +22,44 @@
 
         <input
             type="date"
-            name="fecha"
             value="{{ selected_iso }}"
-            hx-get="/fecha"
-            hx-trigger="change"
-            hx-include="this"
-            hx-swap="none"
+            onchange="jumpDate(this.value)"
             class="date-input"
             title="Ir a una fecha"
         >
 
-        <button
-            hx-get="/fecha?fecha={{ selected_iso }}&shift={{ shift_next }}"
-            hx-swap="none"
-            class="nav-arrow"
-            title="Próximas fechas"
-        >→</button>
+        <button type="button" onclick="scrollDates(1)" class="nav-arrow" title="Próximas fechas">→</button>
     </div>
 </div>
+
+<script>
+    let currentIso = '{{ selected_iso }}';
+
+    function selectDate(btn, iso) {
+        currentIso = iso;
+        document.querySelectorAll('.date-num.selected').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+    }
+
+    function scrollDates(dir) {
+        const strip = document.getElementById('date-strip');
+        if (strip) strip.scrollBy({ left: dir * strip.clientWidth * 0.8, behavior: 'smooth' });
+    }
+
+    function jumpDate(iso) {
+        if (!iso) return;
+        currentIso = iso;
+        document.querySelectorAll('.date-num.selected').forEach(b => b.classList.remove('selected'));
+        htmx.ajax('GET', `/fecha/editor?fecha=${iso}`, { target: '#session-editor', swap: 'outerHTML' });
+        const btn = document.querySelector(`.date-num[data-iso="${iso}"]`);
+        if (btn) {
+            btn.classList.add('selected');
+            btn.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const sel = document.querySelector('.date-num.selected');
+        if (sel) sel.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'auto' });
+    });
+</script>
