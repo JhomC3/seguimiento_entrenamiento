@@ -1,0 +1,19 @@
+# Dependencias y entorno
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Caches de testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Bases de datos SQLite (regenerables con /sync)
+data/*.db
+
+# Índice del conocimiento (regenerable)
+.codebase-memory/
+
+# Sistema
+.DS_Store

@@ -1,0 +1,79 @@
+<div class="animate-fade-in flex flex-col gap-6">
+    {% if session_summary %}
+    <div class="bg-neutral-900 border border-transparent rounded-xl p-5 flex flex-col gap-4 neon-border metallic-border">
+        <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase text-center pb-3 border-b border-neutral-800 neon-title">Resumen por Sesión</h3>
+        <div class="overflow-x-auto rounded-lg border border-neutral-800 bg-matte-950 shadow-sm">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="bg-neutral-900 border-b border-neutral-800">
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Sem</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Ses</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Fecha</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Día</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Series</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Tonelaje (kg)</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Kg Prom</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Reps Prom</th>
+                        <th class="py-2.5 px-3 font-bold text-burgundy-400 uppercase tracking-wider whitespace-nowrap">RMₐ Prom</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-neutral-800/50">
+                    {% for s in session_summary %}
+                    <tr class="hover:bg-neutral-800/30 transition-colors">
+                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ s.semana }}</td>
+                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ s.sesion }}</td>
+                        <td class="py-2.5 px-3 text-neutral-400 whitespace-nowrap">{{ s.fecha }}</td>
+                        <td class="py-2.5 px-3 text-neutral-400 whitespace-nowrap">{{ s.dia[:3] }}</td>
+                        <td class="py-2.5 px-3 font-bold text-white whitespace-nowrap">{{ s.total_sets }}</td>
+                        <td class="py-2.5 px-3 font-bold text-burgundy-400 whitespace-nowrap">{{ "%.1f"|format(s.total_tonelaje) }}</td>
+                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ "%.1f"|format(s.avg_kg) }}</td>
+                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ "%.1f"|format(s.avg_reps) }}</td>
+                        <td class="py-2.5 px-3 font-bold text-burgundy-400 whitespace-nowrap">{{ "%.1f"|format(s.avg_rm_ajustado) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if raw_data %}
+    <div class="bg-neutral-900 border border-transparent rounded-xl p-5 flex flex-col gap-4 neon-border metallic-border">
+        <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase text-center pb-3 border-b border-neutral-800 neon-title">Datos Crudos</h3>
+        <div class="overflow-x-auto rounded-lg border border-neutral-800 bg-matte-950 shadow-sm">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                    <tr class="bg-neutral-900 border-b border-neutral-800">
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Sem</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Ses</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Serie</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Fecha</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Día</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Peso (kg)</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Reps</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">RIR</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">RM</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">RMₐ</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-neutral-800/50">
+                    {% for r in raw_data %}
+                    <tr class="hover:bg-neutral-800/30 transition-colors">
+                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ r.semana }}</td>
+                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ r.sesion }}</td>
+                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ r.serie }}</td>
+                        <td class="py-2.5 px-3 text-neutral-400 whitespace-nowrap">{{ r.fecha }}</td>
+                        <td class="py-2.5 px-3 text-neutral-400 whitespace-nowrap">{{ r.dia[:3] }}</td>
+                        <td class="py-2.5 px-3 font-bold text-white whitespace-nowrap">{{ "%.1f"|format(r.kg) }}</td>
+                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ r.reps|int }}</td>
+                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ "%.1f"|format(r.rir) if r.rir is not none else "—" }}</td>
+                        <td class="py-2.5 px-3 font-bold text-burgundy-400 whitespace-nowrap">{{ "%.1f"|format(r.rm) }}</td>
+                        <td class="py-2.5 px-3 font-bold text-burgundy-300 whitespace-nowrap">{{ "%.1f"|format(r.rm_ajustado) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>

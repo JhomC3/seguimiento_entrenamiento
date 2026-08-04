@@ -1,0 +1,224 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc" />
+      <stop offset="100%" stop-color="#f1f5f9" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <style>
+    .bg-panel {
+      fill: url(#bodyGrad);
+      stroke: #e2e8f0;
+      stroke-width: 1;
+      rx: 16px;
+    }
+    .base-body {
+      fill: #cbd5e1;
+      opacity: 0.35;
+    }
+    .muscle {
+      fill: #94a3b8;
+      stroke: #64748b;
+      stroke-width: 1;
+      stroke-linejoin: round;
+      transition: all 0.2s ease-in-out;
+      cursor: pointer;
+    }
+    .muscle:hover {
+      fill: #2563eb !important;
+      stroke: #1d4ed8;
+      filter: url(#glow);
+    }
+    .label-text {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      fill: #475569;
+      letter-spacing: 0.5px;
+      transition: fill 0.2s ease;
+    }
+    .pointer {
+      fill: none;
+      stroke: #cbd5e1;
+      stroke-width: 1.2;
+      transition: stroke 0.2s ease;
+    }
+    a:hover .muscle {
+      fill: #2563eb;
+      stroke: #1d4ed8;
+    }
+    a:hover .label-text {
+      fill: #2563eb;
+    }
+    a:hover .pointer {
+      stroke: #2563eb;
+      stroke-width: 1.5;
+    }
+    .head-neck {
+      fill: #cbd5e1;
+      stroke: #cbd5e1;
+    }
+  </style>
+
+  <!-- Panels -->
+  <rect x="15" y="15" width="370" height="570" class="bg-panel" />
+  <rect x="415" y="15" width="370" height="570" class="bg-panel" />
+
+  <!-- ==================== FRONT VIEW ==================== -->
+  <g id="front-view">
+    <!-- Base Body Silhouette -->
+    <path class="base-body" d="M200,60 C207,60 215,65 215,75 C215,85 208,95 200,95 C192,95 185,85 185,75 C185,65 193,60 200,60 Z M193,95 L190,108 L210,108 L207,95 Z M185,108 C170,113 130,135 130,170 C130,195 136,250 120,290 C114,305 108,325 108,335 C111,338 118,332 122,295 C128,260 138,195 142,175 C145,210 148,245 148,265 C148,285 152,305 152,310 L140,410 C132,445 135,525 135,560 C135,580 145,580 148,580 C152,580 156,550 156,520 L166,450 C172,420 178,390 182,350 L200,310 L218,350 C222,390 228,420 234,450 L244,520 C244,550 248,580 252,580 C255,580 265,580 265,560 C265,525 268,445 260,410 L248,310 C248,305 252,285 252,265 C252,245 255,210 258,175 C262,195 272,260 278,295 C282,332 289,338 292,335 C292,325 286,305 280,290 C264,250 270,195 270,170 C270,135 230,113 215,108 Z" />
+
+    <!-- Interactive Muscle Groups -->
+    
+    <!-- Pectoral -->
+    <a id="Pectoral" href="#">
+      <!-- Left Pec -->
+      <path class="muscle" d="M200,118 L162,118 C160,135 168,155 198,155 Z" />
+      <!-- Right Pec -->
+      <path class="muscle" d="M200,118 L238,118 C240,135 232,155 202,155 Z" />
+    </a>
+
+    <!-- Hombro -->
+    <a id="Hombro" href="#">
+      <!-- Left Shoulder -->
+      <path class="muscle" d="M158,112 C148,115 138,125 136,138 C134,148 138,158 146,162 C152,148 156,130 158,112 Z" />
+      <!-- Right Shoulder -->
+      <path class="muscle" d="M242,112 C252,115 262,125 264,138 C266,148 262,158 254,162 C248,148 244,130 242,112 Z" />
+    </a>
+
+    <!-- Biceps -->
+    <a id="Biceps" href="#">
+      <!-- Left Bicep -->
+      <path class="muscle" d="M135,148 C131,158 128,178 127,192 C132,192 138,187 143,168 Z" />
+      <!-- Right Bicep -->
+      <path class="muscle" d="M265,148 C269,158 272,178 273,192 C268,192 262,187 257,168 Z" />
+    </a>
+
+    <!-- Abdomen -->
+    <a id="Abdomen" href="#">
+      <path class="muscle" d="M166,160 C175,158 185,158 200,158 C215,158 225,158 234,160 L228,245 L200,250 L172,245 Z" />
+    </a>
+
+    <!-- Aductor -->
+    <a id="Aductor" href="#">
+      <!-- Left Aductor -->
+      <path class="muscle" d="M188,258 L200,260 L200,325 C198,310 193,290 188,258 Z" />
+      <!-- Right Aductor -->
+      <path class="muscle" d="M212,258 L200,260 L200,325 C202,310 207,290 212,258 Z" />
+    </a>
+
+    <!-- Cuadriceps -->
+    <a id="Cuadriceps" href="#">
+      <!-- Left Quad -->
+      <path class="muscle" d="M162,255 C172,255 182,258 184,275 L190,345 L178,375 C166,345 158,300 162,255 Z" />
+      <!-- Right Quad -->
+      <path class="muscle" d="M238,255 C228,255 218,258 216,275 L210,345 L222,375 C234,345 242,300 238,255 Z" />
+    </a>
+
+    <!-- Labels & Pointers Front -->
+    <a id="Hombro" href="#">
+      <line x1="30" y1="125" x2="135" y2="125" class="pointer" />
+      <text x="25" y="129" class="label-text" text-anchor="end">Hombro</text>
+    </a>
+    <a id="Pectoral" href="#">
+      <line x1="30" y1="155" x2="162" y2="140" class="pointer" />
+      <text x="25" y="159" class="label-text" text-anchor="end">Pectoral</text>
+    </a>
+    <a id="Biceps" href="#">
+      <line x1="30" y1="185" x2="127" y2="180" class="pointer" />
+      <text x="25" y="189" class="label-text" text-anchor="end">Biceps</text>
+    </a>
+    <a id="Abdomen" href="#">
+      <line x1="30" y1="215" x2="175" y2="205" class="pointer" />
+      <text x="25" y="219" class="label-text" text-anchor="end">Abdomen</text>
+    </a>
+    <a id="Aductor" href="#">
+      <line x1="30" y1="275" x2="185" y2="280" class="pointer" />
+      <text x="25" y="279" class="label-text" text-anchor="end">Aductor</text>
+    </a>
+    <a id="Cuadriceps" href="#">
+      <line x1="30" y1="335" x2="160" y2="335" class="pointer" />
+      <text x="25" y="339" class="label-text" text-anchor="end">Cuadriceps</text>
+    </a>
+  </g>
+
+  <!-- ==================== POSTERIOR VIEW ==================== -->
+  <g id="back-view">
+    <!-- Base Body Silhouette -->
+    <path class="base-body" d="M600,60 C607,60 615,65 615,75 C615,85 608,95 600,95 C592,95 585,85 585,75 C585,65 593,60 600,60 Z M593,95 L590,108 L610,108 L607,95 Z M585,108 C570,113 530,135 530,170 C530,195 536,250 520,290 C514,305 508,325 508,335 C511,338 518,332 522,295 C528,260 538,195 542,175 C545,210 548,245 548,265 C548,285 552,305 552,310 L540,410 C532,445 535,525 535,560 C535,580 545,580 548,580 C552,580 556,550 556,520 L566,450 C572,420 578,390 582,350 L600,310 L618,350 C622,390 628,420 634,450 L644,520 C644,550 648,580 652,580 C655,580 665,580 665,560 C665,525 668,445 660,410 L648,310 C648,305 652,285 652,265 C652,245 655,210 658,175 C662,195 672,260 678,295 C682,332 689,338 692,335 C692,325 686,305 680,290 C664,250 670,195 670,170 C670,135 630,113 615,108 Z" />
+
+    <!-- Interactive Muscle Groups -->
+
+    <!-- Espalda -->
+    <a id="Espalda" href="#">
+      <path class="muscle" d="M552,118 C565,115 580,120 600,120 C620,120 635,115 648,118 C652,130 644,215 600,240 C556,215 548,130 552,118 Z" />
+      <line x1="600" y1="120" x2="600" y2="240" stroke="#cbd5e1" stroke-width="0.8" />
+    </a>
+
+    <!-- Hombro -->
+    <a id="Hombro" href="#">
+      <!-- Left Shoulder -->
+      <path class="muscle" d="M558,112 C548,115 538,125 536,138 C534,148 538,158 546,162 C552,148 556,130 558,112 Z" />
+      <!-- Right Shoulder -->
+      <path class="muscle" d="M642,112 C652,115 662,125 664,138 C666,148 662,158 654,162 C648,148 644,130 642,112 Z" />
+    </a>
+
+    <!-- Triceps -->
+    <a id="Triceps" href="#">
+      <!-- Left Tricep -->
+      <path class="muscle" d="M535,148 C531,158 528,178 527,192 C532,192 538,187 543,168 Z" />
+      <!-- Right Tricep -->
+      <path class="muscle" d="M665,148 C669,158 672,178 673,192 C668,192 662,187 657,168 Z" />
+    </a>
+
+    <!-- Gluteo -->
+    <a id="Gluteo" href="#">
+      <path class="muscle" d="M550,248 C562,245 578,245 600,245 C622,245 638,245 650,248 C658,260 655,295 600,296 C545,295 542,260 550,248 Z" />
+      <line x1="600" y1="245" x2="600" y2="296" stroke="#cbd5e1" stroke-width="0.8" />
+    </a>
+
+    <!-- Isquio -->
+    <a id="Isquio" href="#">
+      <!-- Left Hamstring -->
+      <path class="muscle" d="M552,300 C554,315 556,340 563,355 C570,355 575,340 575,305 Z" />
+      <!-- Right Hamstring -->
+      <path class="muscle" d="M648,300 C646,315 644,340 637,355 C630,355 625,340 625,305 Z" />
+    </a>
+
+    <!-- Gemelos -->
+    <a id="Gemelos" href="#">
+      <!-- Left Calf -->
+      <path class="muscle" d="M555,372 C553,382 555,410 568,435 L574,435 C575,410 570,380 555,372 Z" />
+      <!-- Right Calf -->
+      <path class="muscle" d="M605,372 C607,382 605,410 592,435 L586,435 C585,410 590,380 605,372 Z" />
+    </a>
+
+    <!-- Labels & Pointers Back -->
+    <a id="Espalda" href="#">
+      <line x1="770" y1="125" x2="630" y2="135" class="pointer" />
+      <text x="775" y="129" class="label-text" text-anchor="start">Espalda</text>
+    </a>
+    <a id="Triceps" href="#">
+      <line x1="770" y1="155" x2="648" y2="175" class="pointer" />
+      <text x="775" y="159" class="label-text" text-anchor="start">Triceps</text>
+    </a>
+    <a id="Gluteo" href="#">
+      <line x1="770" y1="235" x2="628" y2="255" class="pointer" />
+      <text x="775" y="239" class="label-text" text-anchor="start">Gluteo</text>
+    </a>
+    <a id="Isquio" href="#">
+      <line x1="770" y1="315" x2="635" y2="330" class="pointer" />
+      <text x="775" y="319" class="label-text" text-anchor="start">Isquio</text>
+    </a>
+    <a id="Gemelos" href="#">
+      <line x1="770" y1="395" x2="600" y2="425" class="pointer" />
+      <text x="775" y="399" class="label-text" text-anchor="start">Gemelos</text>
+    </a>
+  </g>
+</svg>
