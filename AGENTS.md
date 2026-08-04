@@ -96,7 +96,7 @@ La app `app.py` sirve HTML renderizado con Jinja2 y usa htmx para actualizacione
 **Flujo frontend (en `index.html`):**
 1. El sidebar contiene: formulario de nuevo ejercicio, categorías musculares con sus músculos, y la lista de ejercicios del grupo seleccionado (cargada vía `/select`).
 2. El navegador `#date-navigator` muestra la fecha seleccionada, ~13 días hacia atrás y máximo 2 hacia adelante; scroll horizontal, flechas y un `<input type="date">` permiten ir a cualquier fecha. Los días con entrenamiento muestran un punto de marcador.
-3. `#session-editor` muestra la tabla compacta `# | Ejercicio | Peso | Reps | RIR | RMₐ` de la fecha seleccionada. Hoy/futuro: filas editables (botones +Serie / eliminar / Guardar). Pasado: solo lectura con botón ✏️ Editar.
+3. `#session-editor` muestra la tabla compacta `# | Ejercicio | Peso | Reps | RIR | RMₐ` de la fecha seleccionada. Hoy/futuro: filas editables por defecto (lápiz encendido). Pasado: solo lectura con lápiz apagado que activa edición. Al desplegar el selector de ejercicio, el seleccionado aparece primero.
 4. Seleccionar un ejercicio carga `exercise_detail.html` en `#history-section` y actualiza la gráfica unificada.
 
 ## 8. Reglas de Codificación (Coding Standards)
