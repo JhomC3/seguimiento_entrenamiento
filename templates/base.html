@@ -223,13 +223,18 @@
             border-radius: 6px;
         }
 
-        /* Avisos (éxito/error): superpuestos, translúcidos, centrados, ajustados al texto */
+        /* Avisos: flotantes fijos arriba-centro, superpuestos, sin afectar layout */
+        #notice-container {
+            position: fixed;
+            top: 16px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            z-index: 50;
+            pointer-events: none;
+        }
         .notice {
-            position: absolute;
-            top: 52px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 20;
             width: fit-content;
             border-radius: 8px;
             padding: 6px 14px;
@@ -281,6 +286,7 @@
     </style>
 </head>
 <body class="bg-matte-950 text-neutral-100 min-h-screen font-sans antialiased selection:bg-burgundy-700 selection:text-white">
+    <div id="notice-container"></div>
     {% block content %}{% endblock %}
 
     <script>
@@ -295,8 +301,34 @@
             });
         }
 
+        function setPanelReadonly() {
+            const form = document.getElementById('session-form');
+            if (!form) return;
+            form.querySelectorAll('input, select').forEach(el => { el.disabled = true; });
+            form.querySelectorAll('.row-actions').forEach(el => { el.hidden = true; });
+            const pencil = document.querySelector('#session-editor .edit-toggle');
+            if (pencil) {
+                pencil.classList.remove('on');
+                pencil.classList.add('off');
+            }
+            const actions = document.getElementById('edit-actions');
+            if (actions) actions.classList.add('invisible');
+        }
+
+        function handleEditorState() {
+            const st = document.getElementById('editor-state');
+            if (st && st.dataset.readonly === '1') setPanelReadonly();
+        }
+
         document.addEventListener('DOMContentLoaded', scheduleNotices);
-        document.body.addEventListener('htmx:afterSwap', scheduleNotices);
+        document.body.addEventListener('htmx:afterSwap', function () {
+            scheduleNotices();
+            handleEditorState();
+        });
+        document.body.addEventListener('htmx:afterRequest', function () {
+            scheduleNotices();
+            handleEditorState();
+        });
     </script>
 </body>
 </html>

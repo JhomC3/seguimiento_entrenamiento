@@ -1,14 +1,7 @@
-<div class="relative bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border animate-fade-in">
+<div class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border animate-fade-in">
     <h4 class="text-xs font-black tracking-widest text-burgundy-400 uppercase">Nuevo ejercicio</h4>
 
-    {% if error %}
-    <div class="notice notice-error" data-dismiss="4500">{{ error }}</div>
-    {% endif %}
-    {% if success %}
-    <div class="notice notice-success" data-dismiss="3000">{{ success }}</div>
-    {% endif %}
-
-    <form id="exercise-create-form" hx-post="/ejercicio/nuevo" hx-target="#exercise-create" hx-swap="outerHTML" class="flex flex-col gap-2">
+    <form id="exercise-create-form" hx-post="/ejercicio/nuevo" hx-swap="none" class="flex flex-col gap-2">
         <input
             name="ejercicio" required placeholder="Nombre del ejercicio"
             class="bg-matte-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600 focus:border-burgundy-700 focus:outline-none"

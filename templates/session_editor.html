@@ -1,4 +1,5 @@
-<div id="session-editor" class="relative bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border">
+<div id="session-editor" class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border">
+<div id="editor-state" data-readonly="0" hidden></div>
     <div class="flex items-center justify-between">
         <div class="flex items-baseline gap-2">
             <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title">{{ dia }} {{ fecha_db }}</h3>
@@ -15,13 +16,6 @@
             </button>
         </div>
     </div>
-
-    {% if success %}
-    <div class="notice notice-success" data-dismiss="3000">{{ success }}</div>
-    {% endif %}
-    {% if error %}
-    <div class="notice notice-error" data-dismiss="4500">{{ error }}</div>
-    {% endif %}
 
     <form id="session-form" hx-post="/entrenamiento/session/save" hx-swap="none" class="flex flex-col gap-3">
         <input type="hidden" name="fecha" value="{{ fecha_iso }}">

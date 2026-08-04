@@ -224,19 +224,25 @@ async def entrenamiento_session_save(
     rir: list[str] = Form(default=[]),
 ):
     sets = _build_sets_from_form(ejercicio, kg, reps, rir)
+    notice_success = ('<div id="notice-container" hx-swap-oob="innerHTML">'
+                      '<div class="notice notice-success" data-dismiss="3000">Entrenamiento guardado.</div></div>')
     try:
         backup_db(DB_PATH)
         save_session(DB_PATH, fecha, sets)
         saved_rows = get_sets_by_fecha(DB_PATH, fecha_to_db(parse_form_date(fecha)))
+        if saved_rows:
+            state = '<div id="editor-state" hx-swap-oob="outerHTML" data-readonly="1" hidden></div>'
+            return HTMLResponse(content=notice_success + state)
+        editor = _editor_html(request, fecha)
         return HTMLResponse(
-            f'<div id="session-editor" hx-swap-oob="outerHTML">'
-            f'{_editor_html(request, fecha, success="Entrenamiento guardado.", force_readonly=len(saved_rows) > 0)}</div>'
+            content=notice_success + f'<div id="session-editor" hx-swap-oob="outerHTML">{editor}</div>'
         )
     except ValueError as e:
-        return HTMLResponse(
-            f'<div id="session-editor" hx-swap-oob="outerHTML">'
-            f'{_editor_html(request, fecha, rows=sets, error=str(e), force_editable=True)}</div>'
+        notice_error = (
+            f'<div id="notice-container" hx-swap-oob="innerHTML">'
+            f'<div class="notice notice-error" data-dismiss="4500">{e}</div></div>'
         )
+        return HTMLResponse(content=notice_error)
 
 @app.post("/ejercicio/nuevo", response_class=HTMLResponse)
 async def ejercicio_nuevo(
@@ -257,9 +263,20 @@ async def ejercicio_nuevo(
     elif any(e.lower() == ejercicio.lower() for e in get_exercises_catalog(DB_PATH)):
         error = f"El ejercicio '{ejercicio}' ya existe en el catálogo."
     if error:
-        return HTMLResponse(content=_exercise_form_html(request, error=error))
+        notice_error = (
+            f'<div id="notice-container" hx-swap-oob="innerHTML">'
+            f'<div class="notice notice-error" data-dismiss="4500">{error}</div></div>'
+        )
+        return HTMLResponse(content=notice_error)
     insert_exercise(DB_PATH, ejercicio, grupo_muscular, categoria)
-    return HTMLResponse(content=_exercise_form_html(request, success=f"Ejercicio '{ejercicio}' creado."))
+    notice_success = (
+        f'<div id="notice-container" hx-swap-oob="innerHTML">'
+        f'<div class="notice notice-success" data-dismiss="3000">Ejercicio \'{ejercicio}\' creado.</div></div>'
+    )
+    form_html = _exercise_form_html(request)
+    return HTMLResponse(
+        content=notice_success + f'<div id="exercise-create" hx-swap-oob="outerHTML">{form_html}</div>'
+    )
 
 @app.get("/exportar/csv", response_class=Response)
 async def export_csv():
