@@ -195,20 +195,25 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 26px;
-            height: 26px;
-            border-radius: 6px;
-            transition: color .15s;
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            transition: color .15s, background .15s;
             cursor: pointer;
         }
         .edit-toggle.on {
-            color: #e56d88;
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.12);
         }
         .edit-toggle.off {
-            color: rgba(163, 163, 163, 0.35);
+            color: rgba(255, 255, 255, 0.35);
         }
         .edit-toggle.off:hover {
-            color: rgba(163, 163, 163, 0.75);
+            color: rgba(255, 255, 255, 0.7);
         }
     </style>
 </head>
