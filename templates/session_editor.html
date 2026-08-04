@@ -1,8 +1,10 @@
 <div id="session-editor" class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border">
     <div class="flex items-center justify-between">
-        <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title">{{ dia }} {{ fecha_db }}</h3>
-        <div class="flex items-center gap-2">
+        <div class="flex items-baseline gap-2">
+            <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title">{{ dia }} {{ fecha_db }}</h3>
             <span class="text-[11px] text-neutral-500">Semana {{ semana }}</span>
+        </div>
+        <div class="flex items-center gap-2">
             <button
                 type="button"
                 onclick="enableEdit()"
@@ -42,7 +44,7 @@
                         <td class="py-1 px-1.5">
                             <select
                                 name="ejercicio"
-                                class="ej-select w-full appearance-none bg-white/[0.06] hover:bg-white/[0.1] focus:bg-white/[0.14] rounded px-2 py-1.5 text-xs text-neutral-200 disabled:text-neutral-600 focus:outline-none transition-colors"
+                                class="ej-select w-full appearance-none bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 disabled:text-neutral-400 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                                 {% if readonly %}disabled{% endif %}
                             >
                                 <option value="">— Ejercicio —</option>
@@ -54,7 +56,7 @@
                             <input
                                 name="kg" type="number" step="0.5" min="0" placeholder="kg"
                                 value="{{ r.kg }}"
-                                class="w-full bg-white/[0.06] hover:bg-white/[0.1] focus:bg-white/[0.14] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-600 focus:outline-none transition-colors"
+                                class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-400 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                                 {% if readonly %}disabled{% endif %}
                             >
                         </td>
@@ -62,7 +64,7 @@
                             <input
                                 name="reps" type="number" step="0.5" min="0" placeholder="reps"
                                 value="{{ r.reps }}"
-                                class="w-full bg-white/[0.06] hover:bg-white/[0.1] focus:bg-white/[0.14] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-600 focus:outline-none transition-colors"
+                                class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-400 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                                 {% if readonly %}disabled{% endif %}
                             >
                         </td>
@@ -70,7 +72,7 @@
                             <input
                                 name="rir" type="number" step="0.5" min="0" placeholder="RIR"
                                 value="{{ r.rir }}"
-                                class="w-full bg-white/[0.06] hover:bg-white/[0.1] focus:bg-white/[0.14] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-600 focus:outline-none transition-colors"
+                                class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-400 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                                 {% if readonly %}disabled{% endif %}
                             >
                         </td>
