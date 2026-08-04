@@ -4,8 +4,7 @@ import pandas as pd
 import pytest
 from src.database import init_db, load_ejercicios, load_training_data
 from src.charts import (
-    get_exercise_detail, get_exercise_rest_days,
-    get_muscle_group_rest_days, get_exercise_best_rm, pivot_exercise_table
+    get_exercise_detail, get_exercise_best_rm, pivot_exercise_table
 )
 
 TEST_DB = "data/test_charts.db"
@@ -53,15 +52,6 @@ def test_get_exercise_detail(setup_test_db):
     assert df.iloc[2]["sesion"] == 2  # Viernes
     assert df.iloc[3]["sesion"] == 1  # Semana 2 - Lunes
 
-def test_get_exercise_rest_days(setup_test_db):
-    db = setup_test_db
-    rest = get_exercise_rest_days(db, "Press Convergente")
-    assert rest["promedio"] is not None
-    # 4/5/26 to 8/5/26 is 4 days; 8/5/26 to 11/5/26 is 3 days
-    # Avg: (4+3)/2 = 3.5 days
-    assert rest["promedio"] == 3.5
-    assert rest["frecuencia_semanal"] == 2.0
-
 def test_get_exercise_best_rm(setup_test_db):
     db = setup_test_db
     df = get_exercise_best_rm(db, "Press Convergente")
@@ -78,8 +68,7 @@ def test_pivot_exercise_table(setup_test_db):
     assert "Sem 1 - S1" in pivot.index
     assert "Sem 1 - S2" in pivot.index
     assert "Sem 2 - S1" in pivot.index
-    # Columns should contain Fecha, Orden, Descanso Previo, and Series
+    # Columns should contain Fecha, Orden, and Series
     assert "Fecha" in pivot.columns
     assert "Orden" in pivot.columns
-    assert "Descanso Previo" in pivot.columns
     assert "Serie 1" in pivot.columns

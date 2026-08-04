@@ -257,74 +257,6 @@ def get_exercise_detail(db_path: str, ejercicio: str) -> pd.DataFrame:
     
     return df
 
-def get_exercise_rest_days(db_path: str, ejercicio: str) -> dict:
-    """Retorna estadísticas de días de descanso entre sesiones consecutivas."""
-    conn = sqlite3.connect(db_path)
-    df = pd.read_sql_query("""
-        SELECT DISTINCT fecha FROM training_sets
-        WHERE ejercicio = ? AND kg IS NOT NULL AND fecha IS NOT NULL
-    """, conn, params=[ejercicio])
-    conn.close()
-    
-    if len(df) < 2:
-        # Calcular días transcurridos desde el último si hay al menos una sesión
-        if not df.empty:
-            fechas = pd.to_datetime(df["fecha"], format="%d/%m/%y", errors="coerce").dropna().sort_values()
-            if not fechas.empty:
-                dias_ultimo = (pd.Timestamp.today() - fechas.iloc[-1]).days
-                return {"promedio": None, "dias_desde_ultimo": dias_ultimo, "frecuencia_semanal": None}
-        return {"promedio": None, "dias_desde_ultimo": None, "frecuencia_semanal": None}
-    
-    fechas = pd.to_datetime(df["fecha"], format="%d/%m/%y", errors="coerce").dropna().sort_values()
-    if len(fechas) < 2:
-        return {"promedio": None, "dias_desde_ultimo": None, "frecuencia_semanal": None}
-        
-    deltas = fechas.diff().dropna().dt.days.tolist()
-    dias_ultimo = (pd.Timestamp.today() - fechas.iloc[-1]).days
-    
-    promedio = round(sum(deltas) / len(deltas), 1)
-    frecuencia = round(7 / promedio, 1) if promedio > 0 else 0.0
-    
-    return {
-        "promedio": promedio,
-        "dias_desde_ultimo": dias_ultimo,
-        "frecuencia_semanal": frecuencia
-    }
-
-def get_muscle_group_rest_days(db_path: str, grupo: str) -> dict:
-    """Retorna estadísticas de días de descanso para un grupo muscular."""
-    conn = sqlite3.connect(db_path)
-    df = pd.read_sql_query("""
-        SELECT DISTINCT t.fecha FROM training_sets t
-        JOIN ejercicios e ON LOWER(t.ejercicio) = LOWER(e.ejercicio)
-        WHERE LOWER(e.grupo_muscular) = LOWER(?) AND t.kg IS NOT NULL AND t.fecha IS NOT NULL
-    """, conn, params=[grupo])
-    conn.close()
-    
-    if len(df) < 2:
-        if not df.empty:
-            fechas = pd.to_datetime(df["fecha"], format="%d/%m/%y", errors="coerce").dropna().sort_values()
-            if not fechas.empty:
-                dias_ultimo = (pd.Timestamp.today() - fechas.iloc[-1]).days
-                return {"promedio": None, "dias_desde_ultimo": dias_ultimo, "frecuencia_semanal": None}
-        return {"promedio": None, "dias_desde_ultimo": None, "frecuencia_semanal": None}
-        
-    fechas = pd.to_datetime(df["fecha"], format="%d/%m/%y", errors="coerce").dropna().sort_values()
-    if len(fechas) < 2:
-        return {"promedio": None, "dias_desde_ultimo": None, "frecuencia_semanal": None}
-        
-    deltas = fechas.diff().dropna().dt.days.tolist()
-    dias_ultimo = (pd.Timestamp.today() - fechas.iloc[-1]).days
-    
-    promedio = round(sum(deltas) / len(deltas), 1)
-    frecuencia = round(7 / promedio, 1) if promedio > 0 else 0.0
-    
-    return {
-        "promedio": promedio,
-        "dias_desde_ultimo": dias_ultimo,
-        "frecuencia_semanal": frecuencia
-    }
-
 def get_exercise_best_rm(db_path: str, ejercicio: str) -> pd.DataFrame:
     """Retorna el mejor RM por sesión para graficar la progresión real."""
     conn = sqlite3.connect(db_path)
@@ -418,22 +350,13 @@ def pivot_exercise_table(db_path: str, ejercicio: str) -> pd.DataFrame:
     # Asegurar orden cronológico de las sesiones
     df_sessions = df_sessions.sort_values(["semana", "sesion"]).reset_index(drop=True)
     
-    # Calcular días de descanso entre sesiones consecutivas de este ejercicio
-    df_sessions["descanso_previo"] = "—"
-    for i in range(1, len(df_sessions)):
-        prev_date = df_sessions.loc[i-1, "fecha_dt"]
-        curr_date = df_sessions.loc[i, "fecha_dt"]
-        if pd.notna(prev_date) and pd.notna(curr_date):
-            diff_days = (curr_date - prev_date).days
-            df_sessions.loc[i, "descanso_previo"] = f"{diff_days} días"
-            
     # Formatear campos para mostrar
     df_sessions["Fecha"] = df_sessions.apply(lambda r: f"{r['dia_semana']} {r['fecha']}", axis=1)
     df_sessions["Orden"] = df_sessions["orden_en_sesion"].apply(lambda o: f"#{int(o)}" if pd.notna(o) else "—")
-    df_sessions.rename(columns={"col_sesion": "Sesión", "descanso_previo": "Descanso Previo"}, inplace=True)
+    df_sessions.rename(columns={"col_sesion": "Sesión"}, inplace=True)
     
     # Combinar metadatos de sesión con las columnas de series
-    result = df_sessions[["Sesión", "Fecha", "Orden", "Descanso Previo"]].merge(
+    result = df_sessions[["Sesión", "Fecha", "Orden"]].merge(
         pivot_series, left_on="Sesión", right_index=True, how="left"
     )
     

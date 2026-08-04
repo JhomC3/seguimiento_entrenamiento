@@ -26,9 +26,8 @@ Eres un ingeniero de software senior experto en Python, especializado en anális
   - `fetcher.py`: Extracción HTTP de Google Sheets.
   - `parser.py`: Limpieza y transformación de CSV.
   - `database.py`: Operaciones SQLite (creación de tablas y carga).
-  - `metrics_engine.py`: Motor de métricas (RM ajustado, PFR, fatiga acumulada, recuperación).
+  - `metrics_engine.py`: Motor de métricas (RM ajustado, PFR, rendimiento relativo).
   - `charts.py`: Gráficos Plotly y agregaciones de datos por ejercicio/grupo.
-  - `diagnostics.py`: Diagnósticos lógicos de estancamiento/overreaching.
 - `templates/`: Plantillas Jinja2 del frontend.
   - `base.html`: Layout base (estilos, htmx, Plotly).
   - `index.html`: Pantalla principal con categorías musculares y gráfica unificada.
@@ -81,8 +80,7 @@ La app `app.py` sirve HTML renderizado con Jinja2 y usa htmx para actualizacione
 - **Motor de Métricas:**
   - `RM ajustado = kg * (1 + 0.0333 * (reps + 1 + rir))`.
   - El rendimiento relativo (%) se calcula contra el baseline (promedio RM de la primera semana del ejercicio).
-  - La fatiga acumulada aplica un decaimiento exponencial diario de 0.65 entre sesiones.
-  - Puedes extender `metrics_engine.py`/`diagnostics.py` para nuevas métricas, manteniendo los mismos patrones (DataFrame + filtros `systemic`/`muscle_group`/`exercise`).
+  - Puedes extender `metrics_engine.py` para nuevas métricas, manteniendo los mismos patrones (DataFrame + filtros `systemic`/`muscle_group`/`exercise`).
 - **SQL Seguro:** Usa consultas parametrizadas (`?`) en SQLite para evitar cualquier vulnerabilidad, incluso si los datos provienen de tu propia hoja.
 
 ## 7. Estética del Frontend
