@@ -1,93 +1,90 @@
-<div id="session-editor" class="bg-neutral-900 border border-transparent rounded-xl p-5 flex flex-col gap-4 neon-border metallic-border">
-    <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-neutral-800">
-        <div>
-            <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title">Sesión {{ dia }} {{ fecha_db }}</h3>
-            <p class="text-xs text-neutral-500 mt-1">Semana {{ semana }}{% if readonly %} · solo lectura{% else %} · editable{% endif %}</p>
-        </div>
-        <div id="view-actions" class="flex gap-2" {% if not readonly %}hidden{% endif %}>
+<div id="session-editor" class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border">
+    <div class="flex items-center justify-between">
+        <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title">{{ dia }} {{ fecha_db }}</h3>
+        <div class="flex items-center gap-2">
+            <span class="text-[11px] text-neutral-500">Semana {{ semana }}</span>
             <button
                 type="button"
                 onclick="enableEdit()"
-                class="text-neutral-400 hover:text-neutral-200 transition-colors"
+                class="edit-toggle {% if readonly %}off{% else %}on{% endif %}"
                 aria-label="Editar sesión"
             >
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.13 2.86a3 3 0 0 0-4.17 0l-13 13L2 22l6.19-2L21.13 7a3 3 0 0 0 0-4.16zM6.77 18.57l-1.35-1.34L16.64 6 18 7.35z"></path></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.13 2.86a3 3 0 0 0-4.17 0l-13 13L2 22l6.19-2L21.13 7a3 3 0 0 0 0-4.16zM6.77 18.57l-1.35-1.34L16.64 6 18 7.35z"></path></svg>
             </button>
         </div>
     </div>
 
     {% if success %}
-    <div class="rounded-lg bg-emerald-950/40 border border-emerald-800 text-emerald-300 text-xs px-3 py-2">{{ success }}</div>
+    <div class="rounded-lg bg-emerald-950/40 border border-emerald-800 text-emerald-300 text-[11px] px-2.5 py-1.5">{{ success }}</div>
     {% endif %}
     {% if error %}
-    <div class="rounded-lg bg-red-950/40 border border-red-800 text-red-300 text-xs px-3 py-2">{{ error }}</div>
+    <div class="rounded-lg bg-red-950/40 border border-red-800 text-red-300 text-[11px] px-2.5 py-1.5">{{ error }}</div>
     {% endif %}
 
-    <form id="session-form" hx-post="/entrenamiento/session/save" hx-swap="none" class="flex flex-col gap-4">
+    <form id="session-form" hx-post="/entrenamiento/session/save" hx-swap="none" class="flex flex-col gap-3">
         <input type="hidden" name="fecha" value="{{ fecha_iso }}">
-        <div class="overflow-x-auto rounded-lg border border-neutral-800 bg-matte-950">
+        <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse text-xs">
                 <thead>
-                    <tr class="bg-neutral-900 border-b border-neutral-800">
-                        <th class="w-10 py-2.5 px-2 font-bold text-neutral-400 uppercase tracking-wider">#</th>
-                        <th class="py-2.5 px-2 font-bold text-neutral-400 uppercase tracking-wider">Ejercicio</th>
-                        <th class="w-20 py-2.5 px-2 font-bold text-neutral-400 uppercase tracking-wider">Peso</th>
-                        <th class="w-20 py-2.5 px-2 font-bold text-neutral-400 uppercase tracking-wider">Reps</th>
-                        <th class="w-20 py-2.5 px-2 font-bold text-neutral-400 uppercase tracking-wider">RIR</th>
-                        <th class="w-24 py-2.5 px-2 font-bold text-burgundy-400 uppercase tracking-wider">RMₐ</th>
+                    <tr>
+                        <th class="w-8 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-center">#</th>
+                        <th class="py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Ejercicio</th>
+                        <th class="w-16 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Peso</th>
+                        <th class="w-16 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Reps</th>
+                        <th class="w-16 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">RIR</th>
+                        <th class="w-20 py-1 px-1.5 font-bold text-burgundy-400 uppercase tracking-wider text-center">RMₐ</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-neutral-800/50" id="set-rows">
+                <tbody class="divide-y divide-neutral-800/40" id="set-rows">
                     {% for r in rows %}
-                    <tr class="set-row hover:bg-neutral-800/30 transition-colors">
-                        <td class="set-num py-2 px-2 text-neutral-500 font-bold text-center">{{ loop.index }}</td>
-                        <td class="py-2 px-2">
+                    <tr class="set-row">
+                        <td class="set-num py-1 px-1.5 text-neutral-600 font-bold text-center">{{ loop.index }}</td>
+                        <td class="py-1 px-1.5">
                             <select
                                 name="ejercicio"
-                                class="ej-select w-full bg-matte-950 border border-neutral-800 rounded-lg px-2 py-1.5 text-xs text-neutral-200 focus:border-burgundy-700 focus:outline-none"
+                                class="ej-select w-full appearance-none bg-transparent border border-transparent hover:bg-neutral-800/30 focus:bg-neutral-800/40 rounded px-2 py-1.5 text-xs text-neutral-200 disabled:text-neutral-600 focus:outline-none transition-colors"
                                 {% if readonly %}disabled{% endif %}
                             >
                                 <option value="">— Ejercicio —</option>
-                                {% for ej in catalog %}
-                                <option value="{{ ej }}" {% if r.ejercicio == ej %}selected{% endif %}>{{ ej }}</option>
-                                {% endfor %}
+                                {% if r.ejercicio %}<option value="{{ r.ejercicio }}" selected>{{ r.ejercicio }}</option>{% endif %}
+                                {% for ej in catalog %}{% if ej != r.ejercicio %}<option value="{{ ej }}">{{ ej }}</option>{% endif %}{% endfor %}
                             </select>
                         </td>
-                        <td class="py-2 px-2">
+                        <td class="py-1 px-1.5">
                             <input
                                 name="kg" type="number" step="0.5" min="0" placeholder="kg"
                                 value="{{ r.kg }}"
-                                class="w-full bg-matte-950 border border-neutral-800 rounded-lg px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 focus:border-burgundy-700 focus:outline-none"
+                                class="w-full bg-transparent border border-transparent hover:bg-neutral-800/30 focus:bg-neutral-800/40 rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-600 focus:outline-none transition-colors"
                                 {% if readonly %}disabled{% endif %}
                             >
                         </td>
-                        <td class="py-2 px-2">
+                        <td class="py-1 px-1.5">
                             <input
                                 name="reps" type="number" step="0.5" min="0" placeholder="reps"
                                 value="{{ r.reps }}"
-                                class="w-full bg-matte-950 border border-neutral-800 rounded-lg px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 focus:border-burgundy-700 focus:outline-none"
+                                class="w-full bg-transparent border border-transparent hover:bg-neutral-800/30 focus:bg-neutral-800/40 rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-600 focus:outline-none transition-colors"
                                 {% if readonly %}disabled{% endif %}
                             >
                         </td>
-                        <td class="py-2 px-2">
+                        <td class="py-1 px-1.5">
                             <input
                                 name="rir" type="number" step="0.5" min="0" placeholder="RIR"
                                 value="{{ r.rir }}"
-                                class="w-full bg-matte-950 border border-neutral-800 rounded-lg px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 focus:border-burgundy-700 focus:outline-none"
+                                class="w-full bg-transparent border border-transparent hover:bg-neutral-800/30 focus:bg-neutral-800/40 rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-600 focus:outline-none transition-colors"
                                 {% if readonly %}disabled{% endif %}
                             >
                         </td>
-                        <td class="py-2 px-2 text-center font-bold text-burgundy-300 whitespace-nowrap">{{ "%.1f"|format(r.rm) if r.rm is not none else "—" }}</td>
+                        <td class="py-1 px-1.5 text-center font-bold text-burgundy-300 whitespace-nowrap">{{ "%.1f"|format(r.rm) if r.rm is not none else "—" }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
 
-        <div id="edit-actions" class="flex flex-wrap gap-2" {% if readonly %}hidden{% endif %}>
+        <div id="edit-actions" class="flex gap-2" {% if readonly %}hidden{% endif %}>
             <button
                 type="submit"
-                class="h-9 px-6 bg-burgundy-700 hover:bg-burgundy-600 text-white text-xs rounded-lg transition-all uppercase tracking-widest font-black"
+                class="h-8 px-5 bg-burgundy-700 hover:bg-burgundy-600 text-white text-xs rounded-lg transition-all uppercase tracking-widest font-black"
             >Guardar</button>
             {% if readonly %}
             <button
@@ -95,7 +92,7 @@
                 hx-get="/fecha/editor?fecha={{ fecha_iso }}"
                 hx-target="#session-editor"
                 hx-swap="outerHTML"
-                class="h-9 px-4 bg-matte-950 hover:bg-neutral-800 text-neutral-400 border border-neutral-700 text-xs rounded-lg transition-all uppercase tracking-widest font-black"
+                class="h-8 px-4 bg-matte-950 hover:bg-neutral-800 text-neutral-400 border border-neutral-700 text-xs rounded-lg transition-all uppercase tracking-widest font-black"
             >Cancelar</button>
             {% endif %}
         </div>
@@ -106,7 +103,11 @@
     function enableEdit() {
         const form = document.getElementById('session-form');
         form.querySelectorAll('input, select').forEach(el => { el.disabled = false; });
-        document.getElementById('view-actions').hidden = true;
+        const pencil = document.querySelector('#session-editor .edit-toggle');
+        if (pencil) {
+            pencil.classList.remove('off');
+            pencil.classList.add('on');
+        }
         document.getElementById('edit-actions').hidden = false;
     }
 </script>

@@ -189,6 +189,27 @@
         .no-scrollbar::-webkit-scrollbar {
             display: none;
         }
+
+        /* Lápiz de edición: encendido = editable, apagado = solo lectura */
+        .edit-toggle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 26px;
+            border-radius: 6px;
+            transition: color .15s;
+            cursor: pointer;
+        }
+        .edit-toggle.on {
+            color: #e56d88;
+        }
+        .edit-toggle.off {
+            color: rgba(163, 163, 163, 0.35);
+        }
+        .edit-toggle.off:hover {
+            color: rgba(163, 163, 163, 0.75);
+        }
     </style>
 </head>
 <body class="bg-matte-950 text-neutral-100 min-h-screen font-sans antialiased selection:bg-burgundy-700 selection:text-white">
