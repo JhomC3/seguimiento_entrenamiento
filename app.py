@@ -31,8 +31,8 @@ from src.training_service import (
 
 MONTHS_ABBR = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 NAV_DAYS_BACK = 13
-NAV_DAYS_FORWARD = 2
-FUTURE_MAX_DAYS = 2
+WINDOW_DAYS = 16
+PAGE_STEP = 14
 
 app = FastAPI(title="Gym Tracker")
 templates = Jinja2Templates(directory="templates")
@@ -97,39 +97,30 @@ def _fechas_con_datos() -> set[str]:
             continue
     return out
 
-def _navigator_html(request: Request, fecha_iso: str) -> str:
+def _navigator_html(request: Request, fecha_iso: str, shift: int = 0) -> str:
     selected = parse_form_date(fecha_iso)
-    today = date.today()
-    max_future = today + timedelta(days=FUTURE_MAX_DAYS)
-    start = selected - timedelta(days=NAV_DAYS_BACK)
-    end = selected + timedelta(days=NAV_DAYS_FORWARD)
-    if end > max_future:
-        end = max_future
-    if end < start:
-        end = start
+    start = selected - timedelta(days=NAV_DAYS_BACK) + timedelta(days=shift)
     data_dates = _fechas_con_datos()
     dates = []
-    d = start
-    while d <= end:
+    for i in range(WINDOW_DAYS):
+        d = start + timedelta(days=i)
         iso = d.strftime("%Y-%m-%d")
+        label = f"{d.day}/{d.month}" if d.day == 1 else str(d.day)
         dates.append({
             "iso": iso,
-            "label": f"{d.day} {MONTHS_ABBR[d.month - 1]}",
+            "label": label,
             "has_data": iso in data_dates,
             "selected": d == selected,
-            "is_today": d == today,
         })
-        d += timedelta(days=1)
-    prev_fecha = (start - timedelta(days=1)).strftime("%Y-%m-%d")
-    next_fecha = (end + timedelta(days=1)).strftime("%Y-%m-%d") if end < max_future else None
     return templates.TemplateResponse(
         request=request,
         name="date_navigator.html",
         context={
             "dates": dates,
-            "prev_fecha": prev_fecha,
-            "next_fecha": next_fecha,
             "selected_iso": selected.strftime("%Y-%m-%d"),
+            "shift": shift,
+            "shift_prev": shift - PAGE_STEP,
+            "shift_next": shift + PAGE_STEP,
         },
     ).body.decode()
 
@@ -217,11 +208,11 @@ async def read_index(request: Request):
     )
 
 @app.get("/fecha", response_class=HTMLResponse)
-async def fecha_view(request: Request, fecha: str = Query(default=None)):
+async def fecha_view(request: Request, fecha: str = Query(default=None), shift: int = Query(0)):
     if not fecha:
         fecha = _today_iso()
     return HTMLResponse(
-        f'<div id="date-navigator" hx-swap-oob="outerHTML">{_navigator_html(request, fecha)}</div>'
+        f'<div id="date-navigator" hx-swap-oob="outerHTML">{_navigator_html(request, fecha, shift)}</div>'
         f'<div id="session-editor" hx-swap-oob="outerHTML">{_editor_html(request, fecha)}</div>'
     )
 

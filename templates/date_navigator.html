@@ -1,11 +1,26 @@
 <div id="date-navigator" class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border animate-fade-in">
-    <div class="flex items-center gap-2 overflow-x-auto pb-1">
+    <div class="flex items-center gap-2">
         <button
-            hx-get="/fecha?fecha={{ prev_fecha }}"
+            hx-get="/fecha?fecha={{ selected_iso }}&shift={{ shift_prev }}"
             hx-swap="none"
             class="nav-arrow"
             title="Fechas anteriores"
         >←</button>
+
+        <div class="flex items-center gap-0.5 overflow-x-auto flex-1 min-w-0 no-scrollbar">
+            {% for d in dates %}
+            <button
+                hx-get="/fecha?fecha={{ d.iso }}&shift=0"
+                hx-swap="none"
+                class="date-num {% if d.selected %}selected{% endif %}"
+                title="{{ d.iso }}"
+            >
+                {{ d.label }}
+                {% if d.has_data %}<span class="date-dot"></span>{% endif %}
+            </button>
+            {% endfor %}
+        </div>
+
         <input
             type="date"
             name="fecha"
@@ -17,25 +32,12 @@
             class="date-input"
             title="Ir a una fecha"
         >
-        <div class="flex gap-1 flex-1 min-w-0">
-            {% for d in dates %}
-            <button
-                hx-get="/fecha?fecha={{ d.iso }}"
-                hx-swap="none"
-                class="date-btn {% if d.selected %}selected{% endif %}"
-            >
-                <span class="date-label">{{ d.label }}{% if d.is_today %} <em class="today-tag">hoy</em>{% endif %}</span>
-                {% if d.has_data %}<span class="date-dot"></span>{% endif %}
-            </button>
-            {% endfor %}
-        </div>
-        {% if next_fecha %}
+
         <button
-            hx-get="/fecha?fecha={{ next_fecha }}"
+            hx-get="/fecha?fecha={{ selected_iso }}&shift={{ shift_next }}"
             hx-swap="none"
             class="nav-arrow"
             title="Próximas fechas"
         >→</button>
-        {% endif %}
     </div>
 </div>
