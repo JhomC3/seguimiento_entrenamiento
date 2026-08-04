@@ -17,10 +17,10 @@
     </div>
 
     {% if success %}
-    <div class="rounded-lg bg-emerald-950/40 border border-emerald-800 text-emerald-300 text-[11px] px-2.5 py-1.5">{{ success }}</div>
+    <div class="notice notice-success" data-dismiss="3000">{{ success }}</div>
     {% endif %}
     {% if error %}
-    <div class="rounded-lg bg-red-950/40 border border-red-800 text-red-300 text-[11px] px-2.5 py-1.5">{{ error }}</div>
+    <div class="notice notice-error" data-dismiss="4500">{{ error }}</div>
     {% endif %}
 
     <form id="session-form" hx-post="/entrenamiento/session/save" hx-swap="none" class="flex flex-col gap-3">

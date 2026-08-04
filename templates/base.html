@@ -223,6 +223,32 @@
             border-radius: 6px;
         }
 
+        /* Avisos (éxito/error): translúcidos, centrados, ajustados al texto */
+        .notice {
+            width: fit-content;
+            margin-left: auto;
+            margin-right: auto;
+            border-radius: 8px;
+            padding: 6px 14px;
+            font-size: 11px;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            transition: opacity .4s ease;
+        }
+        .notice-success {
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+            color: rgba(110, 231, 183, 0.9);
+        }
+        .notice-error {
+            background: rgba(239, 68, 68, 0.08);
+            border: 1px solid rgba(239, 68, 68, 0.25);
+            color: rgba(252, 165, 165, 0.95);
+        }
+        .notice.hide {
+            opacity: 0;
+        }
+
         /* Lápiz de edición: encendido = editable, apagado = solo lectura */
         .edit-toggle {
             display: inline-flex;
@@ -253,5 +279,21 @@
 </head>
 <body class="bg-matte-950 text-neutral-100 min-h-screen font-sans antialiased selection:bg-burgundy-700 selection:text-white">
     {% block content %}{% endblock %}
+
+    <script>
+        function scheduleNotices() {
+            document.querySelectorAll('.notice:not(.scheduled)').forEach(function (el) {
+                el.classList.add('scheduled');
+                const delay = parseInt(el.dataset.dismiss || '3000', 10);
+                setTimeout(function () {
+                    el.classList.add('hide');
+                    setTimeout(function () { el.remove(); }, 450);
+                }, delay);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', scheduleNotices);
+        document.body.addEventListener('htmx:afterSwap', scheduleNotices);
+    </script>
 </body>
 </html>
