@@ -25,7 +25,7 @@
 
     <form id="session-form" hx-post="/entrenamiento/session/save" hx-swap="none" class="flex flex-col gap-3">
         <input type="hidden" name="fecha" value="{{ fecha_iso }}">
-        <div class="overflow-x-auto">
+        <div class="overflow-x-auto min-h-[640px]">
             <table class="w-full text-left border-collapse text-xs">
                 <thead>
                     <tr>
@@ -35,11 +35,12 @@
                         <th class="w-20 py-0.5 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Reps</th>
                         <th class="w-20 py-0.5 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">RIR</th>
                         <th class="w-24 py-0.5 px-1.5 font-bold text-burgundy-400 uppercase tracking-wider text-center">RMₐ</th>
+                        <th class="w-12 py-0.5 px-1.5"></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-800/40" id="set-rows">
                     {% for r in rows %}
-                    <tr class="set-row">
+                    <tr class="set-row group">
                         <td class="set-num py-0.5 px-1.5 text-neutral-600 font-bold text-center">{{ loop.index }}</td>
                         <td class="py-0.5 px-1.5">
                             <select
@@ -77,6 +78,12 @@
                             >
                         </td>
                         <td class="py-0.5 px-1.5 text-center font-bold text-burgundy-300 whitespace-nowrap">{{ "%.1f"|format(r.rm) if r.rm is not none else "—" }}</td>
+                        <td class="py-0.5 px-1.5">
+                            <div class="row-actions flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity" {% if readonly %}hidden{% endif %}>
+                                <button type="button" onclick="addRowAfter(this)" class="row-btn" title="Agregar fila">+</button>
+                                <button type="button" onclick="removeRow(this)" class="row-btn" title="Eliminar fila">−</button>
+                            </div>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -86,7 +93,7 @@
         <div id="edit-actions" class="flex gap-2" {% if readonly %}hidden{% endif %}>
             <button
                 type="submit"
-                class="h-8 px-5 bg-burgundy-700 hover:bg-burgundy-600 text-white text-xs rounded-lg transition-all uppercase tracking-widest font-black"
+                class="h-8 px-5 bg-black hover:bg-neutral-900 text-white border border-neutral-800 text-xs rounded-lg transition-all uppercase tracking-widest font-black"
             >Guardar</button>
             {% if readonly %}
             <button
@@ -94,7 +101,7 @@
                 hx-get="/fecha/editor?fecha={{ fecha_iso }}"
                 hx-target="#session-editor"
                 hx-swap="outerHTML"
-                class="h-8 px-4 bg-matte-950 hover:bg-neutral-800 text-neutral-400 border border-neutral-700 text-xs rounded-lg transition-all uppercase tracking-widest font-black"
+                class="h-8 px-4 bg-black hover:bg-neutral-900 text-neutral-300 border border-neutral-800 text-xs rounded-lg transition-all uppercase tracking-widest font-black"
             >Cancelar</button>
             {% endif %}
         </div>
@@ -105,11 +112,32 @@
     function enableEdit() {
         const form = document.getElementById('session-form');
         form.querySelectorAll('input, select').forEach(el => { el.disabled = false; });
+        form.querySelectorAll('.row-actions').forEach(el => { el.hidden = false; });
         const pencil = document.querySelector('#session-editor .edit-toggle');
         if (pencil) {
             pencil.classList.remove('off');
             pencil.classList.add('on');
         }
         document.getElementById('edit-actions').hidden = false;
+    }
+
+    function addRowAfter(btn) {
+        const row = btn.closest('.set-row');
+        const clone = row.cloneNode(true);
+        clone.querySelector('.ej-select').value = '';
+        clone.querySelectorAll('input').forEach(input => { input.value = ''; });
+        row.after(clone);
+        renumberRows();
+    }
+
+    function removeRow(btn) {
+        btn.closest('.set-row').remove();
+        renumberRows();
+    }
+
+    function renumberRows() {
+        document.querySelectorAll('#set-rows .set-row').forEach((row, i) => {
+            row.querySelector('.set-num').textContent = i + 1;
+        });
     }
 </script>

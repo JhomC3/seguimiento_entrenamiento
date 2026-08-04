@@ -34,8 +34,6 @@ def _end_of_next_month(d: date) -> date:
     next_month = (d.month + 1) % 12 + 1
     return date(next_year, next_month, 1) - timedelta(days=1)
 
-MAX_ROWS = 21
-
 app = FastAPI(title="Gym Tracker")
 templates = Jinja2Templates(directory="templates")
 
@@ -130,8 +128,13 @@ def _editor_html(request: Request, fecha_iso: str, *, rows: list[dict] | None = 
     readonly = (fecha < today) and not force_editable
     if rows is None:
         rows = [dict(r) for r in get_sets_by_fecha(DB_PATH, fecha_to_db(fecha))]
+    data_rows = [
+        r for r in rows
+        if str(r.get("ejercicio") or "").strip()
+        or any(str(r.get(k) or "").strip() for k in ("kg", "reps", "rir"))
+    ]
     display_rows = []
-    for r in rows[:MAX_ROWS]:
+    for r in data_rows:
         kg = r.get("kg")
         reps = r.get("reps")
         rir = r.get("rir")
@@ -149,8 +152,8 @@ def _editor_html(request: Request, fecha_iso: str, *, rows: list[dict] | None = 
             "rir": "" if rir is None else rir,
             "rm": rm,
         })
-    while len(display_rows) < MAX_ROWS:
-        display_rows.append({"ejercicio": "", "kg": "", "reps": "", "rir": "", "rm": None})
+    if not display_rows and not readonly:
+        display_rows = [{"ejercicio": "", "kg": "", "reps": "", "rir": "", "rm": None}]
     semana = calculate_cycle_week(fecha, CICLO_START_DATE)
     dia = day_from_date(fecha)
     return templates.TemplateResponse(

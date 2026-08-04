@@ -193,6 +193,36 @@
             display: none;
         }
 
+        /* Botones +/− de filas (overlay glass, visibles al hover) */
+        .row-btn {
+            width: 18px;
+            height: 18px;
+            border-radius: 9999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.10);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 11px;
+            line-height: 1;
+            cursor: pointer;
+            transition: all .15s;
+        }
+        .row-btn:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        /* Spinners numéricos: se mantienen nativos, solo baja un poco su color al aparecer */
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            background-color: rgba(255, 255, 255, 0.04);
+            border-radius: 6px;
+        }
+
         /* Lápiz de edición: encendido = editable, apagado = solo lectura */
         .edit-toggle {
             display: inline-flex;
