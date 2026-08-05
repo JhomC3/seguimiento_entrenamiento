@@ -313,26 +313,27 @@ def main() -> None:
             drag_row(1, 2)
             check("drag bloqueado en readonly", row_order() == before)
 
-            # Q. panel compacto: crece con el contenido y se topa en 18 filas con scroll
+            # Q. panel compacto: altura fija de 18 filas, scroll solo con más filas
             def scroll_metrics():
                 return page.evaluate(
                     '(() => { const w = document.querySelector("#session-editor .table-scroll"); '
-                    'return { client: w.clientHeight, scroll: w.scrollHeight, max: w.style.maxHeight, rows: document.querySelectorAll("#set-rows .set-row").length }; })()'
+                    'return { client: w.clientHeight, scroll: w.scrollHeight, h: w.style.height, rows: document.querySelectorAll("#set-rows .set-row").length }; })()'
                 )
             m = scroll_metrics()
+            h_px = float(m["h"].replace("px", ""))
+            row_px = page.evaluate('document.querySelector("#set-rows .set-row").offsetHeight')
+            check(f"altura fija = thead + 18 filas ({h_px:.0f}px ≈ 18*{row_px})", abs(h_px - (18 * row_px)) <= 40)
             check(f"panel con pocas filas sin scroll (rows={m['rows']}, scroll<=client)", m["scroll"] <= m["client"])
             page.click(".edit-toggle")
             for _ in range(17):
                 page.click("#set-rows .set-row:nth-child(1) .row-actions button:nth-child(2)")
             m = scroll_metrics()
-            check(f"19+ filas -> scroll vertical interno ({m['rows']} rows, {m['scroll']}>{m['client']}, max={m['max']})", m["rows"] >= 19 and m["scroll"] > m["client"])
-            max_px = float(m["max"].replace("px", ""))
-            row_px = page.evaluate('document.querySelector("#set-rows .set-row").offsetHeight')
-            check(f"max-height = thead + 18 filas ({max_px:.0f}px ≈ 18*{row_px})", abs(max_px - (18 * row_px)) <= 40)
+            check(f"19+ filas -> scroll vertical interno ({m['rows']} rows, {m['scroll']}>{m['client']})", m["rows"] >= 19 and m["scroll"] > m["client"])
+            check("altura sin cambios con 19+ filas", m["h"] == f"{h_px:.0f}px")
             page.click("#edit-actions button:not([type=submit])")
             time.sleep(0.8)
             m = scroll_metrics()
-            check(f"tras cancelar vuelve al alto de contenido ({m['rows']} rows, sin scroll)", m["scroll"] <= m["client"])
+            check(f"panel conserva sus dimensiones tras cancelar ({m['h']}, {m['rows']} rows)", m["h"] == f"{h_px:.0f}px" and m["scroll"] <= m["client"])
 
             browser.close()
     finally:

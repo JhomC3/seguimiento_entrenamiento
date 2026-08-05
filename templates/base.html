@@ -545,7 +545,7 @@
             });
         }
 
-        /* ---------- Altura del panel: crece con el contenido, tope de 18 filas ---------- */
+        /* ---------- Altura del panel: fija, siempre caben 18 filas ---------- */
         const ROWS_VISIBLE = 18;
         function fitRowsToPanel() {
             const wrap = document.querySelector('#session-editor .table-scroll');
@@ -555,7 +555,7 @@
             const rowH = row ? row.offsetHeight : 28;
             const thead = wrap.querySelector('thead');
             const theadH = thead ? thead.offsetHeight : 20;
-            wrap.style.maxHeight = (theadH + ROWS_VISIBLE * rowH) + 'px';
+            wrap.style.height = (theadH + ROWS_VISIBLE * rowH) + 'px';
         }
 
         /* ---------- Drag and drop de filas ---------- */        function initRowSortable() {
