@@ -16,12 +16,14 @@ from src.charts import (
 )
 from src.database import (
     backup_db,
+    delete_session_by_fecha,
     get_categories,
     get_ejercicio_categoria,
     get_exercises_catalog,
     get_plantillas,
     get_sets_by_fecha,
     insert_exercise,
+    reorder_plantillas,
 )
 from src.template_service import (
     apply_template_rows,
@@ -281,6 +283,24 @@ async def entrenamiento_session_save(
         )
         return HTMLResponse(content=notice_error + outcome_fail)
 
+@app.post("/entrenamiento/session/eliminar", response_class=HTMLResponse)
+async def entrenamiento_session_eliminar(request: Request, fecha: str = Form(...)):
+    notice = (
+        '<div id="editor-notice" hx-swap-oob="innerHTML">'
+        '<div class="notice notice-success" data-dismiss="3000">Entreno eliminado.</div></div>'
+    )
+    outcome_ok = '<div id="save-outcome" hx-swap-oob="outerHTML" data-ok="1" hidden></div>'
+    try:
+        backup_db(DB_PATH)
+        delete_session_by_fecha(DB_PATH, fecha_to_db(parse_form_date(fecha)))
+    except ValueError:
+        pass
+    editor = _editor_html(request, fecha)
+    return HTMLResponse(
+        content=notice + outcome_ok
+        + f'<div id="session-editor-wrap" hx-swap-oob="innerHTML">{editor}</div>'
+    )
+
 @app.post("/ejercicio/nuevo", response_class=HTMLResponse)
 async def ejercicio_nuevo(
     request: Request,
@@ -333,7 +353,7 @@ async def plantilla_guardar(
             f'<div class="notice notice-error" data-dismiss="4500">{e}</div></div>'
         )
         return HTMLResponse(content=notice_error)
-    msg = "Plantilla actualizada." if result["updated"] else "Plantilla guardada."
+    msg = "Entreno actualizado." if result["updated"] else "Entreno guardado."
     notice = (
         f'<div id="notice-container" hx-swap-oob="innerHTML">'
         f'<div class="notice notice-success" data-dismiss="3000">{msg}</div></div>'
@@ -354,7 +374,7 @@ async def plantilla_editar(
         return HTMLResponse(content=_plantillas_oob(html))
     notice = (
         f'<div id="notice-container" hx-swap-oob="innerHTML">'
-        f'<div class="notice notice-success" data-dismiss="3000">Plantilla guardada.</div></div>'
+        f'<div class="notice notice-success" data-dismiss="3000">Entreno guardado.</div></div>'
     )
     return HTMLResponse(content=notice + _plantillas_oob(_plantillas_list_html(request)))
 
@@ -363,9 +383,14 @@ async def plantilla_eliminar(request: Request, plantilla_id: int):
     delete_plantilla(DB_PATH, plantilla_id)
     notice = (
         f'<div id="notice-container" hx-swap-oob="innerHTML">'
-        f'<div class="notice notice-success" data-dismiss="3000">Plantilla eliminada.</div></div>'
+        f'<div class="notice notice-success" data-dismiss="3000">Entreno eliminado.</div></div>'
     )
     return HTMLResponse(content=notice + _plantillas_oob(_plantillas_list_html(request)))
+
+@app.post("/plantilla/reordenar", response_class=HTMLResponse)
+async def plantilla_reordenar(id: list[int] = Form(default=[])):
+    reorder_plantillas(DB_PATH, id)
+    return HTMLResponse(content="")
 
 @app.get("/plantilla/aplicar/{plantilla_id}", response_class=HTMLResponse)
 async def plantilla_aplicar(request: Request, plantilla_id: int, fecha: str = Query(...)):
@@ -380,7 +405,7 @@ async def plantilla_aplicar(request: Request, plantilla_id: int, fecha: str = Qu
     editor = _editor_html(request, fecha, rows=rows, force_editable=True)
     notice = (
         f'<div id="editor-notice" hx-swap-oob="innerHTML">'
-        f'<div class="notice notice-success" data-dismiss="3000">Plantilla aplicada.</div></div>'
+        f'<div class="notice notice-success" data-dismiss="3000">Entreno aplicado.</div></div>'
     )
     return HTMLResponse(
         content=notice

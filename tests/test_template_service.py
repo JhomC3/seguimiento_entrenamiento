@@ -1,6 +1,6 @@
 import pytest
 
-from src.database import init_db, insert_exercise, get_plantillas, get_plantilla
+from src.database import init_db, insert_exercise, get_plantillas, get_plantilla, reorder_plantillas
 from src.template_service import (
     apply_template_rows,
     classify_template,
@@ -152,3 +152,18 @@ def test_apply_template_sin_historial_deja_fila_vacia(db):
 def test_apply_template_inexistente_rechaza(db):
     with pytest.raises(ValueError):
         apply_template_rows(db, 999)
+
+
+def test_plantillas_se_crean_en_orden_de_insercion(db):
+    save_template(db, "B", ["Press"])
+    save_template(db, "A", ["Curl"])
+    nombres = [p["nombre"] for p in get_plantillas(db)]
+    assert nombres == ["B", "A"]
+
+
+def test_reorder_plantillas(db):
+    pid_a = save_template(db, "A", ["Press"])["id"]
+    pid_b = save_template(db, "B", ["Curl"])["id"]
+    reorder_plantillas(db, [pid_b, pid_a])
+    nombres = [p["nombre"] for p in get_plantillas(db)]
+    assert nombres == ["B", "A"]

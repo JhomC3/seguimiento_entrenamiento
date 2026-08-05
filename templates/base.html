@@ -318,6 +318,57 @@
         .save-template-btn:hover {
             color: #e56d88;
         }
+        .delete-session-btn {
+            color: rgba(255, 255, 255, 0.45);
+        }
+        .delete-session-btn:hover {
+            color: #fca5a5;
+        }
+
+        /* Botones de confirmación: ✓ (guardar, derecha) y ✗ (cancelar, izquierda) */
+        .btn-check,
+        .btn-x {
+            flex: none;
+            width: 28px;
+            height: 28px;
+            border-radius: 9999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.10);
+            color: rgba(255, 255, 255, 0.55);
+            cursor: pointer;
+            transition: all .15s;
+        }
+        .btn-check:hover:not(:disabled) {
+            background: rgba(16, 185, 129, 0.14);
+            border-color: rgba(16, 185, 129, 0.45);
+            color: #6ee7b7;
+        }
+        .btn-x:hover {
+            background: rgba(239, 68, 68, 0.12);
+            border-color: rgba(239, 68, 68, 0.45);
+            color: #fca5a5;
+        }
+        .btn-check:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+
+        /* Destino de drop de entrenos (editor vacío editable) */
+        #session-editor.drop-target {
+            outline: 2px dashed rgba(229, 109, 136, 0.55);
+            outline-offset: -2px;
+        }
+
+        /* Tarjetas de entrenos: arrastrables desde cualquier zona no interactiva */
+        #plantillas-list .pt-card {
+            cursor: grab;
+        }
+        #plantillas-list .pt-card.sortable-chosen {
+            cursor: grabbing;
+        }
 
         /* Badges de clasificación de plantillas */
         .cls-badge {
@@ -429,8 +480,12 @@
         <div class="confirm-card flex flex-col gap-4">
             <p id="confirm-msg" class="text-sm text-neutral-200">¿Guardar los cambios?</p>
             <div class="flex justify-end gap-2">
-                <button type="button" id="confirm-cancel" class="h-8 px-4 bg-black hover:bg-neutral-900 text-neutral-300 border border-neutral-800 text-xs rounded-lg transition-colors uppercase tracking-widest font-black">Cancelar</button>
-                <button type="button" id="confirm-save" class="h-8 px-5 bg-burgundy-700 hover:bg-burgundy-600 text-white text-xs rounded-lg transition-colors uppercase tracking-widest font-black">Guardar</button>
+                <button type="button" id="confirm-cancel" class="btn-x" aria-label="Cancelar" title="Cancelar">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+                </button>
+                <button type="button" id="confirm-save" class="btn-check" aria-label="Confirmar" title="Confirmar">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
+                </button>
             </div>
         </div>
     </div>
@@ -449,6 +504,7 @@
         let saveRequested = false;
         let sortableRows = null;
         let plantillaAppliedPending = false;
+        let entrenosOrderStart = null;
 
         function scheduleNotices() {
             document.querySelectorAll('.notice:not(.scheduled)').forEach(function (el) {
@@ -504,6 +560,8 @@
             if (!actions) return;
             const show = editorEditmode() === '1' && isDirty();
             actions.classList.toggle('invisible', !show);
+            const saveBtn = actions.querySelector('button[type="submit"]');
+            if (saveBtn) saveBtn.disabled = editorEditmode() !== '1';
         }
 
         function syncEditorFromContent() {
@@ -619,8 +677,8 @@
             const table = wrap.querySelector('table') ? wrap.querySelector('table').offsetHeight : 0;
             wrap.style.height = (nrows > ROWS_VISIBLE ? full : Math.max(full, table)) + 'px';
         }
-
-        /* ---------- Drag and drop de filas ---------- */        function initRowSortable() {
+        /* ---------- Drag and drop de filas ---------- */
+        function initRowSortable() {
             const tbody = document.getElementById('set-rows');
             if (!tbody || typeof Sortable === 'undefined') return;
             if (sortableRows) sortableRows.destroy();
@@ -630,9 +688,31 @@
                 chosenClass: 'sortable-chosen',
                 filter: 'input, select, button',
                 preventOnFilter: false,
+                group: { name: 'editor-rows', pull: false, put: ['entrenos'] },
+                onMove: function (evt) {
+                    const editor = document.getElementById('session-editor');
+                    if (evt.from === evt.to) {
+                        if (editor) editor.classList.remove('drop-target');
+                        return true;
+                    }
+                    const st = document.getElementById('editor-state');
+                    const ok = editorEditmode() === '1' && st && st.dataset.hasData === '0';
+                    if (editor) editor.classList.toggle('drop-target', ok);
+                    return ok;
+                },
                 onEnd: function () {
+                    const editor = document.getElementById('session-editor');
+                    if (editor) editor.classList.remove('drop-target');
                     renumberRows();
                     updateEditActions();
+                },
+                onAdd: function (evt) {
+                    const editor = document.getElementById('session-editor');
+                    if (editor) editor.classList.remove('drop-target');
+                    const item = evt.item;
+                    const id = item && item.dataset ? item.dataset.ptId : null;
+                    if (id) aplicarPlantilla(parseInt(id, 10));
+                    if (item) item.remove();
                 },
             });
             syncSortableState();
@@ -657,8 +737,18 @@
         }
 
         function eliminarPlantilla(id, nombre) {
-            if (!confirm(`¿Eliminar la plantilla "${nombre}"?`)) return;
+            if (!confirm(`¿Eliminar el entreno "${nombre}"?`)) return;
             htmx.ajax('POST', `/plantilla/eliminar/${id}`, { target: 'body', swap: 'none' });
+        }
+
+        function eliminarSesion() {
+            const fecha = currentFecha();
+            if (!fecha) return;
+            document.getElementById('confirm-msg').textContent = '¿Eliminar el entreno de esta fecha?';
+            showConfirmDialog(function () {
+                saveRequested = true;
+                htmx.ajax('POST', '/entrenamiento/session/eliminar', { values: { fecha: fecha }, target: 'body', swap: 'none' });
+            }, null);
         }
 
         function editarPlantilla(id) {
@@ -722,6 +812,24 @@
             }
         }
 
+        function confirmEntrenoSave() {
+            const form = document.getElementById('save-template-form');
+            if (!form) return;
+            const nombre = form.querySelector('input[name="nombre"]').value.trim();
+            if (!nombre) {
+                form.requestSubmit();
+                return;
+            }
+            const exists = Array.from(document.querySelectorAll('#plantillas-section [data-pt-nombre]'))
+                .some(el => el.dataset.ptNombre.toLowerCase() === nombre.toLowerCase());
+            document.getElementById('confirm-msg').textContent = exists
+                ? `Ya existe el entreno '${nombre}'. ¿Reemplazarlo?`
+                : `¿Guardar el entreno '${nombre}'?`;
+            showConfirmDialog(function () {
+                form.requestSubmit();
+            }, null);
+        }
+
         function ptAddRow(btn) {
             const container = document.getElementById('plantilla-edit-rows');
             const first = container && container.querySelector('.pt-row');
@@ -739,16 +847,47 @@
 
         function initTemplateSortable() {
             const container = document.getElementById('plantilla-edit-rows');
-            if (!container || typeof Sortable === 'undefined') return;
-            if (container.dataset.sortableReady) return;
-            container.dataset.sortableReady = '1';
-            Sortable.create(container, {
-                animation: 150,
-                ghostClass: 'sortable-ghost',
-                chosenClass: 'sortable-chosen',
-                filter: 'input, select, button',
-                preventOnFilter: false,
-            });
+            if (container && typeof Sortable !== 'undefined' && !container.dataset.sortableReady) {
+                container.dataset.sortableReady = '1';
+                Sortable.create(container, {
+                    animation: 150,
+                    ghostClass: 'sortable-ghost',
+                    chosenClass: 'sortable-chosen',
+                    filter: 'input, select, button',
+                    preventOnFilter: false,
+                });
+            }
+            const list = document.getElementById('plantillas-list');
+            if (list && typeof Sortable !== 'undefined' && !list.dataset.sortableReady) {
+                list.dataset.sortableReady = '1';
+                Sortable.create(list, {
+                    animation: 150,
+                    ghostClass: 'sortable-ghost',
+                    chosenClass: 'sortable-chosen',
+                    filter: 'input, select, button',
+                    preventOnFilter: false,
+                    draggable: '.pt-card',
+                    group: { name: 'entrenos', pull: 'clone', put: false },
+                    onStart: function () { entrenosOrderStart = entrenosOrder(); },
+                    onEnd: function () {
+                        const now = entrenosOrder();
+                        if (entrenosOrderStart && entrenosOrderStart.join() !== now.join()) {
+                            const params = new URLSearchParams();
+                            now.forEach(id => params.append('id', id));
+                            fetch('/plantilla/reordenar', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                                body: params.toString(),
+                            });
+                        }
+                        entrenosOrderStart = null;
+                    },
+                });
+            }
+        }
+
+        function entrenosOrder() {
+            return Array.from(document.querySelectorAll('#plantillas-list .pt-card')).map(el => el.dataset.ptId);
         }
 
         /* ---------- Guardar ---------- */
@@ -839,6 +978,7 @@
             scheduleNotices();
             syncEditorFromContent();
             initRowSortable();
+            initTemplateSortable();
             fitRowsToPanel();
         });
 
@@ -876,6 +1016,7 @@
         document.body.addEventListener('htmx:afterRequest', function (e) {
             scheduleNotices();
             handleEditorState();
+            initTemplateSortable();
             const ptForm = e.detail && e.detail.elt && e.detail.elt.closest
                 ? e.detail.elt.closest('#save-template-form')
                 : null;
@@ -893,6 +1034,8 @@
                         const st = document.getElementById('editor-state');
                         if (st && st.dataset.hasData !== undefined) {
                             updateDateDot(fecha, st.dataset.hasData === '1');
+                            const trash = document.querySelector('#session-editor .delete-session-btn');
+                            if (trash) trash.hidden = st.dataset.hasData !== '1';
                         }
                         recalcRM();
                         syncEditorFromContent();
@@ -910,8 +1053,14 @@
         });
 
         document.addEventListener('submit', function (e) {
-            if (e.target.closest('#session-form')) saveRequested = true;
-        });
+            const form = e.target.closest('#session-form');
+            if (!form) return;
+            if (editorEditmode() !== '1') {
+                e.preventDefault();
+                return;
+            }
+            saveRequested = true;
+        }, true);
 
         document.addEventListener('input', function (e) {
             if (e.target.closest('#session-form')) {

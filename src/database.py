@@ -72,6 +72,9 @@ def init_db(db_path: str) -> None:
             conn.execute("ALTER TABLE ejercicios ADD COLUMN categoria TEXT")
         if "origen" not in ejercicios_cols:
             conn.execute("ALTER TABLE ejercicios ADD COLUMN origen TEXT NOT NULL DEFAULT 'google'")
+        plantillas_cols = _table_columns(conn, "plantillas")
+        if "orden" not in plantillas_cols:
+            conn.execute("ALTER TABLE plantillas ADD COLUMN orden INTEGER NOT NULL DEFAULT 0")
         conn.commit()
         _backfill_categories(conn)
         conn.commit()
@@ -252,7 +255,7 @@ def get_plantillas(db_path: str) -> list[dict]:
     conn = sqlite3.connect(db_path)
     try:
         rows = conn.execute(
-            "SELECT id, nombre, clasificacion, updated_at FROM plantillas ORDER BY nombre"
+            "SELECT id, nombre, clasificacion, updated_at FROM plantillas ORDER BY orden, nombre"
         ).fetchall()
         return [
             {
@@ -301,10 +304,12 @@ def insert_plantilla(db_path: str, nombre: str, clasificacion: str, ejercicios: 
     conn = sqlite3.connect(db_path)
     try:
         with conn:
+            max_row = conn.execute("SELECT COALESCE(MAX(orden), 0) FROM plantillas").fetchone()
+            orden = (max_row[0] or 0) + 1
             cur = conn.execute(
-                "INSERT INTO plantillas (nombre, clasificacion, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?)",
-                (nombre, clasificacion, now, now),
+                "INSERT INTO plantillas (nombre, clasificacion, created_at, updated_at, orden) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (nombre, clasificacion, now, now, orden),
             )
             pid = cur.lastrowid
             for idx, ej in enumerate(ejercicios, start=1):
@@ -340,6 +345,15 @@ def delete_plantilla(db_path: str, plantilla_id: int) -> None:
         with conn:
             conn.execute("DELETE FROM plantilla_sets WHERE plantilla_id = ?", (plantilla_id,))
             conn.execute("DELETE FROM plantillas WHERE id = ?", (plantilla_id,))
+    finally:
+        conn.close()
+
+def reorder_plantillas(db_path: str, ordered_ids: list[int]) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
+        with conn:
+            for pos, pid in enumerate(ordered_ids, start=1):
+                conn.execute("UPDATE plantillas SET orden = ? WHERE id = ?", (pos, pid))
     finally:
         conn.close()
 

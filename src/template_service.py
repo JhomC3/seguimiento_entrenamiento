@@ -50,9 +50,9 @@ def save_template(db_path: str, nombre: str, ejercicios: list[str]) -> dict:
     nombre = str(nombre).strip()
     ejercicios = _clean_ejercicios(ejercicios)
     if not nombre:
-        raise ValueError("Debes ponerle nombre a la plantilla.")
+        raise ValueError("Debes ponerle nombre al entreno.")
     if not ejercicios:
-        raise ValueError("La plantilla debe tener al menos un ejercicio.")
+        raise ValueError("El entreno debe tener al menos un ejercicio.")
     clasificacion = classify_template(db_path, ejercicios)
     existing = find_plantilla_by_nombre(db_path, nombre)
     if existing is not None:
@@ -65,12 +65,12 @@ def edit_template(db_path: str, plantilla_id: int, nombre: str, ejercicios: list
     nombre = str(nombre).strip()
     ejercicios = _clean_ejercicios(ejercicios)
     if not nombre:
-        raise ValueError("El nombre de la plantilla no puede estar vacío.")
+        raise ValueError("El nombre del entreno no puede estar vacío.")
     if not ejercicios:
-        raise ValueError("La plantilla debe tener al menos un ejercicio.")
+        raise ValueError("El entreno debe tener al menos un ejercicio.")
     existing = find_plantilla_by_nombre(db_path, nombre)
     if existing is not None and existing != plantilla_id:
-        raise ValueError(f"Ya existe una plantilla llamada '{nombre}'.")
+        raise ValueError(f"Ya existe un entreno llamado '{nombre}'.")
     clasificacion = classify_template(db_path, ejercicios)
     update_plantilla(db_path, plantilla_id, nombre, clasificacion, ejercicios)
     return {"id": plantilla_id, "nombre": nombre, "clasificacion": clasificacion}

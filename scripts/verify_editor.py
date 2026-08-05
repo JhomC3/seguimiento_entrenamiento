@@ -37,30 +37,30 @@ def main() -> None:
 
     today = datetime.date.today()
     iso_today = today.strftime("%Y-%m-%d")
-    iso_future = (today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
     import sqlite3
     sys.path.insert(0, os.path.join(ROOT, "src"))
     from training_service import fecha_to_db
     conn = sqlite3.connect(db)
     taken = {r[0] for r in conn.execute("SELECT DISTINCT fecha FROM training_sets").fetchall()}
     conn.close()
+    iso_future = ""
+    iso_future2 = ""
+    iso_future3 = ""
+    iso_future4 = ""
+    iso_future5 = ""
+    iso_future6 = ""
+    empties = []
+    for delta in range(1, 15):
+        d = today + datetime.timedelta(days=delta)
+        if fecha_to_db(d) not in taken:
+            empties.append(d.strftime("%Y-%m-%d"))
+    if len(empties) >= 6:
+        iso_future, iso_future2, iso_future3, iso_future4, iso_future5, iso_future6 = empties[:6]
     iso_past = ""
     for delta in range(2, 20):
         d = today - datetime.timedelta(days=delta)
         if fecha_to_db(d) not in taken:
             iso_past = d.strftime("%Y-%m-%d")
-            break
-    iso_future2 = ""
-    for delta in (2, 3, 4):
-        d = today + datetime.timedelta(days=delta)
-        if fecha_to_db(d) not in taken:
-            iso_future2 = d.strftime("%Y-%m-%d")
-            break
-    iso_future3 = ""
-    for delta in (3, 4, 5):
-        d = today + datetime.timedelta(days=delta)
-        if fecha_to_db(d) not in taken and d.strftime("%Y-%m-%d") != iso_future2:
-            iso_future3 = d.strftime("%Y-%m-%d")
             break
     port = free_port()
 
@@ -71,6 +71,13 @@ def main() -> None:
         appmod.DB_PATH = '{db}'
         from src.database import init_db, insert_exercise
         init_db(appmod.DB_PATH)
+        import sqlite3 as _sqlite3
+        _conn = _sqlite3.connect(appmod.DB_PATH)
+        _conn.execute("DELETE FROM plantilla_sets")
+        _conn.execute("DELETE FROM plantillas")
+        _conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('plantillas', 'plantilla_sets')")
+        _conn.commit()
+        _conn.close()
         insert_exercise(appmod.DB_PATH, 'Press Repro', 'Pectoral', 'EMPUJE')
         insert_exercise(appmod.DB_PATH, 'Curl Repro', 'Biceps', 'TIRON')
         from src.training_service import save_session
@@ -345,7 +352,30 @@ def main() -> None:
             m = scroll_metrics()
             check(f"panel conserva sus dimensiones tras cancelar ({m['h']}, {m['rows']} rows)", m["h"] == f"{h_px:.0f}px" and m["scroll"] <= m["client"])
 
-            # R. plantillas: guardar como plantilla, aplicar, editar, eliminar
+            # R. entrenos: guardar como entreno, aplicar, editar, eliminar
+            def entrenos_names() -> list:
+                return page.evaluate('Array.from(document.querySelectorAll("#plantillas-list .pt-card > span")).map(s => s.textContent)')
+
+            def mouse_drag(src_loc, dst_loc) -> None:
+                sb = src_loc.bounding_box()
+                db = dst_loc.bounding_box()
+                page.mouse.move(sb["x"] + sb["width"] / 2, sb["y"] + 16)
+                page.mouse.down()
+                page.mouse.move(db["x"] + db["width"] / 2, db["y"] + 16, steps=15)
+                time.sleep(0.3)
+                page.mouse.up()
+                time.sleep(0.8)
+
+            def save_entreno(nombre: str) -> None:
+                page.click(".save-template-btn")
+                time.sleep(0.3)
+                page.fill('#save-template-form input[name="nombre"]', nombre)
+                page.click('#save-template-form .btn-check')
+                time.sleep(0.3)
+                check("guardar entreno abre confirmación", modal())
+                page.click("#confirm-save")
+                time.sleep(1.2)
+
             page.on("dialog", lambda d: d.accept())
             nav(iso_future2)
             page.click(".save-template-btn")
@@ -353,17 +383,20 @@ def main() -> None:
             sugg = page.input_value('#save-template-form input[name="nombre"]')
             check(f"nombre sugerido por clasificación ({sugg})", sugg == "Torso")
             page.fill('#save-template-form input[name="nombre"]', "Mi Torso")
-            page.click('#save-template-form button[type=submit]')
+            page.click('#save-template-form .btn-check')
+            time.sleep(0.3)
+            check("guardar entreno abre confirmación", modal())
+            page.click("#confirm-save")
             time.sleep(1.2)
             sidebar_txt = page.evaluate("document.getElementById('plantillas-section').textContent")
-            check("plantilla guardada en sidebar (Mi Torso + badge TORSO)", "Mi Torso" in sidebar_txt and "TORSO" in sidebar_txt)
+            check("entreno guardado en sidebar (solo nombre)", "Mi Torso" in sidebar_txt and "TORSO" not in sidebar_txt)
             nav(iso_future3)
             page.click("#pt-card-1 .pt-btn-burgundy")
             time.sleep(1.0)
-            check(f"aplicar plantilla: editable ({em()})", em() == "1")
-            check("aplicar plantilla: filas con últimos valores", row_order() == ["Curl Repro", "Press Repro"])
+            check(f"aplicar entreno: editable ({em()})", em() == "1")
+            check("aplicar entreno: filas con últimos valores", row_order() == ["Curl Repro", "Press Repro"])
             kgs = page.evaluate('Array.from(document.querySelectorAll("#set-rows input[name=\\"kg\\"]")).map(i => i.value)')
-            check(f"aplicar plantilla: kg del último realizado ({kgs})", kgs == ["16", "80"])
+            check(f"aplicar entreno: kg del último realizado ({kgs})", kgs == ["16", "80"])
             page.click("#edit-actions button[type=submit]")
             time.sleep(1.2)
             check(f"sesión aplicada guardada en {iso_future3} (readonly={em()})", em() == "0")
@@ -377,23 +410,94 @@ def main() -> None:
             page.click('#pt-card-1 form button[type=submit]')
             time.sleep(1.2)
             sidebar_txt = page.evaluate("document.getElementById('plantillas-section').textContent")
-            check("plantilla editada (Mi Torso V2, +1 más)", "Mi Torso V2" in sidebar_txt and "+1 más" in sidebar_txt)
+            check("entreno editado (Mi Torso V2)", "Mi Torso V2" in sidebar_txt)
             page.locator("#pt-card-1 .pt-btn").nth(2).click()
             time.sleep(1.2)
             sidebar_txt = page.evaluate("document.getElementById('plantillas-section').textContent")
-            check("plantilla eliminada (sidebar vacío)", "Aún no hay plantillas" in sidebar_txt)
+            check("entreno eliminado (sidebar vacío)", "Aún no hay entrenos" in sidebar_txt)
+
+            # S. drag and drop: reordenar entrenos y soltar sobre el editor vacío
+            nav(iso_future4)
+            page.select_option('#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Press Repro")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="kg"]', "80")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="reps"]', "6")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="rir"]', "1")
+            page.click("#edit-actions button[type=submit]")
+            time.sleep(1.2)
+            save_entreno("Empuje")
+            nav(iso_future5)
+            page.select_option('#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Curl Repro")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="kg"]', "16")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="reps"]', "8")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="rir"]', "2")
+            page.click("#edit-actions button[type=submit]")
+            time.sleep(1.2)
+            save_entreno("Mi Jalón")
+            check("dos entrenos en orden de creación", entrenos_names() == ["Empuje", "Mi Jalón"])
+            mouse_drag(page.locator('#plantillas-list .pt-card').nth(1), page.locator('#plantillas-list .pt-card').nth(0))
+            page.evaluate("refreshPlantillas()")
+            time.sleep(0.8)
+            check("reorden persistido tras refrescar", entrenos_names() == ["Mi Jalón", "Empuje"])
+            nav(iso_future6)
+            check(f"fecha vacía editable para drop ({em()})", em() == "1")
+            mouse_drag(page.locator('#plantillas-list .pt-card').nth(1), page.locator('#set-rows .set-row').first)
+            time.sleep(1.0)
+            check(f"drop aplica entreno: editable ({em()})", em() == "1")
+            check("drop aplica entreno: filas con últimos valores", row_order() == ["Press Repro"])
+            kgs = page.evaluate('Array.from(document.querySelectorAll("#set-rows input[name=\\"kg\\"]")).map(i => i.value)')
+            check(f"drop aplica entreno: kg ({kgs})", kgs == ["80"])
+            page.click("#edit-actions .btn-x")
+            time.sleep(0.8)
+            check("cancelar tras drop restaura fila vacía", nrows() == 1 and em() == "1")
+            nav(iso_future3)
+            check(f"drop bloqueado en fecha con datos ({em()})", em() == "0")
+            before = row_order()
+            mouse_drag(page.locator('#plantillas-list .pt-card').first, page.locator('#set-rows .set-row').first)
+            check("drop bloqueado: editor sin cambios", row_order() == before and em() == "0")
+
+            # T. eliminar entreno del día + confirmación de reemplazo + ✓ solo editable
+            nav(iso_future6)
+            page.select_option('#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Press Repro")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="kg"]', "100")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="reps"]', "6")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="rir"]', "1")
+            page.click("#edit-actions button[type=submit]")
+            time.sleep(1.2)
+            dot = page.evaluate(f"!!document.querySelector('.date-num[data-iso=\"{iso_future6}\"] .date-dot')")
+            check("dot visible tras guardar en T", dot)
+            page.click(".delete-session-btn")
+            time.sleep(0.3)
+            check("eliminar entreno abre confirmación", modal())
+            page.click("#confirm-save")
+            time.sleep(1.2)
+            check(f"sesión eliminada: editor vacío editable ({em()})", em() == "1" and nrows() == 1)
+            dot = page.evaluate(f"!!document.querySelector('.date-num[data-iso=\"{iso_future6}\"] .date-dot')")
+            check("dot desaparece tras eliminar", not dot)
+            nav(iso_future3)
+            page.click(".save-template-btn")
+            time.sleep(0.3)
+            page.fill('#save-template-form input[name="nombre"]', "Empuje")
+            page.click('#save-template-form .btn-check')
+            time.sleep(0.3)
+            check("nombre existente pregunta reemplazo", modal())
+            msg = page.evaluate("document.getElementById('confirm-msg').textContent")
+            check(f"mensaje de reemplazo ({msg})", "Reemplazar" in msg)
+            page.click("#confirm-save")
+            time.sleep(1.2)
+            closed = page.evaluate("document.getElementById('save-template-form-wrap').classList.contains('hidden')")
+            notice = page.evaluate("document.getElementById('notice-container').textContent")
+            check("reemplazo guardado y form cerrado", closed and "actualizado" in notice)
+            btn_disabled = page.evaluate("document.querySelector('#edit-actions button[type=submit]').disabled")
+            check(f"✓ deshabilitado en readonly ({btn_disabled})", btn_disabled)
 
             browser.close()
     finally:
         proc.terminate()
         shutil.rmtree(tmpdir, ignore_errors=True)
-
-    print("\n".join(results))
-    print(f"\n{len(results) - len(failures)}/{len(results)} OK")
-    if failures:
-        print("FALLOS:", ", ".join(failures))
-        return 1
-    return 0
+        print("\n".join(results))
+        print(f"\n{len(results) - len(failures)}/{len(results)} OK")
+        if failures:
+            print("FALLOS:", ", ".join(failures))
 
 
 if __name__ == "__main__":
