@@ -218,6 +218,26 @@ def main() -> None:
             kg = page.evaluate("document.querySelector('#session-form input[name=\"kg\"]').value")
             check(f"modal Guardar persiste (kg={kg})", kg == "90" and em() == "0")
 
+            # N. guardado con error -> botones se mantienen; corregido -> se ocultan
+            page.click("#session-editor .edit-toggle")
+            time.sleep(0.3)
+            page.fill('#session-form input[name="kg"]', "95")
+            page.fill('#session-form input[name="reps"]', "4")
+            page.evaluate("document.querySelector('#set-rows .ej-select').value = ''")
+            page.click("#edit-actions button[type=submit]")
+            time.sleep(1.2)
+            actions_vis = page.evaluate("!document.getElementById('edit-actions').classList.contains('invisible')")
+            err = page.evaluate("!!document.querySelector('#notice-container .notice-error')")
+            check(f"tras error de validación botones visibles ({actions_vis})", actions_vis)
+            check("tras error de validación aviso de error visible", err)
+            kg = page.evaluate("document.querySelector('#session-form input[name=\"kg\"]').value")
+            check(f"datos fallidos conservados (kg={kg})", kg == "95")
+            page.select_option('#session-form select[name="ejercicio"]', "Press Repro")
+            page.click("#edit-actions button[type=submit]")
+            time.sleep(1.2)
+            actions_vis = page.evaluate("!document.getElementById('edit-actions').classList.contains('invisible')")
+            check(f"tras guardar corregido botones ocultos ({em()})", em() == "0" and not actions_vis)
+
             browser.close()
     finally:
         proc.terminate()

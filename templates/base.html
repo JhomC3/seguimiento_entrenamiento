@@ -583,7 +583,8 @@
             handleEditorState();
             if (saveRequested) {
                 saveRequested = false;
-                if (e.detail.successful) {
+                const outcome = document.getElementById('save-outcome');
+                if (e.detail.successful && outcome && outcome.dataset.ok === '1') {
                     setTimeout(function () {
                         const form = document.getElementById('session-form');
                         const fechaInput = form && form.querySelector('input[name="fecha"]');
@@ -600,7 +601,7 @@
                         pendingNav = null;
                         setTimeout(function () { doNav(target, true); }, 150);
                     }
-                } else if (pendingNav) {
+                } else {
                     pendingNav = null;
                 }
             }
