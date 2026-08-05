@@ -306,6 +306,8 @@
             if (!form) return;
             form.querySelectorAll('input, select').forEach(el => { el.disabled = true; });
             form.querySelectorAll('.row-actions').forEach(el => { el.hidden = true; });
+            const editor = document.getElementById('session-editor');
+            if (editor) editor.dataset.editmode = '0';
             const pencil = document.querySelector('#session-editor .edit-toggle');
             if (pencil) {
                 pencil.classList.remove('on');

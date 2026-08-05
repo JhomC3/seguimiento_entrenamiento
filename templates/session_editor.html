@@ -1,5 +1,5 @@
-<div id="session-editor" class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border">
-<div id="editor-state" data-readonly="0" hidden></div>
+<div id="session-editor" data-editmode="{{ 0 if readonly else 1 }}" class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border">
+<div id="editor-state" data-readonly="{{ 1 if readonly else 0 }}" hidden></div>
     <div class="flex items-center justify-between">
         <div class="flex items-baseline gap-2">
             <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title">{{ dia }} {{ fecha_db }}</h3>
@@ -103,10 +103,19 @@
 </div>
 
 <script>
+    function editorEditmode() {
+        return document.getElementById('session-editor')?.dataset.editmode;
+    }
+
     function enableEdit() {
+        if (editorEditmode() === '1') return;
         const form = document.getElementById('session-form');
         form.querySelectorAll('input, select').forEach(el => { el.disabled = false; });
         form.querySelectorAll('.row-actions').forEach(el => { el.hidden = false; });
+        const editor = document.getElementById('session-editor');
+        if (editor) editor.dataset.editmode = '1';
+        const st = document.getElementById('editor-state');
+        if (st) st.dataset.readonly = '0';
         const pencil = document.querySelector('#session-editor .edit-toggle');
         if (pencil) {
             pencil.classList.remove('off');
@@ -116,6 +125,7 @@
     }
 
     function addRowAfter(btn) {
+        if (editorEditmode() !== '1') return;
         const row = btn.closest('.set-row');
         const clone = row.cloneNode(true);
         clone.querySelector('.ej-select').value = '';
@@ -125,6 +135,7 @@
     }
 
     function removeRow(btn) {
+        if (editorEditmode() !== '1') return;
         btn.closest('.set-row').remove();
         renumberRows();
     }
