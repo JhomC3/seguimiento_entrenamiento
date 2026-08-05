@@ -325,10 +325,13 @@ def main() -> None:
             check(f"altura fija = thead + 18 filas ({h_px:.0f}px ≈ 18*{row_px})", abs(h_px - (18 * row_px)) <= 40)
             check(f"panel con pocas filas sin scroll (rows={m['rows']}, scroll<=client)", m["scroll"] <= m["client"])
             page.click(".edit-toggle")
-            for _ in range(17):
+            for _ in range(16):
                 page.click("#set-rows .set-row:nth-child(1) .row-actions button:nth-child(2)")
             m = scroll_metrics()
-            check(f"19+ filas -> scroll vertical interno ({m['rows']} rows, {m['scroll']}>{m['client']})", m["rows"] >= 19 and m["scroll"] > m["client"])
+            check(f"18 filas: tabla llena el panel sin hueco ni scroll ({m['rows']} rows, {m['scroll']}=={m['client']})", m["rows"] == 18 and m["scroll"] == m["client"])
+            page.click("#set-rows .set-row:nth-child(1) .row-actions button:nth-child(2)")
+            m = scroll_metrics()
+            check(f"19+ filas -> scroll vertical interno ({m['rows']} rows, {m['scroll']}>{m['client']})", m["rows"] == 19 and m["scroll"] > m["client"])
             check("altura sin cambios con 19+ filas", m["h"] == f"{h_px:.0f}px")
             page.click("#edit-actions button:not([type=submit])")
             time.sleep(0.8)

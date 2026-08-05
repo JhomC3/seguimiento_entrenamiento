@@ -555,7 +555,10 @@
             const rowH = row ? row.offsetHeight : 28;
             const thead = wrap.querySelector('thead');
             const theadH = thead ? thead.offsetHeight : 20;
-            wrap.style.height = (theadH + ROWS_VISIBLE * rowH) + 'px';
+            const full = theadH + ROWS_VISIBLE * rowH;
+            const nrows = tbody.querySelectorAll('.set-row').length;
+            const table = wrap.querySelector('table') ? wrap.querySelector('table').offsetHeight : 0;
+            wrap.style.height = (nrows > ROWS_VISIBLE ? full : Math.max(full, table)) + 'px';
         }
 
         /* ---------- Drag and drop de filas ---------- */        function initRowSortable() {

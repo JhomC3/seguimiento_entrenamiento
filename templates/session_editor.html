@@ -86,14 +86,14 @@
         <div id="edit-actions" class="mt-2 h-8 flex items-center gap-2 invisible">
             <button
                 type="submit"
-                class="h-8 px-5 bg-black hover:bg-neutral-900 text-white border border-neutral-800 text-xs rounded-lg transition-colors uppercase tracking-widest font-black"
+                class="h-8 px-5 bg-black/70 hover:bg-neutral-900/70 backdrop-blur-sm text-white border border-neutral-800 text-xs rounded-lg transition-colors uppercase tracking-widest font-black"
             >Guardar</button>
             <button
                 type="button"
                 hx-get="/fecha/editor?fecha={{ fecha_iso }}"
                 hx-target="#session-editor-wrap"
                 hx-swap="innerHTML"
-                class="h-8 px-4 bg-black hover:bg-neutral-900 text-neutral-300 border border-neutral-800 text-xs rounded-lg transition-colors uppercase tracking-widest font-black"
+                class="h-8 px-4 bg-black/70 hover:bg-neutral-900/70 backdrop-blur-sm text-neutral-300 border border-neutral-800 text-xs rounded-lg transition-colors uppercase tracking-widest font-black"
             >Cancelar</button>
         </div>
     </form>
