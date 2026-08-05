@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import json
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -22,6 +23,7 @@ from src.database import (
     get_exercises_catalog,
     get_plantillas,
     get_sets_by_fecha,
+    init_db,
     insert_exercise,
     reorder_plantillas,
 )
@@ -46,7 +48,12 @@ def _end_of_next_month(d: date) -> date:
     next_month = (d.month + 1) % 12 + 1
     return date(next_year, next_month, 1) - timedelta(days=1)
 
-app = FastAPI(title="Gym Tracker")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db(DB_PATH)
+    yield
+
+app = FastAPI(title="Gym Tracker", lifespan=lifespan)
 templates = Jinja2Templates(directory="templates")
 
 CICLO_START_DATE = parse_cycle_start(CICLO_START)
