@@ -356,6 +356,18 @@
         #session-editor .sortable-chosen {
             background: rgba(255, 255, 255, 0.06);
         }
+
+        /* Tabla de sesión: scroll vertical interno con tope de 18 filas (max-height via JS) */
+        #session-editor .table-scroll {
+            scrollbar-width: thin;
+            scrollbar-color: #333 #0a0a0a;
+        }
+        #session-editor .table-scroll thead th {
+            position: sticky;
+            top: 0;
+            background: #171717;
+            z-index: 5;
+        }
     </style>
 </head>
 <body class="bg-matte-950 text-neutral-100 min-h-screen font-sans antialiased selection:bg-burgundy-700 selection:text-white">
@@ -533,8 +545,20 @@
             });
         }
 
-        /* ---------- Drag and drop de filas ---------- */
-        function initRowSortable() {
+        /* ---------- Altura del panel: crece con el contenido, tope de 18 filas ---------- */
+        const ROWS_VISIBLE = 18;
+        function fitRowsToPanel() {
+            const wrap = document.querySelector('#session-editor .table-scroll');
+            const tbody = document.getElementById('set-rows');
+            if (!wrap || !tbody) return;
+            const row = tbody.querySelector('.set-row');
+            const rowH = row ? row.offsetHeight : 28;
+            const thead = wrap.querySelector('thead');
+            const theadH = thead ? thead.offsetHeight : 20;
+            wrap.style.maxHeight = (theadH + ROWS_VISIBLE * rowH) + 'px';
+        }
+
+        /* ---------- Drag and drop de filas ---------- */        function initRowSortable() {
             const tbody = document.getElementById('set-rows');
             if (!tbody || typeof Sortable === 'undefined') return;
             if (sortableRows) sortableRows.destroy();
@@ -644,6 +668,7 @@
             scheduleNotices();
             syncEditorFromContent();
             initRowSortable();
+            fitRowsToPanel();
         });
 
         document.body.addEventListener('htmx:afterSwap', function (e) {
@@ -652,6 +677,7 @@
             if (e.detail && e.detail.target && e.detail.target.id === 'session-editor-wrap') {
                 syncEditorFromContent();
                 initRowSortable();
+                fitRowsToPanel();
             }
         });
 
@@ -672,6 +698,7 @@
                         }
                         recalcRM();
                         syncEditorFromContent();
+                        fitRowsToPanel();
                     }, 100);
                     if (pendingNav) {
                         const target = pendingNav;

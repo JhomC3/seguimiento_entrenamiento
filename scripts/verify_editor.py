@@ -203,6 +203,8 @@ def main() -> None:
             check(f"altura estable con/sin botones ({h1:.0f}/{h2:.0f})", abs(h1 - h2) < 1)
 
             # J. hover en futura vacía (editable) y en futura con datos (lápiz)
+            page.mouse.move(10, 10)
+            time.sleep(0.25)
             before = row_bg()
             page.hover("#set-rows .set-row")
             time.sleep(0.25)
@@ -310,6 +312,27 @@ def main() -> None:
             before = row_order()
             drag_row(1, 2)
             check("drag bloqueado en readonly", row_order() == before)
+
+            # Q. panel compacto: crece con el contenido y se topa en 18 filas con scroll
+            def scroll_metrics():
+                return page.evaluate(
+                    '(() => { const w = document.querySelector("#session-editor .table-scroll"); '
+                    'return { client: w.clientHeight, scroll: w.scrollHeight, max: w.style.maxHeight, rows: document.querySelectorAll("#set-rows .set-row").length }; })()'
+                )
+            m = scroll_metrics()
+            check(f"panel con pocas filas sin scroll (rows={m['rows']}, scroll<=client)", m["scroll"] <= m["client"])
+            page.click(".edit-toggle")
+            for _ in range(17):
+                page.click("#set-rows .set-row:nth-child(1) .row-actions button:nth-child(2)")
+            m = scroll_metrics()
+            check(f"19+ filas -> scroll vertical interno ({m['rows']} rows, {m['scroll']}>{m['client']}, max={m['max']})", m["rows"] >= 19 and m["scroll"] > m["client"])
+            max_px = float(m["max"].replace("px", ""))
+            row_px = page.evaluate('document.querySelector("#set-rows .set-row").offsetHeight')
+            check(f"max-height = thead + 18 filas ({max_px:.0f}px ≈ 18*{row_px})", abs(max_px - (18 * row_px)) <= 40)
+            page.click("#edit-actions button:not([type=submit])")
+            time.sleep(0.8)
+            m = scroll_metrics()
+            check(f"tras cancelar vuelve al alto de contenido ({m['rows']} rows, sin scroll)", m["scroll"] <= m["client"])
 
             browser.close()
     finally:
