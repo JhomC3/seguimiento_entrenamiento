@@ -1,0 +1,48 @@
+<div class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-2.5 neon-border metallic-border">
+    <h3 class="text-xs font-black tracking-[0.2em] text-burgundy-400 uppercase text-center pb-2 border-b border-neutral-800 neon-title">Plantillas</h3>
+    {% if not plantillas %}
+    <p class="text-[11px] text-neutral-500 text-center">Aún no hay plantillas.<br>Guarda un entreno desde el editor.</p>
+    {% else %}
+    {% for p in plantillas %}
+    <div class="bg-matte-950 border border-neutral-800 rounded-lg p-2 flex flex-col gap-1.5" id="pt-card-{{ p.id }}">
+        <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-bold text-neutral-200 truncate">{{ p.nombre }}</span>
+            <span class="cls-badge cls-{{ p.clasificacion.lower().replace(' ', '-') }}">{{ p.clasificacion }}</span>
+        </div>
+        <div class="flex items-center justify-between gap-2">
+            <span class="text-[10px] text-neutral-500 truncate">
+                {%- for ej in p.ejercicios[:2] %}{{ ej }}{% if not loop.last %}, {% endif %}{% endfor -%}
+                {% if p.ejercicios|length > 2 %} +{{ p.ejercicios|length - 2 }} más{% endif %}
+            </span>
+        </div>
+        <div class="flex gap-1">
+            <button type="button" onclick="aplicarPlantilla({{ p.id }})" class="pt-btn pt-btn-burgundy flex-1">Aplicar</button>
+            <button type="button" onclick="editarPlantilla({{ p.id }})" class="pt-btn flex-1">Editar</button>
+            <button type="button" onclick="eliminarPlantilla({{ p.id }}, '{{ p.nombre }}')" class="pt-btn flex-1">Eliminar</button>
+        </div>
+        {% if editing_id == p.id %}
+        <form hx-post="/plantilla/editar/{{ p.id }}" hx-swap="none" class="flex flex-col gap-1.5 mt-1.5 pt-1.5 border-t border-neutral-800">
+            {% if error %}<p class="text-[10px] text-red-400">{{ error }}</p>{% endif %}
+            <input name="nombre" value="{{ p.nombre }}" class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 focus:outline-none transition-colors" placeholder="Nombre de la plantilla">
+            <div id="plantilla-edit-rows" class="flex flex-col gap-1">
+                {% for ej in p.ejercicios %}
+                <div class="pt-row flex gap-1 items-center">
+                    <select name="ejercicio" class="pt-select w-full appearance-none bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 focus:outline-none transition-colors">
+                        <option value="{{ ej }}" selected>{{ ej }}</option>
+                        {% for c in catalog %}{% if c != ej %}<option value="{{ c }}">{{ c }}</option>{% endif %}{% endfor %}
+                    </select>
+                    <button type="button" onclick="ptRemoveRow(this)" class="row-btn" title="Quitar ejercicio">−</button>
+                </div>
+                {% endfor %}
+            </div>
+            <button type="button" onclick="ptAddRow(this)" class="row-btn self-start" title="Agregar ejercicio">+</button>
+            <div class="flex gap-1">
+                <button type="submit" class="h-7 px-4 bg-black/70 hover:bg-neutral-900/70 backdrop-blur-sm text-white border border-neutral-800 text-xs rounded-lg transition-colors uppercase tracking-widest font-black">Guardar</button>
+                <button type="button" onclick="refreshPlantillas()" class="h-7 px-4 bg-black/70 hover:bg-neutral-900/70 backdrop-blur-sm text-neutral-300 border border-neutral-800 text-xs rounded-lg transition-colors uppercase tracking-widest font-black">Cancelar</button>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+</div>

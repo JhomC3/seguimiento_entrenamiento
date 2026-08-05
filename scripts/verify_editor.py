@@ -56,6 +56,12 @@ def main() -> None:
         if fecha_to_db(d) not in taken:
             iso_future2 = d.strftime("%Y-%m-%d")
             break
+    iso_future3 = ""
+    for delta in (3, 4, 5):
+        d = today + datetime.timedelta(days=delta)
+        if fecha_to_db(d) not in taken and d.strftime("%Y-%m-%d") != iso_future2:
+            iso_future3 = d.strftime("%Y-%m-%d")
+            break
     port = free_port()
 
     server_code = textwrap.dedent(f"""
@@ -63,7 +69,8 @@ def main() -> None:
         sys.path.insert(0, '{ROOT}')
         import app as appmod
         appmod.DB_PATH = '{db}'
-        from src.database import insert_exercise
+        from src.database import init_db, insert_exercise
+        init_db(appmod.DB_PATH)
         insert_exercise(appmod.DB_PATH, 'Press Repro', 'Pectoral', 'EMPUJE')
         insert_exercise(appmod.DB_PATH, 'Curl Repro', 'Biceps', 'TIRON')
         from src.training_service import save_session
@@ -144,7 +151,7 @@ def main() -> None:
             check(f"pasada vacía: 1 fila fallback (editmode={em()})", nrows() == 1 and em() == "0")
 
             # B. lápiz -> hover ilumina en pasada vacía
-            page.click("#session-editor .edit-toggle")
+            page.click(".pencil-btn")
             time.sleep(0.3)
             before = row_bg()
             page.hover("#set-rows .set-row")
@@ -164,7 +171,7 @@ def main() -> None:
             wait_fecha(iso_today)
 
             # E. hover en hoy CON datos con lápiz activo
-            page.click("#session-editor .edit-toggle")
+            page.click(".pencil-btn")
             time.sleep(0.3)
             before = row_bg()
             page.hover("#set-rows .set-row")
@@ -181,7 +188,7 @@ def main() -> None:
             check("dot aparece tras guardar", dot)
 
             # G. borrar sesión -> dot desaparece
-            page.click("#session-editor .edit-toggle")
+            page.click(".pencil-btn")
             time.sleep(0.3)
             page.evaluate("Array.from(document.querySelectorAll('#set-rows .set-row')).forEach(r => removeRow(r.querySelector('.row-btn')))")
             page.click("#edit-actions button[type=submit]")
@@ -231,12 +238,12 @@ def main() -> None:
             check(f"futura guardada sigue readonly al volver (editmode={em()})", em() == "0")
 
             # M. modal Guardar (lápiz off con cambios) persiste el cambio
-            page.click("#session-editor .edit-toggle")
+            page.click(".pencil-btn")
             time.sleep(0.3)
             page.fill('#session-form input[name="kg"]', "90")
             page.fill('#session-form input[name="reps"]', "5")
             page.fill('#session-form input[name="rir"]', "1")
-            page.click("#session-editor .edit-toggle")
+            page.click(".pencil-btn")
             time.sleep(0.3)
             check("modal al desactivar lápiz con cambios", modal())
             page.click("#confirm-save")
@@ -245,7 +252,7 @@ def main() -> None:
             check(f"modal Guardar persiste (kg={kg})", kg == "90" and em() == "0")
 
             # N. guardado con error -> botones se mantienen; corregido -> se ocultan
-            page.click("#session-editor .edit-toggle")
+            page.click(".pencil-btn")
             time.sleep(0.3)
             page.fill('#session-form input[name="kg"]', "95")
             page.fill('#session-form input[name="reps"]', "4")
@@ -324,7 +331,7 @@ def main() -> None:
             row_px = page.evaluate('document.querySelector("#set-rows .set-row").offsetHeight')
             check(f"altura fija = thead + 18 filas ({h_px:.0f}px ≈ 18*{row_px})", abs(h_px - (18 * row_px)) <= 40)
             check(f"panel con pocas filas sin scroll (rows={m['rows']}, scroll<=client)", m["scroll"] <= m["client"])
-            page.click(".edit-toggle")
+            page.click(".pencil-btn")
             for _ in range(16):
                 page.click("#set-rows .set-row:nth-child(1) .row-actions button:nth-child(2)")
             m = scroll_metrics()
@@ -337,6 +344,44 @@ def main() -> None:
             time.sleep(0.8)
             m = scroll_metrics()
             check(f"panel conserva sus dimensiones tras cancelar ({m['h']}, {m['rows']} rows)", m["h"] == f"{h_px:.0f}px" and m["scroll"] <= m["client"])
+
+            # R. plantillas: guardar como plantilla, aplicar, editar, eliminar
+            page.on("dialog", lambda d: d.accept())
+            nav(iso_future2)
+            page.click(".save-template-btn")
+            time.sleep(0.3)
+            sugg = page.input_value('#save-template-form input[name="nombre"]')
+            check(f"nombre sugerido por clasificación ({sugg})", sugg == "Torso")
+            page.fill('#save-template-form input[name="nombre"]', "Mi Torso")
+            page.click('#save-template-form button[type=submit]')
+            time.sleep(1.2)
+            sidebar_txt = page.evaluate("document.getElementById('plantillas-section').textContent")
+            check("plantilla guardada en sidebar (Mi Torso + badge TORSO)", "Mi Torso" in sidebar_txt and "TORSO" in sidebar_txt)
+            nav(iso_future3)
+            page.click("#pt-card-1 .pt-btn-burgundy")
+            time.sleep(1.0)
+            check(f"aplicar plantilla: editable ({em()})", em() == "1")
+            check("aplicar plantilla: filas con últimos valores", row_order() == ["Curl Repro", "Press Repro"])
+            kgs = page.evaluate('Array.from(document.querySelectorAll("#set-rows input[name=\\"kg\\"]")).map(i => i.value)')
+            check(f"aplicar plantilla: kg del último realizado ({kgs})", kgs == ["16", "80"])
+            page.click("#edit-actions button[type=submit]")
+            time.sleep(1.2)
+            check(f"sesión aplicada guardada en {iso_future3} (readonly={em()})", em() == "0")
+            dot = page.evaluate(f"!!document.querySelector('.date-num[data-iso=\"{iso_future3}\"] .date-dot')")
+            check("dot aparece en la fecha aplicada", dot)
+            page.click("#pt-card-1 .pt-btn:not(.pt-btn-burgundy)")
+            time.sleep(0.8)
+            page.fill('#pt-card-1 form input[name="nombre"]', "Mi Torso V2")
+            page.click('#pt-card-1 button[onclick="ptAddRow(this)"]')
+            page.select_option('#pt-card-1 .pt-row:last-child select', "Press Militar")
+            page.click('#pt-card-1 form button[type=submit]')
+            time.sleep(1.2)
+            sidebar_txt = page.evaluate("document.getElementById('plantillas-section').textContent")
+            check("plantilla editada (Mi Torso V2, +1 más)", "Mi Torso V2" in sidebar_txt and "+1 más" in sidebar_txt)
+            page.locator("#pt-card-1 .pt-btn").nth(2).click()
+            time.sleep(1.2)
+            sidebar_txt = page.evaluate("document.getElementById('plantillas-section').textContent")
+            check("plantilla eliminada (sidebar vacío)", "Aún no hay plantillas" in sidebar_txt)
 
             browser.close()
     finally:

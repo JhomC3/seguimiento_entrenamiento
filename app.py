@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import json
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -16,9 +17,18 @@ from src.charts import (
 from src.database import (
     backup_db,
     get_categories,
+    get_ejercicio_categoria,
     get_exercises_catalog,
+    get_plantillas,
     get_sets_by_fecha,
     insert_exercise,
+)
+from src.template_service import (
+    apply_template_rows,
+    delete_plantilla,
+    edit_template,
+    get_plantilla,
+    save_template,
 )
 from src.training_service import (
     calculate_cycle_week,
@@ -185,6 +195,21 @@ def _exercise_form_html(request: Request, *, error: str | None = None, success: 
         context={"categories": MUSCLE_CATEGORIES, "muscle_names": _muscle_names(), "error": error, "success": success},
     ).body.decode()
 
+def _plantillas_list_html(request: Request, *, editing_id: int | None = None, error: str | None = None) -> str:
+    return templates.TemplateResponse(
+        request=request,
+        name="plantillas_list.html",
+        context={
+            "plantillas": get_plantillas(DB_PATH),
+            "catalog": get_exercises_catalog(DB_PATH),
+            "editing_id": editing_id,
+            "error": error,
+        },
+    ).body.decode()
+
+def _plantillas_oob(html: str) -> str:
+    return f'<div id="plantillas-section" hx-swap-oob="outerHTML">{html}</div>'
+
 def _build_sets_from_form(ejercicios: list[str], kgs: list[str], reps: list[str], rirs: list[str]) -> list[dict]:
     sets = []
     for i, ejercicio in enumerate(ejercicios):
@@ -213,6 +238,8 @@ async def read_index(request: Request):
             "navigator_html": _navigator_html(request, fecha),
             "editor_html": _editor_html(request, fecha),
             "exercise_form_html": _exercise_form_html(request),
+            "plantillas_html": _plantillas_list_html(request),
+            "categoria_map_json": json.dumps(get_ejercicio_categoria(DB_PATH)),
         }
     )
 
@@ -286,6 +313,78 @@ async def ejercicio_nuevo(
     form_html = _exercise_form_html(request)
     return HTMLResponse(
         content=notice_success + f'<div id="exercise-create" hx-swap-oob="outerHTML">{form_html}</div>'
+    )
+
+@app.get("/plantillas", response_class=HTMLResponse)
+async def plantillas_view(request: Request, editar: int | None = Query(None)):
+    return HTMLResponse(content=_plantillas_list_html(request, editing_id=editar))
+
+@app.post("/plantilla/guardar", response_class=HTMLResponse)
+async def plantilla_guardar(
+    request: Request,
+    nombre: str = Form(...),
+    ejercicio: list[str] = Form(default=[]),
+):
+    try:
+        result = save_template(DB_PATH, nombre, ejercicio)
+    except ValueError as e:
+        notice_error = (
+            f'<div id="notice-container" hx-swap-oob="innerHTML">'
+            f'<div class="notice notice-error" data-dismiss="4500">{e}</div></div>'
+        )
+        return HTMLResponse(content=notice_error)
+    msg = "Plantilla actualizada." if result["updated"] else "Plantilla guardada."
+    notice = (
+        f'<div id="notice-container" hx-swap-oob="innerHTML">'
+        f'<div class="notice notice-success" data-dismiss="3000">{msg}</div></div>'
+    )
+    return HTMLResponse(content=notice + _plantillas_oob(_plantillas_list_html(request)))
+
+@app.post("/plantilla/editar/{plantilla_id}", response_class=HTMLResponse)
+async def plantilla_editar(
+    request: Request,
+    plantilla_id: int,
+    nombre: str = Form(...),
+    ejercicio: list[str] = Form(default=[]),
+):
+    try:
+        edit_template(DB_PATH, plantilla_id, nombre, ejercicio)
+    except ValueError as e:
+        html = _plantillas_list_html(request, editing_id=plantilla_id, error=str(e))
+        return HTMLResponse(content=_plantillas_oob(html))
+    notice = (
+        f'<div id="notice-container" hx-swap-oob="innerHTML">'
+        f'<div class="notice notice-success" data-dismiss="3000">Plantilla guardada.</div></div>'
+    )
+    return HTMLResponse(content=notice + _plantillas_oob(_plantillas_list_html(request)))
+
+@app.post("/plantilla/eliminar/{plantilla_id}", response_class=HTMLResponse)
+async def plantilla_eliminar(request: Request, plantilla_id: int):
+    delete_plantilla(DB_PATH, plantilla_id)
+    notice = (
+        f'<div id="notice-container" hx-swap-oob="innerHTML">'
+        f'<div class="notice notice-success" data-dismiss="3000">Plantilla eliminada.</div></div>'
+    )
+    return HTMLResponse(content=notice + _plantillas_oob(_plantillas_list_html(request)))
+
+@app.get("/plantilla/aplicar/{plantilla_id}", response_class=HTMLResponse)
+async def plantilla_aplicar(request: Request, plantilla_id: int, fecha: str = Query(...)):
+    try:
+        rows = apply_template_rows(DB_PATH, plantilla_id)
+    except ValueError as e:
+        notice_error = (
+            f'<div id="editor-notice" hx-swap-oob="innerHTML">'
+            f'<div class="notice notice-error" data-dismiss="4500">{e}</div></div>'
+        )
+        return HTMLResponse(content=notice_error)
+    editor = _editor_html(request, fecha, rows=rows, force_editable=True)
+    notice = (
+        f'<div id="editor-notice" hx-swap-oob="innerHTML">'
+        f'<div class="notice notice-success" data-dismiss="3000">Plantilla aplicada.</div></div>'
+    )
+    return HTMLResponse(
+        content=notice
+        + f'<div id="session-editor-wrap" hx-swap-oob="innerHTML">{editor}<div id="plantilla-applied" hidden></div></div>'
     )
 
 @app.get("/exportar/csv", response_class=Response)

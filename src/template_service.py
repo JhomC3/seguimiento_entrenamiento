@@ -1,0 +1,95 @@
+from src.database import (
+    delete_plantilla,
+    find_plantilla_by_nombre,
+    get_ejercicio_categoria,
+    get_last_session_sets,
+    get_plantilla,
+    get_plantillas,
+    insert_plantilla,
+    update_plantilla,
+)
+
+CLASSIFICATIONS = ["EMPUJE", "JALON", "PIERNA", "TORSO", "FULL BODY", "CORE", "SIN CLASIFICAR"]
+
+def classify_template(db_path: str, ejercicios: list[str]) -> str:
+    cats = {
+        get_ejercicio_categoria(db_path).get(str(ej).strip().lower())
+        for ej in ejercicios
+        if str(ej).strip()
+    }
+    cats.discard(None)
+    if not cats:
+        return "SIN CLASIFICAR"
+    has_empuje = "EMPUJE" in cats
+    has_tiron = "TIRON" in cats
+    has_pierna = "PIERNA" in cats
+    if has_pierna and (has_empuje or has_tiron):
+        return "FULL BODY"
+    if has_empuje and has_tiron:
+        return "TORSO"
+    if has_tiron:
+        return "JALON"
+    if has_empuje:
+        return "EMPUJE"
+    if has_pierna:
+        return "PIERNA"
+    return "CORE"
+
+def _clean_ejercicios(ejercicios: list[str]) -> list[str]:
+    cleaned = []
+    seen = set()
+    for ej in ejercicios:
+        name = str(ej).strip()
+        if not name or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        cleaned.append(name)
+    return cleaned
+
+def save_template(db_path: str, nombre: str, ejercicios: list[str]) -> dict:
+    nombre = str(nombre).strip()
+    ejercicios = _clean_ejercicios(ejercicios)
+    if not nombre:
+        raise ValueError("Debes ponerle nombre a la plantilla.")
+    if not ejercicios:
+        raise ValueError("La plantilla debe tener al menos un ejercicio.")
+    clasificacion = classify_template(db_path, ejercicios)
+    existing = find_plantilla_by_nombre(db_path, nombre)
+    if existing is not None:
+        update_plantilla(db_path, existing, nombre, clasificacion, ejercicios)
+        return {"id": existing, "nombre": nombre, "clasificacion": clasificacion, "updated": True}
+    pid = insert_plantilla(db_path, nombre, clasificacion, ejercicios)
+    return {"id": pid, "nombre": nombre, "clasificacion": clasificacion, "updated": False}
+
+def edit_template(db_path: str, plantilla_id: int, nombre: str, ejercicios: list[str]) -> dict:
+    nombre = str(nombre).strip()
+    ejercicios = _clean_ejercicios(ejercicios)
+    if not nombre:
+        raise ValueError("El nombre de la plantilla no puede estar vacío.")
+    if not ejercicios:
+        raise ValueError("La plantilla debe tener al menos un ejercicio.")
+    existing = find_plantilla_by_nombre(db_path, nombre)
+    if existing is not None and existing != plantilla_id:
+        raise ValueError(f"Ya existe una plantilla llamada '{nombre}'.")
+    clasificacion = classify_template(db_path, ejercicios)
+    update_plantilla(db_path, plantilla_id, nombre, clasificacion, ejercicios)
+    return {"id": plantilla_id, "nombre": nombre, "clasificacion": clasificacion}
+
+def apply_template_rows(db_path: str, plantilla_id: int) -> list[dict]:
+    plantilla = get_plantilla(db_path, plantilla_id)
+    if plantilla is None:
+        raise ValueError("La plantilla no existe.")
+    rows: list[dict] = []
+    for ej in plantilla["ejercicios"]:
+        sets = get_last_session_sets(db_path, ej)
+        if sets:
+            for s in sets:
+                rows.append({
+                    "ejercicio": s["ejercicio"],
+                    "kg": s["kg"],
+                    "reps": s["reps"],
+                    "rir": s["rir"],
+                })
+        else:
+            rows.append({"ejercicio": ej, "kg": "", "reps": "", "rir": ""})
+    return rows

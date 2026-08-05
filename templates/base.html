@@ -312,6 +312,58 @@
         .edit-toggle.off:hover {
             color: rgba(255, 255, 255, 0.7);
         }
+        .save-template-btn {
+            color: rgba(255, 255, 255, 0.5);
+        }
+        .save-template-btn:hover {
+            color: #e56d88;
+        }
+
+        /* Badges de clasificación de plantillas */
+        .cls-badge {
+            flex: none;
+            font-size: 9px;
+            font-weight: 900;
+            letter-spacing: 0.1em;
+            padding: 2px 6px;
+            border-radius: 6px;
+            border: 1px solid;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+        .cls-empuje { color: #e56d88; border-color: rgba(155, 27, 48, 0.55); background: rgba(155, 27, 48, 0.18); }
+        .cls-jalon { color: #7dd3fc; border-color: rgba(56, 189, 248, 0.35); background: rgba(56, 189, 248, 0.1); }
+        .cls-pierna { color: #6ee7b7; border-color: rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.1); }
+        .cls-torso { color: #c4b5fd; border-color: rgba(139, 92, 246, 0.35); background: rgba(139, 92, 246, 0.1); }
+        .cls-full-body { color: #fcd34d; border-color: rgba(245, 158, 11, 0.35); background: rgba(245, 158, 11, 0.1); }
+        .cls-core, .cls-sin-clasificar { color: #a3a3a3; border-color: rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.05); }
+
+        /* Botones de gestión de plantillas */
+        .pt-btn {
+            height: 22px;
+            padding: 0 8px;
+            border-radius: 6px;
+            border: 1px solid #262626;
+            background: #0a0a0a;
+            color: #a3a3a3;
+            font-size: 9px;
+            font-weight: 900;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all .15s;
+        }
+        .pt-btn:hover {
+            border-color: #9b1b30;
+            color: #e56d88;
+        }
+        .pt-btn-burgundy {
+            border-color: rgba(155, 27, 48, 0.55);
+            color: #e56d88;
+        }
+        .pt-btn-burgundy:hover {
+            background: rgba(155, 27, 48, 0.2);
+        }
 
         /* Modal de confirmación de cambios sin guardar */
         #confirm-modal {
@@ -385,11 +437,18 @@
 
     {% block content %}{% endblock %}
 
+    {% if categoria_map_json %}
+    <script>
+        const CATEGORIA_MAP = {{ categoria_map_json | safe }};
+    </script>
+    {% endif %}
+
     <script>
         let pendingNav = null;
         let confirmCbs = null;
         let saveRequested = false;
         let sortableRows = null;
+        let plantillaAppliedPending = false;
 
         function scheduleNotices() {
             document.querySelectorAll('.notice:not(.scheduled)').forEach(function (el) {
@@ -583,6 +642,115 @@
             if (sortableRows) sortableRows.option('disabled', editorEditmode() !== '1');
         }
 
+        /* ---------- Plantillas ---------- */
+        function currentFecha() {
+            if (typeof currentIso !== 'undefined' && currentIso) return currentIso;
+            const form = document.getElementById('session-form');
+            const input = form && form.querySelector('input[name="fecha"]');
+            return input ? input.value : '';
+        }
+
+        function aplicarPlantilla(id) {
+            const fecha = currentFecha();
+            if (!fecha) return;
+            htmx.ajax('GET', `/plantilla/aplicar/${id}?fecha=${fecha}`, { target: '#session-editor-wrap', swap: 'none' });
+        }
+
+        function eliminarPlantilla(id, nombre) {
+            if (!confirm(`¿Eliminar la plantilla "${nombre}"?`)) return;
+            htmx.ajax('POST', `/plantilla/eliminar/${id}`, { target: 'body', swap: 'none' });
+        }
+
+        function editarPlantilla(id) {
+            htmx.ajax('GET', `/plantillas?editar=${id}`, { target: '#plantillas-section', swap: 'innerHTML' });
+        }
+
+        function refreshPlantillas() {
+            htmx.ajax('GET', '/plantillas', { target: '#plantillas-section', swap: 'innerHTML' });
+        }
+
+        function suggestedTemplateName() {
+            const cats = new Set();
+            const seen = new Set();
+            document.querySelectorAll('#set-rows .ej-select').forEach(sel => {
+                const v = sel.value.trim();
+                if (!v || seen.has(v.toLowerCase())) return;
+                seen.add(v.toLowerCase());
+                const c = CATEGORIA_MAP[v.toLowerCase()];
+                if (c) cats.add(c.toUpperCase());
+            });
+            if (!cats.size) return '';
+            const hE = cats.has('EMPUJE'), hT = cats.has('TIRON'), hP = cats.has('PIERNA');
+            if (hP && (hE || hT)) return 'Full Body';
+            if (hE && hT) return 'Torso';
+            if (hT) return 'Jalón';
+            if (hE) return 'Empuje';
+            if (hP) return 'Pierna';
+            return 'Core';
+        }
+
+        function syncTemplateEjercicios() {
+            const wrap = document.getElementById('save-template-form-wrap');
+            const form = wrap && document.getElementById('save-template-form');
+            if (!form || wrap.classList.contains('hidden')) return;
+            form.querySelectorAll('input[name="ejercicio"]').forEach(el => el.remove());
+            const seen = new Set();
+            document.querySelectorAll('#set-rows .ej-select').forEach(sel => {
+                const v = sel.value.trim();
+                if (!v || seen.has(v.toLowerCase())) return;
+                seen.add(v.toLowerCase());
+                const inp = document.createElement('input');
+                inp.type = 'hidden';
+                inp.name = 'ejercicio';
+                inp.value = v;
+                form.appendChild(inp);
+            });
+        }
+
+        function guardarPlantillaToggle(force) {
+            const wrap = document.getElementById('save-template-form-wrap');
+            if (!wrap) return;
+            if (force === false) { wrap.classList.add('hidden'); return; }
+            if (wrap.classList.contains('hidden')) {
+                const input = wrap.querySelector('input[name="nombre"]');
+                if (input && !input.value) input.value = suggestedTemplateName();
+                wrap.classList.remove('hidden');
+                syncTemplateEjercicios();
+                if (input) input.focus();
+            } else {
+                wrap.classList.add('hidden');
+            }
+        }
+
+        function ptAddRow(btn) {
+            const container = document.getElementById('plantilla-edit-rows');
+            const first = container && container.querySelector('.pt-row');
+            if (!container || !first) return;
+            const clone = first.cloneNode(true);
+            clone.querySelector('.pt-select').value = '';
+            container.appendChild(clone);
+        }
+
+        function ptRemoveRow(btn) {
+            const container = document.getElementById('plantilla-edit-rows');
+            if (!container || container.querySelectorAll('.pt-row').length <= 1) return;
+            btn.closest('.pt-row').remove();
+        }
+
+        function initTemplateSortable() {
+            const container = document.getElementById('plantilla-edit-rows');
+            if (!container || typeof Sortable === 'undefined') return;
+            if (container.dataset.sortableReady) return;
+            container.dataset.sortableReady = '1';
+            Sortable.create(container, {
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                chosenClass: 'sortable-chosen',
+                filter: 'input, select, button',
+                preventOnFilter: false,
+            });
+        }
+
         /* ---------- Guardar ---------- */
         function submitSave() {
             const form = document.getElementById('session-form');
@@ -677,16 +845,43 @@
         document.body.addEventListener('htmx:afterSwap', function (e) {
             scheduleNotices();
             handleEditorState();
-            if (e.detail && e.detail.target && e.detail.target.id === 'session-editor-wrap') {
-                syncEditorFromContent();
-                initRowSortable();
-                fitRowsToPanel();
+            if (e.detail && e.detail.target) {
+                if (e.detail.target.id === 'session-editor-wrap') {
+                    syncEditorFromContent();
+                    if (document.getElementById('plantilla-applied')) {
+                        document.getElementById('plantilla-applied').remove();
+                        plantillaAppliedPending = true;
+                    }
+                    initRowSortable();
+                    fitRowsToPanel();
+                } else if (e.detail.target.id === 'plantillas-section') {
+                    initTemplateSortable();
+                }
+            }
+        });
+
+        document.body.addEventListener('htmx:afterSettle', function (e) {
+            if (!plantillaAppliedPending) return;
+            const target = e.detail && e.detail.target;
+            if (target && (target.id === 'session-editor-wrap' || target === document.body)) {
+                plantillaAppliedPending = false;
+                const editor = document.getElementById('session-editor');
+                if (editor) {
+                    editor.dataset.baseline = '';
+                    updateEditActions();
+                }
             }
         });
 
         document.body.addEventListener('htmx:afterRequest', function (e) {
             scheduleNotices();
             handleEditorState();
+            const ptForm = e.detail && e.detail.elt && e.detail.elt.closest
+                ? e.detail.elt.closest('#save-template-form')
+                : null;
+            if (ptForm && e.detail.successful) {
+                guardarPlantillaToggle(false);
+            }
             if (saveRequested) {
                 saveRequested = false;
                 const outcome = document.getElementById('save-outcome');
@@ -719,10 +914,16 @@
         });
 
         document.addEventListener('input', function (e) {
-            if (e.target.closest('#session-form')) updateEditActions();
+            if (e.target.closest('#session-form')) {
+                updateEditActions();
+                syncTemplateEjercicios();
+            }
         });
         document.addEventListener('change', function (e) {
-            if (e.target.closest('#session-form')) updateEditActions();
+            if (e.target.closest('#session-form')) {
+                updateEditActions();
+                syncTemplateEjercicios();
+            }
         });
     </script>
 </body>

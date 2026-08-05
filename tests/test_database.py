@@ -11,6 +11,8 @@ def test_init_db_creates_tables(tmp_path):
     table_names = [t[0] for t in tables]
     assert "ejercicios" in table_names
     assert "training_sets" in table_names
+    assert "plantillas" in table_names
+    assert "plantilla_sets" in table_names
     conn.close()
 
 def test_init_db_creates_new_columns(tmp_path):

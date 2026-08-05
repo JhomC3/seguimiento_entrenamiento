@@ -48,6 +48,21 @@ def init_db(db_path: str) -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_training_semana ON training_sets(semana);
             CREATE INDEX IF NOT EXISTS idx_training_ejercicio ON training_sets(ejercicio);
+            CREATE TABLE IF NOT EXISTS plantillas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT NOT NULL UNIQUE,
+                clasificacion TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS plantilla_sets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plantilla_id INTEGER NOT NULL,
+                set_orden INTEGER NOT NULL,
+                ejercicio TEXT NOT NULL,
+                FOREIGN KEY (plantilla_id) REFERENCES plantillas(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_plantilla_sets ON plantilla_sets(plantilla_id);
         """)
         conn.commit()
         if "origen" not in _table_columns(conn, "training_sets"):
@@ -224,3 +239,153 @@ def delete_session(db_path: str, semana: int, dia: str, fecha: str) -> int:
         return cur.rowcount
     finally:
         conn.close()
+
+def _plantilla_sets(conn: sqlite3.Connection, plantilla_id: int) -> list[str]:
+    return [r[0] for r in conn.execute(
+        "SELECT ejercicio FROM plantilla_sets WHERE plantilla_id = ? ORDER BY set_orden",
+        (plantilla_id,),
+    ).fetchall()]
+
+def get_plantillas(db_path: str) -> list[dict]:
+    if not os.path.exists(db_path):
+        return []
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT id, nombre, clasificacion, updated_at FROM plantillas ORDER BY nombre"
+        ).fetchall()
+        return [
+            {
+                "id": r[0],
+                "nombre": r[1],
+                "clasificacion": r[2],
+                "updated_at": r[3],
+                "ejercicios": _plantilla_sets(conn, r[0]),
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+def get_plantilla(db_path: str, plantilla_id: int) -> dict | None:
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT id, nombre, clasificacion, updated_at FROM plantillas WHERE id = ?",
+            (plantilla_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0],
+            "nombre": row[1],
+            "clasificacion": row[2],
+            "updated_at": row[3],
+            "ejercicios": _plantilla_sets(conn, row[0]),
+        }
+    finally:
+        conn.close()
+
+def find_plantilla_by_nombre(db_path: str, nombre: str) -> int | None:
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT id FROM plantillas WHERE LOWER(nombre) = LOWER(?)", (nombre,)
+        ).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+def insert_plantilla(db_path: str, nombre: str, clasificacion: str, ejercicios: list[str]) -> int:
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = sqlite3.connect(db_path)
+    try:
+        with conn:
+            cur = conn.execute(
+                "INSERT INTO plantillas (nombre, clasificacion, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?)",
+                (nombre, clasificacion, now, now),
+            )
+            pid = cur.lastrowid
+            for idx, ej in enumerate(ejercicios, start=1):
+                conn.execute(
+                    "INSERT INTO plantilla_sets (plantilla_id, set_orden, ejercicio) VALUES (?, ?, ?)",
+                    (pid, idx, ej),
+                )
+        return pid
+    finally:
+        conn.close()
+
+def update_plantilla(db_path: str, plantilla_id: int, nombre: str, clasificacion: str, ejercicios: list[str]) -> None:
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = sqlite3.connect(db_path)
+    try:
+        with conn:
+            conn.execute(
+                "UPDATE plantillas SET nombre = ?, clasificacion = ?, updated_at = ? WHERE id = ?",
+                (nombre, clasificacion, now, plantilla_id),
+            )
+            conn.execute("DELETE FROM plantilla_sets WHERE plantilla_id = ?", (plantilla_id,))
+            for idx, ej in enumerate(ejercicios, start=1):
+                conn.execute(
+                    "INSERT INTO plantilla_sets (plantilla_id, set_orden, ejercicio) VALUES (?, ?, ?)",
+                    (plantilla_id, idx, ej),
+                )
+    finally:
+        conn.close()
+
+def delete_plantilla(db_path: str, plantilla_id: int) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
+        with conn:
+            conn.execute("DELETE FROM plantilla_sets WHERE plantilla_id = ?", (plantilla_id,))
+            conn.execute("DELETE FROM plantillas WHERE id = ?", (plantilla_id,))
+    finally:
+        conn.close()
+
+def get_ejercicio_categoria(db_path: str) -> dict[str, str]:
+    if not os.path.exists(db_path):
+        return {}
+    conn = sqlite3.connect(db_path)
+    try:
+        return {
+            str(r[0]).strip().lower(): (r[1] or "").upper()
+            for r in conn.execute("SELECT ejercicio, categoria FROM ejercicios WHERE categoria IS NOT NULL AND categoria != ''")
+        }
+    finally:
+        conn.close()
+
+def get_last_session_sets(db_path: str, ejercicio: str) -> list[dict]:
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT fecha FROM training_sets WHERE LOWER(ejercicio) = LOWER(?) AND fecha IS NOT NULL",
+            (ejercicio,),
+        ).fetchall()
+    finally:
+        conn.close()
+    latest: str | None = None
+    latest_dt = None
+    for (f,) in rows:
+        try:
+            dt = _parse_fecha(f)
+        except ValueError:
+            continue
+        if latest_dt is None or dt > latest_dt:
+            latest_dt = dt
+            latest = f
+    if latest is None:
+        return []
+    conn = sqlite3.connect(db_path)
+    try:
+        set_rows = conn.execute(
+            "SELECT ejercicio, set_orden, reps, kg, rir FROM training_sets "
+            "WHERE LOWER(ejercicio) = LOWER(?) AND fecha = ? ORDER BY set_orden",
+            (ejercicio, latest),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [
+        {"ejercicio": r[0], "set_orden": r[1], "reps": r[2], "kg": r[3], "rir": r[4]}
+        for r in set_rows
+    ]
