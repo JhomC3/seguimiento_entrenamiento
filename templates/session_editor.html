@@ -8,7 +8,7 @@
         <div class="flex items-center gap-2">
             <button
                 type="button"
-                onclick="enableEdit()"
+                onclick="toggleEdit()"
                 class="edit-toggle {% if readonly %}off{% else %}on{% endif %}"
                 aria-label="Editar sesión"
             >
@@ -84,65 +84,18 @@
             </table>
         </div>
 
-        <div id="edit-actions" class="h-8 flex items-center gap-2 {% if readonly %}invisible{% endif %}">
+        <div id="edit-actions" class="h-8 flex items-center gap-2 hidden">
             <button
                 type="submit"
-                class="h-8 px-5 bg-black hover:bg-neutral-900 text-white border border-neutral-800 text-xs rounded-lg transition-all uppercase tracking-widest font-black"
+                class="h-8 px-5 bg-black hover:bg-neutral-900 text-white border border-neutral-800 text-xs rounded-lg transition-colors uppercase tracking-widest font-black"
             >Guardar</button>
-            {% if readonly %}
             <button
                 type="button"
                 hx-get="/fecha/editor?fecha={{ fecha_iso }}"
                 hx-target="#session-editor-wrap"
                 hx-swap="innerHTML"
-                class="h-8 px-4 bg-black hover:bg-neutral-900 text-neutral-300 border border-neutral-800 text-xs rounded-lg transition-all uppercase tracking-widest font-black"
+                class="h-8 px-4 bg-black hover:bg-neutral-900 text-neutral-300 border border-neutral-800 text-xs rounded-lg transition-colors uppercase tracking-widest font-black"
             >Cancelar</button>
-            {% endif %}
         </div>
     </form>
 </div>
-
-<script>
-    function editorEditmode() {
-        return document.getElementById('session-editor')?.dataset.editmode;
-    }
-
-    function enableEdit() {
-        if (editorEditmode() === '1') return;
-        const form = document.getElementById('session-form');
-        form.querySelectorAll('input, select').forEach(el => { el.disabled = false; });
-        form.querySelectorAll('.row-actions').forEach(el => { el.classList.remove('hidden'); el.hidden = false; });
-        const editor = document.getElementById('session-editor');
-        if (editor) editor.dataset.editmode = '1';
-        const st = document.getElementById('editor-state');
-        if (st) st.dataset.readonly = '0';
-        const pencil = document.querySelector('#session-editor .edit-toggle');
-        if (pencil) {
-            pencil.classList.remove('off');
-            pencil.classList.add('on');
-        }
-        document.getElementById('edit-actions').classList.remove('invisible');
-    }
-
-    function addRowAfter(btn) {
-        if (editorEditmode() !== '1') return;
-        const row = btn.closest('.set-row');
-        const clone = row.cloneNode(true);
-        clone.querySelector('.ej-select').value = '';
-        clone.querySelectorAll('input').forEach(input => { input.value = ''; });
-        row.after(clone);
-        renumberRows();
-    }
-
-    function removeRow(btn) {
-        if (editorEditmode() !== '1') return;
-        btn.closest('.set-row').remove();
-        renumberRows();
-    }
-
-    function renumberRows() {
-        document.querySelectorAll('#set-rows .set-row').forEach((row, i) => {
-            row.querySelector('.set-num').textContent = i + 1;
-        });
-    }
-</script>

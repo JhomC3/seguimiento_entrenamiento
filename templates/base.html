@@ -283,13 +283,51 @@
         .edit-toggle.off:hover {
             color: rgba(255, 255, 255, 0.7);
         }
+
+        /* Modal de confirmación de cambios sin guardar */
+        #confirm-modal {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            z-index: 60;
+        }
+        #confirm-modal .confirm-card {
+            background: #121212;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 18px 20px;
+            width: min(380px, calc(100vw - 40px));
+            box-shadow: 0 0 24px rgba(155, 27, 48, 0.25);
+        }
+        #confirm-modal.hidden {
+            display: none;
+        }
     </style>
 </head>
 <body class="bg-matte-950 text-neutral-100 min-h-screen font-sans antialiased selection:bg-burgundy-700 selection:text-white">
     <div id="notice-container"></div>
+
+    <div id="confirm-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Cambios sin guardar">
+        <div class="confirm-card flex flex-col gap-4">
+            <p id="confirm-msg" class="text-sm text-neutral-200">¿Guardar los cambios?</p>
+            <div class="flex justify-end gap-2">
+                <button type="button" id="confirm-cancel" class="h-8 px-4 bg-black hover:bg-neutral-900 text-neutral-300 border border-neutral-800 text-xs rounded-lg transition-colors uppercase tracking-widest font-black">Cancelar</button>
+                <button type="button" id="confirm-save" class="h-8 px-5 bg-burgundy-700 hover:bg-burgundy-600 text-white text-xs rounded-lg transition-colors uppercase tracking-widest font-black">Guardar</button>
+            </div>
+        </div>
+    </div>
+
     {% block content %}{% endblock %}
 
     <script>
+        let pendingNav = null;
+        let confirmCbs = null;
+
         function scheduleNotices() {
             document.querySelectorAll('.notice:not(.scheduled)').forEach(function (el) {
                 el.classList.add('scheduled');
@@ -299,6 +337,51 @@
                     setTimeout(function () { el.remove(); }, 450);
                 }, delay);
             });
+        }
+
+        /* ---------- Modal de confirmación ---------- */
+        function showConfirmDialog(onSave, onDiscard) {
+            confirmCbs = { onSave, onDiscard };
+            document.getElementById('confirm-modal').classList.remove('hidden');
+        }
+
+        function hideConfirmDialog() {
+            document.getElementById('confirm-modal').classList.add('hidden');
+            confirmCbs = null;
+        }
+
+        /* ---------- Estado del editor ---------- */
+        function editorEditmode() {
+            return document.getElementById('session-editor')?.dataset.editmode;
+        }
+
+        function serializeForm() {
+            const form = document.getElementById('session-form');
+            if (!form) return '[]';
+            const rows = Array.from(form.querySelectorAll('#set-rows .set-row')).map(row => {
+                const sel = row.querySelector('.ej-select');
+                const inputs = Array.from(row.querySelectorAll('input')).map(i => i.value);
+                return [sel ? sel.value : '', ...inputs];
+            });
+            return JSON.stringify(rows);
+        }
+
+        function captureBaseline() {
+            const editor = document.getElementById('session-editor');
+            if (editor) editor.dataset.baseline = serializeForm();
+        }
+
+        function isDirty() {
+            const editor = document.getElementById('session-editor');
+            if (!editor || editor.dataset.baseline === undefined) return false;
+            return editor.dataset.baseline !== serializeForm();
+        }
+
+        function updateEditActions() {
+            const actions = document.getElementById('edit-actions');
+            if (!actions) return;
+            const show = editorEditmode() === '1' && isDirty();
+            actions.classList.toggle('hidden', !show);
         }
 
         function setPanelReadonly() {
@@ -314,7 +397,8 @@
                 pencil.classList.add('off');
             }
             const actions = document.getElementById('edit-actions');
-            if (actions) actions.classList.add('invisible');
+            if (actions) actions.classList.add('hidden');
+            captureBaseline();
         }
 
         function handleEditorState() {
@@ -322,14 +406,152 @@
             if (st && st.dataset.readonly === '1') setPanelReadonly();
         }
 
-        document.addEventListener('DOMContentLoaded', scheduleNotices);
-        document.body.addEventListener('htmx:afterSwap', function () {
-            scheduleNotices();
-            handleEditorState();
+        function enterEditMode() {
+            if (editorEditmode() === '1') return;
+            const form = document.getElementById('session-form');
+            if (!form) return;
+            form.querySelectorAll('input, select').forEach(el => { el.disabled = false; });
+            form.querySelectorAll('.row-actions').forEach(el => { el.classList.remove('hidden'); el.hidden = false; });
+            const editor = document.getElementById('session-editor');
+            if (editor) editor.dataset.editmode = '1';
+            const st = document.getElementById('editor-state');
+            if (st) st.dataset.readonly = '0';
+            const pencil = document.querySelector('#session-editor .edit-toggle');
+            if (pencil) {
+                pencil.classList.remove('off');
+                pencil.classList.add('on');
+            }
+            captureBaseline();
+            updateEditActions();
+        }
+
+        function exitEditMode() {
+            const editor = document.getElementById('session-editor');
+            const fecha = editor?.querySelector('#session-form input[name="fecha"]')?.value;
+            if (isDirty()) {
+                showConfirmDialog(
+                    function () { submitSave(); },
+                    function () { doNav(fecha || '', true); }
+                );
+            } else {
+                doNav(fecha || '', true);
+            }
+        }
+
+        function toggleEdit() {
+            if (editorEditmode() === '1') {
+                exitEditMode();
+            } else {
+                enterEditMode();
+            }
+        }
+
+        /* ---------- Filas ---------- */
+        function addRowAfter(btn) {
+            if (editorEditmode() !== '1') return;
+            const row = btn.closest('.set-row');
+            const clone = row.cloneNode(true);
+            clone.querySelector('.ej-select').value = '';
+            clone.querySelectorAll('input').forEach(input => { input.value = ''; });
+            row.after(clone);
+            renumberRows();
+            updateEditActions();
+        }
+
+        function removeRow(btn) {
+            if (editorEditmode() !== '1') return;
+            btn.closest('.set-row').remove();
+            renumberRows();
+            updateEditActions();
+        }
+
+        function renumberRows() {
+            document.querySelectorAll('#set-rows .set-row').forEach((row, i) => {
+                row.querySelector('.set-num').textContent = i + 1;
+            });
+        }
+
+        /* ---------- Guardar ---------- */
+        function submitSave() {
+            const form = document.getElementById('session-form');
+            if (form) form.requestSubmit();
+        }
+
+        /* ---------- Navegación entre fechas ---------- */
+        function doNav(iso, force) {
+            if (!iso) return;
+            if (force) {
+                pendingNav = null;
+            } else if (pendingNav) {
+                return;
+            }
+            const actions = document.getElementById('edit-actions');
+            if (actions) actions.classList.add('hidden');
+            if (typeof currentIso !== 'undefined') currentIso = iso;
+            document.querySelectorAll('.date-num.selected').forEach(b => b.classList.remove('selected'));
+            const btn = document.querySelector(`.date-num[data-iso="${iso}"]`);
+            if (btn) btn.classList.add('selected');
+            htmx.ajax('GET', `/fecha/editor?fecha=${iso}`, { target: '#session-editor-wrap', swap: 'innerHTML' });
+            if (btn) btn.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+        }
+
+        function requestNavigate(iso) {
+            if (isDirty()) {
+                pendingNav = iso;
+                showConfirmDialog(
+                    function () { submitSave(); },
+                    function () { doNav(iso, true); }
+                );
+            } else {
+                doNav(iso);
+            }
+        }
+
+        /* ---------- Eventos ---------- */
+        document.getElementById('confirm-cancel').addEventListener('click', function () {
+            const cbs = confirmCbs;
+            hideConfirmDialog();
+            if (cbs && cbs.onDiscard) cbs.onDiscard();
         });
-        document.body.addEventListener('htmx:afterRequest', function () {
+        document.getElementById('confirm-save').addEventListener('click', function () {
+            const cbs = confirmCbs;
+            hideConfirmDialog();
+            if (cbs && cbs.onSave) cbs.onSave();
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+            scheduleNotices();
+            captureBaseline();
+            updateEditActions();
+        });
+
+        document.body.addEventListener('htmx:afterSwap', function (e) {
             scheduleNotices();
             handleEditorState();
+            if (e.detail && e.detail.target && e.detail.target.id === 'session-editor-wrap') {
+                captureBaseline();
+                updateEditActions();
+            }
+        });
+
+        document.body.addEventListener('htmx:afterRequest', function (e) {
+            scheduleNotices();
+            handleEditorState();
+            const elt = e.detail && e.detail.elt;
+            if (elt && elt.id === 'session-form' && e.detail.successful) {
+                if (pendingNav) {
+                    const target = pendingNav;
+                    pendingNav = null;
+                    setTimeout(function () { doNav(target, true); }, 50);
+                }
+            }
+        });
+
+        document.addEventListener('input', function (e) {
+            if (e.target.closest('#session-form')) updateEditActions();
+        });
+        document.addEventListener('change', function (e) {
+            if (e.target.closest('#session-form')) updateEditActions();
         });
     </script>
 </body>

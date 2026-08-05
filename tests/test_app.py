@@ -25,6 +25,8 @@ def test_saved_today_is_readonly(tmp_path, monkeypatch):
     assert 'duration-150 hidden"' in r.text
     assert 'data-readonly="1"' in r.text
     assert 'data-editmode="0"' in r.text
+    assert 'id="edit-actions" class="h-8 flex items-center gap-2 hidden"' in r.text
+    assert ">Cancelar</button>" in r.text
 
 def test_saved_future_is_readonly(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
@@ -43,6 +45,8 @@ def test_empty_future_is_editable(tmp_path, monkeypatch):
     assert 'duration-150 hidden"' not in r.text
     assert 'data-readonly="0"' in r.text
     assert 'data-editmode="1"' in r.text
+    assert 'id="edit-actions" class="h-8 flex items-center gap-2 hidden"' in r.text
+    assert ">Cancelar</button>" in r.text
 
 def test_empty_today_is_editable(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)

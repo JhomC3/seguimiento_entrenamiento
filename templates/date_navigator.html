@@ -7,9 +7,6 @@
             <button
                 type="button"
                 data-iso="{{ d.iso }}"
-                hx-get="/fecha/editor?fecha={{ d.iso }}"
-                hx-target="#session-editor-wrap"
-                hx-swap="innerHTML"
                 onclick="selectDate(this, '{{ d.iso }}')"
                 class="date-num {% if d.selected %}selected{% endif %}"
                 title="{{ d.iso }}"
@@ -30,9 +27,7 @@
     let currentIso = '{{ selected_iso }}';
 
     function selectDate(btn, iso) {
-        currentIso = iso;
-        document.querySelectorAll('.date-num.selected').forEach(b => b.classList.remove('selected'));
-        btn.classList.add('selected');
+        requestNavigate(iso);
     }
 
     function scrollDates(dir) {
@@ -42,14 +37,7 @@
 
     function jumpDate(iso) {
         if (!iso) return;
-        currentIso = iso;
-        document.querySelectorAll('.date-num.selected').forEach(b => b.classList.remove('selected'));
-        htmx.ajax('GET', `/fecha/editor?fecha=${iso}`, { target: '#session-editor-wrap', swap: 'innerHTML' });
-        const btn = document.querySelector(`.date-num[data-iso="${iso}"]`);
-        if (btn) {
-            btn.classList.add('selected');
-            btn.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
-        }
+        requestNavigate(iso);
     }
 
     document.addEventListener('DOMContentLoaded', () => {
