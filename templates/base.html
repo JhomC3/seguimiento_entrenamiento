@@ -561,6 +561,11 @@
             }
         }
 
+        function fmtNum(v) {
+            const rounded = Math.round(v * 10) / 10;
+            return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+        }
+
         function recalcRM() {
             document.querySelectorAll('#set-rows .set-row').forEach(function (row) {
                 const kgEl = row.querySelector('input[name="kg"]');
@@ -573,7 +578,7 @@
                 const rirRaw = rirEl ? rirEl.value : '';
                 const rir = rirRaw ? parseFloat(rirRaw) : 0;
                 if (!isNaN(kg) && !isNaN(reps)) {
-                    cell.textContent = (kg * (1 + 0.0333 * (reps + 1 + rir))).toFixed(1);
+                    cell.textContent = fmtNum(kg * (1 + 0.0333 * (reps + 1 + rir)));
                 } else {
                     cell.textContent = '—';
                 }

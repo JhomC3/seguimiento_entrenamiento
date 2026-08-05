@@ -97,3 +97,22 @@ def test_save_invalid_returns_fail_marker(tmp_path, monkeypatch):
     assert 'id="editor-notice" hx-swap-oob="innerHTML"' in r.text
     assert "notice-error" in r.text
     assert 'data-ok="1"' not in r.text
+
+
+def test_save_empty_rir_returns_fail_marker(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = TestClient(appmod.app).post("/entrenamiento/session/save", data={
+        "fecha": _fecha(), "ejercicio": ["Press"], "kg": ["80"], "reps": ["8"], "rir": [""],
+    })
+    assert 'data-ok="0"' in r.text
+    assert "RIR" in r.text
+
+
+def test_save_zero_rir_succeeds(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = TestClient(appmod.app).post("/entrenamiento/session/save", data={
+        "fecha": _fecha(), "ejercicio": ["Press"], "kg": ["80"], "reps": ["8"], "rir": ["0"],
+    })
+    assert 'data-ok="1"' in r.text

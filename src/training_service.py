@@ -32,16 +32,14 @@ def fecha_from_db(fecha: str) -> date:
 def parse_form_date(fecha_iso: str) -> date:
     return datetime.strptime(fecha_iso, "%Y-%m-%d").date()
 
-def _validate_number(value, field: str, allow_none: bool = False) -> float | None:
+def _validate_number(value, field: str, *, allow_zero: bool = False) -> float:
     if value is None or str(value).strip() == "":
-        if allow_none:
-            return None
         raise ValueError(f"El campo {field} es obligatorio.")
     try:
         num = float(value)
     except (TypeError, ValueError):
         raise ValueError(f"El campo {field} debe ser numérico.")
-    if num <= 0 or num != num or num in (float("inf"), float("-inf")):
+    if num != num or num in (float("inf"), float("-inf")) or num < 0 or (num == 0 and not allow_zero):
         raise ValueError(f"El campo {field} debe ser un número positivo.")
     return num
 
@@ -58,9 +56,7 @@ def validate_sets(db_path: str, sets: list[dict]) -> list[dict]:
             raise ValueError(f"El ejercicio '{ejercicio}' no existe en el catálogo.")
         kg = _validate_number(raw.get("kg"), "peso (kg)")
         reps = _validate_number(raw.get("reps"), "repeticiones")
-        rir = _validate_number(raw.get("rir"), "RIR", allow_none=True)
-        if rir is not None and rir < 0:
-            raise ValueError("El RIR no puede ser negativo.")
+        rir = _validate_number(raw.get("rir"), "RIR", allow_zero=True)
         cleaned.append({
             "ejercicio": ejercicio,
             "kg": kg,

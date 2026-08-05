@@ -64,11 +64,11 @@
                         <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ r.serie }}</td>
                         <td class="py-2.5 px-3 text-neutral-400 whitespace-nowrap">{{ r.fecha }}</td>
                         <td class="py-2.5 px-3 text-neutral-400 whitespace-nowrap">{{ r.dia[:3] }}</td>
-                        <td class="py-2.5 px-3 font-bold text-white whitespace-nowrap">{{ "%.1f"|format(r.kg) }}</td>
-                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ r.reps|int }}</td>
-                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ "%.1f"|format(r.rir) if r.rir is not none else "—" }}</td>
-                        <td class="py-2.5 px-3 font-bold text-burgundy-400 whitespace-nowrap">{{ "%.1f"|format(r.rm) }}</td>
-                        <td class="py-2.5 px-3 font-bold text-burgundy-300 whitespace-nowrap">{{ "%.1f"|format(r.rm_ajustado) }}</td>
+                        <td class="py-2.5 px-3 font-bold text-white whitespace-nowrap">{{ "%g"|format(r.kg) }}</td>
+                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ "%g"|format(r.reps) }}</td>
+                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ "%g"|format(r.rir) if r.rir is not none else "—" }}</td>
+                        <td class="py-2.5 px-3 font-bold text-burgundy-400 whitespace-nowrap">{{ "%g"|format(r.rm) }}</td>
+                        <td class="py-2.5 px-3 font-bold text-burgundy-300 whitespace-nowrap">{{ "%g"|format(r.rm_ajustado) }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
