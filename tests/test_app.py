@@ -73,6 +73,7 @@ def test_index_uses_stable_card(tmp_path, monkeypatch):
     assert 'id="session-editor-wrap"' in r.text
     assert "rm-cell" in r.text
     assert 'id="save-outcome" data-ok="0" hidden' in r.text
+    assert '<div id="editor-notice"></div>' in r.text
 
 
 def test_save_valid_returns_ok_marker(tmp_path, monkeypatch):
@@ -82,6 +83,7 @@ def test_save_valid_returns_ok_marker(tmp_path, monkeypatch):
         "fecha": _fecha(), "ejercicio": ["Press"], "kg": ["80"], "reps": ["8"], "rir": ["1"],
     })
     assert 'id="save-outcome" hx-swap-oob="outerHTML" data-ok="1"' in r.text
+    assert 'id="editor-notice" hx-swap-oob="innerHTML"' in r.text
     assert "Entrenamiento guardado" in r.text
 
 
@@ -92,5 +94,6 @@ def test_save_invalid_returns_fail_marker(tmp_path, monkeypatch):
         "fecha": _fecha(), "ejercicio": [""], "kg": ["80"], "reps": ["8"], "rir": [""],
     })
     assert 'id="save-outcome" hx-swap-oob="outerHTML" data-ok="0"' in r.text
+    assert 'id="editor-notice" hx-swap-oob="innerHTML"' in r.text
     assert "notice-error" in r.text
     assert 'data-ok="1"' not in r.text

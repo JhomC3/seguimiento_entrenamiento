@@ -227,11 +227,16 @@ def main() -> None:
             page.click("#edit-actions button[type=submit]")
             time.sleep(1.2)
             actions_vis = page.evaluate("!document.getElementById('edit-actions').classList.contains('invisible')")
-            err = page.evaluate("!!document.querySelector('#notice-container .notice-error')")
+            err = page.evaluate("!!document.querySelector('#editor-notice .notice-error')")
             check(f"tras error de validación botones visibles ({actions_vis})", actions_vis)
             check("tras error de validación aviso de error visible", err)
             kg = page.evaluate("document.querySelector('#session-form input[name=\"kg\"]').value")
             check(f"datos fallidos conservados (kg={kg})", kg == "95")
+            panel_box = page.evaluate("document.getElementById('session-editor').getBoundingClientRect()")
+            notice_box = page.evaluate("document.querySelector('#editor-notice .notice-error').getBoundingClientRect()")
+            inside = panel_box["top"] <= notice_box["top"] + 2 and notice_box["bottom"] <= panel_box["bottom"] + 2
+            big = notice_box["height"] >= 32
+            check(f"aviso dentro del panel ({inside}) y tamaño mayor ({notice_box['height']:.0f}px)", inside and big)
             page.select_option('#session-form select[name="ejercicio"]', "Press Repro")
             page.click("#edit-actions button[type=submit]")
             time.sleep(1.2)

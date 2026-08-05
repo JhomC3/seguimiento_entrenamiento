@@ -54,7 +54,8 @@
             </section>
 
             <!-- Editor de sesión (tarjeta estable; el servidor solo intercambia el contenido) -->
-            <div id="session-editor" data-editmode="0" class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border">
+            <div id="session-editor" data-editmode="0" class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border relative">
+                <div id="editor-notice"></div>
                 <div id="save-outcome" data-ok="0" hidden></div>
                 <section id="session-editor-wrap">
                     {{ editor_html | safe }}

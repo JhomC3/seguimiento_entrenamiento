@@ -230,7 +230,7 @@ async def entrenamiento_session_save(
     rir: list[str] = Form(default=[]),
 ):
     sets = _build_sets_from_form(ejercicio, kg, reps, rir)
-    notice_success = ('<div id="notice-container" hx-swap-oob="innerHTML">'
+    notice_success = ('<div id="editor-notice" hx-swap-oob="innerHTML">'
                       '<div class="notice notice-success" data-dismiss="3000">Entrenamiento guardado.</div></div>')
     outcome_ok = '<div id="save-outcome" hx-swap-oob="outerHTML" data-ok="1" hidden></div>'
     outcome_fail = '<div id="save-outcome" hx-swap-oob="outerHTML" data-ok="0" hidden></div>'
@@ -249,7 +249,7 @@ async def entrenamiento_session_save(
         )
     except ValueError as e:
         notice_error = (
-            f'<div id="notice-container" hx-swap-oob="innerHTML">'
+            f'<div id="editor-notice" hx-swap-oob="innerHTML">'
             f'<div class="notice notice-error" data-dismiss="4500">{e}</div></div>'
         )
         return HTMLResponse(content=notice_error + outcome_fail)
