@@ -8,6 +8,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- HTMX CDN -->
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <!-- SortableJS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
     <!-- Plotly CDN -->
     <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
     <script>
@@ -339,6 +341,21 @@
         #session-editor[data-editmode="1"] .set-row:hover {
             background: rgba(255, 255, 255, 0.04);
         }
+
+        /* Drag and drop de filas (solo en modo editable) */
+        #session-editor[data-editmode="1"] .set-row {
+            cursor: grab;
+        }
+        #session-editor[data-editmode="1"] .set-row.sortable-chosen {
+            cursor: grabbing;
+        }
+        #session-editor .sortable-ghost {
+            opacity: 0.4;
+            background: rgba(155, 27, 48, 0.2);
+        }
+        #session-editor .sortable-chosen {
+            background: rgba(255, 255, 255, 0.06);
+        }
     </style>
 </head>
 <body class="bg-matte-950 text-neutral-100 min-h-screen font-sans antialiased selection:bg-burgundy-700 selection:text-white">
@@ -360,6 +377,7 @@
         let pendingNav = null;
         let confirmCbs = null;
         let saveRequested = false;
+        let sortableRows = null;
 
         function scheduleNotices() {
             document.querySelectorAll('.notice:not(.scheduled)').forEach(function (el) {
@@ -441,6 +459,7 @@
             const actions = document.getElementById('edit-actions');
             if (actions) actions.classList.add('invisible');
             captureBaseline();
+            syncSortableState();
         }
 
         function handleEditorState() {
@@ -465,6 +484,7 @@
             }
             captureBaseline();
             updateEditActions();
+            syncSortableState();
         }
 
         function exitEditMode() {
@@ -511,6 +531,29 @@
             document.querySelectorAll('#set-rows .set-row').forEach((row, i) => {
                 row.querySelector('.set-num').textContent = i + 1;
             });
+        }
+
+        /* ---------- Drag and drop de filas ---------- */
+        function initRowSortable() {
+            const tbody = document.getElementById('set-rows');
+            if (!tbody || typeof Sortable === 'undefined') return;
+            if (sortableRows) sortableRows.destroy();
+            sortableRows = Sortable.create(tbody, {
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                chosenClass: 'sortable-chosen',
+                filter: 'input, select, button',
+                preventOnFilter: false,
+                onEnd: function () {
+                    renumberRows();
+                    updateEditActions();
+                },
+            });
+            syncSortableState();
+        }
+
+        function syncSortableState() {
+            if (sortableRows) sortableRows.option('disabled', editorEditmode() !== '1');
         }
 
         /* ---------- Guardar ---------- */
@@ -600,6 +643,7 @@
         document.addEventListener('DOMContentLoaded', function () {
             scheduleNotices();
             syncEditorFromContent();
+            initRowSortable();
         });
 
         document.body.addEventListener('htmx:afterSwap', function (e) {
@@ -607,6 +651,7 @@
             handleEditorState();
             if (e.detail && e.detail.target && e.detail.target.id === 'session-editor-wrap') {
                 syncEditorFromContent();
+                initRowSortable();
             }
         });
 

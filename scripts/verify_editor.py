@@ -50,6 +50,12 @@ def main() -> None:
         if fecha_to_db(d) not in taken:
             iso_past = d.strftime("%Y-%m-%d")
             break
+    iso_future2 = ""
+    for delta in (2, 3, 4):
+        d = today + datetime.timedelta(days=delta)
+        if fecha_to_db(d) not in taken:
+            iso_future2 = d.strftime("%Y-%m-%d")
+            break
     port = free_port()
 
     server_code = textwrap.dedent(f"""
@@ -59,6 +65,7 @@ def main() -> None:
         appmod.DB_PATH = '{db}'
         from src.database import insert_exercise
         insert_exercise(appmod.DB_PATH, 'Press Repro', 'Pectoral', 'EMPUJE')
+        insert_exercise(appmod.DB_PATH, 'Curl Repro', 'Biceps', 'TIRON')
         from src.training_service import save_session
         import datetime
         save_session(appmod.DB_PATH, datetime.date.today().strftime('%Y-%m-%d'),
@@ -112,6 +119,21 @@ def main() -> None:
                     arg=iso, timeout=5000,
                 )
                 time.sleep(0.3)
+
+            def drag_row(src_idx: int, dst_idx: int) -> None:
+                sb = page.locator(f"#set-rows .set-row:nth-child({src_idx}) .set-num").bounding_box()
+                db = page.locator(f"#set-rows .set-row:nth-child({dst_idx}) .set-num").bounding_box()
+                page.mouse.move(sb["x"] + sb["width"] / 2, sb["y"] + sb["height"] / 2)
+                page.mouse.down()
+                page.mouse.move(db["x"] + db["width"] / 2, db["y"] + db["height"] / 2, steps=15)
+                time.sleep(0.3)
+                page.mouse.up()
+                time.sleep(0.5)
+
+            def row_order() -> list:
+                return page.evaluate(
+                    'Array.from(document.querySelectorAll("#set-rows .set-row")).map(r => r.querySelector(".ej-select").value)'
+                )
 
             def nav(iso: str) -> None:
                 page.evaluate(f"requestNavigate('{iso}')")
@@ -260,6 +282,34 @@ def main() -> None:
             kg_val = page.evaluate("document.querySelector('#session-form input[name=\"kg\"]').value")
             rir_val = page.evaluate("document.querySelector('#session-form input[name=\"rir\"]').value")
             check(f"valores enteros sin decimales (kg={kg_val}, rir={rir_val})", kg_val == "95" and rir_val == "0")
+
+            # P. drag and drop de filas (solo en modo editable)
+            nav(iso_future2)
+            page.select_option('#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Press Repro")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="kg"]', "80")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="reps"]', "6")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="rir"]', "1")
+            page.click("#session-editor .row-actions button:nth-child(2)")
+            page.select_option('#set-rows .set-row:nth-child(2) select[name="ejercicio"]', "Curl Repro")
+            page.fill('#set-rows .set-row:nth-child(2) input[name="kg"]', "16")
+            page.fill('#set-rows .set-row:nth-child(2) input[name="reps"]', "8")
+            page.fill('#set-rows .set-row:nth-child(2) input[name="rir"]', "2")
+            check("orden inicial (Press, Curl)", row_order() == ["Press Repro", "Curl Repro"])
+            drag_row(2, 1)
+            check("drag reordena filas (Curl, Press)", row_order() == ["Curl Repro", "Press Repro"])
+            nums = page.evaluate('Array.from(document.querySelectorAll("#set-rows .set-num")).map(t => t.textContent)')
+            check(f"columna # renumera ({nums})", nums == ["1", "2"])
+            actions_vis = page.evaluate("!document.getElementById('edit-actions').classList.contains('invisible')")
+            check("reorden marca dirty (botones visibles)", actions_vis)
+            page.click("#edit-actions button[type=submit]")
+            time.sleep(1.2)
+            check(f"tras guardar readonly (editmode={em()})", em() == "0")
+            nav(iso_past)
+            nav(iso_future2)
+            check("orden persistido (Curl, Press)", row_order() == ["Curl Repro", "Press Repro"])
+            before = row_order()
+            drag_row(1, 2)
+            check("drag bloqueado en readonly", row_order() == before)
 
             browser.close()
     finally:
