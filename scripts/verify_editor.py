@@ -331,7 +331,7 @@ def main() -> None:
             def scroll_metrics():
                 return page.evaluate(
                     '(() => { const w = document.querySelector("#session-editor .table-scroll"); '
-                    'return { client: w.clientHeight, scroll: w.scrollHeight, h: w.style.height, rows: document.querySelectorAll("#set-rows .set-row").length }; })()'
+                    'return { client: w.clientHeight, scroll: w.scrollHeight, h: getComputedStyle(w).height, rows: document.querySelectorAll("#set-rows .set-row").length }; })()'
                 )
             m = scroll_metrics()
             h_px = float(m["h"].replace("px", ""))
@@ -367,6 +367,8 @@ def main() -> None:
                 time.sleep(0.8)
 
             def save_entreno(nombre: str) -> None:
+                page.click(".pencil-btn")
+                time.sleep(0.3)
                 page.click(".save-template-btn")
                 time.sleep(0.3)
                 page.fill('#save-template-form input[name="nombre"]', nombre)
@@ -378,6 +380,8 @@ def main() -> None:
 
             page.on("dialog", lambda d: d.accept())
             nav(iso_future2)
+            page.click(".pencil-btn")
+            time.sleep(0.3)
             page.click(".save-template-btn")
             time.sleep(0.3)
             sugg = page.input_value('#save-template-form input[name="nombre"]')
@@ -446,7 +450,7 @@ def main() -> None:
             check("drop aplica entreno: filas con últimos valores", row_order() == ["Press Repro"])
             kgs = page.evaluate('Array.from(document.querySelectorAll("#set-rows input[name=\\"kg\\"]")).map(i => i.value)')
             check(f"drop aplica entreno: kg ({kgs})", kgs == ["80"])
-            page.click("#edit-actions .btn-x")
+            page.click("#edit-actions button:not([type=submit])")
             time.sleep(0.8)
             check("cancelar tras drop restaura fila vacía", nrows() == 1 and em() == "1")
             nav(iso_future3)
@@ -465,6 +469,8 @@ def main() -> None:
             time.sleep(1.2)
             dot = page.evaluate(f"!!document.querySelector('.date-num[data-iso=\"{iso_future6}\"] .date-dot')")
             check("dot visible tras guardar en T", dot)
+            page.click(".pencil-btn")
+            time.sleep(0.3)
             page.click(".delete-session-btn")
             time.sleep(0.3)
             check("eliminar entreno abre confirmación", modal())
@@ -474,6 +480,8 @@ def main() -> None:
             dot = page.evaluate(f"!!document.querySelector('.date-num[data-iso=\"{iso_future6}\"] .date-dot')")
             check("dot desaparece tras eliminar", not dot)
             nav(iso_future3)
+            page.click(".pencil-btn")
+            time.sleep(0.3)
             page.click(".save-template-btn")
             time.sleep(0.3)
             page.fill('#save-template-form input[name="nombre"]', "Empuje")
@@ -487,8 +495,76 @@ def main() -> None:
             closed = page.evaluate("document.getElementById('save-template-form-wrap').classList.contains('hidden')")
             notice = page.evaluate("document.getElementById('notice-container').textContent")
             check("reemplazo guardado y form cerrado", closed and "actualizado" in notice)
-            btn_disabled = page.evaluate("document.querySelector('#edit-actions button[type=submit]').disabled")
-            check(f"✓ deshabilitado en readonly ({btn_disabled})", btn_disabled)
+
+            # U. modo editable estricto: gating + iluminación + altura estable al eliminar
+            def icon_state() -> dict:
+                return page.evaluate("""(() => {
+                    const q = s => document.querySelector(s);
+                    const st = s => { const e = q(s); return e ? { on: e.classList.contains('on'), off: e.classList.contains('off'), hidden: e.hidden } : null; };
+                    return {
+                        pencil: st('#session-editor .pencil-btn'),
+                        bookmark: st('#session-editor .save-template-btn'),
+                        trash: st('#session-editor .delete-session-btn'),
+                        saveDisabled: q('#edit-actions button[type=submit]') ? q('#edit-actions button[type=submit]').disabled : null,
+                    };
+                })()""")
+
+            nav(iso_future3)
+            st = icon_state()
+            check("readonly: lápiz apagado", st["pencil"]["off"] and not st["pencil"]["on"])
+            check("readonly: marcador difuminado", not st["bookmark"]["on"])
+            check("readonly: papelera difuminada y visible", not st["trash"]["on"] and not st["trash"]["hidden"])
+            check("readonly: ✓ deshabilitado", st["saveDisabled"] is True)
+            page.click(".save-template-btn")
+            time.sleep(0.3)
+            hidden_form = page.evaluate("document.getElementById('save-template-form-wrap').classList.contains('hidden')")
+            check("readonly: no abre form de entreno", hidden_form)
+            page.click(".delete-session-btn")
+            time.sleep(0.3)
+            check("readonly: no abre modal de eliminar", not modal())
+            before = row_order()
+            page.click("#plantillas-list .pt-card .pt-btn-burgundy")
+            time.sleep(0.5)
+            check("readonly: Aplicar no modifica el editor", row_order() == before)
+            page.click(".pencil-btn")
+            time.sleep(0.3)
+            st = icon_state()
+            check("editable: lápiz encendido", st["pencil"]["on"])
+            check("editable: marcador encendido", st["bookmark"]["on"])
+            check("editable: papelera encendida", st["trash"]["on"])
+            check("editable: ✓ habilitado", st["saveDisabled"] is False)
+            page.click(".save-template-btn")
+            time.sleep(0.3)
+            hidden_form = page.evaluate("document.getElementById('save-template-form-wrap').classList.contains('hidden')")
+            check("editable: abre form de entreno", not hidden_form)
+            page.click("#save-template-form .btn-x")
+            time.sleep(0.2)
+            page.click(".delete-session-btn")
+            time.sleep(0.3)
+            check("editable: abre modal de eliminar", modal())
+            page.click("#confirm-cancel")
+            time.sleep(0.3)
+            nav(iso_future6)
+            page.select_option('#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Press Repro")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="kg"]', "100")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="reps"]', "6")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="rir"]', "1")
+            page.click("#edit-actions button[type=submit]")
+            time.sleep(1.2)
+            page.evaluate("""(() => {
+                window.__ys = [];
+                const el = document.getElementById('unified-chart-container');
+                const loop = () => { window.__ys.push(el.getBoundingClientRect().top); if (window.__ys.length < 80) requestAnimationFrame(loop); };
+                loop();
+            })()""")
+            page.click(".pencil-btn")
+            time.sleep(0.3)
+            page.click(".delete-session-btn")
+            time.sleep(0.3)
+            page.click("#confirm-save")
+            time.sleep(1.0)
+            ys = page.evaluate("window.__ys")
+            check(f"gráfica inmóvil durante delete (rango {max(ys) - min(ys):.2f}px)", len(ys) > 20 and (max(ys) - min(ys)) < 1)
 
             browser.close()
     finally:

@@ -223,14 +223,14 @@ def test_eliminar_sesion_vacia_el_dia(tmp_path, monkeypatch):
     assert get_sets_by_fecha(db, fecha_to_db(datetime.date.today())) == []
 
 
-def test_editor_sin_botones_texto_sino_iconos(tmp_path, monkeypatch):
+def test_editor_botones_texto_en_panel_e_iconos_en_form(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = TestClient(appmod.app).get(f"/fecha/editor?fecha={_fecha()}")
+    assert ">Guardar</button>" in r.text
+    assert ">Cancelar</button>" in r.text
     assert 'class="btn-x"' in r.text
     assert 'class="btn-check"' in r.text
-    assert ">Guardar</button>" not in r.text
-    assert ">Cancelar</button>" not in r.text
 
 
 def test_entreno_guardado_con_papelera_cuando_hay_datos(tmp_path, monkeypatch):

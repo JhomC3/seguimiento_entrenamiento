@@ -313,16 +313,24 @@
             color: rgba(255, 255, 255, 0.7);
         }
         .save-template-btn {
-            color: rgba(255, 255, 255, 0.5);
+            color: rgba(255, 255, 255, 0.35);
         }
-        .save-template-btn:hover {
+        .save-template-btn.on {
             color: #e56d88;
+            background: rgba(255, 255, 255, 0.10);
+        }
+        .save-template-btn.on:hover {
+            color: #fff;
         }
         .delete-session-btn {
-            color: rgba(255, 255, 255, 0.45);
+            color: rgba(255, 255, 255, 0.30);
         }
-        .delete-session-btn:hover {
+        .delete-session-btn.on {
             color: #fca5a5;
+            background: rgba(255, 255, 255, 0.10);
+        }
+        .delete-session-btn.on:hover {
+            color: #fff;
         }
 
         /* Botones de confirmación: ✓ (guardar, derecha) y ✗ (cancelar, izquierda) */
@@ -460,8 +468,9 @@
             background: rgba(255, 255, 255, 0.06);
         }
 
-        /* Tabla de sesión: scroll vertical interno con tope de 18 filas (max-height via JS) */
+        /* Tabla de sesión: altura fija estable (variable en el panel, sobrevive a los swaps) */
         #session-editor .table-scroll {
+            height: var(--table-h, 538px);
             scrollbar-width: thin;
             scrollbar-color: #333 #0a0a0a;
         }
@@ -533,6 +542,35 @@
             return document.getElementById('session-editor')?.dataset.editmode;
         }
 
+        function flashEditorNotice(msg, type) {
+            const box = document.getElementById('editor-notice');
+            if (!box) return;
+            box.innerHTML = `<div class="notice ${type === 'error' ? 'notice-error' : 'notice-success'}" data-dismiss="2500">${msg}</div>`;
+            scheduleNotices();
+        }
+
+        function syncEditButtons() {
+            const st = document.getElementById('editor-state');
+            const editor = document.getElementById('session-editor');
+            if (!st || !editor) return;
+            const editable = editor.dataset.editmode === '1';
+            const pencil = editor.querySelector('.pencil-btn');
+            if (pencil) {
+                pencil.classList.toggle('on', editable);
+                pencil.classList.toggle('off', !editable);
+            }
+            const bookmark = editor.querySelector('.save-template-btn');
+            if (bookmark) bookmark.classList.toggle('on', editable);
+            const trash = editor.querySelector('.delete-session-btn');
+            if (trash) {
+                trash.hidden = st.dataset.hasData !== '1';
+                trash.classList.toggle('on', editable && st.dataset.hasData === '1');
+            }
+            const actions = document.getElementById('edit-actions');
+            const saveBtn = actions && actions.querySelector('button[type="submit"]');
+            if (saveBtn) saveBtn.disabled = !editable;
+        }
+
         function serializeForm() {
             const form = document.getElementById('session-form');
             if (!form) return '[]';
@@ -560,8 +598,6 @@
             if (!actions) return;
             const show = editorEditmode() === '1' && isDirty();
             actions.classList.toggle('invisible', !show);
-            const saveBtn = actions.querySelector('button[type="submit"]');
-            if (saveBtn) saveBtn.disabled = editorEditmode() !== '1';
         }
 
         function syncEditorFromContent() {
@@ -571,6 +607,7 @@
             editor.dataset.editmode = st.dataset.readonly === '1' ? '0' : '1';
             captureBaseline();
             updateEditActions();
+            syncEditButtons();
         }
 
         function setPanelReadonly() {
@@ -580,15 +617,11 @@
             form.querySelectorAll('.row-actions').forEach(el => { el.classList.add('hidden'); el.hidden = true; });
             const editor = document.getElementById('session-editor');
             if (editor) editor.dataset.editmode = '0';
-            const pencil = document.querySelector('#session-editor .edit-toggle');
-            if (pencil) {
-                pencil.classList.remove('on');
-                pencil.classList.add('off');
-            }
             const actions = document.getElementById('edit-actions');
             if (actions) actions.classList.add('invisible');
             captureBaseline();
             syncSortableState();
+            syncEditButtons();
         }
 
         function handleEditorState() {
@@ -606,14 +639,10 @@
             if (editor) editor.dataset.editmode = '1';
             const st = document.getElementById('editor-state');
             if (st) st.dataset.readonly = '0';
-            const pencil = document.querySelector('#session-editor .edit-toggle');
-            if (pencil) {
-                pencil.classList.remove('off');
-                pencil.classList.add('on');
-            }
             captureBaseline();
             updateEditActions();
             syncSortableState();
+            syncEditButtons();
         }
 
         function exitEditMode() {
@@ -662,20 +691,21 @@
             });
         }
 
-        /* ---------- Altura del panel: fija, siempre caben 18 filas ---------- */
+        /* ---------- Altura del panel: fija (variable en el panel estable), siempre caben 18 filas ---------- */
         const ROWS_VISIBLE = 18;
         function fitRowsToPanel() {
-            const wrap = document.querySelector('#session-editor .table-scroll');
+            const editor = document.getElementById('session-editor');
             const tbody = document.getElementById('set-rows');
-            if (!wrap || !tbody) return;
+            if (!editor || !tbody) return;
             const row = tbody.querySelector('.set-row');
             const rowH = row ? row.offsetHeight : 28;
-            const thead = wrap.querySelector('thead');
+            const thead = editor.querySelector('.table-scroll thead');
             const theadH = thead ? thead.offsetHeight : 20;
             const full = theadH + ROWS_VISIBLE * rowH;
             const nrows = tbody.querySelectorAll('.set-row').length;
-            const table = wrap.querySelector('table') ? wrap.querySelector('table').offsetHeight : 0;
-            wrap.style.height = (nrows > ROWS_VISIBLE ? full : Math.max(full, table)) + 'px';
+            const table = editor.querySelector('.table-scroll table');
+            const tableH = table ? table.offsetHeight : 0;
+            editor.style.setProperty('--table-h', (nrows > ROWS_VISIBLE ? full : Math.max(full, tableH)) + 'px');
         }
         /* ---------- Drag and drop de filas ---------- */
         function initRowSortable() {
@@ -731,6 +761,10 @@
         }
 
         function aplicarPlantilla(id) {
+            if (editorEditmode() !== '1') {
+                flashEditorNotice('Activa el modo editable primero.', 'error');
+                return;
+            }
             const fecha = currentFecha();
             if (!fecha) return;
             htmx.ajax('GET', `/plantilla/aplicar/${id}?fecha=${fecha}`, { target: '#session-editor-wrap', swap: 'none' });
@@ -742,6 +776,10 @@
         }
 
         function eliminarSesion() {
+            if (editorEditmode() !== '1') {
+                flashEditorNotice('Activa el modo editable primero.', 'error');
+                return;
+            }
             const fecha = currentFecha();
             if (!fecha) return;
             document.getElementById('confirm-msg').textContent = '¿Eliminar el entreno de esta fecha?';
@@ -801,6 +839,10 @@
             const wrap = document.getElementById('save-template-form-wrap');
             if (!wrap) return;
             if (force === false) { wrap.classList.add('hidden'); return; }
+            if (editorEditmode() !== '1') {
+                flashEditorNotice('Activa el modo editable primero.', 'error');
+                return;
+            }
             if (wrap.classList.contains('hidden')) {
                 const input = wrap.querySelector('input[name="nombre"]');
                 if (input && !input.value) input.value = suggestedTemplateName();
@@ -1034,8 +1076,7 @@
                         const st = document.getElementById('editor-state');
                         if (st && st.dataset.hasData !== undefined) {
                             updateDateDot(fecha, st.dataset.hasData === '1');
-                            const trash = document.querySelector('#session-editor .delete-session-btn');
-                            if (trash) trash.hidden = st.dataset.hasData !== '1';
+                            syncEditButtons();
                         }
                         recalcRM();
                         syncEditorFromContent();
