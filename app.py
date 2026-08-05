@@ -157,7 +157,7 @@ def _editor_html(request: Request, fecha_iso: str, *, rows: list[dict] | None = 
             "rir": "" if rir is None else rir,
             "rm": rm,
         })
-    if not display_rows and not readonly:
+    if not display_rows:
         display_rows = [{"ejercicio": "", "kg": "", "reps": "", "rir": "", "rm": None}]
     semana = calculate_cycle_week(fecha, CICLO_START_DATE)
     dia = day_from_date(fecha)
@@ -171,6 +171,7 @@ def _editor_html(request: Request, fecha_iso: str, *, rows: list[dict] | None = 
             "dia": dia,
             "rows": display_rows,
             "readonly": readonly,
+            "has_data": bool(data_rows),
             "error": error,
             "success": success,
             "catalog": get_exercises_catalog(DB_PATH),
@@ -236,11 +237,13 @@ async def entrenamiento_session_save(
         save_session(DB_PATH, fecha, sets)
         saved_rows = get_sets_by_fecha(DB_PATH, fecha_to_db(parse_form_date(fecha)))
         if saved_rows:
-            state = '<div id="editor-state" hx-swap-oob="outerHTML" data-readonly="1" hidden></div>'
+            state = ('<div id="editor-state" hx-swap-oob="outerHTML" '
+                     f'data-readonly="1" data-has-data="1" hidden></div>')
             return HTMLResponse(content=notice_success + state)
         editor = _editor_html(request, fecha)
         return HTMLResponse(
-            content=notice_success + f'<div id="session-editor" hx-swap-oob="outerHTML">{editor}</div>'
+            content=notice_success
+            + f'<div id="session-editor-wrap" hx-swap-oob="innerHTML">{editor}</div>'
         )
     except ValueError as e:
         notice_error = (

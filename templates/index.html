@@ -53,10 +53,12 @@
                 {{ navigator_html | safe }}
             </section>
 
-            <!-- Editor de sesión -->
-            <section id="session-editor-wrap">
-                {{ editor_html | safe }}
-            </section>
+            <!-- Editor de sesión (tarjeta estable; el servidor solo intercambia el contenido) -->
+            <div id="session-editor" data-editmode="0" class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border">
+                <section id="session-editor-wrap">
+                    {{ editor_html | safe }}
+                </section>
+            </div>
 
             <!-- Gráfica Única -->
             <div id="unified-chart-container" class="bg-neutral-900 border border-transparent rounded-xl p-5 neon-border metallic-border">
@@ -152,23 +154,6 @@
                 htmx.ajax('GET', `/select?grupo=${encodeURIComponent(currentCategory)}`, '#exercise-section');
             } else {
                 htmx.ajax('GET', '/select', '#exercise-section');
-            }
-        }
-        if (elt && elt.id === 'session-form' && event.detail.successful) {
-            const rows = document.querySelectorAll('#session-editor #set-rows .set-row');
-            const filled = Array.from(rows).filter(row => {
-                const sel = row.querySelector('.ej-select');
-                const hasValues = Array.from(row.querySelectorAll('input')).some(i => i.value.trim() !== '');
-                return (sel && sel.value) || hasValues;
-            });
-            const btn = document.querySelector(`.date-num[data-iso="${currentIso}"]`);
-            if (btn) {
-                const dot = btn.querySelector('.date-dot');
-                if (filled.length > 0) {
-                    if (!dot) btn.insertAdjacentHTML('beforeend', '<span class="date-dot"></span>');
-                } else if (dot) {
-                    dot.remove();
-                }
             }
         }
     });

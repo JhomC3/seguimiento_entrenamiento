@@ -24,9 +24,10 @@ def test_saved_today_is_readonly(tmp_path, monkeypatch):
     assert "edit-toggle off" in r.text
     assert 'duration-150 hidden"' in r.text
     assert 'data-readonly="1"' in r.text
-    assert 'data-editmode="0"' in r.text
-    assert 'id="edit-actions" class="h-8 flex items-center gap-2 hidden"' in r.text
+    assert 'data-has-data="1"' in r.text
+    assert 'id="edit-actions" class="h-8 flex items-center gap-2 invisible"' in r.text
     assert ">Cancelar</button>" in r.text
+    assert "rm-cell" in r.text
 
 def test_saved_future_is_readonly(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
@@ -35,6 +36,7 @@ def test_saved_future_is_readonly(tmp_path, monkeypatch):
     r = TestClient(appmod.app).get(f"/fecha/editor?fecha={_fecha(1)}")
     assert "edit-toggle off" in r.text
     assert 'data-readonly="1"' in r.text
+    assert 'data-has-data="1"' in r.text
 
 def test_empty_future_is_editable(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
@@ -44,8 +46,8 @@ def test_empty_future_is_editable(tmp_path, monkeypatch):
     assert 'transition-opacity duration-150' in r.text
     assert 'duration-150 hidden"' not in r.text
     assert 'data-readonly="0"' in r.text
-    assert 'data-editmode="1"' in r.text
-    assert 'id="edit-actions" class="h-8 flex items-center gap-2 hidden"' in r.text
+    assert 'data-has-data="0"' in r.text
+    assert 'id="edit-actions" class="h-8 flex items-center gap-2 invisible"' in r.text
     assert ">Cancelar</button>" in r.text
 
 def test_empty_today_is_editable(tmp_path, monkeypatch):
@@ -54,14 +56,19 @@ def test_empty_today_is_editable(tmp_path, monkeypatch):
     r = TestClient(appmod.app).get(f"/fecha/editor?fecha={_fecha()}")
     assert "edit-toggle on" in r.text
 
-def test_empty_past_is_readonly(tmp_path, monkeypatch):
+def test_empty_past_is_readonly_with_fallback_row(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = TestClient(appmod.app).get(f"/fecha/editor?fecha={_fecha(-2)}")
     assert "edit-toggle off" in r.text
+    assert 'data-readonly="1"' in r.text
+    assert 'data-has-data="0"' in r.text
+    assert r.text.count('<tr class="set-row') == 1
 
-def test_index_uses_stable_wrapper(tmp_path, monkeypatch):
+def test_index_uses_stable_card(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = TestClient(appmod.app).get("/")
-    assert "session-editor-wrap" in r.text
+    assert 'id="session-editor" data-editmode="0"' in r.text
+    assert 'id="session-editor-wrap"' in r.text
+    assert "rm-cell" in r.text
