@@ -239,5 +239,7 @@ def test_entreno_guardado_con_papelera_cuando_hay_datos(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = TestClient(appmod.app).get(f"/fecha/editor?fecha={_fecha()}")
     assert "delete-session-btn" in r.text
+    assert 'delete-session-btn"\n                hidden' not in r.text
     r2 = TestClient(appmod.app).get(f"/fecha/editor?fecha={_fecha(1)}")
-    assert "delete-session-btn" not in r2.text
+    assert "delete-session-btn" in r2.text
+    assert "hidden" in r2.text[r2.text.find("delete-session-btn"):r2.text.find("delete-session-btn") + 200]
