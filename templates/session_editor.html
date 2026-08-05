@@ -73,7 +73,7 @@
                         </td>
                         <td class="py-0.5 px-1.5 text-center font-bold text-burgundy-300 whitespace-nowrap">{{ "%.1f"|format(r.rm) if r.rm is not none else "—" }}</td>
                         <td class="py-0.5 px-1.5">
-                            <div class="row-actions flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity duration-150" {% if readonly %}hidden{% endif %}>
+                            <div class="row-actions flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity duration-150 {% if readonly %}hidden{% endif %}">
                                 <button type="button" onclick="removeRow(this)" class="row-btn" title="Eliminar fila">−</button>
                                 <button type="button" onclick="addRowAfter(this)" class="row-btn" title="Agregar fila">+</button>
                             </div>
@@ -111,7 +111,7 @@
         if (editorEditmode() === '1') return;
         const form = document.getElementById('session-form');
         form.querySelectorAll('input, select').forEach(el => { el.disabled = false; });
-        form.querySelectorAll('.row-actions').forEach(el => { el.hidden = false; });
+        form.querySelectorAll('.row-actions').forEach(el => { el.classList.remove('hidden'); el.hidden = false; });
         const editor = document.getElementById('session-editor');
         if (editor) editor.dataset.editmode = '1';
         const st = document.getElementById('editor-state');

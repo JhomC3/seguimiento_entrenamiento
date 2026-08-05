@@ -22,7 +22,7 @@ def test_saved_today_is_readonly(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = TestClient(appmod.app).get(f"/fecha/editor?fecha={_fecha()}")
     assert "edit-toggle off" in r.text
-    assert 'transition-opacity duration-150" hidden' in r.text
+    assert 'duration-150 hidden"' in r.text
     assert 'data-readonly="1"' in r.text
     assert 'data-editmode="0"' in r.text
 
@@ -39,8 +39,8 @@ def test_empty_future_is_editable(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = TestClient(appmod.app).get(f"/fecha/editor?fecha={_fecha(1)}")
     assert "edit-toggle on" in r.text
-    assert 'transition-opacity duration-150"' in r.text
-    assert 'transition-opacity duration-150" hidden' not in r.text
+    assert 'transition-opacity duration-150' in r.text
+    assert 'duration-150 hidden"' not in r.text
     assert 'data-readonly="0"' in r.text
     assert 'data-editmode="1"' in r.text
 
