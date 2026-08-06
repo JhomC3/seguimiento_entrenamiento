@@ -231,7 +231,7 @@ def test_editor_botones_texto_en_panel_e_iconos_en_form(tmp_path, monkeypatch):
     assert ">Cancelar</button>" in r.text
     assert 'class="btn-x"' in r.text
     assert 'class="btn-check"' not in r.text
-    assert 'class="edit-toggle undo-btn"' in r.text
+    assert "undo-btn" not in r.text
 
 
 def test_undo_sesion_restaura_filas(tmp_path, monkeypatch):
@@ -242,9 +242,27 @@ def test_undo_sesion_restaura_filas(tmp_path, monkeypatch):
     client.post("/entrenamiento/session/save", data={
         "fecha": _fecha(), "ejercicio": ["Press"], "kg": ["80"], "reps": ["8"], "rir": ["1"],
     })
-    r = client.post("/undo")
+    r = client.post("/undo", data={"fecha": _fecha()})
     assert "Acción deshecha" in r.text
     assert 'data-ok="1"' in r.text
+    assert 'id="session-editor-wrap" hx-swap-oob="innerHTML"' in r.text
+    assert get_sets_by_fecha(db, fecha_to_db(datetime.date.today())) == []
+
+
+def test_undo_sesion_fecha_distinta_no_swapea_editor(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    appmod.UNDO_STACK.clear()
+    client = TestClient(appmod.app)
+    client.post("/entrenamiento/session/save", data={
+        "fecha": _fecha(), "ejercicio": ["Press"], "kg": ["80"], "reps": ["8"], "rir": ["1"],
+    })
+    r = client.post("/undo", data={"fecha": _fecha(5)})
+    assert "Acción deshecha" in r.text
+    assert 'id="undo-result"' in r.text
+    assert f'data-fecha="{_fecha()}"' in r.text
+    assert 'data-has-data="0"' in r.text
+    assert 'id="session-editor-wrap" hx-swap-oob="innerHTML"' not in r.text
     assert get_sets_by_fecha(db, fecha_to_db(datetime.date.today())) == []
 
 

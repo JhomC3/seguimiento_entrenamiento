@@ -445,7 +445,7 @@ async def plantilla_aplicar(request: Request, plantilla_id: int, fecha: str = Qu
     )
 
 @app.post("/undo", response_class=HTMLResponse)
-async def undo(request: Request):
+async def undo(request: Request, fecha: str = Form("")):
     notice_ok = (
         '<div id="notice-container" hx-swap-oob="innerHTML">'
         '<div class="notice notice-success" data-dismiss="2500">Acción deshecha.</div></div>'
@@ -461,12 +461,24 @@ async def undo(request: Request):
     if entry["kind"] == "sesion":
         fecha_iso = entry["fecha_iso"]
         save_session(DB_PATH, fecha_iso, entry["before"])
-        outcome_ok = '<div id="save-outcome" hx-swap-oob="outerHTML" data-ok="1" hidden></div>'
-        editor = _editor_html(request, fecha_iso)
-        return HTMLResponse(
-            content=notice_ok + outcome_ok
-            + f'<div id="session-editor-wrap" hx-swap-oob="innerHTML">{editor}</div>'
+        restored = get_sets_by_fecha(DB_PATH, fecha_to_db(parse_form_date(fecha_iso)))
+        has_data = "1" if any(
+            str(r.get("ejercicio") or "").strip()
+            or any(str(r.get(k) or "").strip() for k in ("kg", "reps", "rir"))
+            for r in restored
+        ) else "0"
+        marker = (
+            f'<div id="undo-result" hx-swap-oob="outerHTML" '
+            f'data-fecha="{fecha_iso}" data-has-data="{has_data}" hidden></div>'
         )
+        if fecha == fecha_iso:
+            outcome_ok = '<div id="save-outcome" hx-swap-oob="outerHTML" data-ok="1" hidden></div>'
+            editor = _editor_html(request, fecha_iso)
+            return HTMLResponse(
+                content=notice_ok + outcome_ok + marker
+                + f'<div id="session-editor-wrap" hx-swap-oob="innerHTML">{editor}</div>'
+            )
+        return HTMLResponse(content=notice_ok + marker)
     restore_entrenos(DB_PATH, entry["before"])
     return HTMLResponse(content=notice_ok + _plantillas_oob(_plantillas_list_html(request)))
 

@@ -49,13 +49,14 @@ def main() -> None:
     iso_future4 = ""
     iso_future5 = ""
     iso_future6 = ""
+    iso_future7 = ""
     empties = []
     for delta in range(1, 15):
         d = today + datetime.timedelta(days=delta)
         if fecha_to_db(d) not in taken:
             empties.append(d.strftime("%Y-%m-%d"))
-    if len(empties) >= 6:
-        iso_future, iso_future2, iso_future3, iso_future4, iso_future5, iso_future6 = empties[:6]
+    if len(empties) >= 7:
+        iso_future, iso_future2, iso_future3, iso_future4, iso_future5, iso_future6, iso_future7 = empties[:7]
     iso_past = ""
     for delta in range(2, 20):
         d = today - datetime.timedelta(days=delta)
@@ -578,19 +579,27 @@ def main() -> None:
             ys = page.evaluate("window.__ys")
             check(f"gráfica inmóvil durante delete (rango {max(ys) - min(ys):.2f}px)", len(ys) > 20 and (max(ys) - min(ys)) < 1)
 
-            # V. deshacer (botón ↶ y Ctrl+Z)
+            # V. deshacer (Ctrl+Z) y W (gates)
             check("V: f6 quedó vacío tras U", em() == "1" and nrows() == 1)
-            page.click(".undo-btn")
+            page.keyboard.press("Control+z")
             time.sleep(1.5)
             check("undo restaura la sesión eliminada", em() == "0" and nrows() >= 1)
             dot = page.evaluate(f"!!document.querySelector('.date-num[data-iso=\"{iso_future6}\"] .date-dot')")
             check("undo devuelve el dot de la fecha", dot)
             page.click(".pencil-btn")
             time.sleep(0.3)
-            page.click(".undo-btn")
+            page.keyboard.press("Control+z")
             time.sleep(1.5)
             check("undo quita la sesión guardada", em() == "1" and nrows() == 1)
-            page.click(".undo-btn")
+
+            # W1. crear entreno sin datos bloqueado (aunque esté en modo editable)
+            page.click(".save-template-btn")
+            time.sleep(0.3)
+            check("W1: sin datos no abre el anuncio", not modal())
+            notice_txt = page.evaluate("document.getElementById('editor-notice').textContent")
+            check("W1: aviso de nada que guardar", "No hay nada que guardar" in notice_txt)
+
+            page.keyboard.press("Control+z")
             time.sleep(1.2)
             page.locator('#plantillas-list .pt-card').nth(1).locator('.pt-btn').nth(1).click()
             time.sleep(0.8)
@@ -603,8 +612,12 @@ def main() -> None:
             page.keyboard.press("Control+z")
             time.sleep(1.2)
             check("Ctrl+Z deshace el reorden", entrenos_names() == ["Mi Jalón", "Empuje"])
+            nav(iso_future3)
+            page.click(".pencil-btn")
+            time.sleep(0.3)
             page.click(".save-template-btn")
             time.sleep(0.3)
+            check("W1b: con datos del editor sí abre el anuncio", modal())
             page.click("#confirm-save")
             time.sleep(0.3)
             page.click('#save-template-form input[name="nombre"]')
@@ -616,6 +629,24 @@ def main() -> None:
             check(f"Ctrl+Z en input no deshace la app (valor '{val}', sidebar intacta)", entrenos_names() == ["Mi Jalón", "Empuje"])
             page.click("#save-template-form .btn-x")
             time.sleep(0.3)
+
+            # W2. undo de una sesión desde otra fecha: no salta el editor, solo el dot
+            nav(iso_future7)
+            page.select_option('#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Press Repro")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="kg"]', "90")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="reps"]', "5")
+            page.fill('#set-rows .set-row:nth-child(1) input[name="rir"]', "1")
+            page.click("#edit-actions button[type=submit]")
+            time.sleep(1.2)
+            dot7 = page.evaluate(f"!!document.querySelector('.date-num[data-iso=\"{iso_future7}\"] .date-dot')")
+            check("W2: sesión guardada en f7", dot7)
+            nav(iso_future3)
+            page.keyboard.press("Control+z")
+            time.sleep(1.2)
+            fecha_actual = page.evaluate("document.querySelector('#session-form input[name=\"fecha\"]').value")
+            check(f"W2: editor sigue en {iso_future3}", fecha_actual == iso_future3)
+            dot7 = page.evaluate(f"!!document.querySelector('.date-num[data-iso=\"{iso_future7}\"] .date-dot')")
+            check("W2: dot de f7 desaparece sin saltar el editor", not dot7)
 
             browser.close()
     finally:
