@@ -234,6 +234,16 @@ def test_editor_botones_texto_en_panel_e_iconos_en_form(tmp_path, monkeypatch):
     assert "undo-btn" not in r.text
 
 
+def test_editor_usa_hooks_de_controles_compactos(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    html = TestClient(appmod.app).get(f"/fecha/editor?fecha={_fecha()}").text
+
+    assert 'class="editor-header-actions' in html
+    assert 'class="row-actions' in html
+    assert 'class="set-actions-column' in html
+
+
 def test_undo_sesion_restaura_filas(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)

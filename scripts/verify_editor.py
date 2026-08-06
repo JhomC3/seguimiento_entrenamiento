@@ -347,6 +347,23 @@ def main() -> None:
             check(f"altura fija = thead + {rv} filas ({h_px:.0f}px ≈ {rv}*{row_px})", abs(h_px - (rv * row_px)) <= 40)
             check(f"panel con pocas filas sin scroll (rows={m['rows']}, scroll<=client)", m["scroll"] <= m["client"])
             widths_ro = col_widths()
+            header_probe = page.evaluate("""(() => {
+                const editor = document.querySelector('#session-editor');
+                if (!editor) return { headerInsideEditor: false, allControlsVisible: false, actionColumnWidth: 999 };
+                const actions = editor.querySelector('.editor-header-actions');
+                const controls = actions ? Array.from(actions.querySelectorAll('.edit-toggle')) : [];
+                const actionsBox = actions ? actions.getBoundingClientRect() : null;
+                const editorBox = editor.getBoundingClientRect();
+                const actionColumn = editor.querySelector('.set-actions-column');
+                return {
+                    headerInsideEditor: !!actionsBox && actionsBox.right <= editorBox.right,
+                    allControlsVisible: controls.length === 3 && controls.every(b => b.getBoundingClientRect().width >= 20),
+                    actionColumnWidth: actionColumn ? Math.round(actionColumn.getBoundingClientRect().width) : 999,
+                };
+            })()""")
+            check("cabecera: controles dentro del editor", header_probe["headerInsideEditor"])
+            check("cabecera: tres controles visibles", header_probe["allControlsVisible"])
+            check(f"columna de acciones <= 30px ({header_probe['actionColumnWidth']}px)", header_probe["actionColumnWidth"] <= 30)
             h_base = m["h"]
             page.click(".pencil-btn")
             time.sleep(0.4)
