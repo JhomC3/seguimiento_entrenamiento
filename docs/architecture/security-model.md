@@ -48,6 +48,30 @@ accidental data loss and drive-by browser attacks, not a motivated adversary.
 - The `#app-config` block is `type="application/json"` (data, never executed;
   not subject to `script-src`).
 
+### 2.1.1 Subresource Integrity (SRI)
+
+Third-party `<script src="https://…">` tags in `templates/base.html` are pinned
+with `integrity` (sha384) + `crossorigin="anonymous"` (all three CDNs serve
+`Access-Control-Allow-Origin: *`):
+
+| Resource | URL | sha384 |
+|---|---|---|
+| htmx 1.9.10 | `https://unpkg.com/htmx.org@1.9.10/dist/htmx.min.js` | `D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC` |
+| SortableJS 1.15.6 | `https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js` | `HZZ/fukV+9G8gwTNjN7zQDG0Sp7MsZy5DDN6VfY3Be7V9dvQpEpR2jF2HlyFUUjU` |
+| Plotly 2.32.0 | `https://cdn.plot.ly/plotly-2.32.0.min.js` | `7TVmlZWH60iKX5Uk7lSvQhjtcgw2tkFjuwLcXoRSR4zXTyWFJRm9aPAguMh7CIra` |
+
+**Tailwind CDN is the deliberate exception:** `cdn.tailwindcss.com` is a JIT
+runtime (dynamic response + redirect to its own version path); an integrity hash
+is not practical. A regression test enforces SRI on every other third-party
+script tag. Recompute a hash after a version bump with:
+
+```bash
+curl -s <exact-file-url> | openssl dgst -sha384 -binary | openssl base64 -A
+```
+
+For production, prefer a locally built Tailwind stylesheet (removes the CDN
+runtime and the `style-src 'unsafe-inline'` allowance entirely).
+
 ### 2.2 Output encoding and event boundary
 
 - Jinja autoescape stays enabled (default for `Jinja2Templates`).
