@@ -261,7 +261,7 @@ async def read_index(request: Request):
             "editor_html": _editor_html(request, fecha),
             "exercise_form_html": _exercise_form_html(request),
             "plantillas_html": _plantillas_list_html(request),
-            "categoria_map_json": json.dumps(get_ejercicio_categoria(DB_PATH)),
+            "app_config_json": {"categoria_map": get_ejercicio_categoria(DB_PATH)},
         }
     )
 

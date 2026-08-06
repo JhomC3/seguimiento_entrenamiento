@@ -398,3 +398,31 @@ def test_base_template_has_no_inline_style_block(tmp_path, monkeypatch):
     assert "<style>" not in source
     assert ".date-num {" not in source
     assert 'href="/static/css/app.css"' in source
+
+
+def test_base_template_loads_only_module_js(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    source = open(os.path.join(os.path.dirname(__file__), "..", "templates", "base.html")).read()
+    assert '<script type="module" src="/static/js/app.js"></script>' in source
+    for banned in ("function submitSave", "function doNav", "function aplicarPlantilla", "function recalcRM"):
+        assert banned not in source
+
+
+def test_index_uses_app_config_json(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = TestClient(appmod.app).get("/")
+    assert 'id="app-config" type="application/json"' in r.text
+    assert "CATEGORIA_MAP" not in r.text
+    assert 'categoria_map' in r.text
+
+
+def test_static_js_modules_served(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    for name in ("app.js", "state.js", "notices.js", "editor.js", "row-sortable.js",
+                 "templates.js", "date-navigation.js", "htmx-lifecycle.js"):
+        resp = TestClient(appmod.app).get(f"/static/js/{name}")
+        assert resp.status_code == 200, f"{name} not served"
+        assert resp.headers["content-type"].startswith("text/javascript")
