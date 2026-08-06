@@ -36,6 +36,7 @@ from src.database import (
 )
 from src.db_connection import read_connection
 from src.models import TemplateInput
+from src.security import SecurityHeadersMiddleware
 from src.template_service import (
     apply_template_rows,
     delete_plantilla,
@@ -56,6 +57,7 @@ async def lifespan(_: FastAPI):
     yield
 
 app = FastAPI(title="Gym Tracker", lifespan=lifespan)
+app.add_middleware(SecurityHeadersMiddleware)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
