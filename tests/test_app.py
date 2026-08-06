@@ -1,10 +1,12 @@
 import datetime
 import os
+import sqlite3
 
 from fastapi.testclient import TestClient
 
 import app as appmod
 from src.database import get_plantillas, get_sets_by_fecha, init_db, insert_exercise
+from src.mutation_service import clear_undo_stack, undo_stack_size
 from src.security import get_csrf_secret, make_csrf_token
 from src.training_service import fecha_to_db, save_session
 
@@ -294,7 +296,7 @@ def test_editor_usa_hooks_de_controles_compactos(tmp_path, monkeypatch):
 def test_undo_sesion_restaura_filas(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    appmod.UNDO_STACK.clear()
+    clear_undo_stack()
     client = _client()
     client.post(
         "/entrenamiento/session/save",
@@ -316,7 +318,7 @@ def test_undo_sesion_restaura_filas(tmp_path, monkeypatch):
 def test_undo_sesion_fecha_distinta_no_swapea_editor(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    appmod.UNDO_STACK.clear()
+    clear_undo_stack()
     client = _client()
     client.post(
         "/entrenamiento/session/save",
@@ -341,7 +343,7 @@ def test_undo_sesion_restaura_estado_previo(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     save_session(db, _fecha(), [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    appmod.UNDO_STACK.clear()
+    clear_undo_stack()
     client = _client()
     client.post(
         "/entrenamiento/session/save",
@@ -362,7 +364,7 @@ def test_undo_sesion_restaura_estado_previo(tmp_path, monkeypatch):
 def test_undo_entrenos_restaura_snapshot(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    appmod.UNDO_STACK.clear()
+    clear_undo_stack()
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
     client.post("/plantilla/guardar", data={"nombre": "B", "ejercicio": ["Press"]})
@@ -377,7 +379,7 @@ def test_undo_entrenos_restaura_snapshot(tmp_path, monkeypatch):
 def test_undo_reorden_vuelve_al_orden_original(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    appmod.UNDO_STACK.clear()
+    clear_undo_stack()
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
     client.post("/plantilla/guardar", data={"nombre": "B", "ejercicio": ["Press"]})
@@ -390,7 +392,7 @@ def test_undo_reorden_vuelve_al_orden_original(tmp_path, monkeypatch):
 def test_undo_pila_vacia_avisa(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    appmod.UNDO_STACK.clear()
+    clear_undo_stack()
     r = _client().post("/undo")
     assert "Nada que deshacer" in r.text
 
@@ -398,11 +400,11 @@ def test_undo_pila_vacia_avisa(tmp_path, monkeypatch):
 def test_undo_pila_limitada_a_10(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    appmod.UNDO_STACK.clear()
+    clear_undo_stack()
     client = _client()
     for i in range(12):
         client.post("/plantilla/guardar", data={"nombre": f"E{i}", "ejercicio": ["Press"]})
-    assert len(appmod.UNDO_STACK) == 10
+    assert undo_stack_size() == 10
 
 
 def test_entreno_guardado_con_papelera_cuando_hay_datos(tmp_path, monkeypatch):
@@ -546,7 +548,7 @@ def test_htmx_partial_has_single_document(tmp_path, monkeypatch):
 def test_mutating_routes_return_200(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    appmod.UNDO_STACK.clear()
+    clear_undo_stack()
     client = _client()
     r = client.post(
         "/entrenamiento/session/save",
@@ -625,7 +627,7 @@ def test_ejercicio_nuevo_oob_markers(tmp_path, monkeypatch):
 def test_undo_entrenos_oob_plantillas(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    appmod.UNDO_STACK.clear()
+    clear_undo_stack()
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
     r = client.post("/undo", data={"fecha": _fecha()})
@@ -669,3 +671,80 @@ def test_edit_duplicate_name_shows_inline_error(tmp_path, monkeypatch):
     assert r.status_code == 200
     assert 'id="plantillas-section" hx-swap-oob="outerHTML"' in r.text
     assert "Ya existe un entreno llamado" in r.text
+
+
+# ---------------------------------------------------------------------------
+# Mutation failure truthfulness (Task 4)
+# ---------------------------------------------------------------------------
+
+
+def _seed_session(db, fecha_iso=None):
+    from src.models import TrainingSetInput
+
+    fecha_iso = fecha_iso or _fecha()
+    save_session(db, fecha_iso, [TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1)])
+
+
+def test_delete_session_failure_returns_500_and_keeps_state(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    _seed_session(db)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    clear_undo_stack()
+    monkeypatch.setattr("src.mutation_service.delete_session_by_fecha", _db_locked)
+
+    r = _client().post("/entrenamiento/session/eliminar", data={"fecha": _fecha()})
+    assert r.status_code == 500
+    assert "Ocurrió un error inesperado" in r.text
+    assert "Entreno eliminado" not in r.text
+    assert 'data-ok="0"' in r.text
+    assert undo_stack_size() == 0
+    assert len(get_sets_by_fecha(db, fecha_to_db(datetime.date.today()))) == 1
+
+
+def test_delete_template_failure_returns_500_and_keeps_state(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    clear_undo_stack()
+    _client().post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
+    monkeypatch.setattr("src.mutation_service.delete_plantilla", _db_locked)
+
+    r = _client().post("/plantilla/eliminar/1")
+    assert r.status_code == 500
+    assert "Ocurrió un error inesperado" in r.text
+    assert "Entreno eliminado" not in r.text
+    assert undo_stack_size() == 1  # solo el guardar previo
+    assert len(get_plantillas(db)) == 1
+
+
+def test_reorder_failure_returns_500_and_keeps_order(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    clear_undo_stack()
+    client = _client()
+    client.post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
+    client.post("/plantilla/guardar", data={"nombre": "B", "ejercicio": ["Press"]})
+    monkeypatch.setattr("src.mutation_service.reorder_plantillas", _db_locked)
+
+    r = client.post("/plantilla/reordenar", data={"id": ["2", "1"]})
+    assert r.status_code == 500
+    assert "Ocurrió un error inesperado" in r.text
+    assert undo_stack_size() == 2  # solo los guardar previos
+    assert [p["nombre"] for p in get_plantillas(db)] == ["A", "B"]
+
+
+def test_undo_failure_returns_500_and_keeps_stack(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    clear_undo_stack()
+    _client().post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
+    monkeypatch.setattr("src.mutation_service.restore_entrenos", _db_locked)
+
+    r = _client().post("/undo", data={"fecha": _fecha()})
+    assert r.status_code == 500
+    assert "Ocurrió un error inesperado" in r.text
+    assert undo_stack_size() == 1  # la entrada no se pierde
+    assert len(get_plantillas(db)) == 1
+
+
+def _db_locked(*args, **kwargs):
+    raise sqlite3.OperationalError("database locked")

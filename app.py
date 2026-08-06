@@ -1,4 +1,3 @@
-from collections import deque
 from contextlib import asynccontextmanager
 from datetime import date
 
@@ -19,8 +18,6 @@ from src.dashboard_service import (
     translate_error,
 )
 from src.database import (
-    backup_db,
-    delete_session_by_fecha,
     get_categories,
     get_ejercicio_categoria,
     get_exercises_catalog,
@@ -28,12 +25,18 @@ from src.database import (
     get_sets_by_fecha,
     init_db,
     insert_exercise,
-    reorder_plantillas,
-    restore_entrenos,
-    snapshot_entrenos,
 )
 from src.db_connection import read_connection
 from src.models import TemplateInput
+from src.mutation_service import (
+    delete_session,
+    delete_template_with_undo_snapshot,
+    edit_template_with_undo_snapshot,
+    reorder_templates_with_undo_snapshot,
+    save_session_with_undo_snapshot,
+    save_template_with_undo_snapshot,
+    undo_last_action,
+)
 from src.response_fragments import (
     STATIC_MARKERS,
     chart_oob_wrapper,
@@ -41,6 +44,7 @@ from src.response_fragments import (
     editor_wrap_oob,
     fragment_oob,
     notice_oob,
+    undo_result_oob,
 )
 from src.security import (
     CSRFProtectionMiddleware,
@@ -48,17 +52,11 @@ from src.security import (
     get_csrf_secret,
     make_csrf_token,
 )
-from src.template_service import (
-    apply_template_rows,
-    delete_plantilla,
-    edit_template,
-    save_template,
-)
+from src.template_service import apply_template_rows
 from src.training_service import (
     fecha_to_db,
     parse_cycle_start,
     parse_form_date,
-    save_session,
     sets_from_form,
 )
 
@@ -74,17 +72,6 @@ app.add_middleware(CSRFProtectionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
-
-UNDO_STACK: deque = deque(maxlen=10)
-
-
-def _undo_push_sesion(fecha_iso: str, before: list[dict], after: list[dict]) -> None:
-    UNDO_STACK.append({"kind": "sesion", "fecha_iso": fecha_iso, "before": before, "after": after})
-
-
-def _undo_push_entrenos(before: list, after: list) -> None:
-    UNDO_STACK.append({"kind": "entrenos", "before": before, "after": after})
-
 
 CICLO_START_DATE = parse_cycle_start(CICLO_START)
 
@@ -252,12 +239,8 @@ def entrenamiento_session_save(
     outcome_ok = STATIC_MARKERS["outcome_ok"]
     outcome_fail = STATIC_MARKERS["outcome_fail"]
     try:
-        backup_db(DB_PATH)
-        fecha_db = fecha_to_db(parse_form_date(fecha))
-        before_rows = get_sets_by_fecha(DB_PATH, fecha_db)
-        save_session(DB_PATH, fecha, sets)
-        saved_rows = get_sets_by_fecha(DB_PATH, fecha_db)
-        _undo_push_sesion(fecha, before_rows, saved_rows)
+        save_session_with_undo_snapshot(DB_PATH, fecha, sets)
+        saved_rows = get_sets_by_fecha(DB_PATH, fecha_to_db(parse_form_date(fecha)))
         if saved_rows:
             return HTMLResponse(
                 content=notice_success + outcome_ok + editor_state_oob(templates, request)
@@ -274,14 +257,11 @@ def entrenamiento_session_save(
 def entrenamiento_session_eliminar(request: Request, fecha: str = Form(...)):
     notice = notice_oob(templates, request, target="editor-notice", message="Entreno eliminado.")
     outcome_ok = STATIC_MARKERS["outcome_ok"]
+    outcome_fail = STATIC_MARKERS["outcome_fail"]
     try:
-        backup_db(DB_PATH)
-        fecha_db = fecha_to_db(parse_form_date(fecha))
-        before_rows = get_sets_by_fecha(DB_PATH, fecha_db)
-        delete_session_by_fecha(DB_PATH, fecha_db)
-        _undo_push_sesion(fecha, before_rows, [])
-    except Exception:
-        pass  # S110: best-effort backup y borrado, el editor se re-renderiza igual
+        delete_session(DB_PATH, fecha)
+    except Exception as e:
+        return _domain_error_response(request, e, "editor-notice", extra=outcome_fail)
     editor = _editor_html(request, fecha)
     return HTMLResponse(content=notice + outcome_ok + editor_wrap_oob(templates, request, editor))
 
@@ -338,9 +318,9 @@ def plantilla_guardar(
     ejercicio: list[str] = Form(default=[]),
 ):
     try:
-        before = snapshot_entrenos(DB_PATH)
-        result = save_template(DB_PATH, TemplateInput(nombre=nombre, ejercicios=ejercicio))
-        _undo_push_entrenos(before, snapshot_entrenos(DB_PATH))
+        result = save_template_with_undo_snapshot(
+            DB_PATH, TemplateInput(nombre=nombre, ejercicios=ejercicio)
+        )
     except Exception as e:
         return _domain_error_response(request, e, "notice-container")
     msg = "Entreno actualizado." if result.updated else "Entreno guardado."
@@ -364,9 +344,9 @@ def plantilla_editar(
     ejercicio: list[str] = Form(default=[]),
 ):
     try:
-        before = snapshot_entrenos(DB_PATH)
-        edit_template(DB_PATH, plantilla_id, TemplateInput(nombre=nombre, ejercicios=ejercicio))
-        _undo_push_entrenos(before, snapshot_entrenos(DB_PATH))
+        edit_template_with_undo_snapshot(
+            DB_PATH, plantilla_id, TemplateInput(nombre=nombre, ejercicios=ejercicio)
+        )
     except Exception as e:
         message, _ = translate_error(e)
         html = _plantillas_list_html(request, editing_id=plantilla_id, error=message)
@@ -389,9 +369,10 @@ def plantilla_editar(
 
 @app.post("/plantilla/eliminar/{plantilla_id}", response_class=HTMLResponse)
 def plantilla_eliminar(request: Request, plantilla_id: int):
-    before = snapshot_entrenos(DB_PATH)
-    delete_plantilla(DB_PATH, plantilla_id)
-    _undo_push_entrenos(before, snapshot_entrenos(DB_PATH))
+    try:
+        delete_template_with_undo_snapshot(DB_PATH, plantilla_id)
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
     return HTMLResponse(
         content=notice_oob(
             templates, request, target="notice-container", message="Entreno eliminado."
@@ -407,10 +388,11 @@ def plantilla_eliminar(request: Request, plantilla_id: int):
 
 
 @app.post("/plantilla/reordenar", response_class=HTMLResponse)
-def plantilla_reordenar(id: list[int] = Form(default=[])):
-    before = snapshot_entrenos(DB_PATH)
-    reorder_plantillas(DB_PATH, id)
-    _undo_push_entrenos(before, snapshot_entrenos(DB_PATH))
+def plantilla_reordenar(request: Request, id: list[int] = Form(default=[])):
+    try:
+        reorder_templates_with_undo_snapshot(DB_PATH, id)
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
     return HTMLResponse(content="")
 
 
@@ -441,27 +423,15 @@ def undo(request: Request, fecha: str = Form("")):
         kind="notice-error",
         dismiss=2500,
     )
-    if not UNDO_STACK:
+    try:
+        result = undo_last_action(DB_PATH, fecha)
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    if result["kind"] == "empty":
         return HTMLResponse(content=notice_empty)
-    entry = UNDO_STACK.pop()
-    backup_db(DB_PATH)
-    if entry["kind"] == "sesion":
-        fecha_iso = entry["fecha_iso"]
-        save_session(DB_PATH, fecha_iso, entry["before"])
-        restored = get_sets_by_fecha(DB_PATH, fecha_to_db(parse_form_date(fecha_iso)))
-        has_data = (
-            "1"
-            if any(
-                str(r.get("ejercicio") or "").strip()
-                or any(str(r.get(k) or "").strip() for k in ("kg", "reps", "rir"))
-                for r in restored
-            )
-            else "0"
-        )
-        marker = (
-            f'<div id="undo-result" hx-swap-oob="outerHTML" '
-            f'data-fecha="{fecha_iso}" data-has-data="{has_data}" hidden></div>'
-        )
+    if result["kind"] == "sesion":
+        fecha_iso = result["fecha_iso"]
+        marker = undo_result_oob(templates, request, fecha_iso, result["has_data"])
         if fecha == fecha_iso:
             outcome_ok = STATIC_MARKERS["outcome_ok"]
             editor = _editor_html(request, fecha_iso)
@@ -472,7 +442,6 @@ def undo(request: Request, fecha: str = Form("")):
                 + editor_wrap_oob(templates, request, editor)
             )
         return HTMLResponse(content=notice_ok + marker)
-    restore_entrenos(DB_PATH, entry["before"])
     return HTMLResponse(
         content=notice_ok
         + fragment_oob(

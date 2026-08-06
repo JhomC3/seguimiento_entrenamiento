@@ -83,6 +83,18 @@ def editor_wrap_oob(templates: Jinja2Templates, request: Request, editor_html: s
     )
 
 
+def undo_result_oob(
+    templates: Jinja2Templates, request: Request, fecha_iso: str, has_data: str
+) -> str:
+    return render_fragment(
+        templates,
+        request,
+        "partials/oob_undo_result.html",
+        fecha_iso=fecha_iso,
+        has_data=has_data,
+    )
+
+
 def fragment_oob(
     templates: Jinja2Templates,
     request: Request,
