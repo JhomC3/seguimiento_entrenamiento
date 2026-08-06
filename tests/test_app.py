@@ -525,3 +525,33 @@ def test_undo_entrenos_oob_plantillas(tmp_path, monkeypatch):
     assert r.status_code == 200
     assert 'id="plantillas-section" hx-swap-oob="outerHTML"' in r.text
     assert "Aún no hay entrenos" in r.text
+
+
+def test_domain_errors_return_400_with_notice(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = TestClient(appmod.app)
+    r = client.post("/entrenamiento/session/save", data={
+        "fecha": _fecha(), "ejercicio": [""], "kg": ["80"], "reps": ["8"], "rir": ["1"],
+    })
+    assert r.status_code == 400
+    assert 'id="editor-notice" hx-swap-oob="innerHTML"' in r.text
+    assert "notice-error" in r.text
+    r = client.post("/plantilla/guardar", data={"nombre": "Vacia", "ejercicio": []})
+    assert r.status_code == 400
+    assert "notice-error" in r.text
+    r = client.get("/plantilla/aplicar/999", params={"fecha": _fecha()})
+    assert r.status_code == 400
+    assert "La plantilla no existe" in r.text
+
+
+def test_edit_duplicate_name_shows_inline_error(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = TestClient(appmod.app)
+    client.post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
+    client.post("/plantilla/guardar", data={"nombre": "B", "ejercicio": ["Press"]})
+    r = client.post("/plantilla/editar/2", data={"nombre": "A", "ejercicio": ["Press"]})
+    assert r.status_code == 200
+    assert 'id="plantillas-section" hx-swap-oob="outerHTML"' in r.text
+    assert "Ya existe un entreno llamado" in r.text
