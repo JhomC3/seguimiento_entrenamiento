@@ -1,86 +1,16 @@
 import os
-import sqlite3
 from datetime import datetime
 
+import sqlite3
 import pandas as pd
 
 from config import MUSCLE_CATEGORIES
 from src.db_connection import connect_db, read_connection, transaction
-
-def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
-    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
-
-def _backfill_categories(conn: sqlite3.Connection) -> None:
-    rows = conn.execute("SELECT id, grupo_muscular FROM ejercicios WHERE categoria IS NULL").fetchall()
-    if not rows:
-        return
-    muscle_to_cat = {}
-    for cat in MUSCLE_CATEGORIES:
-        for muscle in cat["muscles"]:
-            muscle_to_cat[muscle.strip().lower()] = cat["name"]
-    for row_id, grupo in rows:
-        cat = muscle_to_cat.get(str(grupo).strip().lower())
-        if cat:
-            conn.execute("UPDATE ejercicios SET categoria = ? WHERE id = ?", (cat, row_id))
+from src.migrations.runner import run_migrations
 
 def init_db(db_path: str) -> None:
     os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
-    conn = connect_db(db_path)
-    try:
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS ejercicios (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                grupo_muscular TEXT NOT NULL,
-                ejercicio TEXT NOT NULL UNIQUE,
-                categoria TEXT,
-                origen TEXT NOT NULL DEFAULT 'google'
-            );
-            CREATE TABLE IF NOT EXISTS training_sets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                semana INTEGER NOT NULL,
-                dia TEXT NOT NULL,
-                fecha TEXT,
-                set_orden INTEGER NOT NULL,
-                ejercicio TEXT NOT NULL,
-                reps REAL,
-                kg REAL,
-                rir REAL,
-                origen TEXT NOT NULL DEFAULT 'google'
-            );
-            CREATE INDEX IF NOT EXISTS idx_training_semana ON training_sets(semana);
-            CREATE INDEX IF NOT EXISTS idx_training_ejercicio ON training_sets(ejercicio);
-            CREATE TABLE IF NOT EXISTS plantillas (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nombre TEXT NOT NULL UNIQUE,
-                clasificacion TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL DEFAULT '',
-                updated_at TEXT NOT NULL DEFAULT ''
-            );
-            CREATE TABLE IF NOT EXISTS plantilla_sets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                plantilla_id INTEGER NOT NULL,
-                set_orden INTEGER NOT NULL,
-                ejercicio TEXT NOT NULL,
-                FOREIGN KEY (plantilla_id) REFERENCES plantillas(id) ON DELETE CASCADE
-            );
-            CREATE INDEX IF NOT EXISTS idx_plantilla_sets ON plantilla_sets(plantilla_id);
-        """)
-        conn.commit()
-        if "origen" not in _table_columns(conn, "training_sets"):
-            conn.execute("ALTER TABLE training_sets ADD COLUMN origen TEXT NOT NULL DEFAULT 'google'")
-        ejercicios_cols = _table_columns(conn, "ejercicios")
-        if "categoria" not in ejercicios_cols:
-            conn.execute("ALTER TABLE ejercicios ADD COLUMN categoria TEXT")
-        if "origen" not in ejercicios_cols:
-            conn.execute("ALTER TABLE ejercicios ADD COLUMN origen TEXT NOT NULL DEFAULT 'google'")
-        plantillas_cols = _table_columns(conn, "plantillas")
-        if "orden" not in plantillas_cols:
-            conn.execute("ALTER TABLE plantillas ADD COLUMN orden INTEGER NOT NULL DEFAULT 0")
-        conn.commit()
-        _backfill_categories(conn)
-        conn.commit()
-    finally:
-        conn.close()
+    run_migrations(db_path)
 
 def backup_db(db_path: str) -> str:
     import shutil

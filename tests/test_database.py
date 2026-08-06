@@ -86,6 +86,121 @@ def test_init_db_idempotent(tmp_path):
     conn.close()
     assert count == 0
 
+
+def test_migrations_recorded_in_schema_migrations(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    versions = sorted(r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall())
+    conn.close()
+    assert versions == [1, 2, 3]
+
+
+def test_migrates_intermediate_state_without_orden(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    conn = sqlite3.connect(db_path)
+    conn.executescript("""
+        CREATE TABLE ejercicios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            grupo_muscular TEXT NOT NULL,
+            ejercicio TEXT NOT NULL UNIQUE,
+            categoria TEXT,
+            origen TEXT NOT NULL DEFAULT 'google'
+        );
+        CREATE TABLE training_sets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            semana INTEGER NOT NULL,
+            dia TEXT NOT NULL,
+            fecha TEXT,
+            set_orden INTEGER NOT NULL,
+            ejercicio TEXT NOT NULL,
+            reps REAL,
+            kg REAL,
+            rir REAL,
+            origen TEXT NOT NULL DEFAULT 'google'
+        );
+        CREATE TABLE plantillas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL UNIQUE,
+            clasificacion TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE plantilla_sets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plantilla_id INTEGER NOT NULL,
+            set_orden INTEGER NOT NULL,
+            ejercicio TEXT NOT NULL,
+            FOREIGN KEY (plantilla_id) REFERENCES plantillas(id) ON DELETE CASCADE
+        );
+        INSERT INTO plantillas (nombre, clasificacion, created_at, updated_at)
+        VALUES ('Mi Empuje', '', '2026-01-01', '2026-01-01');
+        INSERT INTO plantilla_sets (plantilla_id, set_orden, ejercicio) VALUES (1, 1, 'Press');
+    """)
+    conn.commit()
+    conn.close()
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(plantillas)").fetchall()]
+    orden = conn.execute("SELECT orden FROM plantillas").fetchone()[0]
+    conn.close()
+    assert "orden" in cols
+    assert orden == 0
+
+
+def test_migrates_old_schema_keeps_rows_and_indexes(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    conn = sqlite3.connect(db_path)
+    conn.executescript("""
+        CREATE TABLE ejercicios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            grupo_muscular TEXT NOT NULL,
+            ejercicio TEXT NOT NULL UNIQUE
+        );
+        CREATE TABLE training_sets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            semana INTEGER NOT NULL,
+            dia TEXT NOT NULL,
+            fecha TEXT,
+            set_orden INTEGER NOT NULL,
+            ejercicio TEXT NOT NULL,
+            reps REAL,
+            kg REAL,
+            rir REAL
+        );
+        INSERT INTO ejercicios (grupo_muscular, ejercicio) VALUES ('Pectoral', 'Press');
+        INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir)
+        VALUES (1, 'LUNES', '4/5/26', 1, 'Press', 6, 85, 1);
+    """)
+    conn.commit()
+    conn.close()
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    indexes = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'index'"
+    ).fetchall()}
+    n_rows = conn.execute("SELECT COUNT(*) FROM training_sets").fetchone()[0]
+    conn.close()
+    assert {"idx_training_semana", "idx_training_ejercicio", "idx_plantilla_sets"} <= indexes
+    assert n_rows == 1
+
+
+def test_backup_only_when_pending_migrations(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    from src.migrations.runner import run_migrations
+    run_migrations(db_path)
+    backups_dir = tmp_path / "backups"
+    assert not backups_dir.exists()
+    run_migrations(db_path)
+    assert not backups_dir.exists()
+    conn = sqlite3.connect(db_path)
+    conn.execute("DROP TABLE schema_migrations")
+    conn.commit()
+    conn.close()
+    run_migrations(db_path)
+    assert backups_dir.exists()
+    assert len(list(backups_dir.iterdir())) == 1
+
 def test_load_ejercicios(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
