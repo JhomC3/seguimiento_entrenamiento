@@ -347,3 +347,27 @@ def test_entreno_guardado_con_papelera_cuando_hay_datos(tmp_path, monkeypatch):
     r2 = TestClient(appmod.app).get(f"/fecha/editor?fecha={_fecha(1)}")
     assert "delete-session-btn" in r2.text
     assert "hidden" in r2.text[r2.text.find("delete-session-btn"):r2.text.find("delete-session-btn") + 200]
+
+
+def test_index_references_static_assets(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = TestClient(appmod.app).get("/")
+    assert 'href="/static/css/app.css"' in r.text
+    assert 'src="/static/js/app.js"' in r.text
+
+
+def test_static_css_served(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = TestClient(appmod.app).get("/static/css/app.css")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/css")
+
+
+def test_static_js_served(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = TestClient(appmod.app).get("/static/js/app.js")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/javascript")

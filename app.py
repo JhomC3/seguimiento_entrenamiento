@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta
 import pandas as pd
 from fastapi import FastAPI, Form, Query, Request
 from fastapi.responses import HTMLResponse, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from config import CICLO_START, DB_PATH, MUSCLE_CATEGORIES
@@ -57,6 +58,7 @@ async def lifespan(_: FastAPI):
     yield
 
 app = FastAPI(title="Gym Tracker", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 UNDO_STACK: deque = deque(maxlen=10)

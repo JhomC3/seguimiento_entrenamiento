@@ -1,0 +1,6 @@
+/* app.css — CSS import manifest. Order defines cascade precedence. */
+@import "theme.css";
+@import "components.css";
+@import "date-navigator.css";
+@import "session-editor.css";
+@import "templates.css";
