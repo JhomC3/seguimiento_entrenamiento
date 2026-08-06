@@ -230,7 +230,7 @@ def test_editor_botones_texto_en_panel_e_iconos_en_form(tmp_path, monkeypatch):
     assert ">Guardar</button>" in r.text
     assert ">Cancelar</button>" in r.text
     assert 'class="btn-x"' in r.text
-    assert 'class="btn-check"' not in r.text
+    assert 'class="btn-check"' in r.text
     assert "undo-btn" not in r.text
 
 

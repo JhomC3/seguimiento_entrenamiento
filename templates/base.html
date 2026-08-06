@@ -836,12 +836,18 @@
             });
         }
 
+        function setEntrenoBtnVisible(visible) {
+            const btn = document.querySelector('#session-editor .save-template-btn');
+            if (btn) btn.hidden = !visible;
+        }
+
         function openEntrenoForm() {
             const wrap = document.getElementById('save-template-form-wrap');
             if (!wrap) return;
             const input = wrap.querySelector('input[name="nombre"]');
             if (input && !input.value) input.value = suggestedTemplateName();
             wrap.classList.remove('hidden');
+            setEntrenoBtnVisible(false);
             syncTemplateEjercicios();
             if (input) input.focus();
         }
@@ -849,7 +855,11 @@
         function guardarPlantillaToggle(force) {
             const wrap = document.getElementById('save-template-form-wrap');
             if (!wrap) return;
-            if (force === false) { wrap.classList.add('hidden'); return; }
+            if (force === false) {
+                wrap.classList.add('hidden');
+                setEntrenoBtnVisible(true);
+                return;
+            }
             if (editorEditmode() !== '1') {
                 flashEditorNotice('Activa el modo editable primero.', 'error');
                 return;
@@ -863,6 +873,7 @@
                 showConfirmDialog(function () { openEntrenoForm(); }, null);
             } else {
                 wrap.classList.add('hidden');
+                setEntrenoBtnVisible(true);
             }
         }
 
