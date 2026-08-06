@@ -197,8 +197,8 @@
 
         /* Botones +/− de filas (overlay glass, visibles al hover) */
         .row-btn {
-            width: 18px;
-            height: 18px;
+            width: 16px;
+            height: 16px;
             border-radius: 9999px;
             display: inline-flex;
             align-items: center;
@@ -291,8 +291,8 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 34px;
-            height: 34px;
+            width: 26px;
+            height: 26px;
             border-radius: 9999px;
             background: rgba(255, 255, 255, 0.04);
             border: 1px solid rgba(255, 255, 255, 0.06);
@@ -373,8 +373,8 @@
         #plantillas-list .pt-card {
             cursor: grab;
         }
-        #plantillas-list .pt-card.sortable-chosen {
-            cursor: grabbing;
+        #plantillas-list .pt-card.dragging {
+            opacity: 0.5;
         }
 
         /* Badges de clasificación de plantillas */
@@ -470,8 +470,12 @@
         /* Tabla de sesión: altura fija estable (variable en el panel, sobrevive a los swaps) */
         #session-editor .table-scroll {
             height: var(--table-h, 538px);
+            scrollbar-gutter: stable;
             scrollbar-width: thin;
             scrollbar-color: #333 #0a0a0a;
+        }
+        #session-editor .table-scroll table {
+            table-layout: fixed;
         }
         #session-editor .table-scroll thead th {
             position: sticky;
@@ -512,9 +516,13 @@
         let confirmCbs = null;
         let saveRequested = false;
         let sortableRows = null;
-        let dropInFlight = false;
         let plantillaAppliedPending = false;
-        let entrenosOrderStart = null;
+        let dragCard = null;
+        let dragOrderStart = null;
+        let dropHandled = false;
+        let droppedOnList = false;
+        let applyInFlight = null;
+        let dragGhost = null;
 
         function scheduleNotices() {
             document.querySelectorAll('.notice:not(.scheduled)').forEach(function (el) {
@@ -677,6 +685,7 @@
             row.after(clone);
             renumberRows();
             updateEditActions();
+            fitRowsToPanel();
         }
 
         function removeRow(btn) {
@@ -684,6 +693,7 @@
             btn.closest('.set-row').remove();
             renumberRows();
             updateEditActions();
+            fitRowsToPanel();
         }
 
         function renumberRows() {
@@ -692,21 +702,32 @@
             });
         }
 
-        /* ---------- Altura del panel: fija (variable en el panel estable), siempre caben 18 filas ---------- */
-        const ROWS_VISIBLE = 18;
+        /* ---------- Altura del panel: UNA medición estandarizada, constante en todo estado ---------- */
+        const ROWS_VISIBLE = 17.5;
+        const PANEL_BUFFER = 2;
+        const ROW_BORDER_PX = 1;
+        let rowHMeasured = null;
         function fitRowsToPanel() {
             const editor = document.getElementById('session-editor');
             const tbody = document.getElementById('set-rows');
             if (!editor || !tbody) return;
-            const row = tbody.querySelector('.set-row');
-            const rowH = row ? row.offsetHeight : 28;
             const thead = editor.querySelector('.table-scroll thead');
-            const theadH = thead ? thead.offsetHeight : 20;
-            const full = theadH + ROWS_VISIBLE * rowH;
-            const nrows = tbody.querySelectorAll('.set-row').length;
-            const table = editor.querySelector('.table-scroll table');
-            const tableH = table ? table.offsetHeight : 0;
-            editor.style.setProperty('--table-h', (nrows > ROWS_VISIBLE ? full : Math.max(full, tableH)) + 'px');
+            const theadH = thead ? thead.getBoundingClientRect().height : 20;
+            if (rowHMeasured === null) {
+                const row = tbody.querySelector('.set-row');
+                if (row) {
+                    const actions = row.querySelector('.row-actions');
+                    const wasHidden = actions && actions.classList.contains('hidden');
+                    if (wasHidden) actions.classList.remove('hidden');
+                    rowHMeasured = row.getBoundingClientRect().height || 28;
+                    if (wasHidden) actions.classList.add('hidden');
+                } else {
+                    rowHMeasured = 28;
+                }
+            }
+            // Fórmula única: 18 filas + 17 bordes divide-y (1px c/u, solo filas 2..18) + margen único.
+            const full = theadH + ROWS_VISIBLE * rowHMeasured + (ROWS_VISIBLE - 1) * ROW_BORDER_PX + PANEL_BUFFER;
+            editor.style.setProperty('--table-h', full + 'px');
         }
         /* ---------- Drag and drop de filas ---------- */
         function initRowSortable() {
@@ -732,38 +753,68 @@
             if (sortableRows) sortableRows.option('disabled', editorEditmode() !== '1');
         }
 
-        /* ---------- Drop zone de entrenos: todo el panel (no la tabla) ---------- */
-        function initPanelDropZone() {
+        /* ---------- Drag & drop nativo de entrenos: lista -> reordenar, panel -> aplicar ---------- */
+        function getDragAfterElement(container, y) {
+            const cards = Array.from(container.querySelectorAll('.pt-card:not(.dragging)'));
+            return cards.reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = y - box.top - box.height / 2;
+                if (offset < 0 && offset > closest.offset) return { offset, element: child };
+                return closest;
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }
+
+        function restoreDragOrder() {
+            if (!dragCard || !dragOrderStart || !dragCard.parentElement) return;
+            const list = dragCard.parentElement;
+            const cards = Array.from(list.querySelectorAll('.pt-card'));
+            cards.sort(function (a, b) {
+                return dragOrderStart.indexOf(a.dataset.ptId) - dragOrderStart.indexOf(b.dataset.ptId);
+            });
+            cards.forEach(function (c) { list.appendChild(c); });
+        }
+
+        function persistDragOrder() {
+            const params = new URLSearchParams();
+            entrenosOrder().forEach(id => params.append('id', id));
+            fetch('/plantilla/reordenar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString(),
+            });
+        }
+
+        function initEntrenoDnD() {
             const panel = document.getElementById('session-editor');
-            if (!panel || typeof Sortable === 'undefined' || panel.dataset.dropReady) return;
-            panel.dataset.dropReady = '1';
-            Sortable.create(panel, {
-                animation: 150,
-                ghostClass: 'sortable-ghost',
-                chosenClass: 'sortable-chosen',
-                draggable: '.pt-card',
-                group: { name: 'editor-panel', pull: false, put: ['entrenos'] },
-                onMove: function (evt) {
+            const list = document.getElementById('plantillas-list');
+            if (!panel) return;
+
+            if (!panel.dataset.dndPanelReady) {
+                panel.dataset.dndPanelReady = '1';
+
+                panel.addEventListener('dragover', function (e) {
+                    if (!dragCard) return;
                     const ok = editorEditmode() === '1';
                     panel.classList.toggle('drop-target', ok);
-                    return ok;
-                },
-                onEnd: function () {
-                    panel.classList.remove('drop-target');
-                },
-                onAdd: function (evt) {
-                    const item = evt.item;
-                    const id = item && item.dataset ? item.dataset.ptId : null;
-                    if (item) item.remove();
-                    if (!id) return;
-                    if (editorEditmode() !== '1') {
-                        flashEditorNotice('Activa el modo editable primero.', 'error');
-                        return;
+                    if (ok) {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
                     }
-                    panel.classList.add('drop-target');
-                    if (dropInFlight) return;
-                    dropInFlight = true;
-                    setTimeout(function () { dropInFlight = false; }, 500);
+                });
+
+                panel.addEventListener('dragleave', function (e) {
+                    if (!dragCard) return;
+                    if (!panel.contains(e.relatedTarget)) panel.classList.remove('drop-target');
+                });
+
+                panel.addEventListener('drop', function (e) {
+                    panel.classList.remove('drop-target');
+                    if (!dragCard) return;
+                    if (editorEditmode() !== '1') return;
+                    const id = e.dataTransfer.getData('text/plain');
+                    if (!id || dropHandled) return;
+                    dropHandled = true;
+                    e.preventDefault();
                     const st = document.getElementById('editor-state');
                     if (st && st.dataset.hasData === '1') {
                         document.getElementById('confirm-msg').textContent = '¿Reemplazar el entrenamiento del día?';
@@ -771,7 +822,64 @@
                     } else {
                         aplicarPlantilla(parseInt(id, 10));
                     }
-                },
+                });
+            }
+
+            if (!list || list.dataset.dndListReady) return;
+            list.dataset.dndListReady = '1';
+            list.querySelectorAll('.pt-card').forEach(card => { card.draggable = true; });
+
+            list.addEventListener('dragstart', function (e) {
+                const card = e.target.closest('.pt-card');
+                if (!card) return;
+                if (e.target.closest('input, select, button')) { e.preventDefault(); return; }
+                e.dataTransfer.setData('text/plain', card.dataset.ptId);
+                e.dataTransfer.effectAllowed = 'move';
+                if (dragGhost) dragGhost.remove();
+                const rect = card.getBoundingClientRect();
+                dragGhost = card.cloneNode(true);
+                dragGhost.style.cssText = 'position:absolute;left:-9999px;top:0;pointer-events:none;';
+                document.body.appendChild(dragGhost);
+                e.dataTransfer.setDragImage(dragGhost, e.clientX - rect.left, e.clientY - rect.top);
+                card.classList.add('dragging');
+                dragCard = card;
+                dragOrderStart = entrenosOrder();
+                droppedOnList = false;
+                dropHandled = false;
+            });
+
+            list.addEventListener('dragover', function (e) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (!dragCard) return;
+                const after = getDragAfterElement(list, e.clientY);
+                if (after == null) list.appendChild(dragCard);
+                else list.insertBefore(dragCard, after);
+            });
+
+            list.addEventListener('drop', function (e) {
+                e.preventDefault();
+                droppedOnList = true;
+            });
+
+            list.addEventListener('dragend', function () {
+                if (dragCard) dragCard.classList.remove('dragging');
+                if (droppedOnList) {
+                    if (dragOrderStart && dragOrderStart.join() !== entrenosOrder().join()) {
+                        persistDragOrder();
+                    }
+                } else {
+                    restoreDragOrder();
+                }
+                dragCard = null;
+                dragOrderStart = null;
+                droppedOnList = false;
+                dropHandled = false;
+                if (dragGhost) {
+                    dragGhost.remove();
+                    dragGhost = null;
+                }
+                panel.classList.remove('drop-target');
             });
         }
 
@@ -794,6 +902,10 @@
             }
             const fecha = currentFecha();
             if (!fecha) return;
+            const key = `${id}|${fecha}`;
+            if (applyInFlight === key) return;
+            applyInFlight = key;
+            setTimeout(function () { if (applyInFlight === key) applyInFlight = null; }, 600);
             htmx.ajax('GET', `/plantilla/aplicar/${id}?fecha=${fecha}`, { target: '#session-editor-wrap', swap: 'none' });
         }
 
@@ -955,33 +1067,6 @@
                     preventOnFilter: false,
                 });
             }
-            const list = document.getElementById('plantillas-list');
-            if (list && typeof Sortable !== 'undefined' && !list.dataset.sortableReady) {
-                list.dataset.sortableReady = '1';
-                Sortable.create(list, {
-                    animation: 150,
-                    ghostClass: 'sortable-ghost',
-                    chosenClass: 'sortable-chosen',
-                    filter: 'input, select, button',
-                    preventOnFilter: false,
-                    draggable: '.pt-card',
-                    group: { name: 'entrenos', pull: 'clone', put: false },
-                    onStart: function () { entrenosOrderStart = entrenosOrder(); },
-                    onEnd: function () {
-                        const now = entrenosOrder();
-                        if (entrenosOrderStart && entrenosOrderStart.join() !== now.join()) {
-                            const params = new URLSearchParams();
-                            now.forEach(id => params.append('id', id));
-                            fetch('/plantilla/reordenar', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                                body: params.toString(),
-                            });
-                        }
-                        entrenosOrderStart = null;
-                    },
-                });
-            }
         }
 
         function entrenosOrder() {
@@ -1076,8 +1161,8 @@
             scheduleNotices();
             syncEditorFromContent();
             initRowSortable();
-            initPanelDropZone();
             initTemplateSortable();
+            initEntrenoDnD();
             fitRowsToPanel();
         });
 
@@ -1116,6 +1201,7 @@
             scheduleNotices();
             handleEditorState();
             initTemplateSortable();
+            initEntrenoDnD();
             const ptForm = e.detail && e.detail.elt && e.detail.elt.closest
                 ? e.detail.elt.closest('#save-template-form')
                 : null;

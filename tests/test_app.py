@@ -25,7 +25,7 @@ def test_saved_today_is_readonly(tmp_path, monkeypatch):
     assert 'duration-150 hidden"' in r.text
     assert 'data-readonly="1"' in r.text
     assert 'data-has-data="1"' in r.text
-    assert 'id="edit-actions" class="mt-2 h-8 flex items-center gap-2 invisible"' in r.text
+    assert 'id="edit-actions" class="mt-1 h-7 flex items-center gap-2 invisible"' in r.text
     assert 'aria-label="Cancelar"' in r.text
     assert "rm-cell" in r.text
 
@@ -47,7 +47,7 @@ def test_empty_future_is_editable(tmp_path, monkeypatch):
     assert 'duration-150 hidden"' not in r.text
     assert 'data-readonly="0"' in r.text
     assert 'data-has-data="0"' in r.text
-    assert 'id="edit-actions" class="mt-2 h-8 flex items-center gap-2 invisible"' in r.text
+    assert 'id="edit-actions" class="mt-1 h-7 flex items-center gap-2 invisible"' in r.text
     assert 'aria-label="Cancelar"' in r.text
 
 def test_empty_today_is_editable(tmp_path, monkeypatch):

@@ -328,30 +328,51 @@ def main() -> None:
             drag_row(1, 2)
             check("drag bloqueado en readonly", row_order() == before)
 
-            # Q. panel compacto: altura fija de 18 filas, scroll solo con más filas
+            # Q. panel compacto: altura fija estandarizada, scroll solo al exceder las filas visibles
             def scroll_metrics():
                 return page.evaluate(
                     '(() => { const w = document.querySelector("#session-editor .table-scroll"); '
                     'return { client: w.clientHeight, scroll: w.scrollHeight, h: getComputedStyle(w).height, rows: document.querySelectorAll("#set-rows .set-row").length }; })()'
                 )
+            rv = page.evaluate("ROWS_VISIBLE")
+            rv_floor = int(rv)
+            rv_ceil = rv_floor + 1
+
+            def col_widths() -> list:
+                return page.evaluate('Array.from(document.querySelectorAll("#session-editor .table-scroll thead th")).map(t => Math.round(t.getBoundingClientRect().width))')
+
             m = scroll_metrics()
             h_px = float(m["h"].replace("px", ""))
             row_px = page.evaluate('document.querySelector("#set-rows .set-row").offsetHeight')
-            check(f"altura fija = thead + 18 filas ({h_px:.0f}px ≈ 18*{row_px})", abs(h_px - (18 * row_px)) <= 40)
+            check(f"altura fija = thead + {rv} filas ({h_px:.0f}px ≈ {rv}*{row_px})", abs(h_px - (rv * row_px)) <= 40)
             check(f"panel con pocas filas sin scroll (rows={m['rows']}, scroll<=client)", m["scroll"] <= m["client"])
+            widths_ro = col_widths()
+            h_base = m["h"]
             page.click(".pencil-btn")
-            for _ in range(16):
+            time.sleep(0.4)
+            check(f"anchos de columna idénticos readonly vs editable ({widths_ro} == {col_widths()})", col_widths() == widths_ro)
+            for _ in range(rv_floor - m["rows"]):
                 page.click("#set-rows .set-row:nth-child(1) .row-actions button:nth-child(2)")
             m = scroll_metrics()
-            check(f"18 filas: tabla llena el panel sin hueco ni scroll ({m['rows']} rows, {m['scroll']}=={m['client']})", m["rows"] == 18 and m["scroll"] == m["client"])
+            check(f"{rv_floor} filas: panel lleno sin corte ni scroll (rows={m['rows']}, hueco={m['client'] - m['scroll']}px)", m["rows"] == rv_floor and m["scroll"] <= m["client"] and (m["client"] - m["scroll"]) <= 12)
+            check(f"altura constante con 2 y {rv_floor} filas ({m['h']} == {h_base})", m["h"] == h_base)
+            h_full = m["h"]
             page.click("#set-rows .set-row:nth-child(1) .row-actions button:nth-child(2)")
             m = scroll_metrics()
-            check(f"19+ filas -> scroll vertical interno ({m['rows']} rows, {m['scroll']}>{m['client']})", m["rows"] == 19 and m["scroll"] > m["client"])
-            check("altura sin cambios con 19+ filas", m["h"] == f"{h_px:.0f}px")
+            check(f"{rv_ceil}+ filas -> scroll vertical interno ({m['rows']} rows, {m['scroll']}>{m['client']})", m["rows"] == rv_ceil and m["scroll"] > m["client"])
+            check("altura sin cambios al exceder las filas visibles", m["h"] == h_full)
+            check(f"anchos de columna invariantes con scrollbar visible ({widths_ro} == {col_widths()})", col_widths() == widths_ro)
+            row_hidden = page.evaluate("""(() => {
+                const sc = document.querySelector('#session-editor .table-scroll');
+                const rows = document.querySelectorAll('#set-rows .set-row');
+                const last = rows[rows.length - 1];
+                return sc.getBoundingClientRect().bottom < last.getBoundingClientRect().bottom;
+            })()""")
+            check(f"fila {rv_ceil} queda oculta bajo el pliegue (se ven solo las {rv_floor})", row_hidden)
             page.click("#edit-actions button:not([type=submit])")
             time.sleep(0.8)
             m = scroll_metrics()
-            check(f"panel conserva sus dimensiones tras cancelar ({m['h']}, {m['rows']} rows)", m["h"] == f"{h_px:.0f}px" and m["scroll"] <= m["client"])
+            check(f"panel conserva sus dimensiones tras cancelar ({m['h']}, {m['rows']} rows)", m["h"] == h_base and m["scroll"] <= m["client"])
 
             # R. entrenos: guardar como entreno, aplicar, editar, eliminar
             def entrenos_names() -> list:
@@ -362,10 +383,15 @@ def main() -> None:
                 db = dst_loc.bounding_box()
                 page.mouse.move(sb["x"] + sb["width"] / 2, sb["y"] + 16)
                 page.mouse.down()
-                page.mouse.move(db["x"] + db["width"] / 2, db["y"] + 16, steps=15)
+                moving_down = db["y"] > sb["y"] + 4
+                dy = db["y"] + (db["height"] - 8 if moving_down else 16)
+                page.mouse.move(db["x"] + db["width"] / 2, dy, steps=15)
                 time.sleep(0.3)
                 page.mouse.up()
                 time.sleep(0.8)
+
+            apply_xhrs: list[str] = []
+            page.on("request", lambda r: apply_xhrs.append(r.url) if "/plantilla/aplicar" in r.url else None)
 
             def plus_hidden() -> bool:
                 return page.evaluate("document.querySelector('#session-editor .save-template-btn').hidden")
@@ -458,18 +484,20 @@ def main() -> None:
             check("reorden persistido tras refrescar", entrenos_names() == ["Mi Jalón", "Empuje"])
             nav(iso_future6)
             check(f"fecha vacía editable para drop ({em()})", em() == "1")
+
             page.evaluate("""(() => {
                 window.__rows_y = [];
                 window.__frames = 0;
                 const row = document.querySelector('#set-rows .set-row');
                 const loop = () => {
-                    if (document.querySelector('.sortable-ghost')) {
+                    if (document.querySelector('.pt-card.dragging')) {
                         window.__rows_y.push(row ? row.getBoundingClientRect().top : null);
                     }
                     if (window.__frames < 500) { window.__frames++; requestAnimationFrame(loop); }
                 };
                 loop();
             })()""")
+            apply_xhrs.clear()
             mouse_drag(page.locator('#plantillas-list .pt-card').nth(1), page.locator('#set-rows .set-row').first)
             time.sleep(1.0)
             ys = [y for y in page.evaluate("window.__rows_y") if y is not None]
@@ -480,35 +508,44 @@ def main() -> None:
             check("drop aplica entreno: filas con últimos valores", row_order() == ["Press Repro"])
             kgs = page.evaluate('Array.from(document.querySelectorAll("#set-rows input[name=\\"kg\\"]")).map(i => i.value)')
             check(f"drop aplica entreno: kg ({kgs})", kgs == ["80"])
+            check(f"drop aplica entreno: un solo XHR ({len(apply_xhrs)})", len(apply_xhrs) == 1)
             page.click("#edit-actions button:not([type=submit])")
             time.sleep(0.8)
             check("cancelar tras drop restaura fila vacía", nrows() == 1 and em() == "1")
+            apply_xhrs.clear()
             mouse_drag(page.locator('#plantillas-list .pt-card').nth(1), page.locator('#session-editor h3'))
             time.sleep(1.0)
             check("drop en cualquier zona del panel (header) aplica", em() == "1" and row_order() == ["Press Repro"])
+            check(f"drop header aplica una sola vez ({len(apply_xhrs)})", len(apply_xhrs) == 1)
             page.click("#edit-actions button:not([type=submit])")
             time.sleep(0.8)
             check("cancelar tras drop en header restaura", nrows() == 1 and em() == "1")
             nav(iso_future3)
             check(f"drop bloqueado en fecha con datos sin edición ({em()})", em() == "0")
             before = row_order()
+            apply_xhrs.clear()
             mouse_drag(page.locator('#plantillas-list .pt-card').first, page.locator('#set-rows .set-row').first)
             check("drop bloqueado sin edición: editor sin cambios", row_order() == before and em() == "0")
+            check("drop bloqueado: sin llamadas de aplicar", len(apply_xhrs) == 0)
             page.click(".pencil-btn")
             time.sleep(0.3)
             check(f"drop con datos en modo editable ({em()})", em() == "1")
             before = row_order()
+            apply_xhrs.clear()
             mouse_drag(page.locator('#plantillas-list .pt-card').first, page.locator('#set-rows .set-row').first)
             check("drop con datos pregunta reemplazo", modal())
             page.click("#confirm-cancel")
             time.sleep(0.5)
             check("reemplazo cancelado: editor sin cambios", row_order() == before and em() == "1")
+            check("reemplazo cancelado: sin llamadas de aplicar", len(apply_xhrs) == 0)
+            apply_xhrs.clear()
             mouse_drag(page.locator('#plantillas-list .pt-card').first, page.locator('#set-rows .set-row').first)
             check("segundo drop vuelve a preguntar", modal())
             page.click("#confirm-save")
             time.sleep(1.0)
             check("reemplazo aplicado: editor editable y lleno", em() == "1" and nrows() >= 1)
             check("reemplazo aplicado: filas del entreno", row_order() == ["Curl Repro"])
+            check(f"reemplazo aplicado: un solo XHR ({len(apply_xhrs)})", len(apply_xhrs) == 1)
             page.click("#edit-actions button:not([type=submit])")
             time.sleep(0.8)
             check("cancelar tras reemplazo restaura la sesión real", row_order() == before and em() == "0")
