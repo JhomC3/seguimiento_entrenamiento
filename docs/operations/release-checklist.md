@@ -19,7 +19,7 @@ uv run ruff check .
 uv run mypy app.py src tests
 uv run pytest -q --ignore=tests/e2e        # coverage floor 90% enforced
 uv run python scripts/check_module_coverage.py src/charts.py src/metrics_engine.py --min 90
-uv run pytest tests/e2e -q                  # browser tests
+uv run pytest tests/e2e -q --no-cov         # browser tests (coverage gate lives in unit runs)
 ```
 
 - [ ] All green on a clean checkout (CI `quality`, `unit`, `browser` jobs pass).

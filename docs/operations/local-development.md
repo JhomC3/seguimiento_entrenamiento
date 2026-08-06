@@ -49,7 +49,7 @@ uv run uvicorn app:app --host 127.0.0.1 --port 8000
 ```bash
 uv run pytest                    # full suite: unit + integration + browser (Playwright)
 uv run pytest --ignore=tests/e2e # unit/integration only, with coverage floor (90%)
-uv run pytest tests/e2e -q       # browser tests only
+uv run pytest tests/e2e -q --no-cov  # browser tests only (coverage gate belongs to unit runs)
 ```
 
 Coverage (branch, floor 90%) is enforced via `pyproject.toml` `addopts`.

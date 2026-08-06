@@ -2,8 +2,15 @@ name: CI
 
 on:
   push:
-    branches: [master, codex]
+    # CI en toda rama (las ramas de trabajo son codex*, codex-security*, etc.).
+    # Los tags no disparan este workflow; los PRs quedan cubiertos por
+    # `pull_request:` de abajo.
+    branches: ['**']
   pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   quality:
@@ -51,5 +58,8 @@ jobs:
         run: uv sync --locked
       - name: Install Playwright chromium
         run: uv run playwright install --with-deps chromium
+      # --no-cov: la puerta de cobertura (90%) vive en el job `unit`; el proceso
+      # pytest del job browser no instrumenta el subproceso uvicorn y mediría
+      # solo ~10%, fallando el gate en un runner limpio sin aportar valor.
       - name: Browser tests
-        run: uv run pytest tests/e2e -q
+        run: uv run pytest tests/e2e -q --no-cov
