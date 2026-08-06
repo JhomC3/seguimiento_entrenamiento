@@ -1,4 +1,6 @@
-DB_PATH = "data/gym.db"
+import os
+
+DB_PATH = os.environ.get("GYM_DB_PATH", "data/gym.db")
 
 CICLO_START = "10/02/2026"
 
