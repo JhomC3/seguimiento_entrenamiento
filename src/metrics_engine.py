@@ -13,7 +13,7 @@ def is_compound(exercise_name: str) -> bool:
     name_lower = exercise_name.lower()
     return any(kw in name_lower for kw in COMPOUND_KEYWORDS)
 
-def get_exercises_baselines(db_path: str) -> dict:
+def get_exercises_baselines(db_path: str) -> dict[str, float]:
     """
     Calcula el RM_a base de cada ejercicio (promedio de la semana 1).
     Si un ejercicio no se realizó en la semana 1, se toma la primera semana disponible.
@@ -27,7 +27,7 @@ def get_exercises_baselines(db_path: str) -> dict:
         """
         df = pd.read_sql_query(query, conn)
     
-    baselines = {}
+    baselines: dict[str, float] = {}
     if df.empty:
         return baselines
     
@@ -39,11 +39,11 @@ def get_exercises_baselines(db_path: str) -> dict:
     for exercise, group in df.groupby("ejercicio"):
         first_week = group["semana"].min()
         first_week_sets = group[group["semana"] == first_week]
-        baselines[exercise] = round(first_week_sets["rm_ajustado"].mean(), 1)
+        baselines[str(exercise)] = round(first_week_sets["rm_ajustado"].mean(), 1)
         
     return baselines
 
-def calculate_pfr_timeline(db_path: str, filter_type: str = "systemic", filter_value: str = None) -> pd.DataFrame:
+def calculate_pfr_timeline(db_path: str, filter_type: str = "systemic", filter_value: str | None = None) -> pd.DataFrame:
     """
     Calcula la serie temporal diaria de Rendimiento (PI), Fatiga Acumulada (FI) y Recuperación (RI).
     - filter_type: 'systemic' (todo el cuerpo), 'muscle_group', 'exercise'

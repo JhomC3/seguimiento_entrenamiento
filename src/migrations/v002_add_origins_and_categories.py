@@ -3,6 +3,8 @@
 Inspects legacy columns defensively; every step is idempotent.
 """
 
+from typing import cast
+
 from config import MUSCLE_CATEGORIES
 
 VERSION = 2
@@ -17,14 +19,15 @@ def _backfill_categories(conn) -> None:
     rows = conn.execute("SELECT id, grupo_muscular FROM ejercicios WHERE categoria IS NULL").fetchall()
     if not rows:
         return
-    muscle_to_cat = {}
+    muscle_to_cat: dict[str, str] = {}
     for cat in MUSCLE_CATEGORIES:
-        for muscle in cat["muscles"]:
-            muscle_to_cat[muscle.strip().lower()] = cat["name"]
+        muscles = cast(list[str], cat["muscles"])
+        for muscle in muscles:
+            muscle_to_cat[muscle.strip().lower()] = cast(str, cat["name"])
     for row_id, grupo in rows:
-        cat = muscle_to_cat.get(str(grupo).strip().lower())
-        if cat:
-            conn.execute("UPDATE ejercicios SET categoria = ? WHERE id = ?", (cat, row_id))
+        categoria = muscle_to_cat.get(str(grupo).strip().lower())
+        if categoria:
+            conn.execute("UPDATE ejercicios SET categoria = ? WHERE id = ?", (categoria, row_id))
 
 
 def migrate(conn) -> None:

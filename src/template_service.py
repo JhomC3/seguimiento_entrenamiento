@@ -8,6 +8,14 @@ from src.database import (
     insert_plantilla,
     update_plantilla,
 )
+from src.models import (
+    ConflictError,
+    NotFoundError,
+    Template,
+    TemplateInput,
+    TrainingSetInput,
+    ValidationError,
+)
 
 CLASSIFICATIONS = ["EMPUJE", "JALON", "PIERNA", "TORSO", "FULL BODY", "CORE", "SIN CLASIFICAR"]
 
@@ -46,50 +54,79 @@ def _clean_ejercicios(ejercicios: list[str]) -> list[str]:
         cleaned.append(name)
     return cleaned
 
-def save_template(db_path: str, nombre: str, ejercicios: list[str]) -> dict:
-    nombre = str(nombre).strip()
-    ejercicios = _clean_ejercicios(ejercicios)
+def _to_template(row: dict) -> Template:
+    return Template(
+        id=row["id"],
+        nombre=row["nombre"],
+        clasificacion=row["clasificacion"],
+        updated_at=row["updated_at"],
+        ejercicios=list(row.get("ejercicios", [])),
+        updated=bool(row.get("updated", False)),
+    )
+
+def save_template(db_path: str, template: TemplateInput) -> Template:
+    nombre = str(template.nombre).strip()
+    ejercicios = _clean_ejercicios(template.ejercicios)
     if not nombre:
-        raise ValueError("Debes ponerle nombre al entreno.")
+        raise ValidationError("Debes ponerle nombre al entreno.")
     if not ejercicios:
-        raise ValueError("El entreno debe tener al menos un ejercicio.")
+        raise ValidationError("El entreno debe tener al menos un ejercicio.")
     clasificacion = classify_template(db_path, ejercicios)
     existing = find_plantilla_by_nombre(db_path, nombre)
     if existing is not None:
         update_plantilla(db_path, existing, nombre, clasificacion, ejercicios)
-        return {"id": existing, "nombre": nombre, "clasificacion": clasificacion, "updated": True}
+        return _to_template({
+            "id": existing,
+            "nombre": nombre,
+            "clasificacion": clasificacion,
+            "updated_at": "",
+            "ejercicios": ejercicios,
+            "updated": True,
+        })
     pid = insert_plantilla(db_path, nombre, clasificacion, ejercicios)
-    return {"id": pid, "nombre": nombre, "clasificacion": clasificacion, "updated": False}
+    return _to_template({
+        "id": pid,
+        "nombre": nombre,
+        "clasificacion": clasificacion,
+        "updated_at": "",
+        "ejercicios": ejercicios,
+    })
 
-def edit_template(db_path: str, plantilla_id: int, nombre: str, ejercicios: list[str]) -> dict:
-    nombre = str(nombre).strip()
-    ejercicios = _clean_ejercicios(ejercicios)
+def edit_template(db_path: str, plantilla_id: int, template: TemplateInput) -> Template:
+    nombre = str(template.nombre).strip()
+    ejercicios = _clean_ejercicios(template.ejercicios)
     if not nombre:
-        raise ValueError("El nombre del entreno no puede estar vacío.")
+        raise ValidationError("El nombre del entreno no puede estar vacío.")
     if not ejercicios:
-        raise ValueError("El entreno debe tener al menos un ejercicio.")
+        raise ValidationError("El entreno debe tener al menos un ejercicio.")
     existing = find_plantilla_by_nombre(db_path, nombre)
     if existing is not None and existing != plantilla_id:
-        raise ValueError(f"Ya existe un entreno llamado '{nombre}'.")
+        raise ConflictError(f"Ya existe un entreno llamado '{nombre}'.")
     clasificacion = classify_template(db_path, ejercicios)
     update_plantilla(db_path, plantilla_id, nombre, clasificacion, ejercicios)
-    return {"id": plantilla_id, "nombre": nombre, "clasificacion": clasificacion}
+    return _to_template({
+        "id": plantilla_id,
+        "nombre": nombre,
+        "clasificacion": clasificacion,
+        "updated_at": "",
+        "ejercicios": ejercicios,
+    })
 
-def apply_template_rows(db_path: str, plantilla_id: int) -> list[dict]:
+def apply_template_rows(db_path: str, plantilla_id: int) -> list[TrainingSetInput]:
     plantilla = get_plantilla(db_path, plantilla_id)
     if plantilla is None:
-        raise ValueError("La plantilla no existe.")
-    rows: list[dict] = []
+        raise NotFoundError("La plantilla no existe.")
+    rows: list[TrainingSetInput] = []
     for ej in plantilla["ejercicios"]:
         sets = get_last_session_sets(db_path, ej)
         if sets:
             for s in sets:
-                rows.append({
-                    "ejercicio": s["ejercicio"],
-                    "kg": s["kg"],
-                    "reps": s["reps"],
-                    "rir": s["rir"],
-                })
+                rows.append(TrainingSetInput(
+                    ejercicio=s["ejercicio"],
+                    kg=s["kg"],
+                    reps=s["reps"],
+                    rir=s["rir"],
+                ))
         else:
-            rows.append({"ejercicio": ej, "kg": "", "reps": "", "rir": ""})
+            rows.append(TrainingSetInput(ejercicio=ej, kg="", reps="", rir=""))
     return rows

@@ -60,7 +60,7 @@ def parse_ciclo(csv_text: str) -> pd.DataFrame:
         
     records = []
     current_day = None
-    dates_per_week = {}  # {semana_num: fecha}
+    dates_per_week: dict[int, str] = {}  # {semana_num: fecha}
     
     for row_idx in range(2, len(df_raw)):
         row = df_raw.iloc[row_idx]

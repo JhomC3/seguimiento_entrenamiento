@@ -33,7 +33,7 @@ def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
     return df[["semana", "sesion", "serie", "fecha", "fecha_dt", "dia", "set_orden", "kg", "reps", "rir", "rm", "rm_ajustado"]]
 
 
-def chart_pfr_timeline(db_path: str, filter_type: str, filter_value: str = None, title: str = "Rendimiento Semanal") -> go.Figure:
+def chart_pfr_timeline(db_path: str, filter_type: str, filter_value: str | None = None, title: str = "Rendimiento Semanal") -> go.Figure:
     """Gráfica de rendimiento semanal promedio. 100% = Semana 1."""
     df = calculate_pfr_timeline(db_path, filter_type, filter_value)
     if df.empty:

@@ -31,6 +31,7 @@ from src.database import (
     snapshot_entrenos,
 )
 from src.db_connection import read_connection
+from src.models import TemplateInput, TrainingSetInput
 from src.template_service import (
     apply_template_rows,
     delete_plantilla,
@@ -45,6 +46,7 @@ from src.training_service import (
     parse_cycle_start,
     parse_form_date,
     save_session,
+    sets_from_form,
 )
 
 def _end_of_next_month(d: date) -> date:
@@ -137,7 +139,7 @@ def _navigator_html(request: Request, fecha_iso: str) -> str:
             "selected": d == selected,
         })
         d += timedelta(days=1)
-    return templates.TemplateResponse(
+    return _render_body(templates.TemplateResponse(
         request=request,
         name="date_navigator.html",
         context={
@@ -145,13 +147,22 @@ def _navigator_html(request: Request, fecha_iso: str) -> str:
             "selected_iso": selected.strftime("%Y-%m-%d"),
             "today_iso": date.today().strftime("%Y-%m-%d"),
         },
-    ).body.decode()
+    ))
 
-def _editor_html(request: Request, fecha_iso: str, *, rows: list[dict] | None = None, error: str | None = None, success: str | None = None, force_editable: bool = False, force_readonly: bool = False) -> str:
+def _render_body(response) -> str:
+    return bytes(response.body).decode()
+
+def _editor_html(request: Request, fecha_iso: str, *, rows: list[dict] | list[TrainingSetInput] | None = None, error: str | None = None, success: str | None = None, force_editable: bool = False, force_readonly: bool = False) -> str:
     fecha = parse_form_date(fecha_iso)
     today = date.today()
     if rows is None:
         rows = [dict(r) for r in get_sets_by_fecha(DB_PATH, fecha_to_db(fecha))]
+    else:
+        rows = [
+            {"ejercicio": r.ejercicio, "kg": r.kg, "reps": r.reps, "rir": r.rir}
+            if not isinstance(r, dict) else r
+            for r in rows
+        ]
     has_saved = any(
         str(r.get("ejercicio") or "").strip()
         or any(str(r.get(k) or "").strip() for k in ("kg", "reps", "rir"))
@@ -186,7 +197,7 @@ def _editor_html(request: Request, fecha_iso: str, *, rows: list[dict] | None = 
         display_rows = [{"ejercicio": "", "kg": "", "reps": "", "rir": "", "rm": None}]
     semana = calculate_cycle_week(fecha, CICLO_START_DATE)
     dia = day_from_date(fecha)
-    return templates.TemplateResponse(
+    return _render_body(templates.TemplateResponse(
         request=request,
         name="session_editor.html",
         context={
@@ -201,17 +212,17 @@ def _editor_html(request: Request, fecha_iso: str, *, rows: list[dict] | None = 
             "success": success,
             "catalog": get_exercises_catalog(DB_PATH),
         },
-    ).body.decode()
+    ))
 
 def _exercise_form_html(request: Request, *, error: str | None = None, success: str | None = None) -> str:
-    return templates.TemplateResponse(
+    return _render_body(templates.TemplateResponse(
         request=request,
         name="exercise_create_form.html",
         context={"categories": MUSCLE_CATEGORIES, "muscle_names": _muscle_names(), "error": error, "success": success},
-    ).body.decode()
+    ))
 
 def _plantillas_list_html(request: Request, *, editing_id: int | None = None, error: str | None = None) -> str:
-    return templates.TemplateResponse(
+    return _render_body(templates.TemplateResponse(
         request=request,
         name="plantillas_list.html",
         context={
@@ -220,28 +231,17 @@ def _plantillas_list_html(request: Request, *, editing_id: int | None = None, er
             "editing_id": editing_id,
             "error": error,
         },
-    ).body.decode()
+    ))
 
 def _plantillas_oob(html: str) -> str:
     return f'<div id="plantillas-section" hx-swap-oob="outerHTML">{html}</div>'
-
-def _build_sets_from_form(ejercicios: list[str], kgs: list[str], reps: list[str], rirs: list[str]) -> list[dict]:
-    sets = []
-    for i, ejercicio in enumerate(ejercicios):
-        sets.append({
-            "ejercicio": ejercicio,
-            "kg": kgs[i] if i < len(kgs) else "",
-            "reps": reps[i] if i < len(reps) else "",
-            "rir": rirs[i] if i < len(rirs) else "",
-        })
-    return sets
 
 @app.get("/", response_class=HTMLResponse)
 async def read_index(request: Request):
     ejercicios_list, grupos_list = get_filters()
     categories = get_categories(DB_PATH) or MUSCLE_CATEGORIES
     fecha = _today_iso()
-    return templates.TemplateResponse(
+    return _render_body(templates.TemplateResponse(
         request=request,
         name="index.html",
         context={
@@ -256,7 +256,7 @@ async def read_index(request: Request):
             "plantillas_html": _plantillas_list_html(request),
             "app_config_json": {"categoria_map": get_ejercicio_categoria(DB_PATH)},
         }
-    )
+    ))
 
 @app.get("/fecha/editor", response_class=HTMLResponse)
 async def fecha_editor(request: Request, fecha: str = Query(...)):
@@ -271,7 +271,7 @@ async def entrenamiento_session_save(
     reps: list[str] = Form(default=[]),
     rir: list[str] = Form(default=[]),
 ):
-    sets = _build_sets_from_form(ejercicio, kg, reps, rir)
+    sets = sets_from_form(ejercicio, kg, reps, rir)
     notice_success = ('<div id="editor-notice" hx-swap-oob="innerHTML">'
                       '<div class="notice notice-success" data-dismiss="3000">Entrenamiento guardado.</div></div>')
     outcome_ok = '<div id="save-outcome" hx-swap-oob="outerHTML" data-ok="1" hidden></div>'
@@ -366,7 +366,7 @@ async def plantilla_guardar(
 ):
     try:
         before = snapshot_entrenos(DB_PATH)
-        result = save_template(DB_PATH, nombre, ejercicio)
+        result = save_template(DB_PATH, TemplateInput(nombre=nombre, ejercicios=ejercicio))
         _undo_push_entrenos(before, snapshot_entrenos(DB_PATH))
     except ValueError as e:
         notice_error = (
@@ -374,7 +374,7 @@ async def plantilla_guardar(
             f'<div class="notice notice-error" data-dismiss="4500">{e}</div></div>'
         )
         return HTMLResponse(content=notice_error)
-    msg = "Entreno actualizado." if result["updated"] else "Entreno guardado."
+    msg = "Entreno actualizado." if result.updated else "Entreno guardado."
     notice = (
         f'<div id="notice-container" hx-swap-oob="innerHTML">'
         f'<div class="notice notice-success" data-dismiss="3000">{msg}</div></div>'
@@ -390,7 +390,7 @@ async def plantilla_editar(
 ):
     try:
         before = snapshot_entrenos(DB_PATH)
-        edit_template(DB_PATH, plantilla_id, nombre, ejercicio)
+        edit_template(DB_PATH, plantilla_id, TemplateInput(nombre=nombre, ejercicios=ejercicio))
         _undo_push_entrenos(before, snapshot_entrenos(DB_PATH))
     except ValueError as e:
         html = _plantillas_list_html(request, editing_id=plantilla_id, error=str(e))
@@ -494,14 +494,14 @@ async def select_view(request: Request, grupo: str = Query(None)):
         ejercicios_list, _ = get_filters()
         chart_html = _chart_html("systemic", title="Rendimiento Global – Todo el Cuerpo")
 
-        exercise_list_html = templates.TemplateResponse(
+        exercise_list_html = _render_body(templates.TemplateResponse(
             request=request,
             name="exercise_list.html",
             context={
                 "ejercicios_grupo": ejercicios_list,
                 "grupo": "",
             }
-        ).body.decode()
+        ))
 
         oob_chart = f'<div id="unified-chart" hx-swap-oob="innerHTML">{chart_html}</div>'
         return HTMLResponse(content=exercise_list_html + oob_chart)
@@ -509,14 +509,14 @@ async def select_view(request: Request, grupo: str = Query(None)):
     ejercicios_grupo = get_ejercicios_por_grupo(grupo)
     chart_html = _chart_html("muscle_group", grupo, f"Rendimiento – {grupo}")
 
-    exercise_list_html = templates.TemplateResponse(
+    exercise_list_html = _render_body(templates.TemplateResponse(
         request=request,
         name="exercise_list.html",
         context={
             "ejercicios_grupo": ejercicios_grupo,
             "grupo": grupo,
         }
-    ).body.decode()
+    ))
 
     oob_chart = f'<div id="unified-chart" hx-swap-oob="innerHTML">{chart_html}</div>'
     return HTMLResponse(content=exercise_list_html + oob_chart)
@@ -539,7 +539,7 @@ async def get_exercise_history(request: Request, ejercicio: str = Query(...)):
 
     chart_html = _chart_html("exercise", ejercicio, f"Rendimiento – {ejercicio}")
 
-    tables_html = templates.TemplateResponse(
+    tables_html = _render_body(templates.TemplateResponse(
         request=request,
         name="exercise_detail.html",
         context={
@@ -547,7 +547,7 @@ async def get_exercise_history(request: Request, ejercicio: str = Query(...)):
             "session_summary": session_summary,
             "ejercicio": ejercicio,
         }
-    ).body.decode()
+    ))
 
     oob_chart = f'<div id="unified-chart" hx-swap-oob="innerHTML">{chart_html}</div>'
 

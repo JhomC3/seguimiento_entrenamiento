@@ -4,6 +4,7 @@ from datetime import date, timedelta
 import pytest
 
 from src.database import delete_session, get_sets_by_fecha, init_db
+from src.models import TrainingSetInput
 from src.training_service import (
     calculate_cycle_week,
     day_from_date,
@@ -46,11 +47,11 @@ def test_day_from_date():
 
 def test_insert_manual_session_basic(db):
     result = insert_manual_session(db, "2026-02-10", [
-        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 2},
+        TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=2),
     ])
-    assert result["semana"] == 1
-    assert result["dia"] == "MARTES"
-    assert result["fecha"] == "10/2/26"
+    assert result.semana == 1
+    assert result.dia == "MARTES"
+    assert result.fecha == "10/2/26"
     conn = sqlite3.connect(db)
     row = conn.execute("SELECT semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen FROM training_sets").fetchone()
     conn.close()
@@ -58,8 +59,8 @@ def test_insert_manual_session_basic(db):
 
 def test_insert_manual_session_multiple_sets(db):
     insert_manual_session(db, "2026-02-18", [
-        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 2},
-        {"ejercicio": "Press", "kg": 75, "reps": 10, "rir": 0},
+        TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=2),
+        TrainingSetInput(ejercicio="Press", kg=75, reps=10, rir=0),
     ])
     conn = sqlite3.connect(db)
     rows = conn.execute("SELECT semana, set_orden, reps, rir FROM training_sets ORDER BY set_orden").fetchall()
@@ -70,23 +71,23 @@ def test_insert_manual_session_multiple_sets(db):
 
 def test_insert_invalid_kg_rejected(db):
     with pytest.raises(ValueError):
-        insert_manual_session(db, "2026-02-10", [{"ejercicio": "Press", "kg": 0, "reps": 8, "rir": 0}])
+        insert_manual_session(db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=0, reps=8, rir=0)])
 
 def test_insert_invalid_reps_rejected(db):
     with pytest.raises(ValueError):
-        insert_manual_session(db, "2026-02-10", [{"ejercicio": "Press", "kg": 80, "reps": -1, "rir": 0}])
+        insert_manual_session(db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=80, reps=-1, rir=0)])
 
 def test_insert_unknown_exercise_rejected(db):
     with pytest.raises(ValueError):
-        insert_manual_session(db, "2026-02-10", [{"ejercicio": "No Existe", "kg": 80, "reps": 8, "rir": 0}])
+        insert_manual_session(db, "2026-02-10", [TrainingSetInput(ejercicio="No Existe", kg=80, reps=8, rir=0)])
 
 def test_insert_negative_rir_rejected(db):
     with pytest.raises(ValueError):
-        insert_manual_session(db, "2026-02-10", [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": -1}])
+        insert_manual_session(db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=-1)])
 
 def test_insert_zero_rir_accepted(db):
     insert_manual_session(db, "2026-02-10", [
-        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 0},
+        TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=0),
     ])
     conn = sqlite3.connect(db)
     row = conn.execute("SELECT rir FROM training_sets").fetchone()
@@ -96,20 +97,20 @@ def test_insert_zero_rir_accepted(db):
 def test_insert_empty_rir_rejected(db):
     with pytest.raises(ValueError):
         insert_manual_session(db, "2026-02-10", [
-            {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": None},
+            TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=None),
         ])
 
 def test_insert_zero_kg_rejected(db):
     with pytest.raises(ValueError):
         insert_manual_session(db, "2026-02-10", [
-            {"ejercicio": "Press", "kg": 0, "reps": 8, "rir": 0},
+            TrainingSetInput(ejercicio="Press", kg=0, reps=8, rir=0),
         ])
 
 def test_transaction_rolls_back_on_failure(db):
     with pytest.raises(ValueError):
         insert_manual_session(db, "2026-02-10", [
-            {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
-            {"ejercicio": "No Existe", "kg": 80, "reps": 8, "rir": 0},
+            TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
+            TrainingSetInput(ejercicio="No Existe", kg=80, reps=8, rir=0),
         ])
     conn = sqlite3.connect(db)
     count = conn.execute("SELECT COUNT(*) FROM training_sets").fetchone()[0]
@@ -122,8 +123,8 @@ def test_validate_sets_empty(db):
 
 def test_get_sessions_page_and_detail(db):
     insert_manual_session(db, "2026-02-18", [
-        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 2},
-        {"ejercicio": "Press", "kg": 75, "reps": 10, "rir": 0},
+        TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=2),
+        TrainingSetInput(ejercicio="Press", kg=75, reps=10, rir=0),
     ])
     sessions, total, page = get_sessions_page(db, 1, 20)
     assert total == 1
@@ -136,15 +137,15 @@ def test_get_sessions_page_and_detail(db):
     assert s["google_sets"] == 0
     detail = get_session_detail(db, 2, "MIERCOLES", "18/2/26")
     assert len(detail) == 2
-    assert detail[0]["rm_ajustado"] == round(80 * (1 + 0.0333 * (8 + 1 + 2)), 1)
+    assert round(detail[0].kg * (1 + 0.0333 * (detail[0].reps + 1 + detail[0].rir)), 1) == round(80 * (1 + 0.0333 * (8 + 1 + 2)), 1)
 
 def test_update_session(db):
     insert_manual_session(db, "2026-02-10", [
-        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
+        TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
     ])
     update_session(db, 1, "MARTES", "10/2/26", "2026-02-11", [
-        {"ejercicio": "Press", "kg": 85, "reps": 6, "rir": 2},
-        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 0},
+        TrainingSetInput(ejercicio="Press", kg=85, reps=6, rir=2),
+        TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=0),
     ])
     conn = sqlite3.connect(db)
     rows = conn.execute("SELECT semana, dia, fecha, kg FROM training_sets ORDER BY set_orden").fetchall()
@@ -155,7 +156,7 @@ def test_update_session(db):
 
 def test_delete_session(db):
     insert_manual_session(db, "2026-02-10", [
-        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
+        TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
     ])
     deleted = delete_session(db, 1, "MARTES", "10/2/26")
     assert deleted == 1
@@ -166,7 +167,7 @@ def test_delete_session(db):
 
 def test_get_sets_by_fecha(db):
     insert_manual_session(db, "2026-02-10", [
-        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
+        TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
     ])
     rows = get_sets_by_fecha(db, "10/2/26")
     assert len(rows) == 1
@@ -175,14 +176,14 @@ def test_get_sets_by_fecha(db):
 
 def test_save_session_replaces_rows(db):
     insert_manual_session(db, "2026-02-10", [
-        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
+        TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
     ])
     result = save_session(db, "2026-02-10", [
-        {"ejercicio": "Press", "kg": 90, "reps": 6, "rir": 2},
-        {"ejercicio": "Press", "kg": 85, "reps": 8, "rir": 0},
+        TrainingSetInput(ejercicio="Press", kg=90, reps=6, rir=2),
+        TrainingSetInput(ejercicio="Press", kg=85, reps=8, rir=0),
     ])
-    assert result["semana"] == 1
-    assert result["dia"] == "MARTES"
+    assert result.semana == 1
+    assert result.dia == "MARTES"
     conn = sqlite3.connect(db)
     rows = conn.execute("SELECT set_orden, ejercicio, kg, reps, rir, origen FROM training_sets ORDER BY set_orden").fetchall()
     conn.close()
@@ -192,7 +193,7 @@ def test_save_session_replaces_rows(db):
 
 def test_save_session_empty_deletes(db):
     insert_manual_session(db, "2026-02-10", [
-        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
+        TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
     ])
     save_session(db, "2026-02-10", [])
     conn = sqlite3.connect(db)
@@ -202,11 +203,11 @@ def test_save_session_empty_deletes(db):
 
 def test_save_session_invalid_keeps_data(db):
     insert_manual_session(db, "2026-02-10", [
-        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
+        TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
     ])
     with pytest.raises(ValueError):
         save_session(db, "2026-02-10", [
-            {"ejercicio": "No Existe", "kg": 80, "reps": 8, "rir": 0},
+            TrainingSetInput(ejercicio="No Existe", kg=80, reps=8, rir=0),
         ])
     conn = sqlite3.connect(db)
     count = conn.execute("SELECT COUNT(*) FROM training_sets").fetchone()[0]
@@ -222,7 +223,7 @@ def test_save_session_replaces_google_rows_by_fecha(db):
     conn.commit()
     conn.close()
     save_session(db, "2026-02-10", [
-        {"ejercicio": "Press", "kg": 95, "reps": 5, "rir": 2},
+        TrainingSetInput(ejercicio="Press", kg=95, reps=5, rir=2),
     ])
     conn = sqlite3.connect(db)
     rows = conn.execute("SELECT kg, origen FROM training_sets").fetchall()
@@ -231,9 +232,9 @@ def test_save_session_replaces_google_rows_by_fecha(db):
 
 def test_save_session_filters_empty_rows(db):
     save_session(db, "2026-02-10", [
-        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
-        {"ejercicio": "", "kg": "", "reps": "", "rir": ""},
-        {"ejercicio": "", "kg": "", "reps": "", "rir": ""},
+        TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
+        TrainingSetInput(ejercicio="", kg="", reps="", rir=""),
+        TrainingSetInput(ejercicio="", kg="", reps="", rir=""),
     ])
     conn = sqlite3.connect(db)
     rows = conn.execute("SELECT set_orden, kg FROM training_sets").fetchall()
@@ -243,7 +244,7 @@ def test_save_session_filters_empty_rows(db):
 def test_save_session_allows_future_date(db):
     futuro = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
     save_session(db, futuro, [
-        {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
+        TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
     ])
     conn = sqlite3.connect(db)
     count = conn.execute("SELECT COUNT(*) FROM training_sets").fetchone()[0]

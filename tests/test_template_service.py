@@ -1,6 +1,7 @@
 import pytest
 
 from src.database import init_db, insert_exercise, get_plantillas, get_plantilla, reorder_plantillas
+from src.models import TemplateInput, TrainingSetInput
 from src.template_service import (
     apply_template_rows,
     classify_template,
@@ -65,18 +66,18 @@ def test_classify_ejercicio_desconocido(db):
 
 
 def test_save_template_crea_y_clasifica(db):
-    result = save_template(db, "Mi Empuje", ["Press", "Press", "Fondos", ""])
-    assert result["clasificacion"] == "EMPUJE"
-    assert result["updated"] is False
+    result = save_template(db, TemplateInput(nombre="Mi Empuje", ejercicios=["Press", "Press", "Fondos", ""]))
+    assert result.clasificacion == "EMPUJE"
+    assert result.updated is False
     plantillas = get_plantillas(db)
     assert len(plantillas) == 1
     assert plantillas[0]["ejercicios"] == ["Press", "Fondos"]
 
 
 def test_save_template_mismo_nombre_actualiza(db):
-    save_template(db, "Mi Empuje", ["Press"])
-    result = save_template(db, "mi empuje", ["Jalon"])
-    assert result["updated"] is True
+    save_template(db, TemplateInput(nombre="Mi Empuje", ejercicios=["Press"]))
+    result = save_template(db, TemplateInput(nombre="mi empuje", ejercicios=["Jalon"]))
+    assert result.updated is True
     plantillas = get_plantillas(db)
     assert len(plantillas) == 1
     assert plantillas[0]["ejercicios"] == ["Jalon"]
@@ -85,17 +86,17 @@ def test_save_template_mismo_nombre_actualiza(db):
 
 def test_save_template_sin_nombre_rechaza(db):
     with pytest.raises(ValueError):
-        save_template(db, "  ", ["Press"])
+        save_template(db, TemplateInput(nombre="  ", ejercicios=["Press"]))
 
 
 def test_save_template_sin_ejercicios_rechaza(db):
     with pytest.raises(ValueError):
-        save_template(db, "Vacia", [])
+        save_template(db, TemplateInput(nombre="Vacia", ejercicios=[]))
 
 
 def test_edit_template_renombra_y_clasifica(db):
-    pid = save_template(db, "Antes", ["Press"])["id"]
-    edit_template(db, pid, "Despues", ["Press", "Curl"])
+    pid = save_template(db, TemplateInput(nombre="Antes", ejercicios=["Press"])).id
+    edit_template(db, pid, TemplateInput(nombre="Despues", ejercicios=["Press", "Curl"]))
     plantilla = get_plantilla(db, pid)
     assert plantilla["nombre"] == "Despues"
     assert plantilla["clasificacion"] == "TORSO"
@@ -103,49 +104,49 @@ def test_edit_template_renombra_y_clasifica(db):
 
 
 def test_edit_template_nombre_duplicado_rechaza(db):
-    save_template(db, "A", ["Press"])
-    pid = save_template(db, "B", ["Curl"])["id"]
+    save_template(db, TemplateInput(nombre="A", ejercicios=["Press"]))
+    pid = save_template(db, TemplateInput(nombre="B", ejercicios=["Curl"])).id
     with pytest.raises(ValueError):
-        edit_template(db, pid, "A", ["Curl"])
+        edit_template(db, pid, TemplateInput(nombre="A", ejercicios=["Curl"]))
 
 
 def test_delete_template(db):
-    pid = save_template(db, "A", ["Press"])["id"]
+    pid = save_template(db, TemplateInput(nombre="A", ejercicios=["Press"])).id
     delete_plantilla(db, pid)
     assert get_plantilla(db, pid) is None
     assert get_plantillas(db) == []
 
 
 def test_apply_template_usa_ultimo_realizado(db):
-    save_session(db, "2026-01-10", [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
+    save_session(db, "2026-01-10", [TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1)])
     save_session(db, "2026-01-12", [
-        {"ejercicio": "Press", "kg": 85, "reps": 6, "rir": 2},
-        {"ejercicio": "Press", "kg": 85, "reps": 5, "rir": 3},
+        TrainingSetInput(ejercicio="Press", kg=85, reps=6, rir=2),
+        TrainingSetInput(ejercicio="Press", kg=85, reps=5, rir=3),
     ])
-    save_session(db, "2026-01-13", [{"ejercicio": "Curl", "kg": 20, "reps": 10, "rir": 0}])
-    pid = save_template(db, "T", ["Press", "Curl"])["id"]
+    save_session(db, "2026-01-13", [TrainingSetInput(ejercicio="Curl", kg=20, reps=10, rir=0)])
+    pid = save_template(db, TemplateInput(nombre="T", ejercicios=["Press", "Curl"])).id
     rows = apply_template_rows(db, pid)
     assert len(rows) == 3
-    assert rows[0] == {"ejercicio": "Press", "kg": 85, "reps": 6, "rir": 2}
-    assert rows[1] == {"ejercicio": "Press", "kg": 85, "reps": 5, "rir": 3}
-    assert rows[2] == {"ejercicio": "Curl", "kg": 20, "reps": 10, "rir": 0}
+    assert (rows[0].ejercicio, rows[0].kg, rows[0].reps, rows[0].rir) == ("Press", 85, 6, 2)
+    assert (rows[1].ejercicio, rows[1].kg, rows[1].reps, rows[1].rir) == ("Press", 85, 5, 3)
+    assert (rows[2].ejercicio, rows[2].kg, rows[2].reps, rows[2].rir) == ("Curl", 20, 10, 0)
 
 
 def test_apply_template_ultimo_realizado_cada_ejercicio(db):
-    save_session(db, "2026-02-10", [{"ejercicio": "Press", "kg": 100, "reps": 5, "rir": 1}])
-    save_session(db, "2026-02-11", [{"ejercicio": "Curl", "kg": 18, "reps": 12, "rir": 1}])
-    save_session(db, "2026-02-12", [{"ejercicio": "Press", "kg": 102, "reps": 5, "rir": 2}])
-    pid = save_template(db, "T", ["Curl", "Press"])["id"]
+    save_session(db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=100, reps=5, rir=1)])
+    save_session(db, "2026-02-11", [TrainingSetInput(ejercicio="Curl", kg=18, reps=12, rir=1)])
+    save_session(db, "2026-02-12", [TrainingSetInput(ejercicio="Press", kg=102, reps=5, rir=2)])
+    pid = save_template(db, TemplateInput(nombre="T", ejercicios=["Curl", "Press"])).id
     rows = apply_template_rows(db, pid)
-    assert [r["kg"] for r in rows] == [18, 102]
+    assert [r.kg for r in rows] == [18, 102]
 
 
 def test_apply_template_sin_historial_deja_fila_vacia(db):
-    pid = save_template(db, "T", ["Press", "Fondos"])["id"]
+    pid = save_template(db, TemplateInput(nombre="T", ejercicios=["Press", "Fondos"])).id
     rows = apply_template_rows(db, pid)
-    assert rows == [
-        {"ejercicio": "Press", "kg": "", "reps": "", "rir": ""},
-        {"ejercicio": "Fondos", "kg": "", "reps": "", "rir": ""},
+    assert [(r.ejercicio, r.kg, r.reps, r.rir) for r in rows] == [
+        ("Press", "", "", ""),
+        ("Fondos", "", "", ""),
     ]
 
 
@@ -155,15 +156,15 @@ def test_apply_template_inexistente_rechaza(db):
 
 
 def test_plantillas_se_crean_en_orden_de_insercion(db):
-    save_template(db, "B", ["Press"])
-    save_template(db, "A", ["Curl"])
+    save_template(db, TemplateInput(nombre="B", ejercicios=["Press"]))
+    save_template(db, TemplateInput(nombre="A", ejercicios=["Curl"]))
     nombres = [p["nombre"] for p in get_plantillas(db)]
     assert nombres == ["B", "A"]
 
 
 def test_reorder_plantillas(db):
-    pid_a = save_template(db, "A", ["Press"])["id"]
-    pid_b = save_template(db, "B", ["Curl"])["id"]
+    pid_a = save_template(db, TemplateInput(nombre="A", ejercicios=["Press"])).id
+    pid_b = save_template(db, TemplateInput(nombre="B", ejercicios=["Curl"])).id
     reorder_plantillas(db, [pid_b, pid_a])
     nombres = [p["nombre"] for p in get_plantillas(db)]
     assert nombres == ["B", "A"]

@@ -19,6 +19,7 @@ dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "httpx>=0.27.0",
+    "pandas-stubs>=2.2.0",
     "playwright>=1.40.0",
     "ruff>=0.4.0",
     "mypy>=1.10.0",
@@ -31,6 +32,11 @@ target-version = "py311"
 [tool.mypy]
 python_version = "3.11"
 files = ["app.py", "src", "tests"]
+
+# plotly ships no type stubs; silence only those imports, never user code.
+[[tool.mypy.overrides]]
+module = ["plotly", "plotly.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

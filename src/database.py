@@ -197,6 +197,8 @@ def insert_plantilla(db_path: str, nombre: str, clasificacion: str, ejercicios: 
             (nombre, clasificacion, now, now, orden),
         )
         pid = cur.lastrowid
+        if pid is None:
+            raise RuntimeError("No se pudo crear el entreno.")
         for idx, ej in enumerate(ejercicios, start=1):
             conn.execute(
                 "INSERT INTO plantilla_sets (plantilla_id, set_orden, ejercicio) VALUES (?, ?, ?)",
