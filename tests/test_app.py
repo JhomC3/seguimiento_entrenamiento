@@ -1,4 +1,5 @@
 import datetime
+import os
 
 import pytest
 from fastapi.testclient import TestClient
@@ -371,3 +372,29 @@ def test_static_js_served(tmp_path, monkeypatch):
     r = TestClient(appmod.app).get("/static/js/app.js")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/javascript")
+
+
+def test_app_css_imports_ordered(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = TestClient(appmod.app).get("/static/css/app.css")
+    assert r.status_code == 200
+    ordered = ["theme.css", "components.css", "date-navigator.css", "session-editor.css", "templates.css"]
+    positions = [r.text.find(f'"{name}"') for name in ordered]
+    assert all(p >= 0 for p in positions), f"missing import: {r.text}"
+    assert positions == sorted(positions), "css imports out of order"
+    for name in ordered:
+        resp = TestClient(appmod.app).get(f"/static/css/{name}")
+        assert resp.status_code == 200, f"{name} not served"
+
+
+def test_base_template_has_no_inline_style_block(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = TestClient(appmod.app).get("/")
+    assert "tailwind.config" in r.text
+    base_path = os.path.join(os.path.dirname(__file__), "..", "templates", "base.html")
+    source = open(base_path).read()
+    assert "<style>" not in source
+    assert ".date-num {" not in source
+    assert 'href="/static/css/app.css"' in source

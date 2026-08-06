@@ -1,0 +1,146 @@
+/* session-editor.css — owns: #session-editor panel, rows, RM, edit state. */
+
+/* Aviso del editor de sesión: superpuesto arriba del panel, más grande y atenuado */
+#editor-notice {
+    position: absolute;
+    top: 10px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    z-index: 40;
+    pointer-events: none;
+}
+#editor-notice .notice {
+    font-size: 13px;
+    padding: 10px 20px;
+    border-radius: 10px;
+}
+#editor-notice .notice-success {
+    background: rgba(16, 185, 129, 0.05);
+    border: 1px solid rgba(16, 185, 129, 0.12);
+    color: rgba(110, 231, 183, 0.6);
+}
+#editor-notice .notice-error {
+    background: rgba(239, 68, 68, 0.05);
+    border: 1px solid rgba(239, 68, 68, 0.12);
+    color: rgba(252, 165, 165, 0.6);
+}
+
+/* Lápiz de edición: encendido = editable, apagado = solo lectura */
+.edit-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: color .15s, background .15s, box-shadow .15s;
+    cursor: pointer;
+}
+.edit-toggle.on {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.14);
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.25);
+}
+.edit-toggle.off {
+    color: rgba(255, 255, 255, 0.35);
+}
+.edit-toggle.off:hover {
+    color: rgba(255, 255, 255, 0.7);
+}
+.save-template-btn {
+    color: rgba(255, 255, 255, 0.35);
+}
+.save-template-btn.on {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.14);
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.25);
+}
+.delete-session-btn {
+    color: rgba(255, 255, 255, 0.30);
+}
+.delete-session-btn.on {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.14);
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.25);
+}
+
+/* Destino de drop de entrenos (editor en modo editable) */
+#session-editor.drop-target {
+    outline: 2px dashed rgba(229, 109, 136, 0.55);
+    outline-offset: -2px;
+}
+#session-editor .sortable-placeholder {
+    display: none;
+}
+
+/* Hover de fila: solo cuando el modo editable está activo, en cualquier fecha */
+#session-editor[data-editmode="1"] .set-row:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+/* Drag and drop de filas (solo en modo editable) */
+#session-editor[data-editmode="1"] .set-row {
+    cursor: grab;
+}
+#session-editor[data-editmode="1"] .set-row.sortable-chosen {
+    cursor: grabbing;
+}
+#session-editor .sortable-ghost {
+    opacity: 0.4;
+    background: rgba(155, 27, 48, 0.2);
+}
+#session-editor .sortable-chosen {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+/* Tabla de sesión: altura fija estable (variable en el panel, sobrevive a los swaps) */
+#session-editor .table-scroll {
+    height: var(--table-h, 538px);
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: #333 #0a0a0a;
+}
+#session-editor .table-scroll table {
+    table-layout: fixed;
+}
+#session-editor .table-scroll thead th {
+    position: sticky;
+    top: 0;
+    background: #171717;
+    z-index: 5;
+}
+#session-editor .table-scroll::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+#session-editor .table-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+#session-editor .table-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+}
+
+/* Compactación de controles del editor (scoped: no afecta plantillas ni otros contextos) */
+#session-editor .editor-header-actions .edit-toggle {
+    width: 22px;
+    height: 22px;
+}
+#session-editor .editor-header-actions svg {
+    width: 13px;
+    height: 13px;
+}
+#session-editor .set-actions-column {
+    width: 30px;
+}
+#session-editor .row-actions .row-btn {
+    width: 14px;
+    height: 14px;
+    font-size: 10px;
+}

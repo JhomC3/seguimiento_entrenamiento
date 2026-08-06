@@ -1,0 +1,120 @@
+/* components.css — reusable generic components (notices, buttons, modal). */
+
+/* Botones +/− de filas (overlay glass, visibles al hover) */
+.row-btn {
+    width: 16px;
+    height: 16px;
+    border-radius: 9999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    transition: all .15s;
+}
+.row-btn:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.15);
+}
+
+/* Spinners numéricos: se mantienen nativos, solo baja un poco su color al aparecer */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+    background-color: rgba(255, 255, 255, 0.04);
+    border-radius: 6px;
+}
+
+/* Avisos: flotantes fijos arriba-centro, superpuestos, sin afectar layout */
+#notice-container {
+    position: fixed;
+    top: 16px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    z-index: 50;
+    pointer-events: none;
+}
+.notice {
+    width: fit-content;
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 11px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: opacity .4s ease;
+}
+.notice-success {
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    color: rgba(110, 231, 183, 0.9);
+}
+.notice-error {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    color: rgba(252, 165, 165, 0.95);
+}
+.notice.hide {
+    opacity: 0;
+}
+
+/* Botones de confirmación: ✓ (guardar, derecha) y ✗ (cancelar, izquierda) */
+.btn-check,
+.btn-x {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 9999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    color: rgba(255, 255, 255, 0.55);
+    cursor: pointer;
+    transition: all .15s;
+}
+.btn-check:hover:not(:disabled) {
+    background: rgba(16, 185, 129, 0.14);
+    border-color: rgba(16, 185, 129, 0.45);
+    color: #6ee7b7;
+}
+.btn-x:hover {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.45);
+    color: #fca5a5;
+}
+.btn-check:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+/* Modal de confirmación de cambios sin guardar */
+#confirm-modal {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 60;
+}
+#confirm-modal .confirm-card {
+    background: #121212;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 18px 20px;
+    width: min(380px, calc(100vw - 40px));
+    box-shadow: 0 0 24px rgba(155, 27, 48, 0.25);
+}
+#confirm-modal.hidden {
+    display: none;
+}
