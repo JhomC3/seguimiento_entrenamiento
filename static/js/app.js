@@ -17,7 +17,7 @@ import {
 } from './editor.js';
 import { initLifecycle } from './htmx-lifecycle.js';
 import { scheduleNotices } from './notices.js';
-import { setCategoriaMap } from './state.js';
+import { getCsrfToken, setCategoriaMap, setCsrfToken } from './state.js';
 import {
     aplicarPlantilla,
     confirmEntrenoSave,
@@ -37,10 +37,16 @@ function loadConfig() {
     try {
         const config = JSON.parse(el.textContent);
         setCategoriaMap(config.categoria_map || {});
+        setCsrfToken(config.csrf_token || "");
     } catch (err) {
         console.error('app-config no válido', err);
     }
 }
+
+document.body.addEventListener('htmx:configRequest', function (e) {
+    const token = getCsrfToken();
+    if (token) e.detail.headers['X-CSRF-Token'] = token;
+});
 
 function registerInlineHandlers() {
     window.toggleEdit = toggleEdit;

@@ -16,6 +16,7 @@ let droppedOnList = false;
 let applyInFlight = null;
 let dragGhost = null;
 let categoriaMap = {};
+let csrfToken = "";
 
 export function getPendingNav() { return pendingNav; }
 export function setPendingNav(v) { pendingNav = v; }
@@ -41,6 +42,8 @@ export function getDragGhost() { return dragGhost; }
 export function setDragGhost(v) { dragGhost = v; }
 export function setCategoriaMap(m) { categoriaMap = m || {}; }
 export function getCategoriaMap() { return categoriaMap; }
+export function setCsrfToken(t) { csrfToken = t || ""; }
+export function getCsrfToken() { return csrfToken; }
 
 export function getCurrentIso() {
     if (typeof currentIso !== 'undefined' && currentIso) return currentIso;

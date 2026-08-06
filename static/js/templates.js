@@ -12,6 +12,7 @@ import {
     editorEditmode,
     getApplyInFlight,
     getCategoriaMap,
+    getCsrfToken,
     getDragCard,
     getDragGhost,
     getDragOrderStart,
@@ -213,9 +214,12 @@ export function restoreDragOrder() {
 export function persistDragOrder() {
     const params = new URLSearchParams();
     entrenosOrder().forEach(id => params.append('id', id));
+    const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+    const token = getCsrfToken();
+    if (token) headers['X-CSRF-Token'] = token;
     fetch('/plantilla/reordenar', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: headers,
         body: params.toString(),
     });
 }

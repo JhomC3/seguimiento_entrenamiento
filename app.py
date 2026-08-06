@@ -36,7 +36,7 @@ from src.database import (
 )
 from src.db_connection import read_connection
 from src.models import TemplateInput
-from src.security import SecurityHeadersMiddleware
+from src.security import CSRFProtectionMiddleware, SecurityHeadersMiddleware, get_csrf_secret, make_csrf_token
 from src.template_service import (
     apply_template_rows,
     delete_plantilla,
@@ -57,6 +57,7 @@ async def lifespan(_: FastAPI):
     yield
 
 app = FastAPI(title="Gym Tracker", lifespan=lifespan)
+app.add_middleware(CSRFProtectionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
@@ -169,7 +170,10 @@ def read_index(request: Request):
             "editor_html": _editor_html(request, fecha),
             "exercise_form_html": _exercise_form_html(request),
             "plantillas_html": _plantillas_list_html(request),
-            "app_config_json": {"categoria_map": get_ejercicio_categoria(DB_PATH)},
+            "app_config_json": {
+                "categoria_map": get_ejercicio_categoria(DB_PATH),
+                "csrf_token": make_csrf_token(get_csrf_secret()),
+            },
         }
     )
 
