@@ -1,6 +1,5 @@
 """Analytical edge coverage: charts and metrics with explicit tolerances."""
 
-
 import pandas as pd
 import pytest
 
