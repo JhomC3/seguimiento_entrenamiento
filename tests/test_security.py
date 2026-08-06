@@ -1,3 +1,6 @@
+import re
+from html.parser import HTMLParser
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -146,3 +149,82 @@ def test_csrf_token_validates_within_window():
     assert valid_csrf_token(token, secret)
     assert not valid_csrf_token("1.abc", secret)
     assert not valid_csrf_token("", secret)
+
+
+# ---------------------------------------------------------------------------
+# XSS rendering regressions (Task 1)
+# ---------------------------------------------------------------------------
+
+PAYLOAD = "x');alert(1)//<img src=x onerror=alert(2)>"
+
+HANDLER_ATTRS = ("onclick", "onchange", "onsubmit", "onerror", "onload", "oninput", "onkeydown")
+
+
+class _InertChecker(HTMLParser):
+    """Collects element names, attribute names and text nodes from a fragment."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.elements = []
+        self.attributes = []
+        self.text_nodes = []
+
+    def handle_starttag(self, tag, attrs):
+        self.elements.append(tag)
+        self.attributes.extend(name for name, _ in attrs)
+
+    def handle_data(self, data):
+        self.text_nodes.append(data)
+
+
+def _assert_inert_fragment(text: str):
+    """Hostile names must be inert text: no handlers, no raw payload markup."""
+    assert "<img" not in text, "payload <img> must not be raw HTML"
+    assert "&lt;img" in text, "payload must be present in escaped text form"
+    assert "alert(1)//" in text, "payload must be visible as escaped text"
+    parser = _InertChecker()
+    parser.feed(text)
+    assert not any(name in HANDLER_ATTRS for name in parser.attributes), "no event-handler attributes allowed"
+    for node in parser.text_nodes:
+        if "alert(" in node:
+            assert "<" not in node, "alert( must not appear inside a markup-bearing text node"
+    for block in re.findall(r"<script[^>]*>(.*?)</script>", text, re.S):
+        assert "alert(" not in block, "payload must not live inside a script element"
+    joined = "".join(parser.text_nodes)
+    assert PAYLOAD in joined, "payload must be recoverable from the escaped text"
+
+
+def test_hostile_exercise_notice_is_escaped(authed_client):
+    r = authed_client.post(
+        "/ejercicio/nuevo",
+        data={"ejercicio": PAYLOAD, "grupo_muscular": "Pectoral", "categoria": "EMPUJE"},
+    )
+    assert r.status_code == 200
+    _assert_inert_fragment(r.text)
+
+
+def test_hostile_template_renders_inert(authed_client):
+    r = authed_client.post("/plantilla/guardar", data={"nombre": PAYLOAD, "ejercicio": ["Press"]})
+    assert r.status_code == 200
+    _assert_inert_fragment(r.text)
+    r = authed_client.get("/plantillas")
+    assert r.status_code == 200
+    _assert_inert_fragment(r.text)
+
+
+def test_hostile_exercise_in_lists_renders_inert(authed_client):
+    authed_client.post(
+        "/ejercicio/nuevo",
+        data={"ejercicio": PAYLOAD, "grupo_muscular": "Pectoral", "categoria": "EMPUJE"},
+    )
+    r = authed_client.post(
+        "/entrenamiento/session/save",
+        data={"fecha": "2099-01-01", "ejercicio": [PAYLOAD], "kg": ["80"], "reps": ["8"], "rir": ["1"]},
+    )
+    assert r.status_code == 200
+    r = authed_client.get("/select")
+    assert r.status_code == 200
+    _assert_inert_fragment(r.text)
+    r = authed_client.get("/")
+    assert r.status_code == 200
+    _assert_inert_fragment(r.text)

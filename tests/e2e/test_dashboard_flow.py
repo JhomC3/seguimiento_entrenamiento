@@ -199,3 +199,38 @@ def test_invalid_numeric_input_blocks_save(page, server):
     page.wait_for_timeout(600)
     expect(page.locator("#session-editor")).to_have_attribute("data-editmode", "1")
     expect(page.locator("#editor-notice")).not_to_contain_text("Entrenamiento guardado")
+
+
+# ---------------------------------------------------------------------------
+# XSS execution regressions (Task 1)
+# ---------------------------------------------------------------------------
+
+PAYLOAD = "x');alert(1)//<img src=x onerror=alert(2)>"
+
+
+def test_hostile_template_name_does_not_execute(page, server):
+    dialogs = []
+    page.on("dialog", lambda d: (dialogs.append(d.message), d.accept()))
+
+    _create_template(page, server, _iso(8), PAYLOAD)
+    expect(page.locator("#plantillas-section .pt-card")).to_have_count(1)
+
+    page.locator("#plantillas-section .pt-card").first.get_by_role("button", name="Eliminar").click()
+    page.wait_for_timeout(800)
+
+    assert len(dialogs) == 1, f"esperado solo el confirm del dashboard, visto: {dialogs}"
+
+
+def test_hostile_exercise_notice_creates_no_image_node(page, server):
+    page.goto(server)
+    page.wait_for_function("typeof window.toggleEdit === 'function'")
+
+    page.fill('#exercise-create-form input[name="ejercicio"]', PAYLOAD)
+    page.fill('#exercise-create-form input[name="grupo_muscular"]', "Pectoral")
+    page.select_option('#exercise-create-form select[name="categoria"]', "EMPUJE")
+    page.click('#exercise-create-form button[type="submit"]')
+
+    expect(page.locator("#notice-container .notice")).to_be_visible(timeout=3000)
+    page.wait_for_timeout(500)
+    assert page.locator("#notice-container img").count() == 0, "el payload no debe crear nodos HTML"
+    expect(page.locator("#notice-container")).to_contain_text(PAYLOAD)
