@@ -1,10 +1,10 @@
 <div id="editor-state" data-readonly="{{ 1 if readonly else 0 }}" data-has-data="{{ 1 if has_data else 0 }}" hidden></div>
     <div class="flex items-center justify-between">
-        <div class="flex items-baseline gap-2">
-            <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title">{{ dia }} {{ fecha_db }}</h3>
-            <span class="text-[11px] text-neutral-500">Semana {{ semana }}</span>
+        <div class="flex items-baseline gap-2 min-w-0">
+            <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title truncate">{{ dia }} {{ fecha_db }}</h3>
+            <span class="text-[11px] text-neutral-500 flex-none">Semana {{ semana }}</span>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="editor-header-actions flex-none flex items-center gap-1">
             <button
                 type="button"
                 onclick="guardarPlantillaToggle()"
@@ -63,7 +63,7 @@
                         <th class="w-20 py-0 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Reps</th>
                         <th class="w-20 py-0 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">RIR</th>
                         <th class="w-20 py-0 px-1.5 font-bold text-burgundy-400 uppercase tracking-wider text-center">RMₐ</th>
-                        <th class="w-10 py-0 px-1.5"></th>
+                        <th class="set-actions-column py-0"></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-800/40" id="set-rows">
@@ -106,8 +106,8 @@
                             >
                         </td>
                         <td class="rm-cell py-0.5 px-1.5 text-center font-bold text-burgundy-300 whitespace-nowrap">{{ "%g"|format(r.rm) if r.rm is not none else "—" }}</td>
-                        <td class="py-0.5 px-0.5">
-                            <div class="row-actions flex gap-px justify-end opacity-0 group-hover:opacity-100 transition-opacity duration-150 {% if readonly %}hidden{% endif %}">
+                        <td class="set-actions-column py-0.5">
+                            <div class="row-actions flex w-full items-center justify-center gap-px opacity-0 group-hover:opacity-100 transition-opacity duration-150 {% if readonly %}hidden{% endif %}">
                                 <button type="button" onclick="removeRow(this)" class="row-btn" title="Eliminar fila">−</button>
                                 <button type="button" onclick="addRowAfter(this)" class="row-btn" title="Agregar fila">+</button>
                             </div>
