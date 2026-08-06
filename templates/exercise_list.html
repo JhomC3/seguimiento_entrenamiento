@@ -4,7 +4,7 @@
         <div class="flex flex-col gap-2" id="exercise-filters">
             {% for ej in ejercicios_grupo %}
             <button
-                onclick="toggleExercise('{{ ej }}')"
+                data-action="select-exercise" data-exercise="{{ ej }}"
                 class="filter-btn w-full bg-matte-950 border border-neutral-800 hover:border-neutral-700 text-neutral-300 text-sm font-bold py-2.5 px-3 rounded-lg transition-all tracking-wide flex items-center justify-between"
             >
                 <span>{{ ej }}</span>

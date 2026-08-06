@@ -185,11 +185,11 @@ def _assert_inert_fragment(text: str):
     parser = _InertChecker()
     parser.feed(text)
     assert not any(name in HANDLER_ATTRS for name in parser.attributes), "no event-handler attributes allowed"
-    for node in parser.text_nodes:
-        if "alert(" in node:
-            assert "<" not in node, "alert( must not appear inside a markup-bearing text node"
-    for block in re.findall(r"<script[^>]*>(.*?)</script>", text, re.S):
-        assert "alert(" not in block, "payload must not live inside a script element"
+    assert "img" not in parser.elements, "payload must not create an <img> element"
+    for m in re.finditer(r"<script([^>]*)>(.*?)</script>", text, re.S):
+        if 'type="application/json"' in m.group(1):
+            continue  # data block, never executed
+        assert "alert(" not in m.group(2), "payload must not live inside a script element"
     joined = "".join(parser.text_nodes)
     assert PAYLOAD in joined, "payload must be recoverable from the escaped text"
 

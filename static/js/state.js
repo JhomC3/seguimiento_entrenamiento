@@ -17,6 +17,7 @@ let applyInFlight = null;
 let dragGhost = null;
 let categoriaMap = {};
 let csrfToken = "";
+let currentIso = null;
 
 export function getPendingNav() { return pendingNav; }
 export function setPendingNav(v) { pendingNav = v; }
@@ -46,12 +47,13 @@ export function setCsrfToken(t) { csrfToken = t || ""; }
 export function getCsrfToken() { return csrfToken; }
 
 export function getCurrentIso() {
-    if (typeof currentIso !== 'undefined' && currentIso) return currentIso;
-    return null;
+    if (currentIso) return currentIso;
+    const sel = document.querySelector('.date-num.selected');
+    return sel ? sel.dataset.iso : null;
 }
 
 export function setCurrentIso(v) {
-    if (typeof currentIso !== 'undefined') currentIso = v;
+    currentIso = v || null;
 }
 
 export function fmtNum(v) {

@@ -1,13 +1,13 @@
 <div id="date-navigator" class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border">
     <div class="flex items-center gap-2">
-        <button type="button" onclick="scrollDates(-1)" class="nav-arrow" title="Fechas anteriores">←</button>
+        <button type="button" data-action="scroll-dates" data-dir="-1" class="nav-arrow" title="Fechas anteriores">←</button>
 
         <div id="date-strip" class="flex items-center gap-0.5 overflow-x-auto flex-1 min-w-0 no-scrollbar">
             {% for d in dates %}
             <button
                 type="button"
+                data-action="select-date"
                 data-iso="{{ d.iso }}"
-                onclick="selectDate(this, '{{ d.iso }}')"
                 class="date-num {% if d.selected %}selected{% endif %}"
                 title="{{ d.iso }}"
             >
@@ -17,31 +17,8 @@
             {% endfor %}
         </div>
 
-        <button type="button" onclick="jumpDate('{{ today_iso }}')" class="today-btn" title="Ir a hoy">HOY</button>
+        <button type="button" data-action="jump-date" data-iso="{{ today_iso }}" class="today-btn" title="Ir a hoy">HOY</button>
 
-        <button type="button" onclick="scrollDates(1)" class="nav-arrow" title="Próximas fechas">→</button>
+        <button type="button" data-action="scroll-dates" data-dir="1" class="nav-arrow" title="Próximas fechas">→</button>
     </div>
 </div>
-
-<script>
-    let currentIso = '{{ selected_iso }}';
-
-    function selectDate(btn, iso) {
-        requestNavigate(iso);
-    }
-
-    function scrollDates(dir) {
-        const strip = document.getElementById('date-strip');
-        if (strip) strip.scrollBy({ left: dir * strip.clientWidth * 0.8, behavior: 'smooth' });
-    }
-
-    function jumpDate(iso) {
-        if (!iso) return;
-        requestNavigate(iso);
-    }
-
-    document.addEventListener('DOMContentLoaded', () => {
-        const sel = document.querySelector('.date-num.selected');
-        if (sel) sel.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'auto' });
-    });
-</script>

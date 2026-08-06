@@ -7,7 +7,7 @@
         <div class="editor-header-actions flex-none flex items-center gap-1">
             <button
                 type="button"
-                onclick="guardarPlantillaToggle()"
+                data-action="toggle-template-form"
                 class="edit-toggle save-template-btn"
                 aria-label="Guardar como entreno"
                 title="Guardar como entreno"
@@ -22,17 +22,17 @@
                         title="Enter para guardar"
                         class="w-36 sm:w-44 bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 focus:outline-none transition-colors"
                     >
-                    <button type="button" onclick="guardarPlantillaToggle(false)" class="btn-x" aria-label="Cancelar" title="Cancelar">
+                    <button type="button" data-action="cancel-template-form" class="btn-x" aria-label="Cancelar" title="Cancelar">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
                     </button>
-                    <button type="button" onclick="confirmEntrenoSave()" class="btn-check" aria-label="Guardar entreno" title="Guardar entreno">
+                    <button type="button" data-action="confirm-template-save" class="btn-check" aria-label="Guardar entreno" title="Guardar entreno">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>
                     </button>
                 </form>
             </div>
             <button
                 type="button"
-                onclick="eliminarSesion()"
+                data-action="delete-session"
                 class="edit-toggle delete-session-btn"
                 {% if not has_data %}hidden{% endif %}
                 aria-label="Eliminar entreno"
@@ -42,7 +42,7 @@
             </button>
             <button
                 type="button"
-                onclick="toggleEdit()"
+                data-action="toggle-edit"
                 class="edit-toggle pencil-btn {% if readonly %}off{% else %}on{% endif %}"
                 aria-label="Editar sesión"
             >
@@ -108,8 +108,8 @@
                         <td class="rm-cell py-0.5 px-1.5 text-center font-bold text-burgundy-300 whitespace-nowrap">{{ "%g"|format(r.rm) if r.rm is not none else "—" }}</td>
                         <td class="set-actions-column py-0.5">
                             <div class="row-actions flex w-full items-center justify-center gap-px opacity-0 group-hover:opacity-100 transition-opacity duration-150 {% if readonly %}hidden{% endif %}">
-                                <button type="button" onclick="removeRow(this)" class="row-btn" title="Eliminar fila">−</button>
-                                <button type="button" onclick="addRowAfter(this)" class="row-btn" title="Agregar fila">+</button>
+                                <button type="button" data-action="row-remove" class="row-btn" title="Eliminar fila">−</button>
+                                <button type="button" data-action="row-add" class="row-btn" title="Agregar fila">+</button>
                             </div>
                         </td>
                     </tr>

@@ -1,6 +1,6 @@
 // date-navigation.js — owns: date strip selection, unsaved-change confirmation, dots.
 // DOM owned: #date-navigator, #date-strip, .date-num, .date-dot.
-// Public API: doNav, requestNavigate, updateDateDot, selectDate, scrollDates, jumpDate.
+// Public API: initDateNavigation, doNav, requestNavigate, updateDateDot.
 
 import { getPendingNav, isDirty, setCurrentIso, setPendingNav, showConfirmDialog } from './state.js';
 import { submitSave } from './editor.js';
@@ -34,18 +34,31 @@ export function requestNavigate(iso) {
     }
 }
 
-export function selectDate(btn, iso) {
-    requestNavigate(iso);
-}
-
-export function scrollDates(dir) {
+function scrollDates(dir) {
     const strip = document.getElementById('date-strip');
     if (strip) strip.scrollBy({ left: dir * strip.clientWidth * 0.8, behavior: 'smooth' });
 }
 
-export function jumpDate(iso) {
+function jumpDate(iso) {
     if (!iso) return;
     requestNavigate(iso);
+}
+
+export function initDateNavigation() {
+    document.addEventListener('click', function (e) {
+        const el = e.target.closest('[data-action]');
+        if (!el) return;
+        if (el.dataset.action === 'select-date') {
+            requestNavigate(el.dataset.iso);
+        } else if (el.dataset.action === 'jump-date') {
+            jumpDate(el.dataset.iso);
+        } else if (el.dataset.action === 'scroll-dates') {
+            scrollDates(parseInt(el.dataset.dir, 10) || 0);
+        }
+    });
+
+    const sel = document.querySelector('.date-num.selected');
+    if (sel) sel.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'auto' });
 }
 
 export function updateDateDot(fecha, has) {

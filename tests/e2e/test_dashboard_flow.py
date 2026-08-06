@@ -20,7 +20,7 @@ def _fill_row(page, row, ejercicio="Press", kg="80", reps="8", rir="1"):
 
 def _goto_date(page, server, iso):
     page.goto(server)
-    page.wait_for_function("typeof window.toggleEdit === 'function'")
+    page.wait_for_function("document.body.dataset.appReady === '1'")
     page.locator(f'.date-num[data-iso="{iso}"]').click()
     expect(page.locator(f'.date-num[data-iso="{iso}"]')).to_have_class(re.compile(r"\bselected\b"))
     expect(page.locator("#session-editor-wrap")).to_contain_text("Semana")
@@ -28,14 +28,14 @@ def _goto_date(page, server, iso):
 
 def test_empty_state_chart(page, server):
     page.goto(server)
-    page.wait_for_function("typeof window.toggleEdit === 'function'")
+    page.wait_for_function("document.body.dataset.appReady === '1'")
     expect(page.locator("#unified-chart")).to_be_visible()
     expect(page.locator("#unified-chart")).to_contain_text("Sin datos")
 
 
 def test_save_session_flow(page, server):
     page.goto(server)
-    page.wait_for_function("typeof window.toggleEdit === 'function'")
+    page.wait_for_function("document.body.dataset.appReady === '1'")
     expect(page.locator("#session-editor")).to_be_visible()
     _fill_row(page, 0)
     page.click('#edit-actions button[type="submit"]')
@@ -223,7 +223,7 @@ def test_hostile_template_name_does_not_execute(page, server):
 
 def test_hostile_exercise_notice_creates_no_image_node(page, server):
     page.goto(server)
-    page.wait_for_function("typeof window.toggleEdit === 'function'")
+    page.wait_for_function("document.body.dataset.appReady === '1'")
 
     page.fill('#exercise-create-form input[name="ejercicio"]', PAYLOAD)
     page.fill('#exercise-create-form input[name="grupo_muscular"]', "Pectoral")

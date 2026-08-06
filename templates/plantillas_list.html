@@ -8,9 +8,9 @@
         <div class="pt-card bg-matte-950 border border-neutral-800 rounded-lg p-2 flex flex-col gap-1.5" id="pt-card-{{ p.id }}" data-pt-id="{{ p.id }}" data-pt-nombre="{{ p.nombre }}">
             <span class="text-xs font-bold text-neutral-200 truncate">{{ p.nombre }}</span>
             <div class="flex gap-1">
-                <button type="button" onclick="aplicarPlantilla({{ p.id }})" class="pt-btn pt-btn-burgundy flex-1">Aplicar</button>
-                <button type="button" onclick="editarPlantilla({{ p.id }})" class="pt-btn flex-1">Editar</button>
-                <button type="button" onclick="eliminarPlantilla({{ p.id }}, '{{ p.nombre }}')" class="pt-btn flex-1">Eliminar</button>
+                <button type="button" data-action="apply-template" data-template-id="{{ p.id }}" class="pt-btn pt-btn-burgundy flex-1">Aplicar</button>
+                <button type="button" data-action="edit-template" data-template-id="{{ p.id }}" class="pt-btn flex-1">Editar</button>
+                <button type="button" data-action="delete-template" data-template-id="{{ p.id }}" data-template-name="{{ p.nombre }}" class="pt-btn flex-1">Eliminar</button>
             </div>
             {% if editing_id == p.id %}
             <form hx-post="/plantilla/editar/{{ p.id }}" hx-swap="none" class="flex flex-col gap-1.5 mt-1.5 pt-1.5 border-t border-neutral-800">
@@ -23,13 +23,13 @@
                             <option value="{{ ej }}" selected>{{ ej }}</option>
                             {% for c in catalog %}{% if c != ej %}<option value="{{ c }}">{{ c }}</option>{% endif %}{% endfor %}
                         </select>
-                        <button type="button" onclick="ptRemoveRow(this)" class="row-btn" title="Quitar ejercicio">−</button>
+                        <button type="button" data-action="template-row-remove" class="row-btn" title="Quitar ejercicio">−</button>
                     </div>
                     {% endfor %}
                 </div>
-                <button type="button" onclick="ptAddRow(this)" class="row-btn self-start" title="Agregar ejercicio">+</button>
+                <button type="button" data-action="template-row-add" class="row-btn self-start" title="Agregar ejercicio">+</button>
                 <div class="flex gap-1 items-center">
-                    <button type="button" onclick="refreshPlantillas()" class="btn-x" aria-label="Cancelar" title="Cancelar">
+                    <button type="button" data-action="refresh-templates" class="btn-x" aria-label="Cancelar" title="Cancelar">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
                     </button>
                     <button type="submit" class="btn-check" aria-label="Guardar" title="Guardar">

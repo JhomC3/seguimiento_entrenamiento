@@ -1,8 +1,8 @@
 // templates.js — owns: plantilla (entreno) list, form, apply/delete/edit/reorder, DnD.
 // DOM owned: #plantillas-section, #plantillas-list, .pt-card, #plantilla-edit-rows,
 // #save-template-form-wrap, #save-template-form, #session-editor (drop target).
-// Public API: editorHasData, aplicarPlantilla, eliminarPlantilla, editarPlantilla,
-// refreshPlantillas, suggestedTemplateName, syncTemplateEjercicios,
+// Public API: initTemplateActions, editorHasData, aplicarPlantilla, eliminarPlantilla,
+// editarPlantilla, refreshPlantillas, suggestedTemplateName, syncTemplateEjercicios,
 // setEntrenoBtnVisible, openEntrenoForm, guardarPlantillaToggle, confirmEntrenoSave,
 // ptAddRow, ptRemoveRow, initTemplateSortable, entrenosOrder, initEntrenoDnD.
 
@@ -186,6 +186,34 @@ export function initTemplateSortable() {
 
 export function entrenosOrder() {
     return Array.from(document.querySelectorAll('#plantillas-list .pt-card')).map(el => el.dataset.ptId);
+}
+
+/* ---------- Acciones delegadas de plantillas ---------- */
+export function initTemplateActions() {
+    document.addEventListener('click', function (e) {
+        const el = e.target.closest('[data-action]');
+        if (!el) return;
+        switch (el.dataset.action) {
+            case 'apply-template':
+                aplicarPlantilla(parseInt(el.dataset.templateId, 10));
+                break;
+            case 'edit-template':
+                editarPlantilla(parseInt(el.dataset.templateId, 10));
+                break;
+            case 'delete-template':
+                eliminarPlantilla(parseInt(el.dataset.templateId, 10), el.dataset.templateName);
+                break;
+            case 'template-row-add':
+                ptAddRow(el);
+                break;
+            case 'template-row-remove':
+                ptRemoveRow(el);
+                break;
+            case 'refresh-templates':
+                refreshPlantillas();
+                break;
+        }
+    });
 }
 
 /* ---------- Drag & drop nativo de entrenos: lista -> reordenar, panel -> aplicar ---------- */

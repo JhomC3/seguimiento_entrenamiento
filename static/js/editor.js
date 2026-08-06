@@ -1,9 +1,9 @@
 // editor.js — owns: #session-editor edit mode, rows, RM calculation, save.
 // DOM owned: #session-editor, #session-form, #set-rows, #editor-state, #edit-actions.
-// Public API: syncEditButtons, updateEditActions, syncEditorFromContent,
-// setPanelReadonly, handleEditorState, enterEditMode, exitEditMode, toggleEdit,
-// addRowAfter, removeRow, renumberRows, fitRowsToPanel, recalcRM, submitSave,
-// eliminarSesion.
+// Public API: initEditorActions, syncEditButtons, updateEditActions,
+// syncEditorFromContent, setPanelReadonly, handleEditorState, enterEditMode,
+// exitEditMode, toggleEdit, addRowAfter, removeRow, renumberRows, fitRowsToPanel,
+// recalcRM, submitSave, eliminarSesion.
 
 import { flashEditorNotice } from './notices.js';
 import { initRowSortable, syncSortableState } from './row-sortable.js';
@@ -17,6 +17,7 @@ import {
     showConfirmDialog,
 } from './state.js';
 import { doNav } from './date-navigation.js';
+import { confirmEntrenoSave, guardarPlantillaToggle } from './templates.js';
 
 export function syncEditButtons() {
     const st = document.getElementById('editor-state');
@@ -214,4 +215,35 @@ export function eliminarSesion() {
         setSaveRequested(true);
         htmx.ajax('POST', '/entrenamiento/session/eliminar', { values: { fecha: fecha }, target: 'body', swap: 'none' });
     }, null);
+}
+
+/* ---------- Acciones delegadas del editor ---------- */
+export function initEditorActions() {
+    document.addEventListener('click', function (e) {
+        const el = e.target.closest('[data-action]');
+        if (!el) return;
+        switch (el.dataset.action) {
+            case 'toggle-edit':
+                toggleEdit();
+                break;
+            case 'toggle-template-form':
+                guardarPlantillaToggle();
+                break;
+            case 'cancel-template-form':
+                guardarPlantillaToggle(false);
+                break;
+            case 'confirm-template-save':
+                confirmEntrenoSave();
+                break;
+            case 'delete-session':
+                eliminarSesion();
+                break;
+            case 'row-add':
+                addRowAfter(el);
+                break;
+            case 'row-remove':
+                removeRow(el);
+                break;
+        }
+    });
 }
