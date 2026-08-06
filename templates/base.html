@@ -483,6 +483,35 @@
             background: #171717;
             z-index: 5;
         }
+        #session-editor .table-scroll::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        #session-editor .table-scroll::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        #session-editor .table-scroll::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 3px;
+        }
+
+        /* Compactación de controles del editor (scoped: no afecta plantillas ni otros contextos) */
+        #session-editor .editor-header-actions .edit-toggle {
+            width: 22px;
+            height: 22px;
+        }
+        #session-editor .editor-header-actions svg {
+            width: 13px;
+            height: 13px;
+        }
+        #session-editor .set-actions-column {
+            width: 30px;
+        }
+        #session-editor .row-actions .row-btn {
+            width: 14px;
+            height: 14px;
+            font-size: 10px;
+        }
     </style>
 </head>
 <body class="bg-matte-950 text-neutral-100 min-h-screen font-sans antialiased selection:bg-burgundy-700 selection:text-white">
