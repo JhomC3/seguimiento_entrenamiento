@@ -722,8 +722,7 @@
                         if (editor) editor.classList.remove('drop-target');
                         return true;
                     }
-                    const st = document.getElementById('editor-state');
-                    const ok = editorEditmode() === '1' && st && st.dataset.hasData === '0';
+                    const ok = editorEditmode() === '1';
                     if (editor) editor.classList.toggle('drop-target', ok);
                     return ok;
                 },
@@ -738,8 +737,15 @@
                     if (editor) editor.classList.remove('drop-target');
                     const item = evt.item;
                     const id = item && item.dataset ? item.dataset.ptId : null;
-                    if (id) aplicarPlantilla(parseInt(id, 10));
                     if (item) item.remove();
+                    if (!id) return;
+                    const st = document.getElementById('editor-state');
+                    if (st && st.dataset.hasData === '1') {
+                        document.getElementById('confirm-msg').textContent = '¿Reemplazar el entrenamiento del día?';
+                        showConfirmDialog(function () { aplicarPlantilla(parseInt(id, 10)); }, null);
+                    } else {
+                        aplicarPlantilla(parseInt(id, 10));
+                    }
                 },
             });
             syncSortableState();
