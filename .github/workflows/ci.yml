@@ -35,6 +35,9 @@ jobs:
         run: uv sync --locked
       - name: Run tests with coverage floor
         run: uv run pytest -q --ignore=tests/e2e
+      - name: Per-module coverage floors (charts, metrics)
+        run: |
+          uv run python scripts/check_module_coverage.py src/charts.py src/metrics_engine.py --min 90
 
   browser:
     name: Browser (Playwright) tests
