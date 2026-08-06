@@ -360,10 +360,13 @@
             cursor: not-allowed;
         }
 
-        /* Destino de drop de entrenos (editor vacío editable) */
+        /* Destino de drop de entrenos (editor en modo editable) */
         #session-editor.drop-target {
             outline: 2px dashed rgba(229, 109, 136, 0.55);
             outline-offset: -2px;
+        }
+        #session-editor .sortable-placeholder {
+            display: none;
         }
 
         /* Tarjetas de entrenos: arrastrables desde cualquier zona no interactiva */
@@ -509,6 +512,7 @@
         let confirmCbs = null;
         let saveRequested = false;
         let sortableRows = null;
+        let dropInFlight = false;
         let plantillaAppliedPending = false;
         let entrenosOrderStart = null;
 
@@ -715,30 +719,51 @@
                 chosenClass: 'sortable-chosen',
                 filter: 'input, select, button',
                 preventOnFilter: false,
-                group: { name: 'editor-rows', pull: false, put: ['entrenos'] },
-                onMove: function (evt) {
-                    const editor = document.getElementById('session-editor');
-                    if (evt.from === evt.to) {
-                        if (editor) editor.classList.remove('drop-target');
-                        return true;
-                    }
-                    const ok = editorEditmode() === '1';
-                    if (editor) editor.classList.toggle('drop-target', ok);
-                    return ok;
-                },
+                group: { name: 'editor-rows', pull: false, put: false },
                 onEnd: function () {
-                    const editor = document.getElementById('session-editor');
-                    if (editor) editor.classList.remove('drop-target');
                     renumberRows();
                     updateEditActions();
                 },
+            });
+            syncSortableState();
+        }
+
+        function syncSortableState() {
+            if (sortableRows) sortableRows.option('disabled', editorEditmode() !== '1');
+        }
+
+        /* ---------- Drop zone de entrenos: todo el panel (no la tabla) ---------- */
+        function initPanelDropZone() {
+            const panel = document.getElementById('session-editor');
+            if (!panel || typeof Sortable === 'undefined' || panel.dataset.dropReady) return;
+            panel.dataset.dropReady = '1';
+            Sortable.create(panel, {
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                chosenClass: 'sortable-chosen',
+                draggable: '.pt-card',
+                group: { name: 'editor-panel', pull: false, put: ['entrenos'] },
+                onMove: function (evt) {
+                    const ok = editorEditmode() === '1';
+                    panel.classList.toggle('drop-target', ok);
+                    return ok;
+                },
+                onEnd: function () {
+                    panel.classList.remove('drop-target');
+                },
                 onAdd: function (evt) {
-                    const editor = document.getElementById('session-editor');
-                    if (editor) editor.classList.remove('drop-target');
                     const item = evt.item;
                     const id = item && item.dataset ? item.dataset.ptId : null;
                     if (item) item.remove();
                     if (!id) return;
+                    if (editorEditmode() !== '1') {
+                        flashEditorNotice('Activa el modo editable primero.', 'error');
+                        return;
+                    }
+                    panel.classList.add('drop-target');
+                    if (dropInFlight) return;
+                    dropInFlight = true;
+                    setTimeout(function () { dropInFlight = false; }, 500);
                     const st = document.getElementById('editor-state');
                     if (st && st.dataset.hasData === '1') {
                         document.getElementById('confirm-msg').textContent = '¿Reemplazar el entrenamiento del día?';
@@ -748,11 +773,6 @@
                     }
                 },
             });
-            syncSortableState();
-        }
-
-        function syncSortableState() {
-            if (sortableRows) sortableRows.option('disabled', editorEditmode() !== '1');
         }
 
         /* ---------- Plantillas ---------- */
@@ -1056,6 +1076,7 @@
             scheduleNotices();
             syncEditorFromContent();
             initRowSortable();
+            initPanelDropZone();
             initTemplateSortable();
             fitRowsToPanel();
         });

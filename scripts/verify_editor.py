@@ -458,8 +458,24 @@ def main() -> None:
             check("reorden persistido tras refrescar", entrenos_names() == ["Mi Jalón", "Empuje"])
             nav(iso_future6)
             check(f"fecha vacía editable para drop ({em()})", em() == "1")
+            page.evaluate("""(() => {
+                window.__rows_y = [];
+                window.__frames = 0;
+                const row = document.querySelector('#set-rows .set-row');
+                const loop = () => {
+                    if (document.querySelector('.sortable-ghost')) {
+                        window.__rows_y.push(row ? row.getBoundingClientRect().top : null);
+                    }
+                    if (window.__frames < 500) { window.__frames++; requestAnimationFrame(loop); }
+                };
+                loop();
+            })()""")
             mouse_drag(page.locator('#plantillas-list .pt-card').nth(1), page.locator('#set-rows .set-row').first)
             time.sleep(1.0)
+            ys = [y for y in page.evaluate("window.__rows_y") if y is not None]
+            check(f"drop: filas inmóviles durante el arrastre (rango {max(ys) - min(ys):.2f}px)", len(ys) > 10 and (max(ys) - min(ys)) < 1)
+            tbody_kids = page.evaluate('Array.from(document.querySelectorAll("#set-rows > *")).map(n => n.tagName + "." + n.className)')
+            check("drop: el clon no entra a la tabla", all("TR" in k for k in tbody_kids))
             check(f"drop aplica entreno: editable ({em()})", em() == "1")
             check("drop aplica entreno: filas con últimos valores", row_order() == ["Press Repro"])
             kgs = page.evaluate('Array.from(document.querySelectorAll("#set-rows input[name=\\"kg\\"]")).map(i => i.value)')
@@ -467,6 +483,12 @@ def main() -> None:
             page.click("#edit-actions button:not([type=submit])")
             time.sleep(0.8)
             check("cancelar tras drop restaura fila vacía", nrows() == 1 and em() == "1")
+            mouse_drag(page.locator('#plantillas-list .pt-card').nth(1), page.locator('#session-editor h3'))
+            time.sleep(1.0)
+            check("drop en cualquier zona del panel (header) aplica", em() == "1" and row_order() == ["Press Repro"])
+            page.click("#edit-actions button:not([type=submit])")
+            time.sleep(0.8)
+            check("cancelar tras drop en header restaura", nrows() == 1 and em() == "1")
             nav(iso_future3)
             check(f"drop bloqueado en fecha con datos sin edición ({em()})", em() == "0")
             before = row_order()
