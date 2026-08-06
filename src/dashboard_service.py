@@ -4,6 +4,7 @@ Pure orchestration: no HTTP, no template rendering. Handlers stay thin.
 """
 
 import logging
+import sqlite3
 from datetime import date, datetime, timedelta
 
 from src.charts import chart_pfr_timeline
@@ -39,7 +40,7 @@ def get_filters(db_path: str) -> tuple[list[str], list[str]]:
                 ).fetchall()
             ]
         return ejercicios, grupos
-    except Exception:
+    except (sqlite3.Error, OSError):
         logger.exception("No se pudieron cargar los filtros de la DB")
         return [], []
 
@@ -56,7 +57,7 @@ def get_ejercicios_por_grupo(db_path: str, grupo: str) -> list[str]:
                     (grupo,),
                 ).fetchall()
             ]
-    except Exception:
+    except (sqlite3.Error, OSError):
         logger.exception("No se pudieron cargar los ejercicios del grupo %s", grupo)
         return []
 

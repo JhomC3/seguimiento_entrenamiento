@@ -298,3 +298,28 @@ def test_app_source_does_not_interpolate_user_fields_into_html():
             raise AssertionError(
                 f"app.py interpola campo de usuario en f-string HTML: {line.strip()}"
             )
+
+
+def test_edit_template_leak_returns_500_generic(authed_client, monkeypatch):
+    """Unexpected persistence errors must never leak their message."""
+    import sqlite3
+
+
+    def _leaky(*args, **kwargs):
+        raise sqlite3.OperationalError("SECRET_INTERNAL_DETAIL")
+
+    authed_client.post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
+    monkeypatch.setattr("src.mutation_service.edit_template", _leaky)
+    r = authed_client.post("/plantilla/editar/1", data={"nombre": "B", "ejercicio": ["Press"]})
+    assert r.status_code == 500
+    assert "Ocurrió un error inesperado" in r.text
+    assert "SECRET_INTERNAL_DETAIL" not in r.text
+
+
+def test_edit_template_domain_error_keeps_form_with_safe_message(authed_client):
+    authed_client.post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
+    authed_client.post("/plantilla/guardar", data={"nombre": "B", "ejercicio": ["Press"]})
+    r = authed_client.post("/plantilla/editar/2", data={"nombre": "A", "ejercicio": ["Press"]})
+    assert r.status_code == 200
+    assert "Ya existe un entreno llamado" in r.text
+    assert 'id="plantilla-edit-rows"' in r.text

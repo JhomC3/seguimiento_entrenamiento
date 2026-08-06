@@ -348,7 +348,9 @@ def plantilla_editar(
             DB_PATH, plantilla_id, TemplateInput(nombre=nombre, ejercicios=ejercicio)
         )
     except Exception as e:
-        message, _ = translate_error(e)
+        message, status = translate_error(e)
+        if status != 400:
+            return _domain_error_response(request, e, "notice-container")
         html = _plantillas_list_html(request, editing_id=plantilla_id, error=message)
         return HTMLResponse(
             content=fragment_oob(templates, request, "plantillas-section", html, swap="outerHTML")
