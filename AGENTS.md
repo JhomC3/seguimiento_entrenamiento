@@ -23,54 +23,82 @@ Eres un ingeniero de software senior experto en Python, especializado en anális
 
 ## 3. Estructura de Directorios Clave
 
-- `app.py`: Entrada de la aplicación FastAPI (rutas del dashboard).
-- `config.py`: Constantes globales, URLs de descarga y `DB_PATH`.
+- `app.py`: Entrada de la aplicación FastAPI — handlers delgados (parseo de request, servicios, selección de respuesta). Sin SQL ni lógica de dominio multi-paso.
+- `config.py`: Constantes globales, URLs de descarga y `DB_PATH` (configurable vía `GYM_DB_PATH`).
 - `src/`: Lógica central del sistema.
+  - `db_connection.py`: Fábrica `connect_db` (foreign_keys ON, row_factory, busy_timeout) + context managers `read_connection` / `transaction`.
+  - `migrations/`: Migraciones versionadas (`v001`..`v003`) y `runner.py` (transaccionales, con backup automático antes de aplicar migraciones pendientes).
+  - `models.py`: Modelos tipados (`TrainingSetInput`, `TrainingSet`, `Session`, `TemplateInput`, `Template`) y excepciones de dominio (`ValidationError`, `NotFoundError`, `ConflictError`).
+  - `dashboard_service.py`: Orquestación de vistas (view models, charts, filtros) y traducción de errores a respuestas seguras.
+  - `view_models.py`: `DateNavigatorViewModel`, `SessionEditorViewModel` — solo valores que necesitan las plantillas.
+  - `security.py`: Middleware de headers de seguridad + CSP y protección CSRF (token firmado + validación de Origin).
   - `fetcher.py`: Extracción HTTP de Google Sheets.
   - `parser.py`: Limpieza y transformación de CSV.
-  - `database.py`: Operaciones SQLite (creación de tablas y carga).
+  - `database.py`: Operaciones SQLite (lecturas/escrituras) usando `src/db_connection`.
+  - `training_service.py` / `template_service.py`: Servicios de dominio tipados (validación, sesiones, plantillas).
   - `metrics_engine.py`: Motor de métricas (RM ajustado, PFR, rendimiento relativo).
   - `charts.py`: Gráficos Plotly y agregaciones de datos por ejercicio/grupo.
+- `static/`: Assets por responsabilidad.
+  - `css/`: `app.css` (manifest de @import) + `theme`, `components`, `date-navigator`, `session-editor`, `templates`.
+  - `js/`: Módulos ES (`state`, `notices`, `editor`, `row-sortable`, `templates`, `date-navigation`, `htmx-lifecycle`) + bootstrap `app.js` (lee `#app-config` JSON, expone el bridge de handlers inline, inicializa el DOM).
 - `templates/`: Plantillas Jinja2 del frontend.
-  - `base.html`: Layout base (estilos, htmx, Plotly).
+  - `base.html`: Shell de layout (~70 líneas: metadata, CDNs, Tailwind config, partials, `{% block content %}`).
+  - `partials/`: `notices.html`, `confirm_modal.html`, `app_config.html`.
   - `index.html`: Pantalla principal con categorías musculares y gráfica unificada.
-  - `exercise_list.html`: Lista de ejercicios (parcial).
-  - `exercise_detail.html`: Tabla de series/sesiones por ejercicio (parcial).
-- `data/`: Contiene la base de datos local SQLite `gym.db`.
-- `tests/`: Pruebas unitarias e integración.
+  - Fragmentos por feature: `session_editor.html`, `date_navigator.html`, `plantillas_list.html`, `exercise_list.html`, `exercise_detail.html`, `exercise_create_form.html`.
+- `data/`: Contiene la base de datos local SQLite `gym.db` (regenerable) y `backups/`.
+- `tests/`: Pruebas unitarias, integración y `e2e/` (Playwright, servidor aislado + DB temporal).
+- `docs/`: Arquitectura (`current-ui-contract.md`, `security-model.md`), operaciones (`local-development.md`, `release-checklist.md`), planes.
+- `scripts/`: `import_google_sheets.py` (carga del CSV), `verify_editor.py` (chequeo del editor).
 - `assets/body_map.svg`: Mapa corporal (recurso visual).
 
 ## 4. Modelo de Datos (SQLite)
 
-La base `data/gym.db` tiene dos tablas:
+La base `data/gym.db` tiene las tablas `ejercicios`, `training_sets`, `plantillas`,
+`plantilla_sets` y `schema_migrations` (versiones aplicadas). El esquema se gestiona
+exclusivamente con las migraciones versionadas en `src/migrations/`; no se hacen
+`ALTER TABLE` a mano.
 
 **`ejercicios`**
 
 - `id` INTEGER PK
 - `grupo_muscular` TEXT NOT NULL
-- `ejercicio` TEXT NOT NULL UNIQUEB
+- `ejercicio` TEXT NOT NULL UNIQUE
+- `categoria` TEXT (backfilled desde grupo muscular)
+- `origen` TEXT NOT NULL DEFAULT 'google' ('manual' para creados desde el UI)
 
 **`training_sets`**
 
 - `id` INTEGER PK
 - `semana` INTEGER NOT NULL
 - `dia` TEXT NOT NULL
-- `fecha` TEXT
+- `fecha` TEXT (formato `d/m/yy`, contrato de datos vigente)
 - `set_orden` INTEGER NOT NULL
 - `ejercicio` TEXT NOT NULL
 - `reps` REAL
 - `kg` REAL
 - `rir` REAL
+- `origen` TEXT NOT NULL DEFAULT 'google' ('manual' para sesiones guardadas)
+
+**`plantillas`**: `id`, `nombre` UNIQUE, `clasificacion`, `created_at`, `updated_at`, `orden`.
+**`plantilla_sets`**: `id`, `plantilla_id` FK CASCADE, `set_orden`, `ejercicio`.
 
 ## 5. Arquitectura del Dashboard (FastAPI + htmx)
 
 La app `app.py` sirve HTML renderizado con Jinja2 y usa htmx para actualizaciones parciales:
 
-- **`GET /`** → index con categorías musculares y gráfica global (PFR sistémico).
-- **`POST /sync`** → re-descarga Google Sheets, repuebla la DB y recarga.
+- **`GET /`** → index con categorías musculares y gráfica global (PFR sistémico). Incluye `#app-config` (JSON con `categoria_map` y `csrf_token`).
+- **`GET /fecha/editor?fecha=`** → fragmento del editor de sesión.
+- **`POST /entrenamiento/session/save`** y **`POST /entrenamiento/session/eliminar`** → mutaciones OOB (`#editor-notice`, `#save-outcome`, `#session-editor-wrap`, `#editor-state`).
+- **`POST /ejercicio/nuevo`** → crea ejercicio desde el UI (OOB `#notice-container`, `#exercise-create`).
+- **`GET /plantillas` / `POST /plantilla/guardar|editar|eliminar|reordenar` / `GET /plantilla/aplicar/{id}`** → CRUD y drag&drop de plantillas (OOB `#plantillas-section`, `#session-editor-wrap`).
+- **`POST /undo`** → deshace la última acción (pila en memoria, máx. 10).
+- **`GET /exportar/csv`** → descarga CSV de `training_sets`.
 - **`GET /select`** → lista de ejercicios del grupo (`grupo=""` para global) con gráfica OOB.
 - **`GET /grupo/reset`** → actualiza la gráfica con el rendimiento del grupo (PFR del grupo muscular).
 - **`GET /ejercicio`** → tablas de detalle (raw + resumen por sesión) con gráfica OOB del ejercicio.
+- La importación de Google Sheets **no es una ruta HTTP**: se ejecuta con `python scripts/import_google_sheets.py`.
+- Todos los handlers son `def` síncronos (FastAPI los ejecuta en threadpool); las mutaciones exigen token CSRF (`X-CSRF-Token` desde `#app-config`) y Origin del mismo sitio. Errores de dominio → 400 con aviso seguro; excepciones inesperadas → 500 genérico (log servidor).
 
 **Flujo frontend (en `index.html`):**
 
@@ -102,12 +130,22 @@ La app `app.py` sirve HTML renderizado con Jinja2 y usa htmx para actualizacione
 
 Antes de dar por completada una tarea, debes:
 
-1. Validar que las pruebas pasen ejecutando:
+1. Validar que las pruebas pasen (unidad + integración + browser):
    ```bash
    uv run pytest
    ```
-2. Ejecutar la app localmente para verificar la interfaz en caso de cambios visuales:
+2. Ejecutar las puertas de calidad estáticas:
    ```bash
-   uv run uvicorn app:app --reload
+   uv run ruff format --check .
+   uv run ruff check .
+   uv run mypy app.py src tests
    ```
-3. Si agregas dependencias, actualiza siempre el archivo `requirements.txt`.
+3. Ejecutar la app localmente para verificar la interfaz en caso de cambios visuales:
+   ```bash
+   uv run uvicorn app:app --host 127.0.0.1 --reload
+   ```
+4. Si agregas dependencias, actualiza `pyproject.toml` y regenera el lock:
+   ```bash
+   uv lock && uv sync --locked
+   ```
+   (`requirements.txt` se conserva solo como export de compatibilidad.)
