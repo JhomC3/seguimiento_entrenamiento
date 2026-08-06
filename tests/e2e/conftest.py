@@ -36,9 +36,9 @@ def _wait_for_server(url: str, timeout: float = 15.0) -> None:
     raise RuntimeError(f"Servidor no respondió en {timeout}s: {last_error}")
 
 
-@pytest.fixture(scope="session")
-def server(tmp_path_factory):
-    db_path = tmp_path_factory.mktemp("e2e") / "gym.db"
+@pytest.fixture()
+def server(tmp_path):
+    db_path = tmp_path / "gym.db"
     init_db(str(db_path))
     insert_exercise(str(db_path), "Press", "Pectoral", "EMPUJE")
 

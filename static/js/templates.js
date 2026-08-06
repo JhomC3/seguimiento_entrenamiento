@@ -261,9 +261,10 @@ export function initEntrenoDnD() {
         });
     }
 
-    if (!list || list.dataset.dndListReady) return;
-    list.dataset.dndListReady = '1';
+    if (!list) return;
     list.querySelectorAll('.pt-card').forEach(card => { card.draggable = true; });
+    if (list.dataset.dndListReady) return;
+    list.dataset.dndListReady = '1';
 
     list.addEventListener('dragstart', function (e) {
         const card = e.target.closest('.pt-card');

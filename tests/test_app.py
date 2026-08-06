@@ -450,3 +450,78 @@ def test_htmx_partial_has_single_document(tmp_path, monkeypatch):
         r = TestClient(appmod.app).get(path)
         assert r.text.count("<!DOCTYPE html>") == 0, f"{path} devuelve un documento completo"
         assert r.text.count("<html") == 0, f"{path} contiene <html>"
+
+
+def test_mutating_routes_return_200(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    appmod.UNDO_STACK.clear()
+    client = TestClient(appmod.app)
+    r = client.post("/entrenamiento/session/save", data={
+        "fecha": _fecha(), "ejercicio": ["Press"], "kg": ["80"], "reps": ["8"], "rir": ["1"],
+    })
+    assert r.status_code == 200
+    r = client.post("/entrenamiento/session/eliminar", data={"fecha": _fecha()})
+    assert r.status_code == 200
+    r = client.post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
+    assert r.status_code == 200
+    r = client.post("/plantilla/editar/1", data={"nombre": "B", "ejercicio": ["Press"]})
+    assert r.status_code == 200
+    r = client.post("/plantilla/reordenar", data={"id": ["1"]})
+    assert r.status_code == 200
+    r = client.get("/plantilla/aplicar/1", params={"fecha": _fecha(1)})
+    assert r.status_code == 200
+    r = client.post("/undo", data={"fecha": _fecha()})
+    assert r.status_code == 200
+    r = client.post("/ejercicio/nuevo", data={"ejercicio": "Press", "grupo_muscular": "Pectoral", "categoria": "EMPUJE"})
+    assert r.status_code == 200
+
+
+def test_select_and_grupo_reset_oob_chart(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = TestClient(appmod.app)
+    r = client.get("/select")
+    assert r.status_code == 200
+    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
+    r = client.get("/select", params={"grupo": "Pectoral"})
+    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
+    r = client.get("/grupo/reset", params={"grupo": "Pectoral"})
+    assert r.status_code == 200
+    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
+
+
+def test_ejercicio_history_oob_chart(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    save_session(db, _fecha(), [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = TestClient(appmod.app).get("/ejercicio", params={"ejercicio": "Press"})
+    assert r.status_code == 200
+    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
+    assert "Resumen por Sesión" in r.text
+
+
+def test_ejercicio_nuevo_oob_markers(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = TestClient(appmod.app)
+    r = client.post("/ejercicio/nuevo", data={"ejercicio": "Dominadas", "grupo_muscular": "Espalda", "categoria": "TIRON"})
+    assert r.status_code == 200
+    assert 'id="notice-container" hx-swap-oob="innerHTML"' in r.text
+    assert 'id="exercise-create" hx-swap-oob="outerHTML"' in r.text
+    assert "Dominadas" in r.text
+    r = client.post("/ejercicio/nuevo", data={"ejercicio": "   ", "grupo_muscular": "Espalda", "categoria": "TIRON"})
+    assert "notice-error" in r.text
+    assert 'id="exercise-create" hx-swap-oob="outerHTML"' not in r.text
+
+
+def test_undo_entrenos_oob_plantillas(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    appmod.UNDO_STACK.clear()
+    client = TestClient(appmod.app)
+    client.post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
+    r = client.post("/undo", data={"fecha": _fecha()})
+    assert r.status_code == 200
+    assert 'id="plantillas-section" hx-swap-oob="outerHTML"' in r.text
+    assert "Aún no hay entrenos" in r.text
