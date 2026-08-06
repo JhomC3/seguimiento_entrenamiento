@@ -328,6 +328,14 @@
             background: rgba(255, 255, 255, 0.14);
             box-shadow: 0 0 12px rgba(255, 255, 255, 0.25);
         }
+        .undo-btn {
+            color: rgba(255, 255, 255, 0.30);
+        }
+        .undo-btn.on {
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.14);
+            box-shadow: 0 0 12px rgba(255, 255, 255, 0.25);
+        }
 
         /* Botones de confirmación: ✓ (guardar, derecha) y ✗ (cancelar, izquierda) */
         .btn-check,
@@ -562,6 +570,8 @@
                 trash.hidden = st.dataset.hasData !== '1';
                 trash.classList.toggle('on', editable && st.dataset.hasData === '1');
             }
+            const undoBtn = editor.querySelector('.undo-btn');
+            if (undoBtn) undoBtn.classList.toggle('on', editable);
             const actions = document.getElementById('edit-actions');
             const saveBtn = actions && actions.querySelector('button[type="submit"]');
             if (saveBtn) saveBtn.disabled = !editable;
@@ -831,6 +841,16 @@
             });
         }
 
+        function openEntrenoForm() {
+            const wrap = document.getElementById('save-template-form-wrap');
+            if (!wrap) return;
+            const input = wrap.querySelector('input[name="nombre"]');
+            if (input && !input.value) input.value = suggestedTemplateName();
+            wrap.classList.remove('hidden');
+            syncTemplateEjercicios();
+            if (input) input.focus();
+        }
+
         function guardarPlantillaToggle(force) {
             const wrap = document.getElementById('save-template-form-wrap');
             if (!wrap) return;
@@ -840,11 +860,8 @@
                 return;
             }
             if (wrap.classList.contains('hidden')) {
-                const input = wrap.querySelector('input[name="nombre"]');
-                if (input && !input.value) input.value = suggestedTemplateName();
-                wrap.classList.remove('hidden');
-                syncTemplateEjercicios();
-                if (input) input.focus();
+                document.getElementById('confirm-msg').textContent = '¿Desea crear un nuevo entrenamiento?';
+                showConfirmDialog(function () { openEntrenoForm(); }, null);
             } else {
                 wrap.classList.add('hidden');
             }
@@ -866,6 +883,16 @@
             showConfirmDialog(function () {
                 form.requestSubmit();
             }, null);
+        }
+
+        /* ---------- Deshacer (Ctrl+Z / botón ↶) ---------- */
+        function undoAction() {
+            if (editorEditmode() !== '1') {
+                flashEditorNotice('Activa el modo editable primero.', 'error');
+                return;
+            }
+            saveRequested = true;
+            htmx.ajax('POST', '/undo', { target: 'body', swap: 'none' });
         }
 
         function ptAddRow(btn) {
@@ -1111,6 +1138,20 @@
                 syncTemplateEjercicios();
             }
         });
+
+        document.addEventListener('keydown', function (e) {
+            const inField = e.target.closest && e.target.closest('input, textarea');
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+                if (inField) return;
+                e.preventDefault();
+                undoAction();
+                return;
+            }
+            if (e.key === 'Enter' && inField && e.target.closest('#save-template-form input[name="nombre"]')) {
+                e.preventDefault();
+                confirmEntrenoSave();
+            }
+        }, true);
     </script>
 </body>
 </html>

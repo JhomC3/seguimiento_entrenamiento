@@ -12,20 +12,18 @@
                 aria-label="Guardar como entreno"
                 title="Guardar como entreno"
             >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg>
             </button>
             <div id="save-template-form-wrap" class="hidden">
                 <form id="save-template-form" hx-post="/plantilla/guardar" hx-swap="none" class="flex items-center gap-1.5">
                     <input
                         name="nombre"
                         placeholder="Nombre del entreno"
+                        title="Enter para guardar"
                         class="w-36 sm:w-44 bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 focus:outline-none transition-colors"
                     >
                     <button type="button" onclick="guardarPlantillaToggle(false)" class="btn-x" aria-label="Cancelar" title="Cancelar">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
-                    </button>
-                    <button type="button" onclick="confirmEntrenoSave()" class="btn-check" aria-label="Guardar entreno" title="Guardar entreno">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg>
                     </button>
                 </form>
             </div>
@@ -38,6 +36,15 @@
                 title="Eliminar entreno"
             >
                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14zM10 11v6M14 11v6"></path></svg>
+            </button>
+            <button
+                type="button"
+                onclick="undoAction()"
+                class="edit-toggle undo-btn"
+                aria-label="Deshacer (Ctrl+Z)"
+                title="Deshacer (Ctrl+Z)"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6M3 13a9 9 0 1 0 3-7.7L3 8"></path></svg>
             </button>
             <button
                 type="button"

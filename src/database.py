@@ -357,6 +357,44 @@ def reorder_plantillas(db_path: str, ordered_ids: list[int]) -> None:
     finally:
         conn.close()
 
+def snapshot_entrenos(db_path: str) -> list:
+    conn = sqlite3.connect(db_path)
+    try:
+        plantillas = conn.execute(
+            "SELECT id, nombre, clasificacion, created_at, updated_at, orden FROM plantillas ORDER BY id"
+        ).fetchall()
+        sets = conn.execute(
+            "SELECT plantilla_id, set_orden, ejercicio FROM plantilla_sets ORDER BY plantilla_id, set_orden"
+        ).fetchall()
+    finally:
+        conn.close()
+    return [plantillas, sets]
+
+def restore_entrenos(db_path: str, snapshot: list) -> None:
+    plantillas, sets = snapshot[0], snapshot[1]
+    conn = sqlite3.connect(db_path)
+    try:
+        with conn:
+            conn.execute("DELETE FROM plantilla_sets")
+            conn.execute("DELETE FROM plantillas")
+            for r in plantillas:
+                conn.execute(
+                    "INSERT INTO plantillas (id, nombre, clasificacion, created_at, updated_at, orden) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (r[0], r[1], r[2], r[3], r[4], r[5]),
+                )
+            for r in sets:
+                conn.execute(
+                    "INSERT INTO plantilla_sets (plantilla_id, set_orden, ejercicio) VALUES (?, ?, ?)",
+                    (r[0], r[1], r[2]),
+                )
+            max_id = conn.execute("SELECT COALESCE(MAX(id), 0) FROM plantillas").fetchone()[0]
+            conn.execute(
+                "UPDATE sqlite_sequence SET seq = ? WHERE name = 'plantillas'", (max_id,)
+            )
+    finally:
+        conn.close()
+
 def get_ejercicio_categoria(db_path: str) -> dict[str, str]:
     if not os.path.exists(db_path):
         return {}

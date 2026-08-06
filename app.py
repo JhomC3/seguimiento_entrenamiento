@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import json
+from collections import deque
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 
@@ -26,6 +27,8 @@ from src.database import (
     init_db,
     insert_exercise,
     reorder_plantillas,
+    restore_entrenos,
+    snapshot_entrenos,
 )
 from src.template_service import (
     apply_template_rows,
@@ -55,6 +58,14 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Gym Tracker", lifespan=lifespan)
 templates = Jinja2Templates(directory="templates")
+
+UNDO_STACK: deque = deque(maxlen=10)
+
+def _undo_push_sesion(fecha_iso: str, before: list[dict], after: list[dict]) -> None:
+    UNDO_STACK.append({"kind": "sesion", "fecha_iso": fecha_iso, "before": before, "after": after})
+
+def _undo_push_entrenos(before: list, after: list) -> None:
+    UNDO_STACK.append({"kind": "entrenos", "before": before, "after": after})
 
 CICLO_START_DATE = parse_cycle_start(CICLO_START)
 
@@ -272,8 +283,11 @@ async def entrenamiento_session_save(
     outcome_fail = '<div id="save-outcome" hx-swap-oob="outerHTML" data-ok="0" hidden></div>'
     try:
         backup_db(DB_PATH)
+        fecha_db = fecha_to_db(parse_form_date(fecha))
+        before_rows = get_sets_by_fecha(DB_PATH, fecha_db)
         save_session(DB_PATH, fecha, sets)
-        saved_rows = get_sets_by_fecha(DB_PATH, fecha_to_db(parse_form_date(fecha)))
+        saved_rows = get_sets_by_fecha(DB_PATH, fecha_db)
+        _undo_push_sesion(fecha, before_rows, saved_rows)
         if saved_rows:
             state = ('<div id="editor-state" hx-swap-oob="outerHTML" '
                      f'data-readonly="1" data-has-data="1" hidden></div>')
@@ -299,7 +313,10 @@ async def entrenamiento_session_eliminar(request: Request, fecha: str = Form(...
     outcome_ok = '<div id="save-outcome" hx-swap-oob="outerHTML" data-ok="1" hidden></div>'
     try:
         backup_db(DB_PATH)
-        delete_session_by_fecha(DB_PATH, fecha_to_db(parse_form_date(fecha)))
+        fecha_db = fecha_to_db(parse_form_date(fecha))
+        before_rows = get_sets_by_fecha(DB_PATH, fecha_db)
+        delete_session_by_fecha(DB_PATH, fecha_db)
+        _undo_push_sesion(fecha, before_rows, [])
     except ValueError:
         pass
     editor = _editor_html(request, fecha)
@@ -353,7 +370,9 @@ async def plantilla_guardar(
     ejercicio: list[str] = Form(default=[]),
 ):
     try:
+        before = snapshot_entrenos(DB_PATH)
         result = save_template(DB_PATH, nombre, ejercicio)
+        _undo_push_entrenos(before, snapshot_entrenos(DB_PATH))
     except ValueError as e:
         notice_error = (
             f'<div id="notice-container" hx-swap-oob="innerHTML">'
@@ -375,7 +394,9 @@ async def plantilla_editar(
     ejercicio: list[str] = Form(default=[]),
 ):
     try:
+        before = snapshot_entrenos(DB_PATH)
         edit_template(DB_PATH, plantilla_id, nombre, ejercicio)
+        _undo_push_entrenos(before, snapshot_entrenos(DB_PATH))
     except ValueError as e:
         html = _plantillas_list_html(request, editing_id=plantilla_id, error=str(e))
         return HTMLResponse(content=_plantillas_oob(html))
@@ -387,7 +408,9 @@ async def plantilla_editar(
 
 @app.post("/plantilla/eliminar/{plantilla_id}", response_class=HTMLResponse)
 async def plantilla_eliminar(request: Request, plantilla_id: int):
+    before = snapshot_entrenos(DB_PATH)
     delete_plantilla(DB_PATH, plantilla_id)
+    _undo_push_entrenos(before, snapshot_entrenos(DB_PATH))
     notice = (
         f'<div id="notice-container" hx-swap-oob="innerHTML">'
         f'<div class="notice notice-success" data-dismiss="3000">Entreno eliminado.</div></div>'
@@ -396,7 +419,9 @@ async def plantilla_eliminar(request: Request, plantilla_id: int):
 
 @app.post("/plantilla/reordenar", response_class=HTMLResponse)
 async def plantilla_reordenar(id: list[int] = Form(default=[])):
+    before = snapshot_entrenos(DB_PATH)
     reorder_plantillas(DB_PATH, id)
+    _undo_push_entrenos(before, snapshot_entrenos(DB_PATH))
     return HTMLResponse(content="")
 
 @app.get("/plantilla/aplicar/{plantilla_id}", response_class=HTMLResponse)
@@ -418,6 +443,32 @@ async def plantilla_aplicar(request: Request, plantilla_id: int, fecha: str = Qu
         content=notice
         + f'<div id="session-editor-wrap" hx-swap-oob="innerHTML">{editor}<div id="plantilla-applied" hidden></div></div>'
     )
+
+@app.post("/undo", response_class=HTMLResponse)
+async def undo(request: Request):
+    notice_ok = (
+        '<div id="notice-container" hx-swap-oob="innerHTML">'
+        '<div class="notice notice-success" data-dismiss="2500">Acción deshecha.</div></div>'
+    )
+    notice_empty = (
+        '<div id="notice-container" hx-swap-oob="innerHTML">'
+        '<div class="notice notice-error" data-dismiss="2500">Nada que deshacer.</div></div>'
+    )
+    if not UNDO_STACK:
+        return HTMLResponse(content=notice_empty)
+    entry = UNDO_STACK.pop()
+    backup_db(DB_PATH)
+    if entry["kind"] == "sesion":
+        fecha_iso = entry["fecha_iso"]
+        save_session(DB_PATH, fecha_iso, entry["before"])
+        outcome_ok = '<div id="save-outcome" hx-swap-oob="outerHTML" data-ok="1" hidden></div>'
+        editor = _editor_html(request, fecha_iso)
+        return HTMLResponse(
+            content=notice_ok + outcome_ok
+            + f'<div id="session-editor-wrap" hx-swap-oob="innerHTML">{editor}</div>'
+        )
+    restore_entrenos(DB_PATH, entry["before"])
+    return HTMLResponse(content=notice_ok + _plantillas_oob(_plantillas_list_html(request)))
 
 @app.get("/exportar/csv", response_class=Response)
 async def export_csv():
