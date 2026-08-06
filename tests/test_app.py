@@ -426,3 +426,27 @@ def test_static_js_modules_served(tmp_path, monkeypatch):
         resp = TestClient(appmod.app).get(f"/static/js/{name}")
         assert resp.status_code == 200, f"{name} not served"
         assert resp.headers["content-type"].startswith("text/javascript")
+
+
+def test_index_includes_global_partials_once(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = TestClient(appmod.app).get("/")
+    assert r.text.count('id="confirm-modal"') == 1
+    assert r.text.count('id="notice-container"') == 1
+    assert r.text.count('id="app-config"') == 1
+    assert r.text.count('<!DOCTYPE html>') == 1
+
+
+def test_htmx_partial_has_single_document(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    for path in (
+        f"/fecha/editor?fecha={_fecha()}",
+        "/plantillas",
+        "/select",
+        f"/ejercicio?ejercicio=Press",
+    ):
+        r = TestClient(appmod.app).get(path)
+        assert r.text.count("<!DOCTYPE html>") == 0, f"{path} devuelve un documento completo"
+        assert r.text.count("<html") == 0, f"{path} contiene <html>"
