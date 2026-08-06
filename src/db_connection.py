@@ -1,0 +1,34 @@
+"""Configured SQLite connection factory and context managers."""
+
+import sqlite3
+from contextlib import contextmanager
+from typing import Iterator
+
+BUSY_TIMEOUT_MS = 5000
+
+
+def connect_db(db_path: str) -> sqlite3.Connection:
+    conn = sqlite3.connect(db_path, timeout=BUSY_TIMEOUT_MS / 1000)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+    return conn
+
+
+@contextmanager
+def read_connection(db_path: str) -> Iterator[sqlite3.Connection]:
+    conn = connect_db(db_path)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@contextmanager
+def transaction(db_path: str) -> Iterator[sqlite3.Connection]:
+    conn = connect_db(db_path)
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()

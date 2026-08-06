@@ -1,5 +1,6 @@
-import sqlite3
 import pandas as pd
+
+from src.db_connection import read_connection
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -7,14 +8,13 @@ from src.metrics_engine import calculate_pfr_timeline
 
 def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
     """Retorna datos crudos con RM y RM ajustado calculados."""
-    conn = sqlite3.connect(db_path)
-    df = pd.read_sql_query("""
-        SELECT semana, dia, fecha, set_orden, kg, reps, rir
-        FROM training_sets
-        WHERE ejercicio = ? AND kg IS NOT NULL AND reps IS NOT NULL
-        ORDER BY semana, fecha, set_orden
-    """, conn, params=[ejercicio])
-    conn.close()
+    with read_connection(db_path) as conn:
+        df = pd.read_sql_query("""
+            SELECT semana, dia, fecha, set_orden, kg, reps, rir
+            FROM training_sets
+            WHERE ejercicio = ? AND kg IS NOT NULL AND reps IS NOT NULL
+            ORDER BY semana, fecha, set_orden
+        """, conn, params=[ejercicio])
 
     if df.empty:
         return df
@@ -101,14 +101,13 @@ def chart_rm_progression(db_path: str, ejercicio: str) -> go.Figure:
 
 def get_exercise_session_summary(db_path: str, ejercicio: str) -> pd.DataFrame:
     """Resumen por sesión: total sets, tonelaje, kg y reps promedio."""
-    conn = sqlite3.connect(db_path)
-    df = pd.read_sql_query("""
-        SELECT semana, dia, fecha, set_orden, kg, reps, rir
-        FROM training_sets
-        WHERE ejercicio = ? AND kg IS NOT NULL AND reps IS NOT NULL
-        ORDER BY semana, fecha, set_orden
-    """, conn, params=[ejercicio])
-    conn.close()
+    with read_connection(db_path) as conn:
+        df = pd.read_sql_query("""
+            SELECT semana, dia, fecha, set_orden, kg, reps, rir
+            FROM training_sets
+            WHERE ejercicio = ? AND kg IS NOT NULL AND reps IS NOT NULL
+            ORDER BY semana, fecha, set_orden
+        """, conn, params=[ejercicio])
 
     if df.empty:
         return df
@@ -194,34 +193,33 @@ def chart_tonnage_per_session(db_path: str, ejercicio: str) -> go.Figure:
 
 def get_exercise_detail(db_path: str, ejercicio: str) -> pd.DataFrame:
     """Retorna todas las series individuales con peso, reps, RM y RIR calculados."""
-    conn = sqlite3.connect(db_path)
+    with read_connection(db_path) as conn:
     
-    # 1. Obtener todas las series individuales
-    df = pd.read_sql_query("""
-        SELECT semana, dia, fecha, set_orden, kg, reps, rir,
-               ROUND(kg * (1 + 0.0333 * reps), 1) as rm
-        FROM training_sets
-        WHERE ejercicio = ? AND kg IS NOT NULL
-        ORDER BY semana, fecha, set_orden
-    """, conn, params=[ejercicio])
-    
-    # 2. Obtener el orden del ejercicio en cada sesión
-    df_orden = pd.read_sql_query("""
-        WITH ejercicio_orden AS (
-            SELECT semana, dia, fecha, ejercicio,
-                   MIN(set_orden) as primer_set
+        # 1. Obtener todas las series individuales
+        df = pd.read_sql_query("""
+            SELECT semana, dia, fecha, set_orden, kg, reps, rir,
+                   ROUND(kg * (1 + 0.0333 * reps), 1) as rm
             FROM training_sets
-            WHERE kg IS NOT NULL
-            GROUP BY semana, dia, fecha, ejercicio
-        )
-        SELECT semana, dia, fecha,
-               RANK() OVER (PARTITION BY semana, dia ORDER BY primer_set) as orden_en_sesion
-        FROM ejercicio_orden
-        WHERE ejercicio = ?
-        ORDER BY semana, fecha
-    """, conn, params=[ejercicio])
+            WHERE ejercicio = ? AND kg IS NOT NULL
+            ORDER BY semana, fecha, set_orden
+        """, conn, params=[ejercicio])
     
-    conn.close()
+        # 2. Obtener el orden del ejercicio en cada sesión
+        df_orden = pd.read_sql_query("""
+            WITH ejercicio_orden AS (
+                SELECT semana, dia, fecha, ejercicio,
+                       MIN(set_orden) as primer_set
+                FROM training_sets
+                WHERE kg IS NOT NULL
+                GROUP BY semana, dia, fecha, ejercicio
+            )
+            SELECT semana, dia, fecha,
+                   RANK() OVER (PARTITION BY semana, dia ORDER BY primer_set) as orden_en_sesion
+            FROM ejercicio_orden
+            WHERE ejercicio = ?
+            ORDER BY semana, fecha
+        """, conn, params=[ejercicio])
+    
     
     if df.empty:
         return df
@@ -259,18 +257,17 @@ def get_exercise_detail(db_path: str, ejercicio: str) -> pd.DataFrame:
 
 def get_exercise_best_rm(db_path: str, ejercicio: str) -> pd.DataFrame:
     """Retorna el mejor RM por sesión para graficar la progresión real."""
-    conn = sqlite3.connect(db_path)
-    # Agrupamos por semana y fecha para tener sesiones únicas reales cronológicas
-    df = pd.read_sql_query("""
-        SELECT semana, dia, fecha,
-               MAX(ROUND(kg * (1 + 0.0333 * reps), 1)) as mejor_rm,
-               COUNT(*) as total_series
-        FROM training_sets
-        WHERE ejercicio = ? AND kg IS NOT NULL
-        GROUP BY semana, dia, fecha
-        ORDER BY semana, fecha
-    """, conn, params=[ejercicio])
-    conn.close()
+    with read_connection(db_path) as conn:
+        # Agrupamos por semana y fecha para tener sesiones únicas reales cronológicas
+        df = pd.read_sql_query("""
+            SELECT semana, dia, fecha,
+                   MAX(ROUND(kg * (1 + 0.0333 * reps), 1)) as mejor_rm,
+                   COUNT(*) as total_series
+            FROM training_sets
+            WHERE ejercicio = ? AND kg IS NOT NULL
+            GROUP BY semana, dia, fecha
+            ORDER BY semana, fecha
+        """, conn, params=[ejercicio])
     
     if df.empty:
         return df
@@ -371,19 +368,18 @@ def pivot_exercise_table(db_path: str, ejercicio: str) -> pd.DataFrame:
 
 def get_muscle_group_volume(db_path: str, grupo: str) -> pd.DataFrame:
     """Retorna volumen total (series) por semana para un grupo muscular."""
-    conn = sqlite3.connect(db_path)
-    query = """
-        SELECT t.semana, COUNT(*) as total_series, 
-               SUM(t.reps) as total_reps,
-               AVG(t.kg) as kg_promedio
-        FROM training_sets t
-        JOIN ejercicios e ON LOWER(t.ejercicio) = LOWER(e.ejercicio)
-        WHERE LOWER(e.grupo_muscular) = LOWER(?) AND t.kg IS NOT NULL
-        GROUP BY t.semana
-        ORDER BY t.semana
-    """
-    df = pd.read_sql_query(query, conn, params=[grupo])
-    conn.close()
+    with read_connection(db_path) as conn:
+        query = """
+            SELECT t.semana, COUNT(*) as total_series, 
+                   SUM(t.reps) as total_reps,
+                   AVG(t.kg) as kg_promedio
+            FROM training_sets t
+            JOIN ejercicios e ON LOWER(t.ejercicio) = LOWER(e.ejercicio)
+            WHERE LOWER(e.grupo_muscular) = LOWER(?) AND t.kg IS NOT NULL
+            GROUP BY t.semana
+            ORDER BY t.semana
+        """
+        df = pd.read_sql_query(query, conn, params=[grupo])
     return df
 
 def chart_muscle_group_volume(db_path: str, grupo: str) -> go.Figure:

@@ -3,6 +3,7 @@ from datetime import date, datetime
 
 from config import CICLO_START
 from src.database import get_exercises_catalog, get_session_sets, get_training_sessions
+from src.db_connection import connect_db, transaction
 
 DIA_MAP = {
     "Monday": "LUNES",
@@ -80,12 +81,8 @@ def insert_manual_session(db_path: str, fecha_iso: str, sets: list[dict]) -> dic
     semana = calculate_cycle_week(fecha, cycle_start)
     dia = day_from_date(fecha)
     fecha_db = fecha_to_db(fecha)
-    conn = sqlite3.connect(db_path)
-    try:
-        with conn:
-            _insert_sets(conn, semana, dia, fecha_db, cleaned)
-    finally:
-        conn.close()
+    with transaction(db_path) as conn:
+        _insert_sets(conn, semana, dia, fecha_db, cleaned)
     return {"semana": semana, "dia": dia, "fecha": fecha_db}
 
 def update_session(db_path: str, old_semana: int, old_dia: str, old_fecha: str, fecha_iso: str, sets: list[dict]) -> dict:
@@ -95,16 +92,12 @@ def update_session(db_path: str, old_semana: int, old_dia: str, old_fecha: str, 
     semana = calculate_cycle_week(fecha, cycle_start)
     dia = day_from_date(fecha)
     fecha_db = fecha_to_db(fecha)
-    conn = sqlite3.connect(db_path)
-    try:
-        with conn:
-            conn.execute(
-                "DELETE FROM training_sets WHERE semana = ? AND dia = ? AND fecha = ?",
-                (old_semana, old_dia, old_fecha),
-            )
-            _insert_sets(conn, semana, dia, fecha_db, cleaned)
-    finally:
-        conn.close()
+    with transaction(db_path) as conn:
+        conn.execute(
+            "DELETE FROM training_sets WHERE semana = ? AND dia = ? AND fecha = ?",
+            (old_semana, old_dia, old_fecha),
+        )
+        _insert_sets(conn, semana, dia, fecha_db, cleaned)
     return {"semana": semana, "dia": dia, "fecha": fecha_db}
 
 def _is_empty_row(s: dict) -> bool:
@@ -117,18 +110,14 @@ def save_session(db_path: str, fecha_iso: str, sets: list[dict]) -> dict:
     semana = calculate_cycle_week(fecha, cycle_start)
     dia = day_from_date(fecha)
     fecha_db = fecha_to_db(fecha)
-    conn = sqlite3.connect(db_path)
-    try:
-        with conn:
-            conn.execute("DELETE FROM training_sets WHERE fecha = ?", (fecha_db,))
-            for idx, s in enumerate(cleaned, start=1):
-                conn.execute(
-                    "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual')",
-                    (semana, dia, fecha_db, idx, s["ejercicio"], s["reps"], s["kg"], s["rir"]),
-                )
-    finally:
-        conn.close()
+    with transaction(db_path) as conn:
+        conn.execute("DELETE FROM training_sets WHERE fecha = ?", (fecha_db,))
+        for idx, s in enumerate(cleaned, start=1):
+            conn.execute(
+                "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual')",
+                (semana, dia, fecha_db, idx, s["ejercicio"], s["reps"], s["kg"], s["rir"]),
+            )
     return {"semana": semana, "dia": dia, "fecha": fecha_db}
 
 def get_sessions_page(db_path: str, page: int = 1, limit: int = 20) -> tuple[list[dict], int, int]:

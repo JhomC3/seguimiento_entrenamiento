@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import json
 from collections import deque
 from contextlib import asynccontextmanager
@@ -31,6 +30,7 @@ from src.database import (
     restore_entrenos,
     snapshot_entrenos,
 )
+from src.db_connection import read_connection
 from src.template_service import (
     apply_template_rows,
     delete_plantilla,
@@ -80,33 +80,29 @@ def _muscle_names() -> list[str]:
 def get_filters():
     if not os.path.exists(DB_PATH):
         return [], []
-    conn = sqlite3.connect(DB_PATH)
     try:
-        ejercicios = [r[0] for r in conn.execute(
-            "SELECT DISTINCT ejercicio FROM training_sets ORDER BY ejercicio"
-        ).fetchall()]
-        grupos = [r[0] for r in conn.execute(
-            "SELECT DISTINCT grupo_muscular FROM ejercicios ORDER BY grupo_muscular"
-        ).fetchall()]
+        with read_connection(DB_PATH) as conn:
+            ejercicios = [r[0] for r in conn.execute(
+                "SELECT DISTINCT ejercicio FROM training_sets ORDER BY ejercicio"
+            ).fetchall()]
+            grupos = [r[0] for r in conn.execute(
+                "SELECT DISTINCT grupo_muscular FROM ejercicios ORDER BY grupo_muscular"
+            ).fetchall()]
     except Exception:
         ejercicios, grupos = [], []
-    finally:
-        conn.close()
     return ejercicios, grupos
 
 def get_ejercicios_por_grupo(grupo: str):
-    conn = sqlite3.connect(DB_PATH)
     try:
-        result = [r[0] for r in conn.execute(
-            "SELECT DISTINCT t.ejercicio FROM training_sets t "
-            "JOIN ejercicios e ON LOWER(t.ejercicio) = LOWER(e.ejercicio) "
-            "WHERE LOWER(e.grupo_muscular) = LOWER(?) ORDER BY t.ejercicio",
-            (grupo,)
-        ).fetchall()]
+        with read_connection(DB_PATH) as conn:
+            result = [r[0] for r in conn.execute(
+                "SELECT DISTINCT t.ejercicio FROM training_sets t "
+                "JOIN ejercicios e ON LOWER(t.ejercicio) = LOWER(e.ejercicio) "
+                "WHERE LOWER(e.grupo_muscular) = LOWER(?) ORDER BY t.ejercicio",
+                (grupo,)
+            ).fetchall()]
     except Exception:
         result = []
-    finally:
-        conn.close()
     return result
 
 def _chart_html(filter_type: str, filter_value: str | None = None, title: str = ""):
@@ -116,11 +112,8 @@ def _chart_html(filter_type: str, filter_value: str | None = None, title: str = 
     return "<div class='flex items-center justify-center h-[300px] text-neutral-500 text-xs'>Sin datos</div>"
 
 def _fechas_con_datos() -> set[str]:
-    conn = sqlite3.connect(DB_PATH)
-    try:
+    with read_connection(DB_PATH) as conn:
         rows = conn.execute("SELECT DISTINCT fecha FROM training_sets").fetchall()
-    finally:
-        conn.close()
     out = set()
     for (f,) in rows:
         try:
@@ -486,11 +479,8 @@ async def undo(request: Request, fecha: str = Form("")):
 
 @app.get("/exportar/csv", response_class=Response)
 async def export_csv():
-    conn = sqlite3.connect(DB_PATH)
-    try:
+    with read_connection(DB_PATH) as conn:
         df = pd.read_sql_query("SELECT * FROM training_sets ORDER BY fecha, set_orden", conn)
-    finally:
-        conn.close()
     csv = df.to_csv(index=False)
     return Response(
         content=csv,

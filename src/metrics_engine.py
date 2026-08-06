@@ -1,5 +1,6 @@
-import sqlite3
 import pandas as pd
+
+from src.db_connection import read_connection
 
 # Palabras clave para identificar ejercicios compuestos (multiarticulares)
 COMPOUND_KEYWORDS = {
@@ -17,15 +18,14 @@ def get_exercises_baselines(db_path: str) -> dict:
     Calcula el RM_a base de cada ejercicio (promedio de la semana 1).
     Si un ejercicio no se realizó en la semana 1, se toma la primera semana disponible.
     """
-    conn = sqlite3.connect(db_path)
-    query = """
-        SELECT ejercicio, semana, kg, reps, rir
-        FROM training_sets
-        WHERE kg IS NOT NULL AND reps IS NOT NULL
-        ORDER BY semana
-    """
-    df = pd.read_sql_query(query, conn)
-    conn.close()
+    with read_connection(db_path) as conn:
+        query = """
+            SELECT ejercicio, semana, kg, reps, rir
+            FROM training_sets
+            WHERE kg IS NOT NULL AND reps IS NOT NULL
+            ORDER BY semana
+        """
+        df = pd.read_sql_query(query, conn)
     
     baselines = {}
     if df.empty:
@@ -49,17 +49,16 @@ def calculate_pfr_timeline(db_path: str, filter_type: str = "systemic", filter_v
     - filter_type: 'systemic' (todo el cuerpo), 'muscle_group', 'exercise'
     - filter_value: el nombre del grupo muscular o ejercicio correspondiente
     """
-    conn = sqlite3.connect(db_path)
+    with read_connection(db_path) as conn:
     
-    # 1. Obtener todos los sets de entrenamiento con el grupo muscular correspondiente
-    query = """
-        SELECT t.semana, t.dia, t.fecha, t.set_orden, t.ejercicio, t.kg, t.reps, t.rir, e.grupo_muscular
-        FROM training_sets t
-        JOIN ejercicios e ON LOWER(t.ejercicio) = LOWER(e.ejercicio)
-        WHERE t.kg IS NOT NULL AND t.reps IS NOT NULL
-    """
-    df = pd.read_sql_query(query, conn)
-    conn.close()
+        # 1. Obtener todos los sets de entrenamiento con el grupo muscular correspondiente
+        query = """
+            SELECT t.semana, t.dia, t.fecha, t.set_orden, t.ejercicio, t.kg, t.reps, t.rir, e.grupo_muscular
+            FROM training_sets t
+            JOIN ejercicios e ON LOWER(t.ejercicio) = LOWER(e.ejercicio)
+            WHERE t.kg IS NOT NULL AND t.reps IS NOT NULL
+        """
+        df = pd.read_sql_query(query, conn)
     
     if df.empty:
         return pd.DataFrame()

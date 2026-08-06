@@ -148,18 +148,18 @@ def test_delete_and_undo_session(page, server):
     _goto_date(page, server, iso)
     _fill_row(page, 0)
     page.click('#edit-actions button[type="submit"]')
-    expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "1", timeout=2000)
+    expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "1", timeout=5000)
 
     page.locator(".pencil-btn").click()
     expect(page.locator("#session-editor")).to_have_attribute("data-editmode", "1")
     page.locator(".delete-session-btn").click()
     expect(page.locator("#confirm-modal")).to_be_visible()
     page.locator("#confirm-save").click()
-    expect(page.locator("#editor-state")).to_have_attribute("data-has-data", "0", timeout=3000)
+    expect(page.locator("#editor-state")).to_have_attribute("data-has-data", "0", timeout=5000)
 
     page.locator("body").click(position={"x": 5, "y": 5})
     page.keyboard.press("Control+z")
-    expect(page.locator("#editor-state")).to_have_attribute("data-has-data", "1", timeout=3000)
+    expect(page.locator("#editor-state")).to_have_attribute("data-has-data", "1", timeout=5000)
     expect(page.locator("#set-rows .ej-select").first).to_have_value("Press")
 
 
