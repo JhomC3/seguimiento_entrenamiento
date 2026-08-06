@@ -1,7 +1,9 @@
 import sqlite3
-import pytest
+
 import pandas as pd
+
 from src.database import init_db, load_ejercicios, load_training_data
+
 
 def test_init_db_creates_tables(tmp_path):
     db_path = str(tmp_path / "test.db")
@@ -15,6 +17,7 @@ def test_init_db_creates_tables(tmp_path):
     assert "plantilla_sets" in table_names
     conn.close()
 
+
 def test_init_db_creates_new_columns(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
@@ -26,11 +29,14 @@ def test_init_db_creates_new_columns(tmp_path):
     assert "categoria" in ej_cols
     assert "origen" in ej_cols
 
+
 def test_init_db_preserves_existing_rows(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
     conn = sqlite3.connect(db_path)
-    conn.execute("INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) VALUES (1, 'LUNES', '4/5/26', 1, 'Press', 6, 85, 1, 'manual')")
+    conn.execute(
+        "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) VALUES (1, 'LUNES', '4/5/26', 1, 'Press', 6, 85, 1, 'manual')"
+    )
     conn.commit()
     conn.close()
     init_db(db_path)
@@ -38,6 +44,7 @@ def test_init_db_preserves_existing_rows(tmp_path):
     count = conn.execute("SELECT COUNT(*) FROM training_sets").fetchone()[0]
     conn.close()
     assert count == 1
+
 
 def test_init_db_migrates_old_schema(tmp_path):
     db_path = str(tmp_path / "test.db")
@@ -77,6 +84,7 @@ def test_init_db_migrates_old_schema(tmp_path):
     assert set_origen == "google"
     assert cat == "EMPUJE"
 
+
 def test_init_db_idempotent(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
@@ -91,7 +99,9 @@ def test_migrations_recorded_in_schema_migrations(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
     conn = sqlite3.connect(db_path)
-    versions = sorted(r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall())
+    versions = sorted(
+        r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()
+    )
     conn.close()
     assert versions == [1, 2, 3]
 
@@ -176,9 +186,9 @@ def test_migrates_old_schema_keeps_rows_and_indexes(tmp_path):
     conn.close()
     init_db(db_path)
     conn = sqlite3.connect(db_path)
-    indexes = {r[0] for r in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'index'"
-    ).fetchall()}
+    indexes = {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'").fetchall()
+    }
     n_rows = conn.execute("SELECT COUNT(*) FROM training_sets").fetchone()[0]
     conn.close()
     assert {"idx_training_semana", "idx_training_ejercicio", "idx_plantilla_sets"} <= indexes
@@ -188,6 +198,7 @@ def test_migrates_old_schema_keeps_rows_and_indexes(tmp_path):
 def test_backup_only_when_pending_migrations(tmp_path):
     db_path = str(tmp_path / "test.db")
     from src.migrations.runner import run_migrations
+
     run_migrations(db_path)
     backups_dir = tmp_path / "backups"
     assert not backups_dir.exists()
@@ -201,13 +212,16 @@ def test_backup_only_when_pending_migrations(tmp_path):
     assert backups_dir.exists()
     assert len(list(backups_dir.iterdir())) == 1
 
+
 def test_load_ejercicios(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
-    df = pd.DataFrame({
-        "grupo_muscular": ["Pectoral", "Triceps"],
-        "ejercicio": ["Press Convergente", "Katana"],
-    })
+    df = pd.DataFrame(
+        {
+            "grupo_muscular": ["Pectoral", "Triceps"],
+            "ejercicio": ["Press Convergente", "Katana"],
+        }
+    )
     load_ejercicios(db_path, df)
     conn = sqlite3.connect(db_path)
     rows = conn.execute("SELECT grupo_muscular, ejercicio FROM ejercicios").fetchall()
@@ -216,19 +230,22 @@ def test_load_ejercicios(tmp_path):
     assert rows[1] == ("Triceps", "Katana")
     conn.close()
 
+
 def test_load_training_data(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
-    df = pd.DataFrame({
-        "semana": [1, 1],
-        "dia": ["LUNES", "LUNES"],
-        "fecha": ["4/5/26", "4/5/26"],
-        "set_orden": [1, 2],
-        "ejercicio": ["Press Convergente", "Press Convergente"],
-        "reps": [6.0, 6.0],
-        "kg": [85.0, 85.0],
-        "rir": [1.0, 0.5]
-    })
+    df = pd.DataFrame(
+        {
+            "semana": [1, 1],
+            "dia": ["LUNES", "LUNES"],
+            "fecha": ["4/5/26", "4/5/26"],
+            "set_orden": [1, 2],
+            "ejercicio": ["Press Convergente", "Press Convergente"],
+            "reps": [6.0, 6.0],
+            "kg": [85.0, 85.0],
+            "rir": [1.0, 0.5],
+        }
+    )
     load_training_data(db_path, df)
     conn = sqlite3.connect(db_path)
     rows = conn.execute("SELECT semana, dia, reps, kg, rir FROM training_sets").fetchall()

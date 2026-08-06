@@ -1,5 +1,6 @@
 import pandas as pd
-from src.parser import parse_ejercicios, parse_ciclo, parse_float
+
+from src.parser import parse_ciclo, parse_ejercicios, parse_float
 
 SAMPLE_EJERCICIOS_CSV = """,,
 ,Pectoral,Press Convergente
@@ -22,14 +23,12 @@ SAMPLE_CICLO_CSV_DATA = [
 SAMPLE_CICLO_CSV = "\n".join([",".join(row) for row in SAMPLE_CICLO_CSV_DATA]) + "\n"
 
 
-
-
-
 def test_parse_ejercicios_returns_dataframe():
     df = parse_ejercicios(SAMPLE_EJERCICIOS_CSV)
     assert isinstance(df, pd.DataFrame)
     assert list(df.columns) == ["grupo_muscular", "ejercicio"]
     assert len(df) == 5
+
 
 def test_parse_ejercicios_content():
     df = parse_ejercicios(SAMPLE_EJERCICIOS_CSV)
@@ -38,6 +37,7 @@ def test_parse_ejercicios_content():
     assert df.iloc[3]["grupo_muscular"] == "Biceps"
     assert df.iloc[3]["ejercicio"] == "Curl Bayesian"
 
+
 def test_parse_float():
     assert parse_float("6") == 6.0
     assert parse_float("6.5") == 6.5
@@ -45,6 +45,7 @@ def test_parse_float():
     assert parse_float("6 5") == 6.0
     assert parse_float("---") is None
     assert parse_float(None) is None
+
 
 def test_parse_ciclo_returns_dataframe():
     df = parse_ciclo(SAMPLE_CICLO_CSV)
@@ -70,5 +71,3 @@ def test_parse_ciclo_returns_dataframe():
 
     assert len(df[df["semana"] == 1]) == 4
     assert len(df[df["semana"] == 2]) == 4
-
-

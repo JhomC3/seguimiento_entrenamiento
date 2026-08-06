@@ -6,16 +6,18 @@ Uso: uv run python scripts/import_google_sheets.py
 Reemplaza en una sola transacción todas las filas con origen='google'.
 Los registros manuales nunca se tocan.
 """
+
 import os
 import sqlite3
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.fetcher import fetch_sheet_csv
-from src.parser import parse_ejercicios, parse_ciclo
-from src.database import init_db
 from config import DB_PATH
+from src.database import init_db
+from src.fetcher import fetch_sheet_csv
+from src.parser import parse_ciclo, parse_ejercicios
+
 
 def main() -> int:
     print("Descargando Google Sheets...")
@@ -48,7 +50,9 @@ def main() -> int:
                 ],
             )
         with conn:
-            totals = conn.execute("SELECT origen, COUNT(*) FROM training_sets GROUP BY origen").fetchall()
+            totals = conn.execute(
+                "SELECT origen, COUNT(*) FROM training_sets GROUP BY origen"
+            ).fetchall()
             ejercicios_count = conn.execute("SELECT COUNT(*) FROM ejercicios").fetchone()[0]
     finally:
         conn.close()
@@ -58,6 +62,7 @@ def main() -> int:
         print(f"  {origen}: {count} series")
     print(f"  ejercicios: {ejercicios_count}")
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

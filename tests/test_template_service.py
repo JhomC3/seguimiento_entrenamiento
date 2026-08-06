@@ -1,6 +1,6 @@
 import pytest
 
-from src.database import init_db, insert_exercise, get_plantillas, get_plantilla, reorder_plantillas
+from src.database import get_plantilla, get_plantillas, init_db, insert_exercise, reorder_plantillas
 from src.models import TemplateInput, TrainingSetInput
 from src.template_service import (
     apply_template_rows,
@@ -66,7 +66,9 @@ def test_classify_ejercicio_desconocido(db):
 
 
 def test_save_template_crea_y_clasifica(db):
-    result = save_template(db, TemplateInput(nombre="Mi Empuje", ejercicios=["Press", "Press", "Fondos", ""]))
+    result = save_template(
+        db, TemplateInput(nombre="Mi Empuje", ejercicios=["Press", "Press", "Fondos", ""])
+    )
     assert result.clasificacion == "EMPUJE"
     assert result.updated is False
     plantillas = get_plantillas(db)
@@ -119,10 +121,14 @@ def test_delete_template(db):
 
 def test_apply_template_usa_ultimo_realizado(db):
     save_session(db, "2026-01-10", [TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1)])
-    save_session(db, "2026-01-12", [
-        TrainingSetInput(ejercicio="Press", kg=85, reps=6, rir=2),
-        TrainingSetInput(ejercicio="Press", kg=85, reps=5, rir=3),
-    ])
+    save_session(
+        db,
+        "2026-01-12",
+        [
+            TrainingSetInput(ejercicio="Press", kg=85, reps=6, rir=2),
+            TrainingSetInput(ejercicio="Press", kg=85, reps=5, rir=3),
+        ],
+    )
     save_session(db, "2026-01-13", [TrainingSetInput(ejercicio="Curl", kg=20, reps=10, rir=0)])
     pid = save_template(db, TemplateInput(nombre="T", ejercicios=["Press", "Curl"])).id
     rows = apply_template_rows(db, pid)

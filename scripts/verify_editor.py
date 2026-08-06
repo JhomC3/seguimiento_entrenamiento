@@ -8,6 +8,7 @@ Uso:
     uv run playwright install chromium   # una sola vez
     uv run python scripts/verify_editor.py
 """
+
 import datetime
 import os
 import shutil
@@ -38,8 +39,10 @@ def main() -> None:
     today = datetime.date.today()
     iso_today = today.strftime("%Y-%m-%d")
     import sqlite3
+
     sys.path.insert(0, os.path.join(ROOT, "src"))
     from training_service import fecha_to_db
+
     conn = sqlite3.connect(db)
     taken = {r[0] for r in conn.execute("SELECT DISTINCT fecha FROM training_sets").fetchall()}
     conn.close()
@@ -56,7 +59,9 @@ def main() -> None:
         if fecha_to_db(d) not in taken:
             empties.append(d.strftime("%Y-%m-%d"))
     if len(empties) >= 7:
-        iso_future, iso_future2, iso_future3, iso_future4, iso_future5, iso_future6, iso_future7 = empties[:7]
+        iso_future, iso_future2, iso_future3, iso_future4, iso_future5, iso_future6, iso_future7 = (
+            empties[:7]
+        )
     iso_past = ""
     for delta in range(2, 20):
         d = today - datetime.timedelta(days=delta)
@@ -121,7 +126,9 @@ def main() -> None:
                 return page.evaluate('document.querySelectorAll("#set-rows .set-row").length')
 
             def modal() -> bool:
-                return page.evaluate("!document.getElementById('confirm-modal').classList.contains('hidden')")
+                return page.evaluate(
+                    "!document.getElementById('confirm-modal').classList.contains('hidden')"
+                )
 
             def check(label: str, cond: bool) -> None:
                 results.append(f"{'OK ' if cond else 'FAIL'} {label}")
@@ -131,13 +138,18 @@ def main() -> None:
             def wait_fecha(iso: str) -> None:
                 page.wait_for_function(
                     "iso => document.querySelector('#session-form input[name=\"fecha\"]')?.value === iso",
-                    arg=iso, timeout=5000,
+                    arg=iso,
+                    timeout=5000,
                 )
                 time.sleep(0.3)
 
             def drag_row(src_idx: int, dst_idx: int) -> None:
-                sb = page.locator(f"#set-rows .set-row:nth-child({src_idx}) .set-num").bounding_box()
-                db = page.locator(f"#set-rows .set-row:nth-child({dst_idx}) .set-num").bounding_box()
+                sb = page.locator(
+                    f"#set-rows .set-row:nth-child({src_idx}) .set-num"
+                ).bounding_box()
+                db = page.locator(
+                    f"#set-rows .set-row:nth-child({dst_idx}) .set-num"
+                ).bounding_box()
                 page.mouse.move(sb["x"] + sb["width"] / 2, sb["y"] + sb["height"] / 2)
                 page.mouse.down()
                 page.mouse.move(db["x"] + db["width"] / 2, db["y"] + db["height"] / 2, steps=15)
@@ -192,29 +204,45 @@ def main() -> None:
             time.sleep(1.2)
             rm = page.evaluate("document.querySelector('#set-rows .rm-cell').textContent")
             check(f"RM recalculado tras guardar ({rm})", rm == "146.6")
-            dot = page.evaluate(f"!!document.querySelector('.date-num[data-iso=\"{iso_today}\"] .date-dot')")
+            dot = page.evaluate(
+                f"!!document.querySelector('.date-num[data-iso=\"{iso_today}\"] .date-dot')"
+            )
             check("dot aparece tras guardar", dot)
 
             # G. borrar sesión -> dot desaparece
             page.click(".pencil-btn")
             time.sleep(0.3)
-            page.evaluate("Array.from(document.querySelectorAll('#set-rows .set-row')).forEach(r => removeRow(r.querySelector('.row-btn')))")
+            page.evaluate(
+                "Array.from(document.querySelectorAll('#set-rows .set-row')).forEach(r => removeRow(r.querySelector('.row-btn')))"
+            )
             page.click("#edit-actions button[type=submit]")
             time.sleep(1.2)
-            dot = page.evaluate(f"!!document.querySelector('.date-num[data-iso=\"{iso_today}\"] .date-dot')")
+            dot = page.evaluate(
+                f"!!document.querySelector('.date-num[data-iso=\"{iso_today}\"] .date-dot')"
+            )
             check("dot desaparece tras guardar vacío", not dot)
             check(f"tras guardar vacío sigue editable (editmode={em()})", em() == "1")
 
             # H. tarjeta estable al navegar (mismo nodo)
-            page.evaluate("""(() => { const el = document.getElementById('session-editor'); if (!el.getAttribute('data-x')) el.setAttribute('data-x','marca'); })()""")
+            page.evaluate(
+                """(() => { const el = document.getElementById('session-editor'); if (!el.getAttribute('data-x')) el.setAttribute('data-x','marca'); })()"""
+            )
             nav(iso_future)
-            check("tarjeta estable tras navegar", page.evaluate("document.getElementById('session-editor').getAttribute('data-x')") == "marca")
+            check(
+                "tarjeta estable tras navegar",
+                page.evaluate("document.getElementById('session-editor').getAttribute('data-x')")
+                == "marca",
+            )
 
             # I. altura del panel estable al mostrar/ocultar botones
-            h1 = page.evaluate("document.getElementById('session-editor').getBoundingClientRect().height")
+            h1 = page.evaluate(
+                "document.getElementById('session-editor').getBoundingClientRect().height"
+            )
             page.fill('#session-form input[name="kg"]', "50")
             time.sleep(0.3)
-            h2 = page.evaluate("document.getElementById('session-editor').getBoundingClientRect().height")
+            h2 = page.evaluate(
+                "document.getElementById('session-editor').getBoundingClientRect().height"
+            )
             check(f"altura estable con/sin botones ({h1:.0f}/{h2:.0f})", abs(h1 - h2) < 1)
 
             # J. hover en futura vacía (editable) y en futura con datos (lápiz)
@@ -233,11 +261,15 @@ def main() -> None:
             page.click("#edit-actions button[type=submit]")
             time.sleep(1.2)
             check(f"futura guardada pasa a readonly (editmode={em()})", em() == "0")
-            dot = page.evaluate(f"!!document.querySelector('.date-num[data-iso=\"{iso_future}\"] .date-dot')")
+            dot = page.evaluate(
+                f"!!document.querySelector('.date-num[data-iso=\"{iso_future}\"] .date-dot')"
+            )
             check("dot aparece en futura", dot)
 
             # L. bloqueo de filas en readonly + readonly persistente al volver
-            page.evaluate("Array.from(document.querySelectorAll('.row-actions')).forEach(el => el.classList.remove('hidden'))")
+            page.evaluate(
+                "Array.from(document.querySelectorAll('.row-actions')).forEach(el => el.classList.remove('hidden'))"
+            )
             before_n = nrows()
             page.click("#session-editor .row-actions button:nth-child(2)")
             time.sleep(0.2)
@@ -267,56 +299,93 @@ def main() -> None:
             page.evaluate("document.querySelector('#set-rows .ej-select').value = ''")
             page.click("#edit-actions button[type=submit]")
             time.sleep(1.2)
-            actions_vis = page.evaluate("!document.getElementById('edit-actions').classList.contains('invisible')")
+            actions_vis = page.evaluate(
+                "!document.getElementById('edit-actions').classList.contains('invisible')"
+            )
             err = page.evaluate("!!document.querySelector('#editor-notice .notice-error')")
             check(f"tras error de validación botones visibles ({actions_vis})", actions_vis)
             check("tras error de validación aviso de error visible", err)
             kg = page.evaluate("document.querySelector('#session-form input[name=\"kg\"]').value")
             check(f"datos fallidos conservados (kg={kg})", kg == "95")
-            panel_box = page.evaluate("document.getElementById('session-editor').getBoundingClientRect()")
-            notice_box = page.evaluate("document.querySelector('#editor-notice .notice-error').getBoundingClientRect()")
-            inside = panel_box["top"] <= notice_box["top"] + 2 and notice_box["bottom"] <= panel_box["bottom"] + 2
+            panel_box = page.evaluate(
+                "document.getElementById('session-editor').getBoundingClientRect()"
+            )
+            notice_box = page.evaluate(
+                "document.querySelector('#editor-notice .notice-error').getBoundingClientRect()"
+            )
+            inside = (
+                panel_box["top"] <= notice_box["top"] + 2
+                and notice_box["bottom"] <= panel_box["bottom"] + 2
+            )
             big = notice_box["height"] >= 32
-            check(f"aviso dentro del panel ({inside}) y tamaño mayor ({notice_box['height']:.0f}px)", inside and big)
+            check(
+                f"aviso dentro del panel ({inside}) y tamaño mayor ({notice_box['height']:.0f}px)",
+                inside and big,
+            )
             page.select_option('#session-form select[name="ejercicio"]', "Press Repro")
             page.fill('#session-form input[name="rir"]', "")
             page.click("#edit-actions button[type=submit]")
             time.sleep(1.2)
             err_rir = page.evaluate("!!document.querySelector('#editor-notice .notice-error')")
-            actions_vis = page.evaluate("!document.getElementById('edit-actions').classList.contains('invisible')")
-            check(f"RIR vacío rechazado con botones visibles ({actions_vis})", err_rir and actions_vis)
+            actions_vis = page.evaluate(
+                "!document.getElementById('edit-actions').classList.contains('invisible')"
+            )
+            check(
+                f"RIR vacío rechazado con botones visibles ({actions_vis})", err_rir and actions_vis
+            )
             page.fill('#session-form input[name="rir"]', "0")
             page.click("#edit-actions button[type=submit]")
             time.sleep(1.2)
-            actions_vis = page.evaluate("!document.getElementById('edit-actions').classList.contains('invisible')")
-            check(f"tras guardar corregido botones ocultos ({em()})", em() == "0" and not actions_vis)
-            rir0 = page.evaluate("document.querySelector('#session-form input[name=\"rir\"]').value")
+            actions_vis = page.evaluate(
+                "!document.getElementById('edit-actions').classList.contains('invisible')"
+            )
+            check(
+                f"tras guardar corregido botones ocultos ({em()})", em() == "0" and not actions_vis
+            )
+            rir0 = page.evaluate(
+                "document.querySelector('#session-form input[name=\"rir\"]').value"
+            )
             check(f"RIR 0 guardado y mostrado sin decimales ({rir0})", rir0 == "0")
 
             # O. formato de enteros sin decimales tras re-render (server %g)
             nav(iso_past)
             nav(iso_future)
-            kg_val = page.evaluate("document.querySelector('#session-form input[name=\"kg\"]').value")
-            rir_val = page.evaluate("document.querySelector('#session-form input[name=\"rir\"]').value")
-            check(f"valores enteros sin decimales (kg={kg_val}, rir={rir_val})", kg_val == "95" and rir_val == "0")
+            kg_val = page.evaluate(
+                "document.querySelector('#session-form input[name=\"kg\"]').value"
+            )
+            rir_val = page.evaluate(
+                "document.querySelector('#session-form input[name=\"rir\"]').value"
+            )
+            check(
+                f"valores enteros sin decimales (kg={kg_val}, rir={rir_val})",
+                kg_val == "95" and rir_val == "0",
+            )
 
             # P. drag and drop de filas (solo en modo editable)
             nav(iso_future2)
-            page.select_option('#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Press Repro")
+            page.select_option(
+                '#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Press Repro"
+            )
             page.fill('#set-rows .set-row:nth-child(1) input[name="kg"]', "80")
             page.fill('#set-rows .set-row:nth-child(1) input[name="reps"]', "6")
             page.fill('#set-rows .set-row:nth-child(1) input[name="rir"]', "1")
             page.click("#session-editor .row-actions button:nth-child(2)")
-            page.select_option('#set-rows .set-row:nth-child(2) select[name="ejercicio"]', "Curl Repro")
+            page.select_option(
+                '#set-rows .set-row:nth-child(2) select[name="ejercicio"]', "Curl Repro"
+            )
             page.fill('#set-rows .set-row:nth-child(2) input[name="kg"]', "16")
             page.fill('#set-rows .set-row:nth-child(2) input[name="reps"]', "8")
             page.fill('#set-rows .set-row:nth-child(2) input[name="rir"]', "2")
             check("orden inicial (Press, Curl)", row_order() == ["Press Repro", "Curl Repro"])
             drag_row(2, 1)
             check("drag reordena filas (Curl, Press)", row_order() == ["Curl Repro", "Press Repro"])
-            nums = page.evaluate('Array.from(document.querySelectorAll("#set-rows .set-num")).map(t => t.textContent)')
+            nums = page.evaluate(
+                'Array.from(document.querySelectorAll("#set-rows .set-num")).map(t => t.textContent)'
+            )
             check(f"columna # renumera ({nums})", nums == ["1", "2"])
-            actions_vis = page.evaluate("!document.getElementById('edit-actions').classList.contains('invisible')")
+            actions_vis = page.evaluate(
+                "!document.getElementById('edit-actions').classList.contains('invisible')"
+            )
             check("reorden marca dirty (botones visibles)", actions_vis)
             page.click("#edit-actions button[type=submit]")
             time.sleep(1.2)
@@ -334,18 +403,27 @@ def main() -> None:
                     '(() => { const w = document.querySelector("#session-editor .table-scroll"); '
                     'return { client: w.clientHeight, scroll: w.scrollHeight, h: getComputedStyle(w).height, rows: document.querySelectorAll("#set-rows .set-row").length }; })()'
                 )
+
             rv = page.evaluate("ROWS_VISIBLE")
             rv_floor = int(rv)
             rv_ceil = rv_floor + 1
 
             def col_widths() -> list:
-                return page.evaluate('Array.from(document.querySelectorAll("#session-editor .table-scroll thead th")).map(t => Math.round(t.getBoundingClientRect().width))')
+                return page.evaluate(
+                    'Array.from(document.querySelectorAll("#session-editor .table-scroll thead th")).map(t => Math.round(t.getBoundingClientRect().width))'
+                )
 
             m = scroll_metrics()
             h_px = float(m["h"].replace("px", ""))
             row_px = page.evaluate('document.querySelector("#set-rows .set-row").offsetHeight')
-            check(f"altura fija = thead + {rv} filas ({h_px:.0f}px ≈ {rv}*{row_px})", abs(h_px - (rv * row_px)) <= 40)
-            check(f"panel con pocas filas sin scroll (rows={m['rows']}, scroll<=client)", m["scroll"] <= m["client"])
+            check(
+                f"altura fija = thead + {rv} filas ({h_px:.0f}px ≈ {rv}*{row_px})",
+                abs(h_px - (rv * row_px)) <= 40,
+            )
+            check(
+                f"panel con pocas filas sin scroll (rows={m['rows']}, scroll<=client)",
+                m["scroll"] <= m["client"],
+            )
             widths_ro = col_widths()
             header_probe = page.evaluate("""(() => {
                 const editor = document.querySelector('#session-editor');
@@ -363,37 +441,65 @@ def main() -> None:
             })()""")
             check("cabecera: controles dentro del editor", header_probe["headerInsideEditor"])
             check("cabecera: tres controles visibles", header_probe["allControlsVisible"])
-            check(f"columna de acciones <= 30px ({header_probe['actionColumnWidth']}px)", header_probe["actionColumnWidth"] <= 30)
+            check(
+                f"columna de acciones <= 30px ({header_probe['actionColumnWidth']}px)",
+                header_probe["actionColumnWidth"] <= 30,
+            )
             h_base = m["h"]
             page.click(".pencil-btn")
             time.sleep(0.4)
-            check(f"anchos de columna idénticos readonly vs editable ({widths_ro} == {col_widths()})", col_widths() == widths_ro)
+            check(
+                f"anchos de columna idénticos readonly vs editable ({widths_ro} == {col_widths()})",
+                col_widths() == widths_ro,
+            )
             for _ in range(rv_floor - m["rows"]):
                 page.click("#set-rows .set-row:nth-child(1) .row-actions button:nth-child(2)")
             m = scroll_metrics()
-            check(f"{rv_floor} filas: panel lleno sin corte ni scroll (rows={m['rows']}, hueco={m['client'] - m['scroll']}px)", m["rows"] == rv_floor and m["scroll"] <= m["client"] and (m["client"] - m["scroll"]) <= 12)
-            check(f"altura constante con 2 y {rv_floor} filas ({m['h']} == {h_base})", m["h"] == h_base)
+            check(
+                f"{rv_floor} filas: panel lleno sin corte ni scroll (rows={m['rows']}, hueco={m['client'] - m['scroll']}px)",
+                m["rows"] == rv_floor
+                and m["scroll"] <= m["client"]
+                and (m["client"] - m["scroll"]) <= 12,
+            )
+            check(
+                f"altura constante con 2 y {rv_floor} filas ({m['h']} == {h_base})",
+                m["h"] == h_base,
+            )
             h_full = m["h"]
             page.click("#set-rows .set-row:nth-child(1) .row-actions button:nth-child(2)")
             m = scroll_metrics()
-            check(f"{rv_ceil}+ filas -> scroll vertical interno ({m['rows']} rows, {m['scroll']}>{m['client']})", m["rows"] == rv_ceil and m["scroll"] > m["client"])
+            check(
+                f"{rv_ceil}+ filas -> scroll vertical interno ({m['rows']} rows, {m['scroll']}>{m['client']})",
+                m["rows"] == rv_ceil and m["scroll"] > m["client"],
+            )
             check("altura sin cambios al exceder las filas visibles", m["h"] == h_full)
-            check(f"anchos de columna invariantes con scrollbar visible ({widths_ro} == {col_widths()})", col_widths() == widths_ro)
+            check(
+                f"anchos de columna invariantes con scrollbar visible ({widths_ro} == {col_widths()})",
+                col_widths() == widths_ro,
+            )
             row_hidden = page.evaluate("""(() => {
                 const sc = document.querySelector('#session-editor .table-scroll');
                 const rows = document.querySelectorAll('#set-rows .set-row');
                 const last = rows[rows.length - 1];
                 return sc.getBoundingClientRect().bottom < last.getBoundingClientRect().bottom;
             })()""")
-            check(f"fila {rv_ceil} queda oculta bajo el pliegue (se ven solo las {rv_floor})", row_hidden)
+            check(
+                f"fila {rv_ceil} queda oculta bajo el pliegue (se ven solo las {rv_floor})",
+                row_hidden,
+            )
             page.click("#edit-actions button:not([type=submit])")
             time.sleep(0.8)
             m = scroll_metrics()
-            check(f"panel conserva sus dimensiones tras cancelar ({m['h']}, {m['rows']} rows)", m["h"] == h_base and m["scroll"] <= m["client"])
+            check(
+                f"panel conserva sus dimensiones tras cancelar ({m['h']}, {m['rows']} rows)",
+                m["h"] == h_base and m["scroll"] <= m["client"],
+            )
 
             # R. entrenos: guardar como entreno, aplicar, editar, eliminar
             def entrenos_names() -> list:
-                return page.evaluate('Array.from(document.querySelectorAll("#plantillas-list .pt-card > span")).map(s => s.textContent)')
+                return page.evaluate(
+                    'Array.from(document.querySelectorAll("#plantillas-list .pt-card > span")).map(s => s.textContent)'
+                )
 
             def mouse_drag(src_loc, dst_loc) -> None:
                 sb = src_loc.bounding_box()
@@ -408,10 +514,15 @@ def main() -> None:
                 time.sleep(0.8)
 
             apply_xhrs: list[str] = []
-            page.on("request", lambda r: apply_xhrs.append(r.url) if "/plantilla/aplicar" in r.url else None)
+            page.on(
+                "request",
+                lambda r: apply_xhrs.append(r.url) if "/plantilla/aplicar" in r.url else None,
+            )
 
             def plus_hidden() -> bool:
-                return page.evaluate("document.querySelector('#session-editor .save-template-btn').hidden")
+                return page.evaluate(
+                    "document.querySelector('#session-editor .save-template-btn').hidden"
+                )
 
             def save_entreno(nombre: str) -> None:
                 page.click(".pencil-btn")
@@ -423,7 +534,7 @@ def main() -> None:
                 time.sleep(0.3)
                 check("crear entreno: + oculto al escribir el título", plus_hidden())
                 page.fill('#save-template-form input[name="nombre"]', nombre)
-                page.click('#save-template-form .btn-check')
+                page.click("#save-template-form .btn-check")
                 time.sleep(0.3)
                 check("guardar entreno abre confirmación", modal())
                 page.click("#confirm-save")
@@ -443,32 +554,42 @@ def main() -> None:
             check(f"nombre sugerido por clasificación ({sugg})", sugg == "Torso")
             check("crear entreno: + oculto al escribir el título", plus_hidden())
             page.fill('#save-template-form input[name="nombre"]', "Mi Torso")
-            page.click('#save-template-form .btn-check')
+            page.click("#save-template-form .btn-check")
             time.sleep(0.3)
             check("guardar entreno abre confirmación", modal())
             page.click("#confirm-save")
             time.sleep(1.2)
             check("crear entreno: + reaparece tras guardar", not plus_hidden())
             sidebar_txt = page.evaluate("document.getElementById('plantillas-section').textContent")
-            check("entreno guardado en sidebar (solo nombre)", "Mi Torso" in sidebar_txt and "TORSO" not in sidebar_txt)
+            check(
+                "entreno guardado en sidebar (solo nombre)",
+                "Mi Torso" in sidebar_txt and "TORSO" not in sidebar_txt,
+            )
             nav(iso_future3)
             page.click("#pt-card-1 .pt-btn-burgundy")
             time.sleep(1.0)
             check(f"aplicar entreno: editable ({em()})", em() == "1")
-            check("aplicar entreno: filas con últimos valores", row_order() == ["Curl Repro", "Press Repro"])
-            kgs = page.evaluate('Array.from(document.querySelectorAll("#set-rows input[name=\\"kg\\"]")).map(i => i.value)')
+            check(
+                "aplicar entreno: filas con últimos valores",
+                row_order() == ["Curl Repro", "Press Repro"],
+            )
+            kgs = page.evaluate(
+                'Array.from(document.querySelectorAll("#set-rows input[name=\\"kg\\"]")).map(i => i.value)'
+            )
             check(f"aplicar entreno: kg del último realizado ({kgs})", kgs == ["16", "80"])
             page.click("#edit-actions button[type=submit]")
             time.sleep(1.2)
             check(f"sesión aplicada guardada en {iso_future3} (readonly={em()})", em() == "0")
-            dot = page.evaluate(f"!!document.querySelector('.date-num[data-iso=\"{iso_future3}\"] .date-dot')")
+            dot = page.evaluate(
+                f"!!document.querySelector('.date-num[data-iso=\"{iso_future3}\"] .date-dot')"
+            )
             check("dot aparece en la fecha aplicada", dot)
             page.click("#pt-card-1 .pt-btn:not(.pt-btn-burgundy)")
             time.sleep(0.8)
             page.fill('#pt-card-1 form input[name="nombre"]', "Mi Torso V2")
             page.click('#pt-card-1 button[onclick="ptAddRow(this)"]')
-            page.select_option('#pt-card-1 .pt-row:last-child select', "Press Militar")
-            page.click('#pt-card-1 form button[type=submit]')
+            page.select_option("#pt-card-1 .pt-row:last-child select", "Press Militar")
+            page.click("#pt-card-1 form button[type=submit]")
             time.sleep(1.2)
             sidebar_txt = page.evaluate("document.getElementById('plantillas-section').textContent")
             check("entreno editado (Mi Torso V2)", "Mi Torso V2" in sidebar_txt)
@@ -479,7 +600,9 @@ def main() -> None:
 
             # S. drag and drop: reordenar entrenos y soltar sobre el editor vacío
             nav(iso_future4)
-            page.select_option('#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Press Repro")
+            page.select_option(
+                '#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Press Repro"
+            )
             page.fill('#set-rows .set-row:nth-child(1) input[name="kg"]', "80")
             page.fill('#set-rows .set-row:nth-child(1) input[name="reps"]', "6")
             page.fill('#set-rows .set-row:nth-child(1) input[name="rir"]', "1")
@@ -487,7 +610,9 @@ def main() -> None:
             time.sleep(1.2)
             save_entreno("Empuje")
             nav(iso_future5)
-            page.select_option('#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Curl Repro")
+            page.select_option(
+                '#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Curl Repro"
+            )
             page.fill('#set-rows .set-row:nth-child(1) input[name="kg"]', "16")
             page.fill('#set-rows .set-row:nth-child(1) input[name="reps"]', "8")
             page.fill('#set-rows .set-row:nth-child(1) input[name="rir"]', "2")
@@ -495,7 +620,10 @@ def main() -> None:
             time.sleep(1.2)
             save_entreno("Mi Jalón")
             check("dos entrenos en orden de creación", entrenos_names() == ["Empuje", "Mi Jalón"])
-            mouse_drag(page.locator('#plantillas-list .pt-card').nth(1), page.locator('#plantillas-list .pt-card').nth(0))
+            mouse_drag(
+                page.locator("#plantillas-list .pt-card").nth(1),
+                page.locator("#plantillas-list .pt-card").nth(0),
+            )
             page.evaluate("refreshPlantillas()")
             time.sleep(0.8)
             check("reorden persistido tras refrescar", entrenos_names() == ["Mi Jalón", "Empuje"])
@@ -515,24 +643,39 @@ def main() -> None:
                 loop();
             })()""")
             apply_xhrs.clear()
-            mouse_drag(page.locator('#plantillas-list .pt-card').nth(1), page.locator('#set-rows .set-row').first)
+            mouse_drag(
+                page.locator("#plantillas-list .pt-card").nth(1),
+                page.locator("#set-rows .set-row").first,
+            )
             time.sleep(1.0)
             ys = [y for y in page.evaluate("window.__rows_y") if y is not None]
-            check(f"drop: filas inmóviles durante el arrastre (rango {max(ys) - min(ys):.2f}px)", len(ys) > 10 and (max(ys) - min(ys)) < 1)
-            tbody_kids = page.evaluate('Array.from(document.querySelectorAll("#set-rows > *")).map(n => n.tagName + "." + n.className)')
+            check(
+                f"drop: filas inmóviles durante el arrastre (rango {max(ys) - min(ys):.2f}px)",
+                len(ys) > 10 and (max(ys) - min(ys)) < 1,
+            )
+            tbody_kids = page.evaluate(
+                'Array.from(document.querySelectorAll("#set-rows > *")).map(n => n.tagName + "." + n.className)'
+            )
             check("drop: el clon no entra a la tabla", all("TR" in k for k in tbody_kids))
             check(f"drop aplica entreno: editable ({em()})", em() == "1")
             check("drop aplica entreno: filas con últimos valores", row_order() == ["Press Repro"])
-            kgs = page.evaluate('Array.from(document.querySelectorAll("#set-rows input[name=\\"kg\\"]")).map(i => i.value)')
+            kgs = page.evaluate(
+                'Array.from(document.querySelectorAll("#set-rows input[name=\\"kg\\"]")).map(i => i.value)'
+            )
             check(f"drop aplica entreno: kg ({kgs})", kgs == ["80"])
             check(f"drop aplica entreno: un solo XHR ({len(apply_xhrs)})", len(apply_xhrs) == 1)
             page.click("#edit-actions button:not([type=submit])")
             time.sleep(0.8)
             check("cancelar tras drop restaura fila vacía", nrows() == 1 and em() == "1")
             apply_xhrs.clear()
-            mouse_drag(page.locator('#plantillas-list .pt-card').nth(1), page.locator('#session-editor h3'))
+            mouse_drag(
+                page.locator("#plantillas-list .pt-card").nth(1), page.locator("#session-editor h3")
+            )
             time.sleep(1.0)
-            check("drop en cualquier zona del panel (header) aplica", em() == "1" and row_order() == ["Press Repro"])
+            check(
+                "drop en cualquier zona del panel (header) aplica",
+                em() == "1" and row_order() == ["Press Repro"],
+            )
             check(f"drop header aplica una sola vez ({len(apply_xhrs)})", len(apply_xhrs) == 1)
             page.click("#edit-actions button:not([type=submit])")
             time.sleep(0.8)
@@ -541,22 +684,34 @@ def main() -> None:
             check(f"drop bloqueado en fecha con datos sin edición ({em()})", em() == "0")
             before = row_order()
             apply_xhrs.clear()
-            mouse_drag(page.locator('#plantillas-list .pt-card').first, page.locator('#set-rows .set-row').first)
-            check("drop bloqueado sin edición: editor sin cambios", row_order() == before and em() == "0")
+            mouse_drag(
+                page.locator("#plantillas-list .pt-card").first,
+                page.locator("#set-rows .set-row").first,
+            )
+            check(
+                "drop bloqueado sin edición: editor sin cambios",
+                row_order() == before and em() == "0",
+            )
             check("drop bloqueado: sin llamadas de aplicar", len(apply_xhrs) == 0)
             page.click(".pencil-btn")
             time.sleep(0.3)
             check(f"drop con datos en modo editable ({em()})", em() == "1")
             before = row_order()
             apply_xhrs.clear()
-            mouse_drag(page.locator('#plantillas-list .pt-card').first, page.locator('#set-rows .set-row').first)
+            mouse_drag(
+                page.locator("#plantillas-list .pt-card").first,
+                page.locator("#set-rows .set-row").first,
+            )
             check("drop con datos pregunta reemplazo", modal())
             page.click("#confirm-cancel")
             time.sleep(0.5)
             check("reemplazo cancelado: editor sin cambios", row_order() == before and em() == "1")
             check("reemplazo cancelado: sin llamadas de aplicar", len(apply_xhrs) == 0)
             apply_xhrs.clear()
-            mouse_drag(page.locator('#plantillas-list .pt-card').first, page.locator('#set-rows .set-row').first)
+            mouse_drag(
+                page.locator("#plantillas-list .pt-card").first,
+                page.locator("#set-rows .set-row").first,
+            )
             check("segundo drop vuelve a preguntar", modal())
             page.click("#confirm-save")
             time.sleep(1.0)
@@ -565,17 +720,24 @@ def main() -> None:
             check(f"reemplazo aplicado: un solo XHR ({len(apply_xhrs)})", len(apply_xhrs) == 1)
             page.click("#edit-actions button:not([type=submit])")
             time.sleep(0.8)
-            check("cancelar tras reemplazo restaura la sesión real", row_order() == before and em() == "0")
+            check(
+                "cancelar tras reemplazo restaura la sesión real",
+                row_order() == before and em() == "0",
+            )
 
             # T. eliminar entreno del día + confirmación de reemplazo + ✓ solo editable
             nav(iso_future6)
-            page.select_option('#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Press Repro")
+            page.select_option(
+                '#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Press Repro"
+            )
             page.fill('#set-rows .set-row:nth-child(1) input[name="kg"]', "100")
             page.fill('#set-rows .set-row:nth-child(1) input[name="reps"]', "6")
             page.fill('#set-rows .set-row:nth-child(1) input[name="rir"]', "1")
             page.click("#edit-actions button[type=submit]")
             time.sleep(1.2)
-            dot = page.evaluate(f"!!document.querySelector('.date-num[data-iso=\"{iso_future6}\"] .date-dot')")
+            dot = page.evaluate(
+                f"!!document.querySelector('.date-num[data-iso=\"{iso_future6}\"] .date-dot')"
+            )
             check("dot visible tras guardar en T", dot)
             page.click(".pencil-btn")
             time.sleep(0.3)
@@ -585,7 +747,9 @@ def main() -> None:
             page.click("#confirm-save")
             time.sleep(1.2)
             check(f"sesión eliminada: editor vacío editable ({em()})", em() == "1" and nrows() == 1)
-            dot = page.evaluate(f"!!document.querySelector('.date-num[data-iso=\"{iso_future6}\"] .date-dot')")
+            dot = page.evaluate(
+                f"!!document.querySelector('.date-num[data-iso=\"{iso_future6}\"] .date-dot')"
+            )
             check("dot desaparece tras eliminar", not dot)
             nav(iso_future3)
             page.click(".pencil-btn")
@@ -596,14 +760,16 @@ def main() -> None:
             page.click("#confirm-save")
             time.sleep(0.3)
             page.fill('#save-template-form input[name="nombre"]', "Empuje")
-            page.click('#save-template-form .btn-check')
+            page.click("#save-template-form .btn-check")
             time.sleep(0.3)
             check("nombre existente pregunta reemplazo", modal())
             msg = page.evaluate("document.getElementById('confirm-msg').textContent")
             check(f"mensaje de reemplazo ({msg})", "Reemplazar" in msg)
             page.click("#confirm-save")
             time.sleep(1.2)
-            closed = page.evaluate("document.getElementById('save-template-form-wrap').classList.contains('hidden')")
+            closed = page.evaluate(
+                "document.getElementById('save-template-form-wrap').classList.contains('hidden')"
+            )
             notice = page.evaluate("document.getElementById('notice-container').textContent")
             check("reemplazo guardado y form cerrado", closed and "actualizado" in notice)
 
@@ -624,11 +790,16 @@ def main() -> None:
             st = icon_state()
             check("readonly: lápiz apagado", st["pencil"]["off"] and not st["pencil"]["on"])
             check("readonly: marcador difuminado", not st["bookmark"]["on"])
-            check("readonly: papelera difuminada y visible", not st["trash"]["on"] and not st["trash"]["hidden"])
+            check(
+                "readonly: papelera difuminada y visible",
+                not st["trash"]["on"] and not st["trash"]["hidden"],
+            )
             check("readonly: ✓ deshabilitado", st["saveDisabled"] is True)
             page.click(".save-template-btn")
             time.sleep(0.3)
-            hidden_form = page.evaluate("document.getElementById('save-template-form-wrap').classList.contains('hidden')")
+            hidden_form = page.evaluate(
+                "document.getElementById('save-template-form-wrap').classList.contains('hidden')"
+            )
             check("readonly: no abre form de entreno", hidden_form)
             page.click(".delete-session-btn")
             time.sleep(0.3)
@@ -649,7 +820,9 @@ def main() -> None:
             check("editable: anuncio de crear entreno", modal())
             page.click("#confirm-save")
             time.sleep(0.3)
-            hidden_form = page.evaluate("document.getElementById('save-template-form-wrap').classList.contains('hidden')")
+            hidden_form = page.evaluate(
+                "document.getElementById('save-template-form-wrap').classList.contains('hidden')"
+            )
             check("editable: abre form de entreno", not hidden_form)
             page.click("#save-template-form .btn-x")
             time.sleep(0.2)
@@ -659,7 +832,9 @@ def main() -> None:
             page.click("#confirm-cancel")
             time.sleep(0.3)
             nav(iso_future6)
-            page.select_option('#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Press Repro")
+            page.select_option(
+                '#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Press Repro"
+            )
             page.fill('#set-rows .set-row:nth-child(1) input[name="kg"]', "100")
             page.fill('#set-rows .set-row:nth-child(1) input[name="reps"]', "6")
             page.fill('#set-rows .set-row:nth-child(1) input[name="rir"]', "1")
@@ -678,14 +853,19 @@ def main() -> None:
             page.click("#confirm-save")
             time.sleep(1.0)
             ys = page.evaluate("window.__ys")
-            check(f"gráfica inmóvil durante delete (rango {max(ys) - min(ys):.2f}px)", len(ys) > 20 and (max(ys) - min(ys)) < 1)
+            check(
+                f"gráfica inmóvil durante delete (rango {max(ys) - min(ys):.2f}px)",
+                len(ys) > 20 and (max(ys) - min(ys)) < 1,
+            )
 
             # V. deshacer (Ctrl+Z) y W (gates)
             check("V: f6 quedó vacío tras U", em() == "1" and nrows() == 1)
             page.keyboard.press("Control+z")
             time.sleep(1.5)
             check("undo restaura la sesión eliminada", em() == "0" and nrows() >= 1)
-            dot = page.evaluate(f"!!document.querySelector('.date-num[data-iso=\"{iso_future6}\"] .date-dot')")
+            dot = page.evaluate(
+                f"!!document.querySelector('.date-num[data-iso=\"{iso_future6}\"] .date-dot')"
+            )
             check("undo devuelve el dot de la fecha", dot)
             page.click(".pencil-btn")
             time.sleep(0.3)
@@ -702,13 +882,18 @@ def main() -> None:
 
             page.keyboard.press("Control+z")
             time.sleep(1.2)
-            page.locator('#plantillas-list .pt-card').nth(1).locator('.pt-btn').nth(1).click()
+            page.locator("#plantillas-list .pt-card").nth(1).locator(".pt-btn").nth(1).click()
             time.sleep(0.8)
-            n_pt_rows = page.evaluate('document.querySelectorAll("#plantilla-edit-rows .pt-row").length')
+            n_pt_rows = page.evaluate(
+                'document.querySelectorAll("#plantilla-edit-rows .pt-row").length'
+            )
             check(f"undo de entreno restaura ejercicios originales ({n_pt_rows})", n_pt_rows == 1)
             page.evaluate("refreshPlantillas()")
             time.sleep(0.6)
-            mouse_drag(page.locator('#plantillas-list .pt-card').nth(0), page.locator('#plantillas-list .pt-card').nth(1))
+            mouse_drag(
+                page.locator("#plantillas-list .pt-card").nth(0),
+                page.locator("#plantillas-list .pt-card").nth(1),
+            )
             check("V: reorden manual aplicado", entrenos_names() == ["Empuje", "Mi Jalón"])
             page.keyboard.press("Control+z")
             time.sleep(1.2)
@@ -727,26 +912,37 @@ def main() -> None:
             page.keyboard.press("Control+z")
             time.sleep(0.4)
             val = page.input_value('#save-template-form input[name="nombre"]')
-            check(f"Ctrl+Z en input no deshace la app (valor '{val}', sidebar intacta)", entrenos_names() == ["Mi Jalón", "Empuje"])
+            check(
+                f"Ctrl+Z en input no deshace la app (valor '{val}', sidebar intacta)",
+                entrenos_names() == ["Mi Jalón", "Empuje"],
+            )
             page.click("#save-template-form .btn-x")
             time.sleep(0.3)
 
             # W2. undo de una sesión desde otra fecha: no salta el editor, solo el dot
             nav(iso_future7)
-            page.select_option('#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Press Repro")
+            page.select_option(
+                '#set-rows .set-row:nth-child(1) select[name="ejercicio"]', "Press Repro"
+            )
             page.fill('#set-rows .set-row:nth-child(1) input[name="kg"]', "90")
             page.fill('#set-rows .set-row:nth-child(1) input[name="reps"]', "5")
             page.fill('#set-rows .set-row:nth-child(1) input[name="rir"]', "1")
             page.click("#edit-actions button[type=submit]")
             time.sleep(1.2)
-            dot7 = page.evaluate(f"!!document.querySelector('.date-num[data-iso=\"{iso_future7}\"] .date-dot')")
+            dot7 = page.evaluate(
+                f"!!document.querySelector('.date-num[data-iso=\"{iso_future7}\"] .date-dot')"
+            )
             check("W2: sesión guardada en f7", dot7)
             nav(iso_future3)
             page.keyboard.press("Control+z")
             time.sleep(1.2)
-            fecha_actual = page.evaluate("document.querySelector('#session-form input[name=\"fecha\"]').value")
+            fecha_actual = page.evaluate(
+                "document.querySelector('#session-form input[name=\"fecha\"]').value"
+            )
             check(f"W2: editor sigue en {iso_future3}", fecha_actual == iso_future3)
-            dot7 = page.evaluate(f"!!document.querySelector('.date-num[data-iso=\"{iso_future7}\"] .date-dot')")
+            dot7 = page.evaluate(
+                f"!!document.querySelector('.date-num[data-iso=\"{iso_future7}\"] .date-dot')"
+            )
             check("W2: dot de f7 desaparece sin saltar el editor", not dot7)
 
             browser.close()

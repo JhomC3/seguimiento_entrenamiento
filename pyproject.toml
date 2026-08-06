@@ -29,6 +29,23 @@ dev = [
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.lint.per-file-ignores]
+# app.py routes: FastAPI's Form(...)/Query(...) default-arg idiom (B008);
+# safe-fallback helpers mandated by AGENTS.md (BLE001);
+# best-effort backup/delete that must never block the editor (S110);
+# naive local dates are the dashboard's calendar contract (DTZ*).
+"app.py" = ["B008", "BLE001", "S110", "DTZ005", "DTZ007", "DTZ011"]
+# Tests generate today-relative dates without tz on purpose.
+"tests/*" = ["DTZ005", "DTZ007", "DTZ011"]
+"tests/e2e/*" = ["DTZ005", "DTZ007", "DTZ011"]
+# Backup/undo orchestration uses naive local timestamps by design.
+"src/migrations/runner.py" = ["DTZ005", "DTZ007", "DTZ011"]
+"src/database.py" = ["DTZ005", "DTZ007", "DTZ011"]
+# Naive local dates: the dashboard calendar contract (fechas d/m/yy).
+"src/dashboard_service.py" = ["DTZ005", "DTZ007", "DTZ011"]
+"src/training_service.py" = ["DTZ005", "DTZ007", "DTZ011"]
+"scripts/verify_editor.py" = ["DTZ005", "DTZ007", "DTZ011"]
+
 [tool.mypy]
 python_version = "3.11"
 files = ["app.py", "src", "tests"]
@@ -41,3 +58,4 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+addopts = "--cov=src --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=90"

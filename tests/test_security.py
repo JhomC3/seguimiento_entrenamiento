@@ -4,9 +4,11 @@ from fastapi.testclient import TestClient
 import app as appmod
 from src.security import CSP, get_csrf_secret, make_csrf_token
 
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     from src.database import init_db, insert_exercise
+
     db = str(tmp_path / "gym.db")
     init_db(db)
     insert_exercise(db, "Press", "Pectoral", "EMPUJE")
@@ -52,9 +54,16 @@ def test_csp_allows_required_cdn_sources(client):
 
 
 def test_headers_on_mutating_route(client):
-    r = client.post("/entrenamiento/session/save", data={
-        "fecha": "2099-01-01", "ejercicio": ["Press"], "kg": ["80"], "reps": ["8"], "rir": ["1"],
-    })
+    r = client.post(
+        "/entrenamiento/session/save",
+        data={
+            "fecha": "2099-01-01",
+            "ejercicio": ["Press"],
+            "kg": ["80"],
+            "reps": ["8"],
+            "rir": ["1"],
+        },
+    )
     assert r.headers["x-content-type-options"] == "nosniff"
     assert r.headers["content-security-policy"] == CSP
 
@@ -72,9 +81,16 @@ def authed_client(client):
 
 
 def test_mutation_without_token_rejected(client):
-    r = client.post("/entrenamiento/session/save", data={
-        "fecha": "2099-01-01", "ejercicio": ["Press"], "kg": ["80"], "reps": ["8"], "rir": ["1"],
-    })
+    r = client.post(
+        "/entrenamiento/session/save",
+        data={
+            "fecha": "2099-01-01",
+            "ejercicio": ["Press"],
+            "kg": ["80"],
+            "reps": ["8"],
+            "rir": ["1"],
+        },
+    )
     assert r.status_code == 403
 
 
@@ -85,9 +101,16 @@ def test_mutation_with_wrong_token_rejected(client):
 
 
 def test_mutation_with_valid_token_accepted(authed_client):
-    r = authed_client.post("/entrenamiento/session/save", data={
-        "fecha": "2099-01-01", "ejercicio": ["Press"], "kg": ["80"], "reps": ["8"], "rir": ["1"],
-    })
+    r = authed_client.post(
+        "/entrenamiento/session/save",
+        data={
+            "fecha": "2099-01-01",
+            "ejercicio": ["Press"],
+            "kg": ["80"],
+            "reps": ["8"],
+            "rir": ["1"],
+        },
+    )
     assert r.status_code == 200
     assert 'data-ok="1"' in r.text
 
@@ -119,6 +142,7 @@ def test_csrf_token_validates_within_window():
     secret = get_csrf_secret()
     token = make_csrf_token(secret)
     from src.security import valid_csrf_token
+
     assert valid_csrf_token(token, secret)
     assert not valid_csrf_token("1.abc", secret)
     assert not valid_csrf_token("", secret)

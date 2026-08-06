@@ -39,7 +39,9 @@ def test_save_session_flow(page, server):
     expect(page.locator("#session-editor")).to_be_visible()
     _fill_row(page, 0)
     page.click('#edit-actions button[type="submit"]')
-    expect(page.locator("#editor-notice .notice-success")).to_contain_text("Entrenamiento guardado", timeout=2000)
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
     expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "1")
     expect(page.locator("#session-editor")).to_have_attribute("data-editmode", "0")
     expect(page.locator('input[name="kg"]')).to_be_disabled()
@@ -53,7 +55,9 @@ def test_unsaved_changes_confirmation(page, server):
     page.locator(f'.date-num[data-iso="{_iso(2)}"]').click()
     expect(page.locator("#confirm-modal")).to_be_visible()
     page.locator("#confirm-save").click()
-    expect(page.locator("#editor-notice .notice-success")).to_contain_text("Entrenamiento guardado", timeout=2000)
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
     expect(page.locator("#session-editor-wrap")).to_contain_text("Semana")
     expect(page.locator('input[name="fecha"]')).to_have_value(_iso(2))
 
@@ -72,7 +76,9 @@ def test_add_remove_reorder_set(page, server):
     expect(page.locator("#set-rows .set-row").nth(0).locator(".set-num")).to_have_text("1")
     expect(page.locator("#set-rows .set-row").nth(1).locator(".set-num")).to_have_text("2")
 
-    page.locator("#set-rows .set-row").nth(1).locator(".row-actions [title='Eliminar fila']").click()
+    page.locator("#set-rows .set-row").nth(1).locator(
+        ".row-actions [title='Eliminar fila']"
+    ).click()
     expect(page.locator("#set-rows .set-row")).to_have_count(1)
 
     page.locator("#set-rows .set-row").first.locator(".row-actions [title='Agregar fila']").click()
@@ -88,8 +94,12 @@ def test_add_remove_reorder_set(page, server):
     page.mouse.move(target_box["x"] + 300, target_box["y"] + 14, steps=10)
     page.wait_for_timeout(150)
     page.mouse.up()
-    expect(page.locator("#set-rows .set-row").nth(0).locator('input[name="kg"]')).to_have_value("70")
-    expect(page.locator("#set-rows .set-row").nth(1).locator('input[name="kg"]')).to_have_value("80")
+    expect(page.locator("#set-rows .set-row").nth(0).locator('input[name="kg"]')).to_have_value(
+        "70"
+    )
+    expect(page.locator("#set-rows .set-row").nth(1).locator('input[name="kg"]')).to_have_value(
+        "80"
+    )
 
 
 def _create_template(page, server, iso, nombre):
@@ -111,7 +121,9 @@ def test_apply_template(page, server):
     _goto_date(page, server, iso)
     expect(page.locator("#session-editor")).to_have_attribute("data-editmode", "1")
     page.locator("#plantillas-section .pt-card").get_by_role("button", name="Aplicar").click()
-    expect(page.locator("#editor-notice .notice-success")).to_contain_text("Entreno aplicado", timeout=3000)
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entreno aplicado", timeout=3000
+    )
     expect(page.locator("#set-rows .ej-select").first).to_have_value("Press")
 
 
@@ -122,8 +134,12 @@ def test_template_crud_and_reorder(page, server):
     page.locator("#plantillas-section .pt-card").get_by_role("button", name="Editar").click()
     page.locator('#plantillas-section .pt-card form input[name="nombre"]').fill("A-edit")
     page.locator(".pt-card form .btn-check").click()
-    expect(page.locator("#notice-container .notice-success")).to_contain_text("Entreno guardado", timeout=2000)
-    expect(page.locator("#plantillas-section .pt-card").first).to_have_attribute("data-pt-nombre", "A-edit")
+    expect(page.locator("#notice-container .notice-success")).to_contain_text(
+        "Entreno guardado", timeout=2000
+    )
+    expect(page.locator("#plantillas-section .pt-card").first).to_have_attribute(
+        "data-pt-nombre", "A-edit"
+    )
 
     page.locator("#session-editor .save-template-btn").click()
     expect(page.locator("#confirm-modal")).to_be_visible()
@@ -140,12 +156,18 @@ def test_template_crud_and_reorder(page, server):
         page.locator(f"#plantillas-section .pt-card[data-pt-id='{first_id}']"),
         target_position={"x": 150, "y": 5},
     )
-    expect(page.locator("#plantillas-section .pt-card").nth(0)).to_have_attribute("data-pt-id", second_id, timeout=3000)
+    expect(page.locator("#plantillas-section .pt-card").nth(0)).to_have_attribute(
+        "data-pt-id", second_id, timeout=3000
+    )
 
     page.on("dialog", lambda dialog: dialog.accept())
-    page.locator("#plantillas-section .pt-card").first.get_by_role("button", name="Eliminar").click()
+    page.locator("#plantillas-section .pt-card").first.get_by_role(
+        "button", name="Eliminar"
+    ).click()
     expect(page.locator("#plantillas-section .pt-card")).to_have_count(1, timeout=3000)
-    expect(page.locator("#notice-container .notice-success")).to_contain_text("Entreno eliminado", timeout=2000)
+    expect(page.locator("#notice-container .notice-success")).to_contain_text(
+        "Entreno eliminado", timeout=2000
+    )
 
 
 def test_delete_and_undo_session(page, server):

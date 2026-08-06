@@ -2,6 +2,7 @@
 
 import pytest
 
+from src.database import init_db, insert_exercise
 from src.models import (
     ConflictError,
     NotFoundError,
@@ -9,7 +10,6 @@ from src.models import (
     TrainingSetInput,
     ValidationError,
 )
-from src.database import init_db, insert_exercise
 from src.template_service import apply_template_rows, edit_template, save_template
 from src.training_service import parse_form_date, save_session, sets_from_form, validate_sets
 
@@ -55,7 +55,9 @@ def test_validate_zero_rir_is_valid(db):
 
 def test_save_session_malformed_date_raises_domain_error(db):
     with pytest.raises(ValidationError):
-        save_session(db, "01/13/2026", [TrainingSetInput(ejercicio="Press", kg="80", reps="8", rir="1")])
+        save_session(
+            db, "01/13/2026", [TrainingSetInput(ejercicio="Press", kg="80", reps="8", rir="1")]
+        )
 
 
 def test_template_duplicate_name_raises_conflict(db):

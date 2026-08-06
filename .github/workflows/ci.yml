@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [master, codex]
+  pull_request:
+
+jobs:
+  quality:
+    name: Locked sync + lint + types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Locked sync (fails if uv.lock is stale)
+        run: uv sync --locked
+      - name: Format check
+        run: uv run ruff format --check .
+      - name: Lint
+        run: uv run ruff check .
+      - name: Type check
+        run: uv run mypy app.py src tests
+
+  unit:
+    name: Unit / integration tests with coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Locked sync
+        run: uv sync --locked
+      - name: Run tests with coverage floor
+        run: uv run pytest -q --ignore=tests/e2e
+
+  browser:
+    name: Browser (Playwright) tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Locked sync
+        run: uv sync --locked
+      - name: Install Playwright chromium
+        run: uv run playwright install --with-deps chromium
+      - name: Browser tests
+        run: uv run pytest tests/e2e -q
