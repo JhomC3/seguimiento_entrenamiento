@@ -13,7 +13,8 @@
 - Renders `index.html` extending `base.html`.
 - Serves: category navigation, exercise list, date navigator, session editor, unified chart (systemic PFR), exercise-create form, plantillas (templates) list.
 - Injects `categoria_map_json` (JSON string of exercise → category map) via `const CATEGORIA_MAP = {{ categoria_map_json | safe }};` into `base.html` (block after `{% block content %}`).
-- Includes inline `<style>` blocks (theme, htmx-indicator, chart fade-in) and page-level JS in `index.html` (`toggleCategory`, `toggleExercise`, `highlightExerciseBtn`, `resetToGlobal`, Esc handler, `htmx:afterRequest` for exercise-create refresh).
+- Injects `app_config_json` (`categoria_map` + `csrf_token`) via `<script id="app-config" type="application/json">` (data, never executed).
+- Page-level `<style>` blocks remain in `index.html` (htmx-indicator, chart fade-in). All page JS was moved to `static/js/dashboard-filters.js`.
 
 ### `GET /fecha/editor?fecha=<YYYY-MM-DD>`
 
@@ -130,35 +131,88 @@
 | `#exercise-section`, `#history-section` | htmx.ajax targets for category/exercise navigation |
 | `#unified-chart` | Single chart OOB target (innerHTML) |
 | `#date-navigator`, `#date-strip`, `.date-num`, `.date-dot`, `.nav-arrow`, `.today-btn` | Date navigator; `.date-num` buttons carry `data-iso` and `.selected` |
-| `#app-config` (future) | Planned replacement for inline `CATEGORIA_MAP` script |
+| `#app-config` | `type="application/json"` block with `categoria_map` + `csrf_token`, parsed by `app.js` |
 | `#plantilla-applied` | Hidden marker inside editor OOB response after applying a plantilla; removed client-side to trigger baseline reset |
-| `body[data-*]` globals | `currentIso` (page-scoped `let` from `date_navigator.html`), `currentCategory`/`currentExercise` (from `index.html`), `pendingNav`, `confirmCbs`, `saveRequested`, `sortableRows`, `plantillaAppliedPending`, `dragCard`, `dragOrderStart`, `dropHandled`, `droppedOnList`, `applyInFlight`, `dragGhost` (from `base.html`) |
+| `body[data-app-ready]` | Set to `1` by `app.js` after bootstrap; e2e waits on it (no `window.*` bridge exists) |
 
-## 3. Client behaviour summary (base.html script block)
+## 3. Client event contract (data-action delegation)
 
-- **Notices:** `scheduleNotices()` — schedules auto-dismiss (`data-dismiss`) and fade-out for `.notice` elements.
-- **Confirm dialog:** `showConfirmDialog(onSave, onDiscard)` / `hideConfirmDialog()`; callbacks stored in `confirmCbs`.
-- **Editor state machine:** `editorEditmode()`, `captureBaseline()`, `isDirty()`, `syncEditorFromContent()`, `setPanelReadonly()`, `enterEditMode()`, `exitEditMode()`, `toggleEdit()`, `updateEditActions()`, `syncEditButtons()`, `flashEditorNotice()`.
-- **Rows:** `addRowAfter()`, `removeRow()`, `renumberRows()`, `fitRowsToPanel()` (single measured row height, `--table-h` CSS var, 17.5 visible rows + buffer).
-- **Row sortable:** `initRowSortable()` / `syncSortableState()` (Sortable on `#set-rows`, disabled outside edit mode).
-- **Entreno DnD (native HTML5):** `getDragAfterElement()`, `restoreDragOrder()`, `persistDragOrder()`, `initEntrenoDnD()` — reorder in list, drop on editor panel applies plantilla (with replace confirm when data exists).
-- **Plantillas:** `editorHasData()`, `currentFecha()`, `aplicarPlantilla(id)` (debounce `applyInFlight`), `eliminarPlantilla(id, nombre)`, `editarPlantilla(id)`, `refreshPlantillas()`, `suggestedTemplateName()` (uses `CATEGORIA_MAP`), `syncTemplateEjercicios()`, `setEntrenoBtnVisible()`, `openEntrenoForm()`, `guardarPlantillaToggle(force)`, `confirmEntrenoSave()`, `ptAddRow()`, `ptRemoveRow()`, `initTemplateSortable()`, `entrenosOrder()`.
-- **Undo:** `undoAction()` (Ctrl/Cmd+Z or button) → `POST /undo`.
-- **Save:** `submitSave()` → `#session-form.requestSubmit()`.
-- **Navigation:** `doNav(iso, force)` (pendingNav logic, `.selected` class, scrollIntoView), `requestNavigate(iso)` (dirty → confirm dialog).
-- **Post-save sync:** `updateDateDot(fecha, has)`, `fmtNum()`, `recalcRM()`.
-- **htmx lifecycle (delegated on document/body):**
-  - `DOMContentLoaded` → scheduleNotices, syncEditorFromContent, initRowSortable, initTemplateSortable, initEntrenoDnD, fitRowsToPanel.
-  - `htmx:afterSwap` → scheduleNotices, handleEditorState; on `#session-editor-wrap` → syncEditorFromContent + plantilla-applied handling + initRowSortable + fitRowsToPanel; on `#plantillas-section` → initTemplateSortable.
-  - `htmx:afterSettle` → plantillaAppliedPending baseline reset.
-  - `htmx:afterRequest` → scheduleNotices, handleEditorState, initTemplateSortable, initEntrenoDnD, template-form close, save/undo outcome handling (`saveRequested`, `#undo-result`, `#save-outcome`, pendingNav follow-through).
-  - `submit` (capture, `#session-form`) → gate on edit mode, set `saveRequested`.
-  - `input`/`change` (delegated, `#session-form`) → updateEditActions, syncTemplateEjercicios.
-  - `keydown` (capture) → Ctrl/Cmd+Z undo (not inside fields), Enter in template-name input → `confirmEntrenoSave()`.
+There are **no inline event handlers** in templates. Every interactive element
+carries inert `data-action` attributes; one delegated `click` listener per owning
+module reads `event.target.closest('[data-action]')`, validates the action name,
+and ignores anything else. No mutable state is exposed on `window`.
 
-## 4. Server-side orchestration notes (for later extraction)
+| `data-action` | Element | Owning module | Values |
+|---|---|---|---|
+| `select-category` | `.category-btn` | `dashboard-filters.js` | `data-category` |
+| `select-exercise` | `.filter-btn` | `dashboard-filters.js` | `data-exercise` |
+| `select-date` | `.date-num` | `date-navigation.js` | `data-iso` |
+| `jump-date` | `.today-btn` | `date-navigation.js` | `data-iso` |
+| `scroll-dates` | `.nav-arrow` | `date-navigation.js` | `data-dir` |
+| `toggle-edit` | `.pencil-btn` | `editor.js` | — |
+| `toggle-template-form` | `.save-template-btn` | `editor.js` | — |
+| `cancel-template-form` | `.btn-x` (form wrap) | `editor.js` | — |
+| `confirm-template-save` | `.btn-check` (form wrap) | `editor.js` | — |
+| `delete-session` | `.delete-session-btn` | `editor.js` | — |
+| `row-add` / `row-remove` | `.row-btn` | `editor.js` | — |
+| `apply-template` | `.pt-btn-burgundy` | `templates.js` | `data-template-id` |
+| `edit-template` | `.pt-btn` | `templates.js` | `data-template-id` |
+| `delete-template` | `.pt-btn` | `templates.js` | `data-template-id`, `data-template-name` |
+| `template-row-add` / `template-row-remove` | `.row-btn` (edit form) | `templates.js` | — |
+| `refresh-templates` | `.btn-x` (edit form) | `templates.js` | — |
 
-- `app.py` helpers performing DB access today: `get_filters`, `get_ejercicios_por_grupo`, `_fechas_con_datos`, `export_csv` (raw pandas read), plus view-builder helpers `_chart_html`, `_navigator_html`, `_editor_html`, `_exercise_form_html`, `_plantillas_list_html`, `_plantillas_oob`, `_build_sets_from_form`.
-- In-memory `UNDO_STACK` (deque, maxlen 10) lives in `app.py`.
+Delegated listeners are bound once at `document` (stable root) inside the module
+`init*` functions called from `app.js` bootstrap; htmx fragment swaps never
+re-register them. The `#confirm-modal` buttons keep direct listeners wired once
+in `htmx-lifecycle.js`.
+
+## 4. Client behaviour summary (ES modules)
+
+- **State (`state.js`):** module-scoped shared state via getters/setters only:
+  `pendingNav`, `confirmCbs`, `saveRequested`, `sortableRows`,
+  `plantillaAppliedPending`, drag state, `csrfToken`, `categoriaMap`,
+  `currentIso` (falls back to the selected `.date-num`). Plus pure helpers:
+  `serializeForm`/`captureBaseline`/`isDirty`, `fmtNum`, `editorEditmode`,
+  `currentFecha`, confirm-dialog helpers.
+- **Notices (`notices.js`):** `scheduleNotices()` (auto-dismiss + fade),
+  `flashEditorNotice(msg, type)`.
+- **Editor (`editor.js`):** edit-mode machine (`syncEditorFromContent`,
+  `setPanelReadonly`, `enterEditMode`, `exitEditMode`, `toggleEdit`,
+  `updateEditActions`, `syncEditButtons`), rows (`addRowAfter`, `removeRow`,
+  `renumberRows`, `fitRowsToPanel`), `recalcRM`, `submitSave`,
+  `eliminarSesion`, `initEditorActions` (delegated listener).
+- **Row sortable (`row-sortable.js`):** `initRowSortable(onEnd)` /
+  `syncSortableState` on `#set-rows`; editor passes the renumber/dirty callback.
+- **Templates (`templates.js`):** plantilla flow (`aplicarPlantilla` debounce,
+  `eliminarPlantilla`, `editarPlantilla`, `refreshPlantillas`,
+  `suggestedTemplateName` via `getCategoriaMap()`, `syncTemplateEjercicios`,
+  `guardarPlantillaToggle`, `confirmEntrenoSave`, `ptAddRow`/`ptRemoveRow`,
+  `initTemplateSortable`, `initEntrenoDnD`, `persistDragOrder` (fetch with
+  `X-CSRF-Token`)), `initTemplateActions` (delegated listener).
+- **Date navigation (`date-navigation.js`):** `doNav(iso, force)`,
+  `requestNavigate(iso)`, `updateDateDot(fecha, has)`, `initDateNavigation`
+  (delegated listener + initial scrollIntoView).
+- **Dashboard filters (`dashboard-filters.js`):** category/exercise selection,
+  highlighting, `resetToGlobal`, Esc handler, exercise-create refresh,
+  `initDashboardFilters` (delegated listener).
+- **htmx lifecycle (`htmx-lifecycle.js`):** `initLifecycle()` wires the
+  confirm-modal buttons and the delegated `htmx:afterSwap`/`afterSettle`/
+  `afterRequest`, `submit` (capture, `#session-form`), `input`/`change`,
+  `keydown` (Ctrl/Cmd+Z undo, Enter in template-name input → `confirmEntrenoSave`).
+- **Bootstrap (`app.js`):** reads `#app-config` (`categoria_map`,
+  `csrf_token`), injects `X-CSRF-Token` on every htmx request via
+  `htmx:configRequest`, then runs the module initializers once on
+  `DOMContentLoaded`; sets `body[data-app-ready]`.
+
+## 5. Server-side orchestration notes
+
+- `app.py` is thin: request parsing, one mutation-service call, fragment
+  rendering. `src/dashboard_service.py` builds view models and translates
+  errors; `src/mutation_service.py` owns backup/snapshot/undo-stack sequences;
+  `src/response_fragments.py` renders OOB fragments through Jinja partials
+  (autoescaping is the only HTML boundary; chart fragments are nonced).
+- The in-memory `UNDO_STACK` (deque, maxlen 10) lives in `src/mutation_service.py`.
 - RM formula client + server: `kg * (1 + 0.0333 * (reps + 1 + rir))`, rounded to 1 decimal.
-- `categoria_map_json` is the only executable-JS interpolation today; it must be replaced by the `#app-config` JSON-data pattern (Task 1.3).
+- OOB responses: notices and editor markers/wrappers render via
+  `templates/partials/oob_*.html`; no request-derived value is concatenated
+  into HTML.

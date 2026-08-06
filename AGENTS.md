@@ -31,7 +31,9 @@ Eres un ingeniero de software senior experto en Python, especializado en anális
   - `models.py`: Modelos tipados (`TrainingSetInput`, `TrainingSet`, `Session`, `TemplateInput`, `Template`) y excepciones de dominio (`ValidationError`, `NotFoundError`, `ConflictError`).
   - `dashboard_service.py`: Orquestación de vistas (view models, charts, filtros) y traducción de errores a respuestas seguras.
   - `view_models.py`: `DateNavigatorViewModel`, `SessionEditorViewModel` — solo valores que necesitan las plantillas.
-  - `security.py`: Middleware de headers de seguridad + CSP y protección CSRF (token firmado + validación de Origin).
+  - `security.py`: Middleware de headers de seguridad + CSP (nonce por respuesta, sin `'unsafe-inline'` en script-src) y protección CSRF (token firmado + validación de Origin).
+  - `mutation_service.py`: Casos de uso de mutación (backup/snapshot/escritura/undo como una operación; pila de undo en memoria, máx. 10).
+  - `response_fragments.py`: Render de fragmentos OOB vía partials Jinja (autoescape como única frontera HTML; targets allow-listed).
   - `fetcher.py`: Extracción HTTP de Google Sheets.
   - `parser.py`: Limpieza y transformación de CSV.
   - `database.py`: Operaciones SQLite (lecturas/escrituras) usando `src/db_connection`.
@@ -40,7 +42,7 @@ Eres un ingeniero de software senior experto en Python, especializado en anális
   - `charts.py`: Gráficos Plotly y agregaciones de datos por ejercicio/grupo.
 - `static/`: Assets por responsabilidad.
   - `css/`: `app.css` (manifest de @import) + `theme`, `components`, `date-navigator`, `session-editor`, `templates`.
-  - `js/`: Módulos ES (`state`, `notices`, `editor`, `row-sortable`, `templates`, `date-navigation`, `htmx-lifecycle`) + bootstrap `app.js` (lee `#app-config` JSON, expone el bridge de handlers inline, inicializa el DOM).
+  - `js/`: Módulos ES (`state`, `notices`, `editor`, `row-sortable`, `templates`, `date-navigation`, `dashboard-filters`, `htmx-lifecycle`) + bootstrap `app.js` (lee `#app-config` JSON, inyecta el token CSRF vía `htmx:configRequest`, inicializa el DOM; sin bridge `window.*`). Los handlers inline fueron eliminados: toda interacción usa `data-action` + listeners delegados (ver `docs/architecture/current-ui-contract.md` §3).
 - `templates/`: Plantillas Jinja2 del frontend.
   - `base.html`: Shell de layout (~70 líneas: metadata, CDNs, Tailwind config, partials, `{% block content %}`).
   - `partials/`: `notices.html`, `confirm_modal.html`, `app_config.html`.

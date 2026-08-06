@@ -18,6 +18,7 @@ uv run ruff format --check .
 uv run ruff check .
 uv run mypy app.py src tests
 uv run pytest -q --ignore=tests/e2e        # coverage floor 90% enforced
+uv run python scripts/check_module_coverage.py src/charts.py src/metrics_engine.py --min 90
 uv run pytest tests/e2e -q                  # browser tests
 ```
 
@@ -48,7 +49,22 @@ With a copied development DB and `uv run uvicorn app:app --host 127.0.0.1 --port
 - [ ] CSV export downloads.
 - [ ] Date navigation with unsaved-change confirmation.
 
-## 6. Post-release
+## 6. Security surface assertions
+
+These commands must return zero matches; review any future match manually. The
+second command is a security alarm, not an automatic proof of safety.
+
+```bash
+rg -n 'on(click|change|submit|input|keydown)=' templates -g '*.html'
+rg -n 'innerHTML\s*=.*(message|nombre|ejercicio|error)' static app.py src -g '*.{js,py}'
+```
+
+- [ ] No inline event attributes remain in templates.
+- [ ] No client module writes user fields into `innerHTML`.
+- [ ] Hostile-payload regression tests pass:
+      `uv run pytest tests/test_security.py -k 'hostile or oob or leak or nonce' -v`
+
+## 7. Post-release
 
 - [ ] Tag and/or merge with a conventional message.
 - [ ] Update `docs/architecture/current-ui-contract.md` if the contract changed.

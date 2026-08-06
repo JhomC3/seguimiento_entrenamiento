@@ -16,6 +16,10 @@ export function scheduleNotices() {
 export function flashEditorNotice(msg, type) {
     const box = document.getElementById('editor-notice');
     if (!box) return;
-    box.innerHTML = `<div class="notice ${type === 'error' ? 'notice-error' : 'notice-success'}" data-dismiss="2500">${msg}</div>`;
+    const div = document.createElement('div');
+    div.className = `notice ${type === 'error' ? 'notice-error' : 'notice-success'}`;
+    div.dataset.dismiss = '2500';
+    div.textContent = msg;
+    box.appendChild(div);
     scheduleNotices();
 }

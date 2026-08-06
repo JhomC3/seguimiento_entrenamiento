@@ -48,16 +48,24 @@ accidental data loss and drive-by browser attacks, not a motivated adversary.
 - The `#app-config` block is `type="application/json"` (data, never executed;
   not subject to `script-src`).
 
-### 2.2 Output encoding
+### 2.2 Output encoding and event boundary
 
 - Jinja autoescape stays enabled (default for `Jinja2Templates`).
+- **User values are data attributes and text nodes only.** No inline event
+  handlers exist in templates; interactions go through `data-action` attributes
+  read via `element.dataset` by delegated ES-module listeners (see
+  `current-ui-contract.md` §3). Dynamic values never become JavaScript source.
+- **OOB messages and fragments render through Jinja partials**
+  (`templates/partials/oob_*.html` via `src/response_fragments.py`); request
+  values are never concatenated into HTML. The only `| safe` content is a
+  server-rendered Jinja fragment or the nonced Plotly payload.
 - Client-configurable data (exercise names, template names, dates) is rendered
-  through Jinja escaping only. The one former executable-JS interpolation
+  through Jinja escaping only. The former executable-JS interpolation
   (`const CATEGORIA_MAP = {{ ... | safe }}`) was replaced by the `#app-config`
   `type="application/json"` pattern parsed via `textContent` (Task 1.3).
 - Review checklist before any new template: no `| safe` on user-supplied values;
   never build HTML/JS/URLs by string-interpolating request data (use parameterized
-  SQL and form encoding).
+  SQL and form encoding); no inline `on*=` attributes.
 
 ### 2.3 SQL safety
 
@@ -68,9 +76,11 @@ accidental data loss and drive-by browser attacks, not a motivated adversary.
 
 - Domain errors (`ValidationError`, `NotFoundError`, `ConflictError`) are mapped
   to safe 400 responses with user-facing Spanish messages.
-- Unexpected exceptions are logged server-side with context; clients receive a
-  generic "Ocurrió un error inesperado." (500). No SQLite exception text reaches
-  the browser.
+- **Unexpected exceptions are never exposed.** They are logged with
+  `logger.exception` and translated to a generic "Ocurrió un error inesperado."
+  (500) by `translate_error`; no SQLite/internal message reaches the browser.
+- Read fallbacks in `dashboard_service` catch only `sqlite3.Error`/`OSError`
+  (documented empty-result behaviour), never `Exception`.
 
 ### 2.5 CSRF / cross-origin protection
 
