@@ -6,8 +6,6 @@ Pure orchestration: no HTTP, no template rendering. Handlers stay thin.
 import logging
 from datetime import date, datetime, timedelta
 
-import pandas as pd
-
 from src.charts import chart_pfr_timeline
 from src.db_connection import read_connection
 from src.models import ConflictError, NotFoundError, ValidationError
@@ -28,12 +26,18 @@ def get_filters(db_path: str) -> tuple[list[str], list[str]]:
     """All distinct exercises and muscle groups. Safe empty result on error."""
     try:
         with read_connection(db_path) as conn:
-            ejercicios = [r[0] for r in conn.execute(
-                "SELECT DISTINCT ejercicio FROM training_sets ORDER BY ejercicio"
-            ).fetchall()]
-            grupos = [r[0] for r in conn.execute(
-                "SELECT DISTINCT grupo_muscular FROM ejercicios ORDER BY grupo_muscular"
-            ).fetchall()]
+            ejercicios = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT DISTINCT ejercicio FROM training_sets ORDER BY ejercicio"
+                ).fetchall()
+            ]
+            grupos = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT DISTINCT grupo_muscular FROM ejercicios ORDER BY grupo_muscular"
+                ).fetchall()
+            ]
         return ejercicios, grupos
     except Exception:
         logger.exception("No se pudieron cargar los filtros de la DB")
@@ -43,12 +47,15 @@ def get_filters(db_path: str) -> tuple[list[str], list[str]]:
 def get_ejercicios_por_grupo(db_path: str, grupo: str) -> list[str]:
     try:
         with read_connection(db_path) as conn:
-            return [r[0] for r in conn.execute(
-                "SELECT DISTINCT t.ejercicio FROM training_sets t "
-                "JOIN ejercicios e ON LOWER(t.ejercicio) = LOWER(e.ejercicio) "
-                "WHERE LOWER(e.grupo_muscular) = LOWER(?) ORDER BY t.ejercicio",
-                (grupo,)
-            ).fetchall()]
+            return [
+                r[0]
+                for r in conn.execute(
+                    "SELECT DISTINCT t.ejercicio FROM training_sets t "
+                    "JOIN ejercicios e ON LOWER(t.ejercicio) = LOWER(e.ejercicio) "
+                    "WHERE LOWER(e.grupo_muscular) = LOWER(?) ORDER BY t.ejercicio",
+                    (grupo,),
+                ).fetchall()
+            ]
     except Exception:
         logger.exception("No se pudieron cargar los ejercicios del grupo %s", grupo)
         return []
@@ -66,10 +73,14 @@ def fechas_con_datos(db_path: str) -> set[str]:
     return out
 
 
-def chart_html(db_path: str, filter_type: str, filter_value: str | None = None, title: str = "") -> str:
+def chart_html(
+    db_path: str, filter_type: str, filter_value: str | None = None, title: str = ""
+) -> str:
     fig = chart_pfr_timeline(db_path, filter_type, filter_value, title)
     if fig.data:
-        return fig.to_html(include_plotlyjs=False, full_html=False, config={"displayModeBar": False})
+        return fig.to_html(
+            include_plotlyjs=False, full_html=False, config={"displayModeBar": False}
+        )
     return "<div class='flex items-center justify-center h-[300px] text-neutral-500 text-xs'>Sin datos</div>"
 
 
@@ -79,7 +90,9 @@ def _end_of_next_month(d: date) -> date:
     return date(next_year, next_month, 1) - timedelta(days=1)
 
 
-def build_date_navigator(db_path: str, fecha_iso: str, ciclo_start: date, today: date) -> DateNavigatorViewModel:
+def build_date_navigator(
+    db_path: str, fecha_iso: str, ciclo_start: date, today: date
+) -> DateNavigatorViewModel:
     selected = parse_form_date(fecha_iso)
     data_dates = fechas_con_datos(db_path)
     dates = []
@@ -87,12 +100,14 @@ def build_date_navigator(db_path: str, fecha_iso: str, ciclo_start: date, today:
     end = _end_of_next_month(today)
     while d <= end:
         iso = d.strftime("%Y-%m-%d")
-        dates.append(DateDay(
-            iso=iso,
-            label=f"{d.day}/{d.month}" if d.day == 1 else str(d.day),
-            has_data=iso in data_dates,
-            selected=d == selected,
-        ))
+        dates.append(
+            DateDay(
+                iso=iso,
+                label=f"{d.day}/{d.month}" if d.day == 1 else str(d.day),
+                has_data=iso in data_dates,
+                selected=d == selected,
+            )
+        )
         d += timedelta(days=1)
     return DateNavigatorViewModel(
         dates=dates,
@@ -129,13 +144,15 @@ def _editor_rows(rows: list[dict]) -> list[EditorRow]:
                 rm = round(kg * (1 + 0.0333 * (reps + 1 + (rir or 0.0))), 1)
         except (TypeError, ValueError):
             rm = None
-        display.append(EditorRow(
-            ejercicio=str(r.get("ejercicio", "")),
-            kg=kg,
-            reps=reps,
-            rir=rir,
-            rm=rm,
-        ))
+        display.append(
+            EditorRow(
+                ejercicio=str(r.get("ejercicio", "")),
+                kg=kg,
+                reps=reps,
+                rir=rir,
+                rm=rm,
+            )
+        )
     if not display:
         display = [EditorRow(ejercicio="", kg=None, reps=None, rir=None, rm=None)]
     return display
@@ -161,7 +178,8 @@ def build_session_editor(
     else:
         rows = [
             {"ejercicio": r.ejercicio, "kg": r.kg, "reps": r.reps, "rir": r.rir}
-            if not isinstance(r, dict) else r
+            if not isinstance(r, dict)
+            else r
             for r in rows
         ]
     has_saved = any(_row_has_values(r) for r in rows)

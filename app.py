@@ -1,5 +1,3 @@
-import os
-import json
 from collections import deque
 from contextlib import asynccontextmanager
 from datetime import date
@@ -36,7 +34,12 @@ from src.database import (
 )
 from src.db_connection import read_connection
 from src.models import TemplateInput
-from src.security import CSRFProtectionMiddleware, SecurityHeadersMiddleware, get_csrf_secret, make_csrf_token
+from src.security import (
+    CSRFProtectionMiddleware,
+    SecurityHeadersMiddleware,
+    get_csrf_secret,
+    make_csrf_token,
+)
 from src.template_service import (
     apply_template_rows,
     delete_plantilla,
@@ -51,10 +54,12 @@ from src.training_service import (
     sets_from_form,
 )
 
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db(DB_PATH)
     yield
+
 
 app = FastAPI(title="Gym Tracker", lifespan=lifespan)
 app.add_middleware(CSRFProtectionMiddleware)
@@ -64,82 +69,122 @@ templates = Jinja2Templates(directory="templates")
 
 UNDO_STACK: deque = deque(maxlen=10)
 
+
 def _undo_push_sesion(fecha_iso: str, before: list[dict], after: list[dict]) -> None:
     UNDO_STACK.append({"kind": "sesion", "fecha_iso": fecha_iso, "before": before, "after": after})
+
 
 def _undo_push_entrenos(before: list, after: list) -> None:
     UNDO_STACK.append({"kind": "entrenos", "before": before, "after": after})
 
+
 CICLO_START_DATE = parse_cycle_start(CICLO_START)
+
 
 def _today_iso() -> str:
     return date.today().strftime("%Y-%m-%d")
 
+
 def _muscle_names() -> list[str]:
     return sorted({m for c in MUSCLE_CATEGORIES for m in c["muscles"]})
+
 
 def _render_body(response) -> str:
     return bytes(response.body).decode()
 
+
 def _navigator_html(request: Request, fecha_iso: str) -> str:
     vm = build_date_navigator(DB_PATH, fecha_iso, CICLO_START_DATE, date.today())
-    return _render_body(templates.TemplateResponse(
-        request=request,
-        name="date_navigator.html",
-        context={
-            "dates": vm.dates,
-            "selected_iso": vm.selected_iso,
-            "today_iso": vm.today_iso,
-        },
-    ))
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="date_navigator.html",
+            context={
+                "dates": vm.dates,
+                "selected_iso": vm.selected_iso,
+                "today_iso": vm.today_iso,
+            },
+        )
+    )
 
-def _editor_html(request: Request, fecha_iso: str, *, rows=None, error: str | None = None, success: str | None = None, force_editable: bool = False, force_readonly: bool = False) -> str:
+
+def _editor_html(
+    request: Request,
+    fecha_iso: str,
+    *,
+    rows=None,
+    error: str | None = None,
+    success: str | None = None,
+    force_editable: bool = False,
+    force_readonly: bool = False,
+) -> str:
     vm = build_session_editor(
-        DB_PATH, fecha_iso, CICLO_START_DATE,
+        DB_PATH,
+        fecha_iso,
+        CICLO_START_DATE,
         rows=rows,
         error=error,
         success=success,
         force_editable=force_editable,
         force_readonly=force_readonly,
     )
-    return _render_body(templates.TemplateResponse(
-        request=request,
-        name="session_editor.html",
-        context={
-            "fecha_iso": vm.fecha_iso,
-            "fecha_db": vm.fecha_db,
-            "semana": vm.semana,
-            "dia": vm.dia,
-            "rows": vm.rows,
-            "readonly": vm.readonly,
-            "has_data": vm.has_data,
-            "error": vm.error,
-            "success": vm.success,
-            "catalog": vm.catalog,
-        },
-    ))
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="session_editor.html",
+            context={
+                "fecha_iso": vm.fecha_iso,
+                "fecha_db": vm.fecha_db,
+                "semana": vm.semana,
+                "dia": vm.dia,
+                "rows": vm.rows,
+                "readonly": vm.readonly,
+                "has_data": vm.has_data,
+                "error": vm.error,
+                "success": vm.success,
+                "catalog": vm.catalog,
+            },
+        )
+    )
 
-def _exercise_form_html(request: Request, *, error: str | None = None, success: str | None = None) -> str:
-    return _render_body(templates.TemplateResponse(
-        request=request,
-        name="exercise_create_form.html",
-        context={"categories": MUSCLE_CATEGORIES, "muscle_names": _muscle_names(), "error": error, "success": success},
-    ))
 
-def _plantillas_list_html(request: Request, *, editing_id: int | None = None, error: str | None = None) -> str:
-    return _render_body(templates.TemplateResponse(
-        request=request,
-        name="plantillas_list.html",
-        context={
-            "plantillas": get_plantillas(DB_PATH),
-            "catalog": get_exercises_catalog(DB_PATH),
-            "editing_id": editing_id,
-            "error": error,
-        },
-    ))
+def _exercise_form_html(
+    request: Request, *, error: str | None = None, success: str | None = None
+) -> str:
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="exercise_create_form.html",
+            context={
+                "categories": MUSCLE_CATEGORIES,
+                "muscle_names": _muscle_names(),
+                "error": error,
+                "success": success,
+            },
+        )
+    )
+
+
+def _plantillas_list_html(
+    request: Request, *, editing_id: int | None = None, error: str | None = None
+) -> str:
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="plantillas_list.html",
+            context={
+                "plantillas": get_plantillas(DB_PATH),
+                "catalog": get_exercises_catalog(DB_PATH),
+                "editing_id": editing_id,
+                "error": error,
+            },
+        )
+    )
+
 
 def _plantillas_oob(html: str) -> str:
     return f'<div id="plantillas-section" hx-swap-oob="outerHTML">{html}</div>'
+
 
 def _notice_oob(target: str, message: str, *, error: bool = False, dismiss: int = 3000) -> str:
     kind = "notice-error" if error else "notice-success"
@@ -148,9 +193,13 @@ def _notice_oob(target: str, message: str, *, error: bool = False, dismiss: int 
         f'<div class="notice {kind}" data-dismiss="{dismiss}">{message}</div></div>'
     )
 
+
 def _domain_error_response(error: Exception, target: str, *, extra: str = "") -> HTMLResponse:
     message, status = translate_error(error)
-    return HTMLResponse(content=_notice_oob(target, message, error=True, dismiss=4500) + extra, status_code=status)
+    return HTMLResponse(
+        content=_notice_oob(target, message, error=True, dismiss=4500) + extra, status_code=status
+    )
+
 
 @app.get("/", response_class=HTMLResponse)
 def read_index(request: Request):
@@ -165,7 +214,9 @@ def read_index(request: Request):
             "ejercicios_list": ejercicios_list,
             "ejercicios_grupo": ejercicios_list,
             "muscle_categories": categories,
-            "systemic_chart_html": chart_html(DB_PATH, "systemic", title="Rendimiento Global – Todo el Cuerpo"),
+            "systemic_chart_html": chart_html(
+                DB_PATH, "systemic", title="Rendimiento Global – Todo el Cuerpo"
+            ),
             "navigator_html": _navigator_html(request, fecha),
             "editor_html": _editor_html(request, fecha),
             "exercise_form_html": _exercise_form_html(request),
@@ -174,12 +225,14 @@ def read_index(request: Request):
                 "categoria_map": get_ejercicio_categoria(DB_PATH),
                 "csrf_token": make_csrf_token(get_csrf_secret()),
             },
-        }
+        },
     )
+
 
 @app.get("/fecha/editor", response_class=HTMLResponse)
 def fecha_editor(request: Request, fecha: str = Query(...)):
     return HTMLResponse(content=_editor_html(request, fecha))
+
 
 @app.post("/entrenamiento/session/save", response_class=HTMLResponse)
 def entrenamiento_session_save(
@@ -202,16 +255,20 @@ def entrenamiento_session_save(
         saved_rows = get_sets_by_fecha(DB_PATH, fecha_db)
         _undo_push_sesion(fecha, before_rows, saved_rows)
         if saved_rows:
-            state = ('<div id="editor-state" hx-swap-oob="outerHTML" '
-                     f'data-readonly="1" data-has-data="1" hidden></div>')
+            state = (
+                '<div id="editor-state" hx-swap-oob="outerHTML" '
+                'data-readonly="1" data-has-data="1" hidden></div>'
+            )
             return HTMLResponse(content=notice_success + outcome_ok + state)
         editor = _editor_html(request, fecha)
         return HTMLResponse(
-            content=notice_success + outcome_ok
+            content=notice_success
+            + outcome_ok
             + f'<div id="session-editor-wrap" hx-swap-oob="innerHTML">{editor}</div>'
         )
     except Exception as e:
         return _domain_error_response(e, "editor-notice", extra=outcome_fail)
+
 
 @app.post("/entrenamiento/session/eliminar", response_class=HTMLResponse)
 def entrenamiento_session_eliminar(request: Request, fecha: str = Form(...)):
@@ -224,12 +281,14 @@ def entrenamiento_session_eliminar(request: Request, fecha: str = Form(...)):
         delete_session_by_fecha(DB_PATH, fecha_db)
         _undo_push_sesion(fecha, before_rows, [])
     except Exception:
-        pass
+        pass  # S110: best-effort backup y borrado, el editor se re-renderiza igual
     editor = _editor_html(request, fecha)
     return HTMLResponse(
-        content=notice + outcome_ok
+        content=notice
+        + outcome_ok
         + f'<div id="session-editor-wrap" hx-swap-oob="innerHTML">{editor}</div>'
     )
+
 
 @app.post("/ejercicio/nuevo", response_class=HTMLResponse)
 def ejercicio_nuevo(
@@ -250,17 +309,24 @@ def ejercicio_nuevo(
     elif any(e.lower() == ejercicio.lower() for e in get_exercises_catalog(DB_PATH)):
         error = f"El ejercicio '{ejercicio}' ya existe en el catálogo."
     if error:
-        return HTMLResponse(content=_notice_oob("notice-container", error, error=True, dismiss=4500))
+        return HTMLResponse(
+            content=_notice_oob("notice-container", error, error=True, dismiss=4500)
+        )
     insert_exercise(DB_PATH, ejercicio, grupo_muscular, categoria)
-    notice_success = _notice_oob("notice-container", f"Ejercicio '{ejercicio}' creado.", dismiss=3000)
+    notice_success = _notice_oob(
+        "notice-container", f"Ejercicio '{ejercicio}' creado.", dismiss=3000
+    )
     form_html = _exercise_form_html(request)
     return HTMLResponse(
-        content=notice_success + f'<div id="exercise-create" hx-swap-oob="outerHTML">{form_html}</div>'
+        content=notice_success
+        + f'<div id="exercise-create" hx-swap-oob="outerHTML">{form_html}</div>'
     )
+
 
 @app.get("/plantillas", response_class=HTMLResponse)
 def plantillas_view(request: Request, editar: int | None = Query(None)):
     return HTMLResponse(content=_plantillas_list_html(request, editing_id=editar))
+
 
 @app.post("/plantilla/guardar", response_class=HTMLResponse)
 def plantilla_guardar(
@@ -275,7 +341,11 @@ def plantilla_guardar(
     except Exception as e:
         return _domain_error_response(e, "notice-container")
     msg = "Entreno actualizado." if result.updated else "Entreno guardado."
-    return HTMLResponse(content=_notice_oob("notice-container", msg, dismiss=3000) + _plantillas_oob(_plantillas_list_html(request)))
+    return HTMLResponse(
+        content=_notice_oob("notice-container", msg, dismiss=3000)
+        + _plantillas_oob(_plantillas_list_html(request))
+    )
+
 
 @app.post("/plantilla/editar/{plantilla_id}", response_class=HTMLResponse)
 def plantilla_editar(
@@ -296,6 +366,7 @@ def plantilla_editar(
         + _plantillas_oob(_plantillas_list_html(request))
     )
 
+
 @app.post("/plantilla/eliminar/{plantilla_id}", response_class=HTMLResponse)
 def plantilla_eliminar(request: Request, plantilla_id: int):
     before = snapshot_entrenos(DB_PATH)
@@ -306,12 +377,14 @@ def plantilla_eliminar(request: Request, plantilla_id: int):
         + _plantillas_oob(_plantillas_list_html(request))
     )
 
+
 @app.post("/plantilla/reordenar", response_class=HTMLResponse)
 def plantilla_reordenar(id: list[int] = Form(default=[])):
     before = snapshot_entrenos(DB_PATH)
     reorder_plantillas(DB_PATH, id)
     _undo_push_entrenos(before, snapshot_entrenos(DB_PATH))
     return HTMLResponse(content="")
+
 
 @app.get("/plantilla/aplicar/{plantilla_id}", response_class=HTMLResponse)
 def plantilla_aplicar(request: Request, plantilla_id: int, fecha: str = Query(...)):
@@ -326,6 +399,7 @@ def plantilla_aplicar(request: Request, plantilla_id: int, fecha: str = Query(..
         + f'<div id="session-editor-wrap" hx-swap-oob="innerHTML">{editor}<div id="plantilla-applied" hidden></div></div>'
     )
 
+
 @app.post("/undo", response_class=HTMLResponse)
 def undo(request: Request, fecha: str = Form("")):
     notice_ok = _notice_oob("notice-container", "Acción deshecha.", dismiss=2500)
@@ -338,11 +412,15 @@ def undo(request: Request, fecha: str = Form("")):
         fecha_iso = entry["fecha_iso"]
         save_session(DB_PATH, fecha_iso, entry["before"])
         restored = get_sets_by_fecha(DB_PATH, fecha_to_db(parse_form_date(fecha_iso)))
-        has_data = "1" if any(
-            str(r.get("ejercicio") or "").strip()
-            or any(str(r.get(k) or "").strip() for k in ("kg", "reps", "rir"))
-            for r in restored
-        ) else "0"
+        has_data = (
+            "1"
+            if any(
+                str(r.get("ejercicio") or "").strip()
+                or any(str(r.get(k) or "").strip() for k in ("kg", "reps", "rir"))
+                for r in restored
+            )
+            else "0"
+        )
         marker = (
             f'<div id="undo-result" hx-swap-oob="outerHTML" '
             f'data-fecha="{fecha_iso}" data-has-data="{has_data}" hidden></div>'
@@ -351,12 +429,15 @@ def undo(request: Request, fecha: str = Form("")):
             outcome_ok = '<div id="save-outcome" hx-swap-oob="outerHTML" data-ok="1" hidden></div>'
             editor = _editor_html(request, fecha_iso)
             return HTMLResponse(
-                content=notice_ok + outcome_ok + marker
+                content=notice_ok
+                + outcome_ok
+                + marker
                 + f'<div id="session-editor-wrap" hx-swap-oob="innerHTML">{editor}</div>'
             )
         return HTMLResponse(content=notice_ok + marker)
     restore_entrenos(DB_PATH, entry["before"])
     return HTMLResponse(content=notice_ok + _plantillas_oob(_plantillas_list_html(request)))
+
 
 @app.get("/exportar/csv", response_class=Response)
 def export_csv():
@@ -369,40 +450,49 @@ def export_csv():
         headers={"Content-Disposition": 'attachment; filename="entrenamientos.csv"'},
     )
 
+
 @app.get("/select", response_class=HTMLResponse)
 def select_view(request: Request, grupo: str = Query(None)):
     if not grupo:
         ejercicios_list, _ = get_filters(DB_PATH)
-        chart_html_frag = chart_html(DB_PATH, "systemic", title="Rendimiento Global – Todo el Cuerpo")
-        exercise_list_html = _render_body(templates.TemplateResponse(
-            request=request,
-            name="exercise_list.html",
-            context={
-                "ejercicios_grupo": ejercicios_list,
-                "grupo": "",
-            }
-        ))
+        chart_html_frag = chart_html(
+            DB_PATH, "systemic", title="Rendimiento Global – Todo el Cuerpo"
+        )
+        exercise_list_html = _render_body(
+            templates.TemplateResponse(
+                request=request,
+                name="exercise_list.html",
+                context={
+                    "ejercicios_grupo": ejercicios_list,
+                    "grupo": "",
+                },
+            )
+        )
         oob_chart = f'<div id="unified-chart" hx-swap-oob="innerHTML">{chart_html_frag}</div>'
         return HTMLResponse(content=exercise_list_html + oob_chart)
 
     ejercicios_grupo = get_ejercicios_por_grupo(DB_PATH, grupo)
     chart_html_frag = chart_html(DB_PATH, "muscle_group", grupo, f"Rendimiento – {grupo}")
-    exercise_list_html = _render_body(templates.TemplateResponse(
-        request=request,
-        name="exercise_list.html",
-        context={
-            "ejercicios_grupo": ejercicios_grupo,
-            "grupo": grupo,
-        }
-    ))
+    exercise_list_html = _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="exercise_list.html",
+            context={
+                "ejercicios_grupo": ejercicios_grupo,
+                "grupo": grupo,
+            },
+        )
+    )
     oob_chart = f'<div id="unified-chart" hx-swap-oob="innerHTML">{chart_html_frag}</div>'
     return HTMLResponse(content=exercise_list_html + oob_chart)
+
 
 @app.get("/grupo/reset", response_class=HTMLResponse)
 def reset_grupo(request: Request, grupo: str = Query(...)):
     chart_html_frag = chart_html(DB_PATH, "muscle_group", grupo, f"Rendimiento – {grupo}")
     oob_chart = f'<div id="unified-chart" hx-swap-oob="innerHTML">{chart_html_frag}</div>'
-    return HTMLResponse(content='<div></div>' + oob_chart)
+    return HTMLResponse(content="<div></div>" + oob_chart)
+
 
 @app.get("/ejercicio", response_class=HTMLResponse)
 def get_exercise_history(request: Request, ejercicio: str = Query(...)):
@@ -413,14 +503,16 @@ def get_exercise_history(request: Request, ejercicio: str = Query(...)):
     session_summary = session_df.to_dict(orient="records") if not session_df.empty else []
 
     chart_html_frag = chart_html(DB_PATH, "exercise", ejercicio, f"Rendimiento – {ejercicio}")
-    tables_html = _render_body(templates.TemplateResponse(
-        request=request,
-        name="exercise_detail.html",
-        context={
-            "raw_data": raw_data,
-            "session_summary": session_summary,
-            "ejercicio": ejercicio,
-        }
-    ))
+    tables_html = _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="exercise_detail.html",
+            context={
+                "raw_data": raw_data,
+                "session_summary": session_summary,
+                "ejercicio": ejercicio,
+            },
+        )
+    )
     oob_chart = f'<div id="unified-chart" hx-swap-oob="innerHTML">{chart_html_frag}</div>'
     return HTMLResponse(content=tables_html + oob_chart)

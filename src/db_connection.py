@@ -1,8 +1,8 @@
 """Configured SQLite connection factory and context managers."""
 
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
 
 BUSY_TIMEOUT_MS = 5000
 

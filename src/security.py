@@ -105,7 +105,7 @@ def _same_origin(origin: str, scope) -> bool:
 class CSRFProtectionMiddleware:
     """Rejects cross-origin and token-less state-changing requests with 403."""
 
-    UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+    UNSAFE_METHODS: frozenset = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
     def __init__(self, app):
         self.app = app
@@ -133,12 +133,14 @@ class CSRFProtectionMiddleware:
 
     @staticmethod
     async def _send_response(scope, receive, send, body: bytes, status: int):
-        await send({
-            "type": "http.response.start",
-            "status": status,
-            "headers": [
-                (b"content-type", b"text/html; charset=utf-8"),
-                (b"content-length", str(len(body)).encode()),
-            ],
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": status,
+                "headers": [
+                    (b"content-type", b"text/html; charset=utf-8"),
+                    (b"content-length", str(len(body)).encode()),
+                ],
+            }
+        )
         await send({"type": "http.response.body", "body": body})

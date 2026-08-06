@@ -16,7 +16,9 @@ def _table_columns(conn, table: str) -> set[str]:
 
 
 def _backfill_categories(conn) -> None:
-    rows = conn.execute("SELECT id, grupo_muscular FROM ejercicios WHERE categoria IS NULL").fetchall()
+    rows = conn.execute(
+        "SELECT id, grupo_muscular FROM ejercicios WHERE categoria IS NULL"
+    ).fetchall()
     if not rows:
         return
     muscle_to_cat: dict[str, str] = {}

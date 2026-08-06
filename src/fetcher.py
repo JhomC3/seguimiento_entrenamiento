@@ -1,5 +1,7 @@
 import requests
+
 from config import GIDS, get_csv_url
+
 
 def fetch_sheet_csv(sheet_name: str) -> str:
     """Descarga una hoja de Google Sheets como texto CSV."""

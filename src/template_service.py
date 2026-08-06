@@ -4,10 +4,18 @@ from src.database import (
     get_ejercicio_categoria,
     get_last_session_sets,
     get_plantilla,
-    get_plantillas,
     insert_plantilla,
     update_plantilla,
 )
+
+__all__ = [
+    "CLASSIFICATIONS",
+    "apply_template_rows",
+    "classify_template",
+    "delete_plantilla",
+    "edit_template",
+    "save_template",
+]
 from src.models import (
     ConflictError,
     NotFoundError,
@@ -18,6 +26,7 @@ from src.models import (
 )
 
 CLASSIFICATIONS = ["EMPUJE", "JALON", "PIERNA", "TORSO", "FULL BODY", "CORE", "SIN CLASIFICAR"]
+
 
 def classify_template(db_path: str, ejercicios: list[str]) -> str:
     cats = {
@@ -43,6 +52,7 @@ def classify_template(db_path: str, ejercicios: list[str]) -> str:
         return "PIERNA"
     return "CORE"
 
+
 def _clean_ejercicios(ejercicios: list[str]) -> list[str]:
     cleaned = []
     seen = set()
@@ -54,6 +64,7 @@ def _clean_ejercicios(ejercicios: list[str]) -> list[str]:
         cleaned.append(name)
     return cleaned
 
+
 def _to_template(row: dict) -> Template:
     return Template(
         id=row["id"],
@@ -63,6 +74,7 @@ def _to_template(row: dict) -> Template:
         ejercicios=list(row.get("ejercicios", [])),
         updated=bool(row.get("updated", False)),
     )
+
 
 def save_template(db_path: str, template: TemplateInput) -> Template:
     nombre = str(template.nombre).strip()
@@ -75,22 +87,27 @@ def save_template(db_path: str, template: TemplateInput) -> Template:
     existing = find_plantilla_by_nombre(db_path, nombre)
     if existing is not None:
         update_plantilla(db_path, existing, nombre, clasificacion, ejercicios)
-        return _to_template({
-            "id": existing,
+        return _to_template(
+            {
+                "id": existing,
+                "nombre": nombre,
+                "clasificacion": clasificacion,
+                "updated_at": "",
+                "ejercicios": ejercicios,
+                "updated": True,
+            }
+        )
+    pid = insert_plantilla(db_path, nombre, clasificacion, ejercicios)
+    return _to_template(
+        {
+            "id": pid,
             "nombre": nombre,
             "clasificacion": clasificacion,
             "updated_at": "",
             "ejercicios": ejercicios,
-            "updated": True,
-        })
-    pid = insert_plantilla(db_path, nombre, clasificacion, ejercicios)
-    return _to_template({
-        "id": pid,
-        "nombre": nombre,
-        "clasificacion": clasificacion,
-        "updated_at": "",
-        "ejercicios": ejercicios,
-    })
+        }
+    )
+
 
 def edit_template(db_path: str, plantilla_id: int, template: TemplateInput) -> Template:
     nombre = str(template.nombre).strip()
@@ -104,13 +121,16 @@ def edit_template(db_path: str, plantilla_id: int, template: TemplateInput) -> T
         raise ConflictError(f"Ya existe un entreno llamado '{nombre}'.")
     clasificacion = classify_template(db_path, ejercicios)
     update_plantilla(db_path, plantilla_id, nombre, clasificacion, ejercicios)
-    return _to_template({
-        "id": plantilla_id,
-        "nombre": nombre,
-        "clasificacion": clasificacion,
-        "updated_at": "",
-        "ejercicios": ejercicios,
-    })
+    return _to_template(
+        {
+            "id": plantilla_id,
+            "nombre": nombre,
+            "clasificacion": clasificacion,
+            "updated_at": "",
+            "ejercicios": ejercicios,
+        }
+    )
+
 
 def apply_template_rows(db_path: str, plantilla_id: int) -> list[TrainingSetInput]:
     plantilla = get_plantilla(db_path, plantilla_id)
@@ -121,12 +141,14 @@ def apply_template_rows(db_path: str, plantilla_id: int) -> list[TrainingSetInpu
         sets = get_last_session_sets(db_path, ej)
         if sets:
             for s in sets:
-                rows.append(TrainingSetInput(
-                    ejercicio=s["ejercicio"],
-                    kg=s["kg"],
-                    reps=s["reps"],
-                    rir=s["rir"],
-                ))
+                rows.append(
+                    TrainingSetInput(
+                        ejercicio=s["ejercicio"],
+                        kg=s["kg"],
+                        reps=s["reps"],
+                        rir=s["rir"],
+                    )
+                )
         else:
             rows.append(TrainingSetInput(ejercicio=ej, kg="", reps="", rir=""))
     return rows

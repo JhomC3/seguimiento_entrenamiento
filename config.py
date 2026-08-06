@@ -12,8 +12,10 @@ GIDS: dict[str, str] = {
     "ejercicios": "2123755988",
 }
 
+
 def get_csv_url(gid: str) -> str:
     return f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={gid}"
+
 
 MUSCLE_CATEGORIES: list[dict[str, str | list[str]]] = [
     {"name": "EMPUJE", "muscles": ["Pectoral", "Hombro", "Triceps"]},

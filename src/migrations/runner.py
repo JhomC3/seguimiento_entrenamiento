@@ -4,7 +4,11 @@ import os
 from datetime import datetime
 
 from src.db_connection import connect_db
-from src.migrations import v001_initial_schema, v002_add_origins_and_categories, v003_add_template_order
+from src.migrations import (
+    v001_initial_schema,
+    v002_add_origins_and_categories,
+    v003_add_template_order,
+)
 
 MIGRATIONS = [
     v001_initial_schema,
@@ -19,9 +23,9 @@ _DOMAIN_TABLES = {"ejercicios", "training_sets", "plantillas", "plantilla_sets"}
 
 
 def _existing_tables(conn) -> set[str]:
-    return {r[0] for r in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table'"
-    ).fetchall()}
+    return {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+    }
 
 
 def _backup_before_upgrade(db_path: str, conn) -> None:

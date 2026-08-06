@@ -1,3 +1,4 @@
+import math
 import sqlite3
 from datetime import date, datetime
 
@@ -16,26 +17,33 @@ DIA_MAP = {
     "Sunday": "DOMINGO",
 }
 
+
 def parse_cycle_start(value: str = CICLO_START) -> date:
     return datetime.strptime(value, "%d/%m/%Y").date()
+
 
 def calculate_cycle_week(fecha: date, cycle_start: date) -> int:
     return max(1, (fecha - cycle_start).days // 7 + 1)
 
+
 def day_from_date(fecha: date) -> str:
     return DIA_MAP[fecha.strftime("%A")]
+
 
 def fecha_to_db(fecha: date) -> str:
     return f"{fecha.day}/{fecha.month}/{fecha.year % 100:02d}"
 
+
 def fecha_from_db(fecha: str) -> date:
     return datetime.strptime(fecha, "%d/%m/%y").date()
+
 
 def parse_form_date(fecha_iso: str) -> date:
     try:
         return datetime.strptime(fecha_iso, "%Y-%m-%d").date()
     except ValueError:
         raise ValidationError(f"Fecha inválida: '{fecha_iso}'.")
+
 
 def _validate_number(value, field: str, *, allow_zero: bool = False) -> float:
     if value is None or str(value).strip() == "":
@@ -44,21 +52,32 @@ def _validate_number(value, field: str, *, allow_zero: bool = False) -> float:
         num = float(value)
     except (TypeError, ValueError):
         raise ValidationError(f"El campo {field} debe ser numérico.")
-    if num != num or num in (float("inf"), float("-inf")) or num < 0 or (num == 0 and not allow_zero):
+    if (
+        math.isnan(num)
+        or num in (float("inf"), float("-inf"))
+        or num < 0
+        or (num == 0 and not allow_zero)
+    ):
         raise ValidationError(f"El campo {field} debe ser un número positivo.")
     return num
 
-def sets_from_form(ejercicios: list[str], kgs: list[str], reps: list[str], rirs: list[str]) -> list[TrainingSetInput]:
+
+def sets_from_form(
+    ejercicios: list[str], kgs: list[str], reps: list[str], rirs: list[str]
+) -> list[TrainingSetInput]:
     """Adapter: parallel form arrays -> typed set inputs."""
     sets = []
     for i, ejercicio in enumerate(ejercicios):
-        sets.append(TrainingSetInput(
-            ejercicio=ejercicio,
-            kg=kgs[i] if i < len(kgs) else "",
-            reps=reps[i] if i < len(reps) else "",
-            rir=rirs[i] if i < len(rirs) else "",
-        ))
+        sets.append(
+            TrainingSetInput(
+                ejercicio=ejercicio,
+                kg=kgs[i] if i < len(kgs) else "",
+                reps=reps[i] if i < len(reps) else "",
+                rir=rirs[i] if i < len(rirs) else "",
+            )
+        )
     return sets
+
 
 def _coerce_set(raw) -> TrainingSetInput:
     """Internal adapter: accepts TrainingSetInput or dict rows (undo stack, DB rows)."""
@@ -72,6 +91,7 @@ def _coerce_set(raw) -> TrainingSetInput:
             rir=raw.get("rir", ""),
         )
     raise ValidationError("Serie inválida.")
+
 
 def validate_sets(db_path: str, sets: list[TrainingSetInput]) -> list[TrainingSetInput]:
     if not sets:
@@ -91,7 +111,10 @@ def validate_sets(db_path: str, sets: list[TrainingSetInput]) -> list[TrainingSe
         cleaned.append(TrainingSetInput(ejercicio=ejercicio, kg=kg, reps=reps, rir=rir))
     return cleaned
 
-def _insert_sets(conn: sqlite3.Connection, semana: int, dia: str, fecha: str, sets: list[TrainingSetInput]) -> None:
+
+def _insert_sets(
+    conn: sqlite3.Connection, semana: int, dia: str, fecha: str, sets: list[TrainingSetInput]
+) -> None:
     for idx, s in enumerate(sets, start=1):
         conn.execute(
             "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) "
@@ -99,8 +122,10 @@ def _insert_sets(conn: sqlite3.Connection, semana: int, dia: str, fecha: str, se
             (semana, dia, fecha, idx, s.ejercicio, s.reps, s.kg, s.rir),
         )
 
+
 def _session_from_meta(semana: int, dia: str, fecha_db: str) -> Session:
     return Session(semana=semana, dia=dia, fecha=fecha_db)
+
 
 def insert_manual_session(db_path: str, fecha_iso: str, sets: list[TrainingSetInput]) -> Session:
     fecha = parse_form_date(fecha_iso)
@@ -113,7 +138,15 @@ def insert_manual_session(db_path: str, fecha_iso: str, sets: list[TrainingSetIn
         _insert_sets(conn, semana, dia, fecha_db, cleaned)
     return _session_from_meta(semana, dia, fecha_db)
 
-def update_session(db_path: str, old_semana: int, old_dia: str, old_fecha: str, fecha_iso: str, sets: list[TrainingSetInput]) -> Session:
+
+def update_session(
+    db_path: str,
+    old_semana: int,
+    old_dia: str,
+    old_fecha: str,
+    fecha_iso: str,
+    sets: list[TrainingSetInput],
+) -> Session:
     fecha = parse_form_date(fecha_iso)
     cycle_start = parse_cycle_start()
     cleaned = validate_sets(db_path, sets)
@@ -128,9 +161,11 @@ def update_session(db_path: str, old_semana: int, old_dia: str, old_fecha: str, 
         _insert_sets(conn, semana, dia, fecha_db, cleaned)
     return _session_from_meta(semana, dia, fecha_db)
 
+
 def _is_empty_row(s) -> bool:
     s = _coerce_set(s)
     return not any(str(getattr(s, k, "")).strip() for k in ("ejercicio", "kg", "reps", "rir"))
+
 
 def save_session(db_path: str, fecha_iso: str, sets: list[TrainingSetInput]) -> Session:
     fecha = parse_form_date(fecha_iso)
@@ -149,11 +184,13 @@ def save_session(db_path: str, fecha_iso: str, sets: list[TrainingSetInput]) -> 
             )
     return _session_from_meta(semana, dia, fecha_db)
 
+
 def get_sessions_page(db_path: str, page: int = 1, limit: int = 20) -> tuple[list[dict], int, int]:
     sessions = get_training_sessions(db_path)
     total = len(sessions)
     offset = (page - 1) * limit
-    return sessions[offset:offset + limit], total, page
+    return sessions[offset : offset + limit], total, page
+
 
 def get_session_detail(db_path: str, semana: int, dia: str, fecha: str) -> list[TrainingSet]:
     sets = get_session_sets(db_path, semana, dia, fecha)
@@ -161,14 +198,16 @@ def get_session_detail(db_path: str, semana: int, dia: str, fecha: str) -> list[
     for s in sets:
         kg = s["kg"]
         reps = s["reps"]
-        rir = s["rir"] or 0
-        rm = round(kg * (1 + 0.0333 * reps), 1) if kg and reps else None
-        result.append(TrainingSet(
-            ejercicio=s["ejercicio"],
-            set_orden=s["set_orden"],
-            reps=s["reps"],
-            kg=s["kg"],
-            rir=s["rir"],
-            origen=s["origen"],
-        ))
+        s["rir"] or 0
+        round(kg * (1 + 0.0333 * reps), 1) if kg and reps else None
+        result.append(
+            TrainingSet(
+                ejercicio=s["ejercicio"],
+                set_orden=s["set_orden"],
+                reps=s["reps"],
+                kg=s["kg"],
+                rir=s["rir"],
+                origen=s["origen"],
+            )
+        )
     return result
