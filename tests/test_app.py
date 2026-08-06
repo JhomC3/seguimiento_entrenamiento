@@ -470,7 +470,7 @@ def test_base_template_has_no_inline_style_block(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/")
-    assert "tailwind.config" in r.text
+    assert "tailwind.config" not in r.text
     base_path = os.path.join(os.path.dirname(__file__), "..", "templates", "base.html")
     with open(base_path) as f:
         source = f.read()

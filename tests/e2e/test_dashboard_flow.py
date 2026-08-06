@@ -236,3 +236,18 @@ def test_hostile_exercise_notice_creates_no_image_node(page, server):
     page.wait_for_timeout(500)
     assert page.locator("#notice-container img").count() == 0, "el payload no debe crear nodos HTML"
     expect(page.locator("#notice-container")).to_contain_text(PAYLOAD)
+
+
+def test_dynamic_script_does_not_execute(page, server):
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.evaluate(
+        """() => {
+            window.__xssProbe = false;
+            const s = document.createElement('script');
+            s.textContent = 'window.__xssProbe = true';
+            document.body.appendChild(s);
+        }"""
+    )
+    page.wait_for_timeout(400)
+    assert page.evaluate("window.__xssProbe") is False, "la CSP debe bloquear scripts inyectados"

@@ -13,34 +13,7 @@
     <!-- Plotly CDN -->
     <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
     <link rel="stylesheet" href="/static/css/app.css">
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        burgundy: {
-                            50: '#fdf2f4',
-                            100: '#fbe5e9',
-                            200: '#f7ccd5',
-                            300: '#f0a3b3',
-                            400: '#e56d88',
-                            500: '#d23d5f',
-                            600: '#9b1b30', // Carmesí metálico
-                            700: '#800020', // Deep Vinotinto
-                            800: '#66001a',
-                            900: '#4d0013',
-                            950: '#2d020c',
-                        },
-                        matte: {
-                            900: '#121212',
-                            950: '#0a0a0a',
-                        }
-                    }
-                }
-            }
-        }
-    </script>
+    <link rel="stylesheet" href="/static/css/palette.css">
 </head>
 <body class="bg-matte-950 text-neutral-100 min-h-screen font-sans antialiased selection:bg-burgundy-700 selection:text-white">
     {% include "partials/notices.html" %}

@@ -3,16 +3,18 @@
 import hashlib
 import hmac
 import os
+import secrets
 import time
 
-# The dashboard renders Plotly charts and a Tailwind runtime config as inline
-# <script> elements (server-generated, no client input reaches them). That is
-# why script-src/style-src keep 'unsafe-inline'; every external origin is
-# pinned explicitly. See docs/architecture/security-model.md.
-CSP = (
+# Inline executable scripts are gone from the templates (Task 2/6). The only
+# remaining inline script is the Plotly chart payload, which is allowed per
+# response via a nonce. style-src keeps 'unsafe-inline' because the Tailwind
+# CDN runtime injects <style> elements at runtime (CSS injection is not script
+# execution). See docs/architecture/security-model.md.
+CSP_TEMPLATE = (
     "default-src 'self'; "
     "script-src 'self' https://cdn.tailwindcss.com https://unpkg.com "
-    "https://cdn.jsdelivr.net https://cdn.plot.ly 'unsafe-inline'; "
+    "https://cdn.jsdelivr.net https://cdn.plot.ly 'nonce-{nonce}'; "
     "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; "
     "img-src 'self' data:; "
     "connect-src 'self'; "
@@ -22,11 +24,15 @@ CSP = (
     "frame-ancestors 'none'"
 )
 
+
+def build_csp(nonce: str) -> str:
+    return CSP_TEMPLATE.format(nonce=nonce)
+
+
 DEFAULT_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "same-origin",
     "X-Frame-Options": "DENY",
-    "Content-Security-Policy": CSP,
 }
 
 CSRF_HEADER = "X-CSRF-Token"
@@ -37,7 +43,12 @@ _DEV_SECRET = "dev-only-secret-do-not-use-in-production"
 
 
 class SecurityHeadersMiddleware:
-    """Adds security headers to every response (including static assets)."""
+    """Adds security headers to every response (including static assets).
+
+    Generates a per-request nonce, exposes it as ``request.state.csp_nonce``
+    (used by chart fragments) and pins it in the CSP header of the same
+    response.
+    """
 
     def __init__(self, app):
         self.app = app
@@ -47,11 +58,16 @@ class SecurityHeadersMiddleware:
             await self.app(scope, receive, send)
             return
 
+        nonce = secrets.token_urlsafe(16)
+        scope.setdefault("state", {})["csp_nonce"] = nonce
+        csp = build_csp(nonce)
+
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
                 headers = dict(message.get("headers", []))
                 for name, value in DEFAULT_HEADERS.items():
                     headers[name.lower().encode()] = value.encode()
+                headers[b"content-security-policy"] = csp.encode()
                 message["headers"] = list(headers.items())
             await send(message)
 

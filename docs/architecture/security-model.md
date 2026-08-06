@@ -27,14 +27,26 @@ accidental data loss and drive-by browser attacks, not a motivated adversary.
 - `Referrer-Policy: same-origin`
 - `X-Frame-Options: DENY` (no framing; equivalent CSP `frame-ancestors 'none'`)
 - `Content-Security-Policy` — restrictive `default-src 'self'`, explicit pinned CDN
-  origins for script/style, `object-src 'none'`, `base-uri 'self'`,
+  origins for script/style, **no `'unsafe-inline'` in `script-src`**, per-response
+  `nonce` for the Plotly inline payload, `object-src 'none'`, `base-uri 'self'`,
   `form-action 'self'`, `connect-src 'self'`, `img-src 'self' data:`.
 
-**Why `'unsafe-inline'` in script-src/style-src:** Plotly charts are rendered
-server-side as inline `<script>` payloads, and the Tailwind CDN runtime requires
-an inline config script plus runtime-injected styles. No client-supplied value is
-ever interpolated into those inline blocks (see §2.3). Removing `'unsafe-inline'`
-requires moving chart payloads to nonced external scripts — tracked as future work.
+**Inline script policy (decided in the remediation programme):**
+
+- All inline event handlers and the Tailwind runtime config were removed
+  (Tasks 2/6); `app.js` is the only first-party executable source.
+- **Tailwind CDN runs without inline configuration.** The custom
+  burgundy/matte utilities previously defined in `tailwind.config` are now
+  static tokens in `static/css/palette.css`. The CDN runtime injects `<style>`
+  elements, so `style-src` keeps `'unsafe-inline'` (CSS injection is not script
+  execution) — documented as the only remaining global inline allowance.
+- **Plotly chart payloads** are the only inline `<script>`; each response CSP
+  carries a fresh nonce (`request.state.csp_nonce`) and the chart fragment's
+  `<script>` tag gets the same nonce. plotly JSON-escapes `</` sequences in its
+  payload (regression-tested); a runtime tripwire fails loudly if that ever
+  regresses.
+- The `#app-config` block is `type="application/json"` (data, never executed;
+  not subject to `script-src`).
 
 ### 2.2 Output encoding
 
@@ -79,8 +91,9 @@ requires moving chart payloads to nonced external scripts — tracked as future 
 3. Switch server binding away from `127.0.0.1` only after 1–2 are done.
 4. Re-run the full security test suite and the browser suite against the new
    deployment origin.
-5. Remove `'unsafe-inline'` from the CSP (nonced chart payloads) before any
-   untrusted content model is introduced.
+5. Re-evaluate the Tailwind CDN runtime: for production, prefer a locally built
+   Tailwind stylesheet so the CDN script and the `style-src 'unsafe-inline'`
+   allowance can also be removed.
 
 ## 4. Runbook
 

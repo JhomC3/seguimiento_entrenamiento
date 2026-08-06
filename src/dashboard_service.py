@@ -4,6 +4,7 @@ Pure orchestration: no HTTP, no template rendering. Handlers stay thin.
 """
 
 import logging
+import re
 import sqlite3
 from datetime import date, datetime, timedelta
 
@@ -75,13 +76,31 @@ def fechas_con_datos(db_path: str) -> set[str]:
 
 
 def chart_html(
-    db_path: str, filter_type: str, filter_value: str | None = None, title: str = ""
+    db_path: str,
+    filter_type: str,
+    filter_value: str | None = None,
+    title: str = "",
+    *,
+    nonce: str | None = None,
 ) -> str:
+    """Plotly chart fragment.
+
+    Trusted fragment: plotly JSON-encodes all figure data and escapes `</`
+    sequences in its payload (verified by regression test); the inline script is
+    allowed by CSP only via the per-response nonce. Never pass request-derived
+    strings through this function without going through the figure data.
+    """
     fig = chart_pfr_timeline(db_path, filter_type, filter_value, title)
     if fig.data:
-        return fig.to_html(
+        html = fig.to_html(
             include_plotlyjs=False, full_html=False, config={"displayModeBar": False}
         )
+        body = re.search(r"<script[^>]*>(.*?)</script>", html, re.DOTALL)
+        if body and "</script>" in body.group(1):
+            raise RuntimeError("Fragmento Plotly contiene </script> sin escapar")
+        if nonce:
+            html = html.replace("<script", f'<script nonce="{nonce}"', 1)
+        return html
     return "<div class='flex items-center justify-center h-[300px] text-neutral-500 text-xs'>Sin datos</div>"
 
 

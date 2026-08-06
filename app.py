@@ -204,7 +204,10 @@ def read_index(request: Request):
             "ejercicios_grupo": ejercicios_list,
             "muscle_categories": categories,
             "systemic_chart_html": chart_html(
-                DB_PATH, "systemic", title="Rendimiento Global – Todo el Cuerpo"
+                DB_PATH,
+                "systemic",
+                title="Rendimiento Global – Todo el Cuerpo",
+                nonce=getattr(request.state, "csp_nonce", None),
             ),
             "navigator_html": _navigator_html(request, fecha),
             "editor_html": _editor_html(request, fecha),
@@ -473,7 +476,10 @@ def select_view(request: Request, grupo: str = Query(None)):
     if not grupo:
         ejercicios_list, _ = get_filters(DB_PATH)
         chart_html_frag = chart_html(
-            DB_PATH, "systemic", title="Rendimiento Global – Todo el Cuerpo"
+            DB_PATH,
+            "systemic",
+            title="Rendimiento Global – Todo el Cuerpo",
+            nonce=getattr(request.state, "csp_nonce", None),
         )
         exercise_list_html = _render_body(
             templates.TemplateResponse(
@@ -489,7 +495,13 @@ def select_view(request: Request, grupo: str = Query(None)):
         return HTMLResponse(content=exercise_list_html + oob_chart)
 
     ejercicios_grupo = get_ejercicios_por_grupo(DB_PATH, grupo)
-    chart_html_frag = chart_html(DB_PATH, "muscle_group", grupo, f"Rendimiento – {grupo}")
+    chart_html_frag = chart_html(
+        DB_PATH,
+        "muscle_group",
+        grupo,
+        f"Rendimiento – {grupo}",
+        nonce=getattr(request.state, "csp_nonce", None),
+    )
     exercise_list_html = _render_body(
         templates.TemplateResponse(
             request=request,
@@ -506,7 +518,13 @@ def select_view(request: Request, grupo: str = Query(None)):
 
 @app.get("/grupo/reset", response_class=HTMLResponse)
 def reset_grupo(request: Request, grupo: str = Query(...)):
-    chart_html_frag = chart_html(DB_PATH, "muscle_group", grupo, f"Rendimiento – {grupo}")
+    chart_html_frag = chart_html(
+        DB_PATH,
+        "muscle_group",
+        grupo,
+        f"Rendimiento – {grupo}",
+        nonce=getattr(request.state, "csp_nonce", None),
+    )
     oob_chart = chart_oob_wrapper(chart_html_frag)
     return HTMLResponse(content="<div></div>" + oob_chart)
 
@@ -519,7 +537,13 @@ def get_exercise_history(request: Request, ejercicio: str = Query(...)):
     session_df = get_exercise_session_summary(DB_PATH, ejercicio)
     session_summary = session_df.to_dict(orient="records") if not session_df.empty else []
 
-    chart_html_frag = chart_html(DB_PATH, "exercise", ejercicio, f"Rendimiento – {ejercicio}")
+    chart_html_frag = chart_html(
+        DB_PATH,
+        "exercise",
+        ejercicio,
+        f"Rendimiento – {ejercicio}",
+        nonce=getattr(request.state, "csp_nonce", None),
+    )
     tables_html = _render_body(
         templates.TemplateResponse(
             request=request,

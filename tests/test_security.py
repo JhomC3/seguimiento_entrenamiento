@@ -6,7 +6,7 @@ from fastapi import Request
 from fastapi.testclient import TestClient
 
 import app as appmod
-from src.security import CSP, get_csrf_secret, make_csrf_token
+from src.security import get_csrf_secret, make_csrf_token
 
 
 @pytest.fixture()
@@ -35,19 +35,44 @@ def test_frame_options_header(client):
     assert r.headers["x-frame-options"] == "DENY"
 
 
+def _csp_of(response) -> str:
+    return response.headers["content-security-policy"]
+
+
+def _script_src(csp: str) -> str:
+    return csp.split("script-src")[1].split(";")[0]
+
+
 def test_csp_header_present_and_restrictive(client):
     r = client.get("/")
-    csp = r.headers["content-security-policy"]
-    assert csp == CSP
+    csp = _csp_of(r)
+    nonce = _nonce_of(csp)
+    from src.security import build_csp
+
+    assert csp == build_csp(nonce)
     assert "frame-ancestors 'none'" in csp
     assert "object-src 'none'" in csp
     assert "default-src 'self'" in csp
     assert "form-action 'self'" in csp
 
 
+def _nonce_of(csp: str) -> str:
+    import re as _re
+
+    m = _re.search(r"'nonce-([^']+)'", csp)
+    assert m, "la CSP debe incluir un nonce"
+    return m.group(1)
+
+
+def test_csp_has_no_unsafe_inline_in_script_src(client):
+    script_src = _script_src(_csp_of(client.get("/")))
+    assert "'unsafe-inline'" not in script_src
+    assert "'nonce-" in script_src
+
+
 def test_csp_allows_required_cdn_sources(client):
     r = client.get("/")
-    csp = r.headers["content-security-policy"]
+    csp = _csp_of(r)
     for src in (
         "https://cdn.tailwindcss.com",
         "https://unpkg.com",
@@ -69,7 +94,26 @@ def test_headers_on_mutating_route(client):
         },
     )
     assert r.headers["x-content-type-options"] == "nosniff"
-    assert r.headers["content-security-policy"] == CSP
+    from src.security import build_csp
+
+    assert _csp_of(r) == build_csp(_nonce_of(_csp_of(r)))
+
+
+def test_chart_fragment_carries_response_nonce(authed_client):
+    authed_client.post(
+        "/entrenamiento/session/save",
+        data={
+            "fecha": "2099-01-01",
+            "ejercicio": ["Press"],
+            "kg": ["80"],
+            "reps": ["8"],
+            "rir": ["1"],
+        },
+    )
+    r = authed_client.get("/")
+    csp_nonce = _nonce_of(_csp_of(r))
+    assert f'<script nonce="{csp_nonce}"' in r.text
+    assert "'unsafe-inline'" not in _script_src(_csp_of(r))
 
 
 def test_static_assets_have_headers(client):
@@ -304,7 +348,6 @@ def test_edit_template_leak_returns_500_generic(authed_client, monkeypatch):
     """Unexpected persistence errors must never leak their message."""
     import sqlite3
 
-
     def _leaky(*args, **kwargs):
         raise sqlite3.OperationalError("SECRET_INTERNAL_DETAIL")
 
@@ -323,3 +366,29 @@ def test_edit_template_domain_error_keeps_form_with_safe_message(authed_client):
     assert r.status_code == 200
     assert "Ya existe un entreno llamado" in r.text
     assert 'id="plantilla-edit-rows"' in r.text
+
+
+def test_chart_fragment_never_contains_raw_script_terminator():
+    """Tripwire: plotly must JSON-escape </script> inside chart payloads."""
+    import tempfile
+
+    from src.dashboard_service import chart_html
+    from src.database import init_db, insert_exercise
+    from src.models import TrainingSetInput
+    from src.training_service import save_session
+
+    db = tempfile.mktemp(suffix=".db")
+    try:
+        init_db(db)
+        hostile = "x</script><script>alert(1)</script>y"
+        insert_exercise(db, hostile, "Pectoral", "EMPUJE")
+        save_session(db, "2026-02-10", [TrainingSetInput(ejercicio=hostile, kg=80, reps=8, rir=1)])
+        html = chart_html(db, "exercise", hostile, f"Rendimiento – {hostile}", nonce="test-nonce")
+        assert '<script nonce="test-nonce"' in html
+        body = html.split("<script")[1].split("</script>")[0]
+        assert "</script>" not in body
+        assert "<script" not in body.split(">", 1)[1]
+    finally:
+        import os
+
+        os.unlink(db)
