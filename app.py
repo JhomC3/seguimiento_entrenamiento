@@ -34,6 +34,14 @@ from src.database import (
 )
 from src.db_connection import read_connection
 from src.models import TemplateInput
+from src.response_fragments import (
+    STATIC_MARKERS,
+    chart_oob_wrapper,
+    editor_state_oob,
+    editor_wrap_oob,
+    fragment_oob,
+    notice_oob,
+)
 from src.security import (
     CSRFProtectionMiddleware,
     SecurityHeadersMiddleware,
@@ -182,22 +190,16 @@ def _plantillas_list_html(
     )
 
 
-def _plantillas_oob(html: str) -> str:
-    return f'<div id="plantillas-section" hx-swap-oob="outerHTML">{html}</div>'
-
-
-def _notice_oob(target: str, message: str, *, error: bool = False, dismiss: int = 3000) -> str:
-    kind = "notice-error" if error else "notice-success"
-    return (
-        f'<div id="{target}" hx-swap-oob="innerHTML">'
-        f'<div class="notice {kind}" data-dismiss="{dismiss}">{message}</div></div>'
-    )
-
-
-def _domain_error_response(error: Exception, target: str, *, extra: str = "") -> HTMLResponse:
+def _domain_error_response(
+    request: Request, error: Exception, target: str, *, extra: str = ""
+) -> HTMLResponse:
     message, status = translate_error(error)
     return HTMLResponse(
-        content=_notice_oob(target, message, error=True, dismiss=4500) + extra, status_code=status
+        content=notice_oob(
+            templates, request, target=target, message=message, kind="notice-error", dismiss=4500
+        )
+        + extra,
+        status_code=status,
     )
 
 
@@ -244,9 +246,11 @@ def entrenamiento_session_save(
     rir: list[str] = Form(default=[]),
 ):
     sets = sets_from_form(ejercicio, kg, reps, rir)
-    notice_success = _notice_oob("editor-notice", "Entrenamiento guardado.", dismiss=3000)
-    outcome_ok = '<div id="save-outcome" hx-swap-oob="outerHTML" data-ok="1" hidden></div>'
-    outcome_fail = '<div id="save-outcome" hx-swap-oob="outerHTML" data-ok="0" hidden></div>'
+    notice_success = notice_oob(
+        templates, request, target="editor-notice", message="Entrenamiento guardado."
+    )
+    outcome_ok = STATIC_MARKERS["outcome_ok"]
+    outcome_fail = STATIC_MARKERS["outcome_fail"]
     try:
         backup_db(DB_PATH)
         fecha_db = fecha_to_db(parse_form_date(fecha))
@@ -255,25 +259,21 @@ def entrenamiento_session_save(
         saved_rows = get_sets_by_fecha(DB_PATH, fecha_db)
         _undo_push_sesion(fecha, before_rows, saved_rows)
         if saved_rows:
-            state = (
-                '<div id="editor-state" hx-swap-oob="outerHTML" '
-                'data-readonly="1" data-has-data="1" hidden></div>'
+            return HTMLResponse(
+                content=notice_success + outcome_ok + editor_state_oob(templates, request)
             )
-            return HTMLResponse(content=notice_success + outcome_ok + state)
         editor = _editor_html(request, fecha)
         return HTMLResponse(
-            content=notice_success
-            + outcome_ok
-            + f'<div id="session-editor-wrap" hx-swap-oob="innerHTML">{editor}</div>'
+            content=notice_success + outcome_ok + editor_wrap_oob(templates, request, editor)
         )
     except Exception as e:
-        return _domain_error_response(e, "editor-notice", extra=outcome_fail)
+        return _domain_error_response(request, e, "editor-notice", extra=outcome_fail)
 
 
 @app.post("/entrenamiento/session/eliminar", response_class=HTMLResponse)
 def entrenamiento_session_eliminar(request: Request, fecha: str = Form(...)):
-    notice = _notice_oob("editor-notice", "Entreno eliminado.", dismiss=3000)
-    outcome_ok = '<div id="save-outcome" hx-swap-oob="outerHTML" data-ok="1" hidden></div>'
+    notice = notice_oob(templates, request, target="editor-notice", message="Entreno eliminado.")
+    outcome_ok = STATIC_MARKERS["outcome_ok"]
     try:
         backup_db(DB_PATH)
         fecha_db = fecha_to_db(parse_form_date(fecha))
@@ -283,11 +283,7 @@ def entrenamiento_session_eliminar(request: Request, fecha: str = Form(...)):
     except Exception:
         pass  # S110: best-effort backup y borrado, el editor se re-renderiza igual
     editor = _editor_html(request, fecha)
-    return HTMLResponse(
-        content=notice
-        + outcome_ok
-        + f'<div id="session-editor-wrap" hx-swap-oob="innerHTML">{editor}</div>'
-    )
+    return HTMLResponse(content=notice + outcome_ok + editor_wrap_oob(templates, request, editor))
 
 
 @app.post("/ejercicio/nuevo", response_class=HTMLResponse)
@@ -310,16 +306,23 @@ def ejercicio_nuevo(
         error = f"El ejercicio '{ejercicio}' ya existe en el catálogo."
     if error:
         return HTMLResponse(
-            content=_notice_oob("notice-container", error, error=True, dismiss=4500)
+            content=notice_oob(
+                templates,
+                request,
+                target="notice-container",
+                message=error,
+                kind="notice-error",
+                dismiss=4500,
+            )
         )
     insert_exercise(DB_PATH, ejercicio, grupo_muscular, categoria)
-    notice_success = _notice_oob(
-        "notice-container", f"Ejercicio '{ejercicio}' creado.", dismiss=3000
+    notice_success = notice_oob(
+        templates, request, target="notice-container", message=f"Ejercicio '{ejercicio}' creado."
     )
     form_html = _exercise_form_html(request)
     return HTMLResponse(
         content=notice_success
-        + f'<div id="exercise-create" hx-swap-oob="outerHTML">{form_html}</div>'
+        + fragment_oob(templates, request, "exercise-create", form_html, swap="outerHTML")
     )
 
 
@@ -339,11 +342,17 @@ def plantilla_guardar(
         result = save_template(DB_PATH, TemplateInput(nombre=nombre, ejercicios=ejercicio))
         _undo_push_entrenos(before, snapshot_entrenos(DB_PATH))
     except Exception as e:
-        return _domain_error_response(e, "notice-container")
+        return _domain_error_response(request, e, "notice-container")
     msg = "Entreno actualizado." if result.updated else "Entreno guardado."
     return HTMLResponse(
-        content=_notice_oob("notice-container", msg, dismiss=3000)
-        + _plantillas_oob(_plantillas_list_html(request))
+        content=notice_oob(templates, request, target="notice-container", message=msg)
+        + fragment_oob(
+            templates,
+            request,
+            "plantillas-section",
+            _plantillas_list_html(request),
+            swap="outerHTML",
+        )
     )
 
 
@@ -359,11 +368,22 @@ def plantilla_editar(
         edit_template(DB_PATH, plantilla_id, TemplateInput(nombre=nombre, ejercicios=ejercicio))
         _undo_push_entrenos(before, snapshot_entrenos(DB_PATH))
     except Exception as e:
-        html = _plantillas_list_html(request, editing_id=plantilla_id, error=str(e))
-        return HTMLResponse(content=_plantillas_oob(html))
+        message, _ = translate_error(e)
+        html = _plantillas_list_html(request, editing_id=plantilla_id, error=message)
+        return HTMLResponse(
+            content=fragment_oob(templates, request, "plantillas-section", html, swap="outerHTML")
+        )
     return HTMLResponse(
-        content=_notice_oob("notice-container", "Entreno guardado.", dismiss=3000)
-        + _plantillas_oob(_plantillas_list_html(request))
+        content=notice_oob(
+            templates, request, target="notice-container", message="Entreno guardado."
+        )
+        + fragment_oob(
+            templates,
+            request,
+            "plantillas-section",
+            _plantillas_list_html(request),
+            swap="outerHTML",
+        )
     )
 
 
@@ -373,8 +393,16 @@ def plantilla_eliminar(request: Request, plantilla_id: int):
     delete_plantilla(DB_PATH, plantilla_id)
     _undo_push_entrenos(before, snapshot_entrenos(DB_PATH))
     return HTMLResponse(
-        content=_notice_oob("notice-container", "Entreno eliminado.", dismiss=3000)
-        + _plantillas_oob(_plantillas_list_html(request))
+        content=notice_oob(
+            templates, request, target="notice-container", message="Entreno eliminado."
+        )
+        + fragment_oob(
+            templates,
+            request,
+            "plantillas-section",
+            _plantillas_list_html(request),
+            swap="outerHTML",
+        )
     )
 
 
@@ -391,19 +419,28 @@ def plantilla_aplicar(request: Request, plantilla_id: int, fecha: str = Query(..
     try:
         rows = apply_template_rows(DB_PATH, plantilla_id)
     except Exception as e:
-        return _domain_error_response(e, "editor-notice")
+        return _domain_error_response(request, e, "editor-notice")
     editor = _editor_html(request, fecha, rows=rows, force_editable=True)
-    notice = _notice_oob("editor-notice", "Entreno aplicado.", dismiss=3000)
+    notice = notice_oob(templates, request, target="editor-notice", message="Entreno aplicado.")
     return HTMLResponse(
         content=notice
-        + f'<div id="session-editor-wrap" hx-swap-oob="innerHTML">{editor}<div id="plantilla-applied" hidden></div></div>'
+        + editor_wrap_oob(templates, request, editor + STATIC_MARKERS["plantilla_applied"])
     )
 
 
 @app.post("/undo", response_class=HTMLResponse)
 def undo(request: Request, fecha: str = Form("")):
-    notice_ok = _notice_oob("notice-container", "Acción deshecha.", dismiss=2500)
-    notice_empty = _notice_oob("notice-container", "Nada que deshacer.", error=True, dismiss=2500)
+    notice_ok = notice_oob(
+        templates, request, target="notice-container", message="Acción deshecha.", dismiss=2500
+    )
+    notice_empty = notice_oob(
+        templates,
+        request,
+        target="notice-container",
+        message="Nada que deshacer.",
+        kind="notice-error",
+        dismiss=2500,
+    )
     if not UNDO_STACK:
         return HTMLResponse(content=notice_empty)
     entry = UNDO_STACK.pop()
@@ -426,17 +463,26 @@ def undo(request: Request, fecha: str = Form("")):
             f'data-fecha="{fecha_iso}" data-has-data="{has_data}" hidden></div>'
         )
         if fecha == fecha_iso:
-            outcome_ok = '<div id="save-outcome" hx-swap-oob="outerHTML" data-ok="1" hidden></div>'
+            outcome_ok = STATIC_MARKERS["outcome_ok"]
             editor = _editor_html(request, fecha_iso)
             return HTMLResponse(
                 content=notice_ok
                 + outcome_ok
                 + marker
-                + f'<div id="session-editor-wrap" hx-swap-oob="innerHTML">{editor}</div>'
+                + editor_wrap_oob(templates, request, editor)
             )
         return HTMLResponse(content=notice_ok + marker)
     restore_entrenos(DB_PATH, entry["before"])
-    return HTMLResponse(content=notice_ok + _plantillas_oob(_plantillas_list_html(request)))
+    return HTMLResponse(
+        content=notice_ok
+        + fragment_oob(
+            templates,
+            request,
+            "plantillas-section",
+            _plantillas_list_html(request),
+            swap="outerHTML",
+        )
+    )
 
 
 @app.get("/exportar/csv", response_class=Response)
@@ -468,7 +514,7 @@ def select_view(request: Request, grupo: str = Query(None)):
                 },
             )
         )
-        oob_chart = f'<div id="unified-chart" hx-swap-oob="innerHTML">{chart_html_frag}</div>'
+        oob_chart = chart_oob_wrapper(chart_html_frag)
         return HTMLResponse(content=exercise_list_html + oob_chart)
 
     ejercicios_grupo = get_ejercicios_por_grupo(DB_PATH, grupo)
@@ -483,14 +529,14 @@ def select_view(request: Request, grupo: str = Query(None)):
             },
         )
     )
-    oob_chart = f'<div id="unified-chart" hx-swap-oob="innerHTML">{chart_html_frag}</div>'
+    oob_chart = chart_oob_wrapper(chart_html_frag)
     return HTMLResponse(content=exercise_list_html + oob_chart)
 
 
 @app.get("/grupo/reset", response_class=HTMLResponse)
 def reset_grupo(request: Request, grupo: str = Query(...)):
     chart_html_frag = chart_html(DB_PATH, "muscle_group", grupo, f"Rendimiento – {grupo}")
-    oob_chart = f'<div id="unified-chart" hx-swap-oob="innerHTML">{chart_html_frag}</div>'
+    oob_chart = chart_oob_wrapper(chart_html_frag)
     return HTMLResponse(content="<div></div>" + oob_chart)
 
 
@@ -514,5 +560,5 @@ def get_exercise_history(request: Request, ejercicio: str = Query(...)):
             },
         )
     )
-    oob_chart = f'<div id="unified-chart" hx-swap-oob="innerHTML">{chart_html_frag}</div>'
+    oob_chart = chart_oob_wrapper(chart_html_frag)
     return HTMLResponse(content=tables_html + oob_chart)

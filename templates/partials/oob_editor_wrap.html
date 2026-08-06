@@ -1,0 +1,4 @@
+{# editor_html is a server-rendered Jinja fragment (autoescaped inside); marking
+   it safe here does not bypass escaping of any user value. Never pass request
+   data through this partial. #}
+<div id="session-editor-wrap" hx-swap-oob="innerHTML">{{ editor_html | safe }}</div>

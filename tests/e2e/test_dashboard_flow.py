@@ -215,7 +215,9 @@ def test_hostile_template_name_does_not_execute(page, server):
     _create_template(page, server, _iso(8), PAYLOAD)
     expect(page.locator("#plantillas-section .pt-card")).to_have_count(1)
 
-    page.locator("#plantillas-section .pt-card").first.get_by_role("button", name="Eliminar").click()
+    page.locator("#plantillas-section .pt-card").first.get_by_role(
+        "button", name="Eliminar"
+    ).click()
     page.wait_for_timeout(800)
 
     assert len(dialogs) == 1, f"esperado solo el confirm del dashboard, visto: {dialogs}"

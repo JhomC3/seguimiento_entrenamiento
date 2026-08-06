@@ -2,6 +2,7 @@ import re
 from html.parser import HTMLParser
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 import app as appmod
@@ -184,9 +185,11 @@ def _assert_inert_fragment(text: str):
     assert "alert(1)//" in text, "payload must be visible as escaped text"
     parser = _InertChecker()
     parser.feed(text)
-    assert not any(name in HANDLER_ATTRS for name in parser.attributes), "no event-handler attributes allowed"
+    assert not any(name in HANDLER_ATTRS for name in parser.attributes), (
+        "no event-handler attributes allowed"
+    )
     assert "img" not in parser.elements, "payload must not create an <img> element"
-    for m in re.finditer(r"<script([^>]*)>(.*?)</script>", text, re.S):
+    for m in re.finditer(r"<script([^>]*)>(.*?)</script>", text, re.DOTALL):
         if 'type="application/json"' in m.group(1):
             continue  # data block, never executed
         assert "alert(" not in m.group(2), "payload must not live inside a script element"
@@ -219,7 +222,13 @@ def test_hostile_exercise_in_lists_renders_inert(authed_client):
     )
     r = authed_client.post(
         "/entrenamiento/session/save",
-        data={"fecha": "2099-01-01", "ejercicio": [PAYLOAD], "kg": ["80"], "reps": ["8"], "rir": ["1"]},
+        data={
+            "fecha": "2099-01-01",
+            "ejercicio": [PAYLOAD],
+            "kg": ["80"],
+            "reps": ["8"],
+            "rir": ["1"],
+        },
     )
     assert r.status_code == 200
     r = authed_client.get("/select")
@@ -228,3 +237,64 @@ def test_hostile_exercise_in_lists_renders_inert(authed_client):
     r = authed_client.get("/")
     assert r.status_code == 200
     _assert_inert_fragment(r.text)
+
+
+def _minimal_request() -> Request:
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "raw_path": b"/",
+            "query_string": b"",
+            "headers": [],
+            "server": ("testserver", 80),
+            "scheme": "http",
+            "client": ("127.0.0.1", 1234),
+        }
+    )
+
+
+def test_oob_notice_renders_hostile_message_escaped():
+    from app import templates
+    from src.response_fragments import notice_oob
+
+    frag = notice_oob(templates, _minimal_request(), target="editor-notice", message=PAYLOAD)
+    assert 'id="editor-notice" hx-swap-oob="innerHTML"' in frag
+    assert "<img" not in frag
+    assert "&lt;img" in frag
+    parser = _InertChecker()
+    parser.feed(frag)
+    assert parser.elements == ["div", "div"]
+    assert not any(name in HANDLER_ATTRS for name in parser.attributes)
+    assert PAYLOAD in "".join(parser.text_nodes)
+
+
+def test_oob_notice_rejects_unknown_target():
+    from app import templates
+    from src.response_fragments import notice_oob
+
+    with pytest.raises(ValueError):
+        notice_oob(
+            templates, _minimal_request(), target="<img src=x onerror=alert(1)>", message="x"
+        )
+    with pytest.raises(ValueError):
+        notice_oob(templates, _minimal_request(), target="unified-chart", message="x")
+
+
+def test_app_source_does_not_interpolate_user_fields_into_html():
+    """Regression tripwire: user fields must not appear inside f-string HTML in app.py."""
+    from pathlib import Path
+
+    source = (Path(__file__).parents[1] / "app.py").read_text()
+    user_fields = ("ejercicio", "nombre", "error", "message", "msg")
+    for line in source.splitlines():
+        html_like = "<" in line or ">" in line
+        if (
+            ("f'" in line or 'f"' in line)
+            and any(f"{{{f}}}" in line for f in user_fields)
+            and html_like
+        ):
+            raise AssertionError(
+                f"app.py interpola campo de usuario en f-string HTML: {line.strip()}"
+            )
