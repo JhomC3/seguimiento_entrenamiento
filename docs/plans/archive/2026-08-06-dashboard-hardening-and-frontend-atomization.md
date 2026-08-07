@@ -1,5 +1,8 @@
 # Dashboard Hardening and Frontend Atomization Implementation Plan
 
+> **Status:** ✅ COMPLETED (movido a `docs/plans/archive/` el 2026-08-07)
+
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Convert the monolithic client layout into maintainable, tested assets while strengthening persistence, architecture, security, dependency management, and automated quality gates without changing the dashboard's user-visible behaviour.

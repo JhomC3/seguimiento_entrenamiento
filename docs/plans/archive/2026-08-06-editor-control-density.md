@@ -1,5 +1,8 @@
 # Densidad y visibilidad de controles del editor — Plan de implementación
 
+> **Status:** ✅ COMPLETED (movido a `docs/plans/archive/` el 2026-08-07)
+
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Eliminar el recorte de los controles del encabezado y recuperar el ancho desperdiciado al extremo derecho de la tabla de sesión, sin alterar el flujo de edición, guardado, arrastre ni el scroll vertical interno.

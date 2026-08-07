@@ -1,5 +1,8 @@
 # Security and Architecture Remediation Implementation Plan
 
+> **Status:** ✅ COMPLETED (movido a `docs/plans/archive/` el 2026-08-07)
+
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Eliminate the confirmed XSS vectors, make mutation failures truthful and safe, complete the client event-boundary refactor, and reduce remaining route orchestration without changing dashboard behaviour.

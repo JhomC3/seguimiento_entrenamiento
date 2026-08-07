@@ -46,6 +46,17 @@ export function initLifecycle() {
         if (cbs && cbs.onSave) cbs.onSave();
     });
 
+    // htmx descarta el cuerpo de las respuestas 4xx por defecto, lo que impedía
+    // que los avisos de error de dominio (validación, CSRF) llegaran al DOM vía OOB.
+    // Se permite el swap solo en 4xx (respuestas propias); los 500 internos se
+    // mantienen sin renderizar (log de servidor).
+    document.body.addEventListener('htmx:beforeSwap', function (e) {
+        const xhr = e.detail && e.detail.xhr;
+        if (xhr && xhr.status >= 400 && xhr.status < 500) {
+            e.detail.shouldSwap = true;
+        }
+    });
+
     document.body.addEventListener('htmx:afterSwap', function (e) {
         scheduleNotices();
         handleEditorState();

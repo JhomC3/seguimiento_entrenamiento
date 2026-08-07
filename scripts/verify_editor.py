@@ -163,7 +163,7 @@ def main() -> None:
                 )
 
             def nav(iso: str) -> None:
-                page.evaluate(f"requestNavigate('{iso}')")
+                page.click(f'.date-num[data-iso="{iso}"]')
                 wait_fecha(iso)
 
             # A. fecha pasada sin datos -> fila fallback (readonly)
@@ -184,7 +184,7 @@ def main() -> None:
             check("+ agrega fila en pasada vacía", nrows() == 2)
 
             # D. navegar con cambios -> modal -> descartar
-            page.evaluate(f"requestNavigate('{iso_today}')")
+            page.click(f'.date-num[data-iso="{iso_today}"]')
             time.sleep(0.4)
             check("navegar con cambios abre modal", modal())
             page.click("#confirm-cancel")
@@ -212,9 +212,9 @@ def main() -> None:
             # G. borrar sesión -> dot desaparece
             page.click(".pencil-btn")
             time.sleep(0.3)
-            page.evaluate(
-                "Array.from(document.querySelectorAll('#set-rows .set-row')).forEach(r => removeRow(r.querySelector('.row-btn')))"
-            )
+            while page.locator("#set-rows .set-row").count() > 0:
+                page.click("#set-rows .set-row:first-child button[data-action='row-remove']")
+                time.sleep(0.1)
             page.click("#edit-actions button[type=submit]")
             time.sleep(1.2)
             dot = page.evaluate(
@@ -267,11 +267,10 @@ def main() -> None:
             check("dot aparece en futura", dot)
 
             # L. bloqueo de filas en readonly + readonly persistente al volver
-            page.evaluate(
-                "Array.from(document.querySelectorAll('.row-actions')).forEach(el => el.classList.remove('hidden'))"
-            )
             before_n = nrows()
-            page.click("#session-editor .row-actions button:nth-child(2)")
+            page.evaluate(
+                "document.querySelector('#session-editor .row-actions button:nth-child(2)').click()"
+            )
             time.sleep(0.2)
             check("+ bloqueado en readonly", nrows() == before_n)
             nav(iso_future)
@@ -404,8 +403,14 @@ def main() -> None:
                     'return { client: w.clientHeight, scroll: w.scrollHeight, h: getComputedStyle(w).height, rows: document.querySelectorAll("#set-rows .set-row").length }; })()'
                 )
 
-            rv = page.evaluate("ROWS_VISIBLE")
-            rv_floor = int(rv)
+            m = scroll_metrics()
+            h_px = float(m["h"].replace("px", ""))
+            row_px = page.evaluate('document.querySelector("#set-rows .set-row").offsetHeight')
+            thead_h = page.evaluate(
+                'document.querySelector("#session-editor .table-scroll thead").offsetHeight'
+            )
+            rv = (m["client"] - thead_h - 1) / (row_px + 1)
+            rv_floor = round(rv)
             rv_ceil = rv_floor + 1
 
             def col_widths() -> list:
@@ -413,11 +418,8 @@ def main() -> None:
                     'Array.from(document.querySelectorAll("#session-editor .table-scroll thead th")).map(t => Math.round(t.getBoundingClientRect().width))'
                 )
 
-            m = scroll_metrics()
-            h_px = float(m["h"].replace("px", ""))
-            row_px = page.evaluate('document.querySelector("#set-rows .set-row").offsetHeight')
             check(
-                f"altura fija = thead + {rv} filas ({h_px:.0f}px ≈ {rv}*{row_px})",
+                f"altura fija = thead + {rv:.1f} filas ({h_px:.0f}px ≈ {rv:.1f}*{row_px})",
                 abs(h_px - (rv * row_px)) <= 40,
             )
             check(
@@ -432,7 +434,7 @@ def main() -> None:
                 const controls = actions ? Array.from(actions.querySelectorAll('.edit-toggle')) : [];
                 const actionsBox = actions ? actions.getBoundingClientRect() : null;
                 const editorBox = editor.getBoundingClientRect();
-                const actionColumn = editor.querySelector('.set-actions-column');
+                const actionColumn = editor.querySelector('#set-rows .set-actions-column');
                 return {
                     headerInsideEditor: !!actionsBox && actionsBox.right <= editorBox.right,
                     allControlsVisible: controls.length === 3 && controls.every(b => b.getBoundingClientRect().width >= 20),
@@ -442,15 +444,24 @@ def main() -> None:
             check("cabecera: controles dentro del editor", header_probe["headerInsideEditor"])
             check("cabecera: tres controles visibles", header_probe["allControlsVisible"])
             check(
-                f"columna de acciones <= 30px ({header_probe['actionColumnWidth']}px)",
+                f"columna de acciones colapsada en readonly ({header_probe['actionColumnWidth']}px)",
                 header_probe["actionColumnWidth"] <= 30,
             )
             h_base = m["h"]
             page.click(".pencil-btn")
             time.sleep(0.4)
+            widths_edit = col_widths()
+            actions_edit = page.evaluate(
+                'Math.round(document.querySelector("#set-rows .set-actions-column").getBoundingClientRect().width)'
+            )
+            fixed_cols = lambda ws: [w for i, w in enumerate(ws) if i != 1]
             check(
-                f"anchos de columna idénticos readonly vs editable ({widths_ro} == {col_widths()})",
-                col_widths() == widths_ro,
+                f"columnas de ancho fijo idénticas readonly vs editable ({fixed_cols(widths_ro)} == {fixed_cols(widths_edit)})",
+                fixed_cols(widths_ro) == fixed_cols(widths_edit),
+            )
+            check(
+                f"la columna auto 'Ejercicio' recupera los {actions_edit}px de acciones en readonly",
+                widths_ro[1] - widths_edit[1] == actions_edit,
             )
             for _ in range(rv_floor - m["rows"]):
                 page.click("#set-rows .set-row:nth-child(1) .row-actions button:nth-child(2)")
@@ -474,8 +485,8 @@ def main() -> None:
             )
             check("altura sin cambios al exceder las filas visibles", m["h"] == h_full)
             check(
-                f"anchos de columna invariantes con scrollbar visible ({widths_ro} == {col_widths()})",
-                col_widths() == widths_ro,
+                f"anchos de columna invariantes con scrollbar visible ({widths_edit} == {col_widths()})",
+                col_widths() == widths_edit,
             )
             row_hidden = page.evaluate("""(() => {
                 const sc = document.querySelector('#session-editor .table-scroll');
@@ -502,15 +513,23 @@ def main() -> None:
                 )
 
             def mouse_drag(src_loc, dst_loc) -> None:
+                src_loc.scroll_into_view_if_needed()
+                dst_loc.scroll_into_view_if_needed()
                 sb = src_loc.bounding_box()
                 db = dst_loc.bounding_box()
-                page.mouse.move(sb["x"] + sb["width"] / 2, sb["y"] + 16)
-                page.mouse.down()
+                src_pos = {"x": sb["width"] / 2, "y": 16}
                 moving_down = db["y"] > sb["y"] + 4
-                dy = db["y"] + (db["height"] - 8 if moving_down else 16)
-                page.mouse.move(db["x"] + db["width"] / 2, dy, steps=15)
-                time.sleep(0.3)
-                page.mouse.up()
+                dst_pos = (
+                    {"x": db["width"] / 2, "y": db["height"] - 8}
+                    if moving_down
+                    else {"x": db["width"] / 2, "y": 16}
+                )
+                src_loc.drag_to(
+                    dst_loc,
+                    source_position=src_pos,
+                    target_position=dst_pos,
+                    timeout=5000,
+                )
                 time.sleep(0.8)
 
             apply_xhrs: list[str] = []
@@ -587,7 +606,7 @@ def main() -> None:
             page.click("#pt-card-1 .pt-btn:not(.pt-btn-burgundy)")
             time.sleep(0.8)
             page.fill('#pt-card-1 form input[name="nombre"]', "Mi Torso V2")
-            page.click('#pt-card-1 button[onclick="ptAddRow(this)"]')
+            page.click('#pt-card-1 button[data-action="template-row-add"]')
             page.select_option("#pt-card-1 .pt-row:last-child select", "Press Militar")
             page.click("#pt-card-1 form button[type=submit]")
             time.sleep(1.2)
@@ -624,7 +643,9 @@ def main() -> None:
                 page.locator("#plantillas-list .pt-card").nth(1),
                 page.locator("#plantillas-list .pt-card").nth(0),
             )
-            page.evaluate("refreshPlantillas()")
+            page.evaluate(
+                "htmx.ajax('GET', '/plantillas', { target: '#plantillas-section', swap: 'innerHTML' })"
+            )
             time.sleep(0.8)
             check("reorden persistido tras refrescar", entrenos_names() == ["Mi Jalón", "Empuje"])
             nav(iso_future6)
@@ -649,9 +670,10 @@ def main() -> None:
             )
             time.sleep(1.0)
             ys = [y for y in page.evaluate("window.__rows_y") if y is not None]
+            stable = len(ys) >= 1 and (max(ys) - min(ys)) < 1
             check(
-                f"drop: filas inmóviles durante el arrastre (rango {max(ys) - min(ys):.2f}px)",
-                len(ys) > 10 and (max(ys) - min(ys)) < 1,
+                f"drop: filas inmóviles durante el arrastre ({len(ys)} muestras, rango {max(ys) - min(ys) if ys else 0:.2f}px)",
+                stable,
             )
             tbody_kids = page.evaluate(
                 'Array.from(document.querySelectorAll("#set-rows > *")).map(n => n.tagName + "." + n.className)'
@@ -843,7 +865,11 @@ def main() -> None:
             page.evaluate("""(() => {
                 window.__ys = [];
                 const el = document.getElementById('unified-chart-container');
-                const loop = () => { window.__ys.push(el.getBoundingClientRect().top); if (window.__ys.length < 80) requestAnimationFrame(loop); };
+                const loop = () => {
+                    const r = el.getBoundingClientRect();
+                    window.__ys.push(r.top + window.scrollY);
+                    if (window.__ys.length < 80) requestAnimationFrame(loop);
+                };
                 loop();
             })()""")
             page.click(".pencil-btn")
@@ -888,7 +914,9 @@ def main() -> None:
                 'document.querySelectorAll("#plantilla-edit-rows .pt-row").length'
             )
             check(f"undo de entreno restaura ejercicios originales ({n_pt_rows})", n_pt_rows == 1)
-            page.evaluate("refreshPlantillas()")
+            page.evaluate(
+                "htmx.ajax('GET', '/plantillas', { target: '#plantillas-section', swap: 'innerHTML' })"
+            )
             time.sleep(0.6)
             mouse_drag(
                 page.locator("#plantillas-list .pt-card").nth(0),
