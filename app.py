@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from config import CICLO_NUMERO, CICLO_START, DB_PATH, MUSCLE_CATEGORIES
+from config import CICLO_START, DB_PATH, MUSCLE_CATEGORIES
 from src.charts import get_exercise_raw_data, get_exercise_session_summary
 from src.dashboard_service import (
     build_date_navigator,
@@ -85,7 +85,7 @@ def _muscle_names() -> list[str]:
 
 
 def _chart_title(filtro: str | None = None) -> str:
-    base = f"Rendimiento – Ciclo {CICLO_NUMERO}"
+    base = "Rendimiento"
     return f"{base} – {filtro}" if filtro else base
 
 

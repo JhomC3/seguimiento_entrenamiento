@@ -3,11 +3,13 @@
 Pure orchestration: no HTTP, no template rendering. Handlers stay thin.
 """
 
+import html
 import logging
 import re
 import sqlite3
 from datetime import date, datetime, timedelta
 
+from config import CICLO_NUMERO
 from src.charts import chart_pfr_timeline
 from src.db_connection import read_connection
 from src.models import ConflictError, NotFoundError, ValidationError
@@ -83,25 +85,34 @@ def chart_html(
     *,
     nonce: str | None = None,
 ) -> str:
-    """Plotly chart fragment.
+    """Plotly chart fragment with the panel header (same style as the editor).
 
-    Trusted fragment: plotly JSON-encodes all figure data and escapes `</`
-    sequences in its payload (verified by regression test); the inline script is
-    allowed by CSP only via the per-response nonce. Never pass request-derived
-    strings through this function without going through the figure data.
+    The header mirrors `session_editor.html`: a burgundy h3 title plus a small
+    gray "Ciclo N" label. The h3 text is HTML-escaped (it may embed exercise or
+    group names); the Plotly body is JSON-encoded by plotly itself. Never pass
+    request-derived strings through this function without escaping.
     """
-    fig = chart_pfr_timeline(db_path, filter_type, filter_value, title)
+    header = (
+        '<div class="flex items-baseline gap-2 min-w-0 pl-3 mb-3">'
+        f'<h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title truncate">{html.escape(title)}</h3>'
+        f'<span class="text-[11px] text-neutral-500 flex-none">Ciclo {CICLO_NUMERO}</span>'
+        "</div>"
+    )
+    fig = chart_pfr_timeline(db_path, filter_type, filter_value, "")
     if fig.data:
-        html = fig.to_html(
+        plotly_html = fig.to_html(
             include_plotlyjs=False, full_html=False, config={"displayModeBar": False}
         )
-        body = re.search(r"<script[^>]*>(.*?)</script>", html, re.DOTALL)
+        body = re.search(r"<script[^>]*>(.*?)</script>", plotly_html, re.DOTALL)
         if body and "</script>" in body.group(1):
             raise RuntimeError("Fragmento Plotly contiene </script> sin escapar")
         if nonce:
-            html = html.replace("<script", f'<script nonce="{nonce}"', 1)
-        return html
-    return "<div class='flex items-center justify-center h-[300px] text-neutral-500 text-xs'>Sin datos</div>"
+            plotly_html = plotly_html.replace("<script", f'<script nonce="{nonce}"', 1)
+        return header + plotly_html
+    return (
+        header
+        + "<div class='flex items-center justify-center h-[300px] text-neutral-500 text-xs'>Sin datos</div>"
+    )
 
 
 def _end_of_next_month(d: date) -> date:

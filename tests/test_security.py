@@ -384,6 +384,9 @@ def test_chart_fragment_never_contains_raw_script_terminator():
         insert_exercise(db, hostile, "Pectoral", "EMPUJE")
         save_session(db, "2026-02-10", [TrainingSetInput(ejercicio=hostile, kg=80, reps=8, rir=1)])
         html = chart_html(db, "exercise", hostile, f"Rendimiento – {hostile}", nonce="test-nonce")
+        assert 'class="text-[11px] text-neutral-500 flex-none">Ciclo 1<' in html
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html  # título escapado en el h3
+        assert "<script>alert(1)</script>" not in html  # nunca crudo en el documento
         assert '<script nonce="test-nonce"' in html
         body = html.split("<script")[1].split("</script>")[0]
         assert "</script>" not in body
