@@ -5,11 +5,12 @@
 // are bound once on stable roots.
 
 import { initDashboardFilters } from './dashboard-filters.js';
+import { initChartInteractions } from './chart-interaction.js';
 import { initDateNavigation } from './date-navigation.js';
 import { fitRowsToPanel, initEditorActions, initEditorRowSortable, syncEditorFromContent } from './editor.js';
 import { initLifecycle } from './htmx-lifecycle.js';
 import { scheduleNotices } from './notices.js';
-import { getCsrfToken, setCategoriaMap, setCsrfToken } from './state.js';
+import { getCspNonce, getCsrfToken, setCategoriaMap, setCspNonce, setCsrfToken } from './state.js';
 import { initEntrenoDnD, initTemplateActions, initTemplateSortable } from './templates.js';
 
 function loadConfig() {
@@ -19,6 +20,7 @@ function loadConfig() {
         const config = JSON.parse(el.textContent);
         setCategoriaMap(config.categoria_map || {});
         setCsrfToken(config.csrf_token || "");
+        setCspNonce(config.csp_nonce || "");
     } catch (err) {
         console.error('app-config no válido', err);
     }
@@ -27,12 +29,15 @@ function loadConfig() {
 document.body.addEventListener('htmx:configRequest', function (e) {
     const token = getCsrfToken();
     if (token) e.detail.headers['X-CSRF-Token'] = token;
+    const nonce = getCspNonce();
+    if (nonce) e.detail.headers['X-CSP-Nonce'] = nonce;
 });
 
 document.addEventListener('DOMContentLoaded', function () {
     loadConfig();
     initLifecycle();
     initDashboardFilters();
+    initChartInteractions();
     initDateNavigation();
     initEditorActions();
     initTemplateActions();

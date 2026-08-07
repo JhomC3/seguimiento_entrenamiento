@@ -75,6 +75,10 @@ function resetToGlobal() {
     htmx.ajax('GET', '/select', '#exercise-section');
 }
 
+export function getActiveFilter() {
+    return { grupo: currentCategory, ejercicio: currentExercise };
+}
+
 export function initDashboardFilters() {
     document.addEventListener('click', function (e) {
         const el = e.target.closest('[data-action]');

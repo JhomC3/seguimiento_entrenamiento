@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import time
 
@@ -48,7 +49,15 @@ class SecurityHeadersMiddleware:
     Generates a per-request nonce, exposes it as ``request.state.csp_nonce``
     (used by chart fragments) and pins it in the CSP header of the same
     response.
+
+    htmx-injected fragments execute scripts in the context of the original
+    document, whose CSP nonce was fixed at page load. To keep those scripts
+    allowed, the page sends its nonce back on every htmx request via
+    ``X-CSP-Nonce``; when present and well-formed, that nonce rules this
+    response too (CSP header + fragment scripts).
     """
+
+    _NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 
     def __init__(self, app):
         self.app = app
@@ -59,6 +68,12 @@ class SecurityHeadersMiddleware:
             return
 
         nonce = secrets.token_urlsafe(16)
+        for name, value in scope.get("headers", []):
+            if name.lower() == b"x-csp-nonce":
+                page_nonce = value.decode("ascii", "ignore").strip()
+                if self._NONCE_RE.fullmatch(page_nonce):
+                    nonce = page_nonce
+                break
         scope.setdefault("state", {})["csp_nonce"] = nonce
         csp = build_csp(nonce)
 

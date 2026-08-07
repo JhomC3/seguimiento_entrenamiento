@@ -64,6 +64,13 @@ def _nonce_of(csp: str) -> str:
     return m.group(1)
 
 
+_NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+
+
+def _re_nonce_fullmatch(value: str) -> bool:
+    return bool(_NONCE_RE.fullmatch(value))
+
+
 def test_csp_has_no_unsafe_inline_in_script_src(client):
     script_src = _script_src(_csp_of(client.get("/")))
     assert "'unsafe-inline'" not in script_src
@@ -114,6 +121,25 @@ def test_chart_fragment_carries_response_nonce(authed_client):
     csp_nonce = _nonce_of(_csp_of(r))
     assert f'<script nonce="{csp_nonce}"' in r.text
     assert "'unsafe-inline'" not in _script_src(_csp_of(r))
+
+
+def test_middleware_honors_page_nonce_header(client):
+    """El nonce de la página (X-CSP-Nonce) debe regir los fragmentos OOB de htmx:
+    los scripts inyectados se validan contra el CSP del documento, no de la respuesta."""
+    from src.models import TrainingSetInput
+    from src.training_service import save_session
+
+    save_session(appmod.DB_PATH, "2026-05-04", [TrainingSetInput("Press", 80, 8, 1)])
+    r = client.get("/select", headers={"X-CSP-Nonce": "page-nonce-abc1234567890"})
+    assert _nonce_of(_csp_of(r)) == "page-nonce-abc1234567890"
+    assert '<script nonce="page-nonce-abc1234567890"' in r.text
+
+
+def test_middleware_rejects_malformed_nonce_header(client):
+    r = client.get("/select", headers={"X-CSP-Nonce": "<script>alert(1)</script>"})
+    csp_nonce = _nonce_of(_csp_of(r))
+    assert csp_nonce != "<script>alert(1)</script>"
+    assert _re_nonce_fullmatch(csp_nonce)
 
 
 def test_static_assets_have_headers(client):

@@ -764,3 +764,23 @@ def test_undo_failure_returns_500_and_keeps_stack(tmp_path, monkeypatch):
 
 def _db_locked(*args, **kwargs):
     raise sqlite3.OperationalError("database locked")
+
+
+def test_semana_primer_entreno_global(tmp_path, monkeypatch):
+    from src.models import TrainingSetInput
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    save_session(db, "2026-08-03", [TrainingSetInput("Press", 90, 6, 1)])
+    save_session(db, "2026-08-06", [TrainingSetInput("Press", 92, 6, 1)])
+    save_session(db, "2026-07-29", [TrainingSetInput("Press", 88, 6, 1)])
+    r = _client().get("/semana/primer-entreno?semana=14")
+    assert r.status_code == 200
+    assert r.json() == {"fecha": "2026-08-03"}
+
+
+def test_semana_primer_entreno_sin_datos(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/semana/primer-entreno?semana=99")
+    assert r.json() == {"fecha": None}

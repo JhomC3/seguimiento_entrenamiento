@@ -3,7 +3,7 @@ from datetime import date
 
 import pandas as pd
 from fastapi import FastAPI, Form, Query, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -15,6 +15,7 @@ from src.dashboard_service import (
     chart_html,
     get_ejercicios_por_grupo,
     get_filters,
+    get_first_session_date,
     translate_error,
 )
 from src.database import (
@@ -221,6 +222,7 @@ def read_index(request: Request):
             "app_config_json": {
                 "categoria_map": get_ejercicio_categoria(DB_PATH),
                 "csrf_token": make_csrf_token(get_csrf_secret()),
+                "csp_nonce": getattr(request.state, "csp_nonce", ""),
             },
         },
     )
@@ -462,6 +464,16 @@ def undo(request: Request, fecha: str = Form("")):
             swap="outerHTML",
         )
     )
+
+
+@app.get("/semana/primer-entreno", response_class=JSONResponse)
+def semana_primer_entreno(
+    semana: int = Query(...),
+    grupo: str | None = Query(None),
+    ejercicio: str | None = Query(None),
+):
+    fecha = get_first_session_date(DB_PATH, semana, grupo, ejercicio)
+    return JSONResponse({"fecha": fecha})
 
 
 @app.get("/exportar/csv", response_class=Response)

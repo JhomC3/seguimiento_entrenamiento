@@ -77,6 +77,38 @@ def fechas_con_datos(db_path: str) -> set[str]:
     return out
 
 
+def get_first_session_date(
+    db_path: str,
+    semana: int,
+    grupo: str | None = None,
+    ejercicio: str | None = None,
+) -> str | None:
+    """ISO de la primera sesión de una semana del ciclo, opcionalmente filtrada."""
+    with read_connection(db_path) as conn:
+        sql = (
+            "SELECT t.fecha FROM training_sets t "
+            "JOIN ejercicios e ON LOWER(t.ejercicio) = LOWER(e.ejercicio) "
+            "WHERE t.semana = ?"
+        )
+        params: list = [semana]
+        if grupo:
+            sql += " AND LOWER(e.grupo_muscular) = LOWER(?)"
+            params.append(grupo)
+        if ejercicio:
+            sql += " AND LOWER(t.ejercicio) = LOWER(?)"
+            params.append(ejercicio)
+        fechas = [r[0] for r in conn.execute(sql, params).fetchall()]
+    best = None
+    for f in fechas:
+        try:
+            d = datetime.strptime(f, "%d/%m/%y").date()
+        except (TypeError, ValueError):
+            continue
+        if best is None or d < best:
+            best = d
+    return best.strftime("%Y-%m-%d") if best else None
+
+
 def chart_html(
     db_path: str,
     filter_type: str,
