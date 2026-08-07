@@ -103,7 +103,7 @@ def test_migrations_recorded_in_schema_migrations(tmp_path):
         r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()
     )
     conn.close()
-    assert versions == [1, 2, 3]
+    assert versions == [1, 2, 3, 5]
 
 
 def test_migrates_intermediate_state_without_orden(tmp_path):
@@ -211,6 +211,60 @@ def test_backup_only_when_pending_migrations(tmp_path):
     run_migrations(db_path)
     assert backups_dir.exists()
     assert len(list(backups_dir.iterdir())) == 1
+
+
+def test_v005_recomputa_semanas_desde_fecha(tmp_path):
+    from src.db_connection import connect_db, read_connection
+    from src.migrations import v005_recompute_semana
+
+    db = str(tmp_path / "legacy.db")
+    with connect_db(db) as conn:
+        conn.execute(
+            "CREATE TABLE training_sets (id INTEGER PRIMARY KEY, semana INTEGER, dia TEXT, "
+            "fecha TEXT, set_orden INTEGER, ejercicio TEXT, reps REAL, kg REAL, rir REAL)"
+        )
+        rows = [
+            (25, "MIERCOLES", "29/7/26"),
+            (26, "MARTES", "4/8/26"),
+            (26, "JUEVES", "6/8/26"),
+            (26, "VIERNES", "7/8/26"),
+            (1, "LUNES", "4/5/26"),
+            (13, "VIERNES", "1/8/26"),
+            (7, "LUNES", None),
+            (9, "MIERCOLES", "2026-08-07"),
+        ]
+        for semana, dia, fecha in rows:
+            conn.execute(
+                "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) "
+                "VALUES (?, ?, ?, 1, 'Press', 90, 7, 1)",
+                (semana, dia, fecha),
+            )
+    with connect_db(db) as conn:
+        v005_recompute_semana.migrate(conn)
+    with read_connection(db) as conn:
+        result = [r[1] for r in conn.execute("SELECT id, semana FROM training_sets ORDER BY id")]
+    assert result == [13, 14, 14, 14, 1, 13, 7, 14]
+
+
+def test_v005_recompute_idempotente(tmp_path):
+    from src.db_connection import connect_db, read_connection
+    from src.migrations import v005_recompute_semana
+
+    db = str(tmp_path / "legacy.db")
+    with connect_db(db) as conn:
+        conn.execute(
+            "CREATE TABLE training_sets (id INTEGER PRIMARY KEY, semana INTEGER, dia TEXT, "
+            "fecha TEXT, set_orden INTEGER, ejercicio TEXT, reps REAL, kg REAL, rir REAL)"
+        )
+        conn.execute(
+            "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) "
+            "VALUES (26, 'VIERNES', '7/8/26', 1, 'Press', 90, 7, 1)"
+        )
+    with connect_db(db) as conn:
+        v005_recompute_semana.migrate(conn)
+        v005_recompute_semana.migrate(conn)
+    with read_connection(db) as conn:
+        assert conn.execute("SELECT semana FROM training_sets").fetchone()[0] == 14
 
 
 def test_load_ejercicios(tmp_path):

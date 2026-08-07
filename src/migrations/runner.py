@@ -8,12 +8,14 @@ from src.migrations import (
     v001_initial_schema,
     v002_add_origins_and_categories,
     v003_add_template_order,
+    v005_recompute_semana,
 )
 
 MIGRATIONS = [
     v001_initial_schema,
     v002_add_origins_and_categories,
     v003_add_template_order,
+    v005_recompute_semana,
 ]
 
 _CURRENT_VERSION = max(m.VERSION for m in MIGRATIONS)
