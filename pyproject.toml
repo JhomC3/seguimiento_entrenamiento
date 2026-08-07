@@ -40,6 +40,7 @@ target-version = "py311"
 "tests/e2e/*" = ["DTZ005", "DTZ007", "DTZ011"]
 # Backup/undo orchestration uses naive local timestamps by design.
 "src/migrations/runner.py" = ["DTZ005", "DTZ007", "DTZ011"]
+"src/migrations/v005_recompute_semana.py" = ["DTZ005", "DTZ007", "DTZ011"]
 "src/database.py" = ["DTZ005", "DTZ007", "DTZ011"]
 # Naive local dates: the dashboard calendar contract (fechas d/m/yy).
 "src/dashboard_service.py" = ["DTZ005", "DTZ007", "DTZ011"]

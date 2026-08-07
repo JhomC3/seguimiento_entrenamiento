@@ -91,12 +91,21 @@ Expected: PASS, registrar el contador (190 actual) como referencia de esta fase.
 ```python
 def test_v004_convierte_fechas_a_iso(tmp_path):
     from src.migrations import v004_iso_dates
+
     db = str(tmp_path / "legacy.db")
     with connect_db(db) as conn:
-        conn.execute("CREATE TABLE training_sets (id INTEGER PRIMARY KEY, semana INTEGER, dia TEXT, fecha TEXT, set_orden INTEGER, ejercicio TEXT, reps REAL, kg REAL, rir REAL)")
-        conn.execute("INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, kg, reps, rir) VALUES (1, 'LUNES', '6/8/26', 1, 'Press', 90, 7, 1.2)")
-        conn.execute("INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, kg, reps, rir) VALUES (2, 'MARTES', '10/02/2026', 1, 'Press', 90, 7, 1.2)")
-        conn.execute("INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, kg, reps, rir) VALUES (3, 'MIERCOLES', 'basura', 1, 'Press', 90, 7, 1.2)")
+        conn.execute(
+            "CREATE TABLE training_sets (id INTEGER PRIMARY KEY, semana INTEGER, dia TEXT, fecha TEXT, set_orden INTEGER, ejercicio TEXT, reps REAL, kg REAL, rir REAL)"
+        )
+        conn.execute(
+            "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, kg, reps, rir) VALUES (1, 'LUNES', '6/8/26', 1, 'Press', 90, 7, 1.2)"
+        )
+        conn.execute(
+            "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, kg, reps, rir) VALUES (2, 'MARTES', '10/02/2026', 1, 'Press', 90, 7, 1.2)"
+        )
+        conn.execute(
+            "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, kg, reps, rir) VALUES (3, 'MIERCOLES', 'basura', 1, 'Press', 90, 7, 1.2)"
+        )
     v004_iso_dates.migrate(connect_db(db))
     with read_connection(db) as conn:
         fechas = [r[0] for r in conn.execute("SELECT fecha FROM training_sets ORDER BY id")]
@@ -114,6 +123,7 @@ Expected: FAIL (ModuleNotFoundError `v004_iso_dates`).
 ```python
 # src/migrations/v004_iso_dates.py
 """v004 — normalize training_sets.fecha to ISO (YYYY-MM-DD)."""
+
 from datetime import datetime
 
 VERSION = 4
@@ -143,7 +153,9 @@ def migrate(conn) -> None:
     conn.execute(f"ALTER TABLE training_sets RENAME COLUMN fecha TO {_LEGACY_COL}")
     conn.execute("ALTER TABLE training_sets ADD COLUMN fecha TEXT")
     for row_id, legacy in conn.execute(f"SELECT id, {_LEGACY_COL} FROM training_sets").fetchall():
-        conn.execute("UPDATE training_sets SET fecha = ? WHERE id = ?", (_iso_or_null(legacy), row_id))
+        conn.execute(
+            "UPDATE training_sets SET fecha = ? WHERE id = ?", (_iso_or_null(legacy), row_id)
+        )
     conn.execute(f"ALTER TABLE training_sets DROP COLUMN {_LEGACY_COL}")
 ```
 
@@ -173,6 +185,7 @@ git commit -m "feat: v004 migration normalizes session dates to ISO"
 ```python
 def test_fecha_to_db_devuelve_iso():
     assert fecha_to_db(date(2026, 8, 6)) == "2026-08-06"
+
 
 def test_fecha_display():
     assert fecha_display("2026-08-06") == "6/8/26"
@@ -277,11 +290,14 @@ git commit -m "refactor: chronological ordering now native in SQL (ISO dates)"
 ```python
 from src.metrics_engine import RM_FACTOR, rm_ajustado
 
+
 def test_rm_ajustado_escalar():
     assert rm_ajustado(90, 7, 1.2) == 90 * (1 + 0.0333 * (7 + 1 + 1.2))
 
+
 def test_factor_constante():
     assert RM_FACTOR == 0.0333
+
 
 def test_editor_js_usa_misma_constante_rm():
     src = Path("static/js/editor.js").read_text()
@@ -345,6 +361,7 @@ def test_export_csv_orden_cronologico(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     from src.training_service import save_session
     from src.models import TrainingSetInput
+
     for iso, sets in [
         ("2026-01-15", [TrainingSetInput("Press", 90, 7, 1)]),
         ("2026-02-03", [TrainingSetInput("Press", 92, 7, 1)]),
@@ -417,6 +434,7 @@ def test_backup_prune_mantiene_ultimos_30(tmp_path):
 ```python
 # src/backup_utils.py
 """Backup retention helpers shared by app backups and migration pre-upgrade backups."""
+
 from pathlib import Path
 
 
@@ -459,7 +477,11 @@ def test_undo_restaura_origen_google(tmp_path, monkeypatch):
             "VALUES (1, 'LUNES', '2026-08-06', 1, 'Press', 90, 7, 1.2, 'google')"
         )
     fecha = "2026-08-06"
-    client.post("/entrenamiento/session/save", data={"fecha": fecha, "ejercicio": ["Press"], "kg": ["95"], "reps": ["6"], "rir": ["1"]}, headers=_csrf_headers(client))
+    client.post(
+        "/entrenamiento/session/save",
+        data={"fecha": fecha, "ejercicio": ["Press"], "kg": ["95"], "reps": ["6"], "rir": ["1"]},
+        headers=_csrf_headers(client),
+    )
     client.post("/undo", data={"fecha": fecha}, headers=_csrf_headers(client))
     rows = get_sets_by_fecha(str(tmp_path / "gym.db"), "2026-08-06")
     assert rows[0]["kg"] == 90 and rows[0]["origen"] == "google"
@@ -612,9 +634,13 @@ def get_recent_sessions(db_path: str, limit: int = 10) -> list[dict]:
 
 ```python
 def _sesiones_list_html(request: Request) -> str:
-    return _render_body(templates.TemplateResponse(
-        request=request, name="session_history.html",
-        context={"sessions": get_recent_sessions(DB_PATH)}))
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="session_history.html",
+            context={"sessions": get_recent_sessions(DB_PATH)},
+        )
+    )
 
 
 @app.get("/sesiones", response_class=HTMLResponse)
@@ -667,7 +693,17 @@ git commit -m "feat: recent sessions history section with navigation"
 ```python
 def test_save_incluye_oob_history(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
-    resp = client.post("/entrenamiento/session/save", data={"fecha": "2026-08-06", "ejercicio": ["Press"], "kg": ["90"], "reps": ["7"], "rir": ["1"]}, headers=_csrf_headers(client))
+    resp = client.post(
+        "/entrenamiento/session/save",
+        data={
+            "fecha": "2026-08-06",
+            "ejercicio": ["Press"],
+            "kg": ["90"],
+            "reps": ["7"],
+            "rir": ["1"],
+        },
+        headers=_csrf_headers(client),
+    )
     assert 'id="session-history" hx-swap-oob="innerHTML"' in resp.text
 ```
 
@@ -768,6 +804,7 @@ def test_csrf_window_configurable(monkeypatch):
     monkeypatch.setenv("GYM_CSRF_WINDOW_HOURS", "1")
     import importlib
     import src.security as sec
+
     importlib.reload(sec)
     assert sec.CSRF_WINDOW_SECONDS == 3600
 ```
@@ -891,7 +928,8 @@ def test_keyboard_day_shift_updates_editor(page, server):
     fecha = page.input_value("#session-form input[name='fecha']")
     page.keyboard.press("ArrowRight")
     page.wait_for_function(
-        "document.querySelector('#session-form input[name=\\'fecha\\']').value !== arguments[0]", fecha
+        "document.querySelector('#session-form input[name=\\'fecha\\']').value !== arguments[0]",
+        fecha,
     )
 ```
 
