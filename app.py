@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from config import CICLO_START, DB_PATH, MUSCLE_CATEGORIES
+from config import CICLO_NUMERO, CICLO_START, DB_PATH, MUSCLE_CATEGORIES
 from src.charts import get_exercise_raw_data, get_exercise_session_summary
 from src.dashboard_service import (
     build_date_navigator,
@@ -82,6 +82,11 @@ def _today_iso() -> str:
 
 def _muscle_names() -> list[str]:
     return sorted({m for c in MUSCLE_CATEGORIES for m in c["muscles"]})
+
+
+def _chart_title(filtro: str | None = None) -> str:
+    base = f"Rendimiento – Ciclo {CICLO_NUMERO}"
+    return f"{base} – {filtro}" if filtro else base
 
 
 def _render_body(response) -> str:
@@ -206,7 +211,7 @@ def read_index(request: Request):
             "systemic_chart_html": chart_html(
                 DB_PATH,
                 "systemic",
-                title="Rendimiento Global – Todo el Cuerpo",
+                title=_chart_title(),
                 nonce=getattr(request.state, "csp_nonce", None),
             ),
             "navigator_html": _navigator_html(request, fecha),
@@ -478,7 +483,7 @@ def select_view(request: Request, grupo: str = Query(None)):
         chart_html_frag = chart_html(
             DB_PATH,
             "systemic",
-            title="Rendimiento Global – Todo el Cuerpo",
+            title=_chart_title(),
             nonce=getattr(request.state, "csp_nonce", None),
         )
         exercise_list_html = _render_body(
@@ -499,7 +504,7 @@ def select_view(request: Request, grupo: str = Query(None)):
         DB_PATH,
         "muscle_group",
         grupo,
-        f"Rendimiento – {grupo}",
+        _chart_title(grupo),
         nonce=getattr(request.state, "csp_nonce", None),
     )
     exercise_list_html = _render_body(
@@ -522,7 +527,7 @@ def reset_grupo(request: Request, grupo: str = Query(...)):
         DB_PATH,
         "muscle_group",
         grupo,
-        f"Rendimiento – {grupo}",
+        _chart_title(grupo),
         nonce=getattr(request.state, "csp_nonce", None),
     )
     oob_chart = chart_oob_wrapper(chart_html_frag)
@@ -541,7 +546,7 @@ def get_exercise_history(request: Request, ejercicio: str = Query(...)):
         DB_PATH,
         "exercise",
         ejercicio,
-        f"Rendimiento – {ejercicio}",
+        _chart_title(ejercicio),
         nonce=getattr(request.state, "csp_nonce", None),
     )
     tables_html = _render_body(

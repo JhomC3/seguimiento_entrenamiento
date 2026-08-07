@@ -4,6 +4,8 @@ DB_PATH: str = os.environ.get("GYM_DB_PATH", "data/gym.db")
 
 CICLO_START: str = "04/05/2026"
 
+CICLO_NUMERO: int = 1
+
 SHEET_ID: str = "11njHN7oxzwS0N7DUbQ-RfhzA_pTgPaWz"
 
 GIDS: dict[str, str] = {

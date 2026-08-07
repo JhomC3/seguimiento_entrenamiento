@@ -84,14 +84,17 @@ def setup_test_db():
         os.remove(TEST_DB)
 
 
-def test_chart_pfr_timeline_eje_x_muestra_rango_de_fechas(setup_test_db):
+def test_chart_pfr_timeline_crecimiento_base_0(setup_test_db):
     db = setup_test_db
     fig = chart_pfr_timeline(db, "systemic")
     assert fig.data, "la gráfica debe tener datos"
-    ticktext = list(fig.layout.xaxis.ticktext)
-    assert "Semana 1" in ticktext[0] and "04/05–10/05" in ticktext[0]
-    assert "Semana 2" in ticktext[1] and "11/05–17/05" in ticktext[1]
-    assert "04/05/26 – 10/05/26" in fig.data[0].customdata[0]
+    assert list(fig.layout.xaxis.ticktext) == ["1", "2"]
+    assert fig.layout.yaxis.range[0] == 0
+    ys = list(fig.data[0].y)
+    assert ys[0] == pytest.approx(0, abs=0.5)  # semana 1 = baseline
+    assert ys[1] > 0  # semana 2 = crecimiento
+    assert "Ciclo 1" in fig.layout.title.text
+    assert "Crecimiento" in fig.data[0].hovertemplate
 
 
 def test_get_exercise_detail(setup_test_db):

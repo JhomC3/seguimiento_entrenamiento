@@ -2,9 +2,9 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
+from config import CICLO_NUMERO
 from src.db_connection import read_connection
 from src.metrics_engine import calculate_pfr_timeline
-from src.training_service import parse_cycle_start
 
 
 def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
@@ -57,9 +57,9 @@ def chart_pfr_timeline(
     db_path: str,
     filter_type: str,
     filter_value: str | None = None,
-    title: str = "Rendimiento Semanal",
+    title: str = f"Rendimiento – Ciclo {CICLO_NUMERO}",
 ) -> go.Figure:
-    """Gráfica de rendimiento semanal promedio. 100% = Semana 1."""
+    """Gráfica de crecimiento semanal vs baseline (semana 1 = 0)."""
     df = calculate_pfr_timeline(db_path, filter_type, filter_value)
     if df.empty:
         return go.Figure()
@@ -72,38 +72,24 @@ def chart_pfr_timeline(
     )
     weekly["semana"] = weekly["semana"].astype(int)
     weekly = weekly.sort_values("semana")
+    weekly["crecimiento"] = weekly["rendimiento"] - 100
 
-    ciclo_start = parse_cycle_start()
-    week_delta = pd.to_timedelta((weekly["semana"] - 1) * 7, unit="D")
-    weekly["week_start"] = pd.Timestamp(ciclo_start) + week_delta
-    weekly["week_end"] = weekly["week_start"] + pd.to_timedelta(6, unit="D")
-    weekly["tick"] = weekly.apply(
-        lambda r: f"Semana {int(r['semana'])}<br>{r['week_start']:%d/%m}–{r['week_end']:%d/%m}",
-        axis=1,
-    )
-    weekly["range_label"] = weekly.apply(
-        lambda r: f"{r['week_start']:%d/%m/%y} – {r['week_end']:%d/%m/%y}", axis=1
-    )
-
-    y_min = weekly["rendimiento"].min()
-    y_max = weekly["rendimiento"].max()
+    y_min = weekly["crecimiento"].min()
+    y_max = weekly["crecimiento"].max()
     y_padding = (y_max - y_min) * 0.15 if y_max > y_min else 5
+    y_bottom = 0 if y_min >= 0 else y_min - y_padding
 
     fig = go.Figure()
 
     fig.add_trace(
         go.Scatter(
             x=weekly["semana"],
-            y=weekly["rendimiento"],
+            y=weekly["crecimiento"],
             mode="lines+markers",
-            name="Rendimiento",
+            name="Crecimiento",
             line={"color": "#e56d88", "width": 2.5},
             marker={"size": 8, "color": "#e56d88"},
-            customdata=weekly[["range_label"]].values,
-            hovertemplate=(
-                "Semana %{x} (%{customdata[0]})<br>"
-                "Promedio: %{y:.1f}%<br>(Semana 1 = 100%)<extra></extra>"
-            ),
+            hovertemplate=("Semana %{x}<br>Crecimiento: %{y:.1f}%<extra></extra>"),
         )
     )
 
@@ -113,13 +99,13 @@ def chart_pfr_timeline(
             "title": "Semana",
             "tickmode": "array",
             "tickvals": weekly["semana"],
-            "ticktext": weekly["tick"],
+            "ticktext": [str(n) for n in weekly["semana"]],
             "tickfont": {"size": 10, "color": "#a3a3a3"},
             "showgrid": False,
         },
         yaxis={
-            "title": "Rendimiento (%)",
-            "range": [y_min - y_padding, y_max + y_padding],
+            "title": "Crecimiento (%)",
+            "range": [y_bottom, y_max + y_padding],
             "showgrid": False,
             "zerolinecolor": "#333",
             "tickfont": {"color": "#a3a3a3"},
