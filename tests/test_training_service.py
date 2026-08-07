@@ -36,12 +36,25 @@ def db(tmp_path):
 
 
 def test_calculate_cycle_week():
-    assert calculate_cycle_week(date(2026, 2, 10), CYCLE) == 1
-    assert calculate_cycle_week(date(2026, 2, 16), CYCLE) == 1
-    assert calculate_cycle_week(date(2026, 2, 17), CYCLE) == 2
-    assert calculate_cycle_week(date(2026, 2, 18), CYCLE) == 2
-    assert calculate_cycle_week(date(2026, 3, 1), CYCLE) == 3
-    assert calculate_cycle_week(date(2026, 1, 1), CYCLE) == 1
+    # Ciclo actual: inicia lunes 04/05/2026; semanas alineadas a lunes-domingo.
+    assert calculate_cycle_week(date(2026, 5, 4), CYCLE) == 1  # lunes, inicio del ciclo
+    assert calculate_cycle_week(date(2026, 5, 10), CYCLE) == 1  # domingo
+    assert calculate_cycle_week(date(2026, 5, 11), CYCLE) == 2  # lunes siguiente
+    assert calculate_cycle_week(date(2026, 5, 17), CYCLE) == 2  # domingo
+    assert calculate_cycle_week(date(2026, 5, 18), CYCLE) == 3
+    assert calculate_cycle_week(date(2026, 8, 7), CYCLE) == 14  # hoy
+    assert calculate_cycle_week(date(2026, 1, 1), CYCLE) == 1  # antes del ciclo -> 1
+
+
+def test_calculate_cycle_week_ancla_al_lunes_de_la_semana_calendario():
+    # Si el ciclo iniciara a mitad de semana (miércoles 06/05/2026),
+    # la semana 1 cubre la semana calendario lun-dom (04/05 al 10/05).
+    start = date(2026, 5, 6)
+    assert calculate_cycle_week(date(2026, 5, 4), start) == 1  # lunes previo al inicio
+    assert calculate_cycle_week(date(2026, 5, 6), start) == 1  # inicio (miércoles)
+    assert calculate_cycle_week(date(2026, 5, 10), start) == 1  # domingo
+    assert calculate_cycle_week(date(2026, 5, 11), start) == 2  # lunes siguiente
+    assert calculate_cycle_week(date(2026, 5, 12), start) == 2
 
 
 def test_day_from_date():
@@ -72,7 +85,7 @@ def test_insert_manual_session_basic(db):
 def test_insert_manual_session_multiple_sets(db):
     insert_manual_session(
         db,
-        "2026-02-18",
+        "2026-05-13",
         [
             TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=2),
             TrainingSetInput(ejercicio="Press", kg=75, reps=10, rir=0),
@@ -176,7 +189,7 @@ def test_validate_sets_empty(db):
 def test_get_sessions_page_and_detail(db):
     insert_manual_session(
         db,
-        "2026-02-18",
+        "2026-05-13",
         [
             TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=2),
             TrainingSetInput(ejercicio="Press", kg=75, reps=10, rir=0),
@@ -191,7 +204,7 @@ def test_get_sessions_page_and_detail(db):
     assert s["n_ejercicios"] == 1
     assert s["manual_sets"] == 2
     assert s["google_sets"] == 0
-    detail = get_session_detail(db, 2, "MIERCOLES", "18/2/26")
+    detail = get_session_detail(db, 2, "MIERCOLES", "13/5/26")
     assert len(detail) == 2
     assert round(detail[0].kg * (1 + 0.0333 * (detail[0].reps + 1 + detail[0].rir)), 1) == round(
         80 * (1 + 0.0333 * (8 + 1 + 2)), 1

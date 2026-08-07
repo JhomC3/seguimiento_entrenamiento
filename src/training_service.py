@@ -1,6 +1,6 @@
 import math
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from config import CICLO_START
 from src.database import get_exercises_catalog, get_session_sets, get_training_sessions
@@ -23,7 +23,13 @@ def parse_cycle_start(value: str = CICLO_START) -> date:
 
 
 def calculate_cycle_week(fecha: date, cycle_start: date) -> int:
-    return max(1, (fecha - cycle_start).days // 7 + 1)
+    """Semana del ciclo con semanas alineadas a lunes-domingo.
+
+    La semana 1 es la semana calendario (lun-dom) que contiene el inicio del
+    ciclo; las fechas anteriores al inicio se truncan a la semana 1.
+    """
+    monday = cycle_start - timedelta(days=cycle_start.weekday())
+    return max(1, (fecha - monday).days // 7 + 1)
 
 
 def day_from_date(fecha: date) -> str:
