@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 
 from src.db_connection import read_connection
 from src.metrics_engine import calculate_pfr_timeline
+from src.training_service import parse_cycle_start
 
 
 def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
@@ -72,6 +73,18 @@ def chart_pfr_timeline(
     weekly["semana"] = weekly["semana"].astype(int)
     weekly = weekly.sort_values("semana")
 
+    ciclo_start = parse_cycle_start()
+    week_delta = pd.to_timedelta((weekly["semana"] - 1) * 7, unit="D")
+    weekly["week_start"] = pd.Timestamp(ciclo_start) + week_delta
+    weekly["week_end"] = weekly["week_start"] + pd.to_timedelta(6, unit="D")
+    weekly["tick"] = weekly.apply(
+        lambda r: f"Semana {int(r['semana'])}<br>{r['week_start']:%d/%m}–{r['week_end']:%d/%m}",
+        axis=1,
+    )
+    weekly["range_label"] = weekly.apply(
+        lambda r: f"{r['week_start']:%d/%m/%y} – {r['week_end']:%d/%m/%y}", axis=1
+    )
+
     y_min = weekly["rendimiento"].min()
     y_max = weekly["rendimiento"].max()
     y_padding = (y_max - y_min) * 0.15 if y_max > y_min else 5
@@ -86,8 +99,10 @@ def chart_pfr_timeline(
             name="Rendimiento",
             line={"color": "#e56d88", "width": 2.5},
             marker={"size": 8, "color": "#e56d88"},
+            customdata=weekly[["range_label"]].values,
             hovertemplate=(
-                "Semana %{x}<br>Promedio: %{y:.1f}%<br>(Semana 1 = 100%)<extra></extra>"
+                "Semana %{x} (%{customdata[0]})<br>"
+                "Promedio: %{y:.1f}%<br>(Semana 1 = 100%)<extra></extra>"
             ),
         )
     )
@@ -96,7 +111,9 @@ def chart_pfr_timeline(
         title={"text": title, "font": {"color": "white", "size": 14}},
         xaxis={
             "title": "Semana",
-            "dtick": 1,
+            "tickmode": "array",
+            "tickvals": weekly["semana"],
+            "ticktext": weekly["tick"],
             "tickfont": {"size": 10, "color": "#a3a3a3"},
             "showgrid": False,
         },

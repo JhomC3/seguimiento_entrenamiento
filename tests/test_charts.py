@@ -3,7 +3,12 @@ import os
 import pandas as pd
 import pytest
 
-from src.charts import get_exercise_best_rm, get_exercise_detail, pivot_exercise_table
+from src.charts import (
+    chart_pfr_timeline,
+    get_exercise_best_rm,
+    get_exercise_detail,
+    pivot_exercise_table,
+)
 from src.database import init_db, load_ejercicios, load_training_data
 
 TEST_DB = "data/test_charts.db"
@@ -77,6 +82,16 @@ def setup_test_db():
 
     if os.path.exists(TEST_DB):
         os.remove(TEST_DB)
+
+
+def test_chart_pfr_timeline_eje_x_muestra_rango_de_fechas(setup_test_db):
+    db = setup_test_db
+    fig = chart_pfr_timeline(db, "systemic")
+    assert fig.data, "la gráfica debe tener datos"
+    ticktext = list(fig.layout.xaxis.ticktext)
+    assert "Semana 1" in ticktext[0] and "04/05–10/05" in ticktext[0]
+    assert "Semana 2" in ticktext[1] and "11/05–17/05" in ticktext[1]
+    assert "04/05/26 – 10/05/26" in fig.data[0].customdata[0]
 
 
 def test_get_exercise_detail(setup_test_db):
