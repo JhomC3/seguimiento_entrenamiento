@@ -111,17 +111,19 @@
 - JSON `{"fecha": "<iso>"|null}`: first training date (ISO) of a cycle week, optionally filtered by the active muscle group/exercise.
 - Consumed by `chart-interaction.js` when a chart marker is clicked: the editor navigates to that week's first session (`requestNavigate`).
 
-### Nutrition dashboard (`/alimentacion`)
+### Nutrition dashboard (panel integrado en `/`)
 
-- `GET /alimentacion[?fecha=<YYYY-MM-DD>]` — full page: `#nutrition-date-navigator`, `#nutrition-editor-wrap`, `#alimento-create`, `#app-config` (with `alimento_map` + `csrf_token`).
-- `GET /alimentacion/editor?fecha=<YYYY-MM-DD>` — editor fragment (any date editable; no readonly semantics).
-- `POST /alimentacion/save` — form `fecha`, `alimento[]`, `cantidad[]`; server recomputes nutrients from catalog (`ROUND_HALF_UP(catálogo_100g * g / 100)`), never trusts client macros. OOB: `#notice-container`, `#save-outcome`, `#nutrition-editor-wrap` (innerHTML), `#nutrition-date-navigator` (outerHTML).
-- `POST /alimentacion/eliminar` — form `fecha`; deletes the whole day. Same OOB set.
-- `POST /alimento/nuevo` — form `nombre`, `categoria`, nine nutrient fields (per 100 g). OOB: `#notice-container`, `#app-config` (script tag, outerHTML, updated `alimento_map`), `#alimento-create` (outerHTML).
-- `GET /alimentacion/exportar/csv` — `text/csv` of `diario_alimentacion` ordered by `fecha, orden`.
-- `POST /undo` — `alimentacion` entries: same notice/marker as `sesion` plus `#nutrition-editor-wrap` (innerHTML) and `#nutrition-date-navigator` (outerHTML) when undoing the current date.
-- `data-action` handlers (delegated in `nutrition-editor.js`): `nutrition-prev`, `nutrition-next`, `nutrition-date-input`, `nutrition-row-add`, `nutrition-row-remove`, `nutrition-delete`. Row preview uses the `alimento_map` from `#app-config`; the server stays authoritative on save.
-- Stable selectors: `#nutrition-form`, `#nutrition-rows .nutrition-row`, `.food-select`, `.cantidad-input`, `.nutrition-preview.kcal-cell/.carb-cell/.prot-cell/.fat-cell`, `#nutrition-totals [data-total="kcal|carbohidratos|proteina|grasa"]`, `#nutrition-editor-state[data-has-data]`.
+- El panel vive en `index.html` **arriba del editor de sesión** (`#nutrition-panel`); no existe página standalone (`GET /alimentacion` → 404).
+- `GET /alimentacion/editor?fecha=<YYYY-MM-DD>` — fragmento del editor (toda fecha editable; sin readonly).
+- `POST /alimentacion/save` — form `fecha`, `alimento[]`, `cantidad[]`, `peso_kg`, `factor_proteina`, `factor_grasa`, `kcal_objetivo`. El servidor recalcula los 9 nutrientes desde el catálogo (`ROUND_HALF_UP(catálogo_100g * g / 100)`); los parámetros se persisten en `parametros_diarios` (UPSERT). OOB: `#notice-container`, `#save-outcome`, `#nutrition-editor-wrap` (innerHTML), `#nutrition-date-navigator` (outerHTML).
+- `POST /alimentacion/eliminar` — form `fecha`; borra el día completo (los parámetros no se tocan). Mismo set OOB.
+- `POST /alimento/nuevo` — form `nombre`, `categoria` + 9 nutrientes (por 100 g). OOB: `#notice-container`, `#app-config` (script tag, outerHTML, `alimento_map` actualizado), `#alimento-create` (outerHTML).
+- `GET /alimentacion/exportar/csv` — `text/csv` de `diario_alimentacion` ordenado por `fecha, orden`.
+- `POST /undo` — entradas `alimentacion` restauran filas **y** parámetros; OOB de editor y navegador cuando la fecha coincide.
+- **Fórmulas de objetivo (servidor)**: `proteina = round(peso × factor_proteina)`, `grasa = round(peso × factor_grasa)`, `kcal = round(kcal_objetivo)` (editable), `carb = round((kcal − 4·prot − 9·grasa) / 4)`; fibra/hierro/calcio/vitC/vitA objetivo importados de la hoja.
+- **Fila Consumido** = suma del día (gramos + 9 nutrientes), calculada, nunca importada.
+- Selectores estables: `#nutrition-form`, `#nutrition-rows .nutrition-row`, `.food-select`, `.cantidad-input`, `.nutrition-preview.kcal-cell/.carb-cell/.prot-cell/.fat-cell/.fibra-cell/.hierro-cell/.calcio-cell/.vitc-cell/.vita-cell`, filas `Objetivo`/`Consumido` (`.target-*`, `.consumed-*`), `#target-params` (`#param-peso`, `#param-kcal`, `#param-factor-prot`, `#param-factor-grasa`), `#nutrition-editor-state[data-has-data]`.
+- `data-action` handlers (delegados en `nutrition-editor.js`): `nutrition-prev`, `nutrition-next`, `nutrition-date-input`, `nutrition-row-add`, `nutrition-row-remove`, `nutrition-delete`. La preview usa `alimento_map` (9 nutrientes) de `#app-config`; el servidor es autoritativo al guardar.
 
 ---
 

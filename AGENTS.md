@@ -95,7 +95,9 @@ exclusivamente con las migraciones versionadas en `src/migrations/`; no se hacen
 
 **`alimentos`**: `id`, `nombre` UNIQUE, `categoria`, nueve nutrientes por 100 g (`kcal`, `carbohidratos`, `fibra`, `proteina`, `grasa`, `hierro`, `calcio`, `vitamina_c`, `vitamina_a`), `origen` ('google'|'manual').
 
-**`diario_alimentacion`**: `id`, `fecha` ISO `YYYY-MM-DD`, `orden`, `alimento`, `cantidad_g`, nueve nutrientes (snapshot de la entrada, sin FK a `alimentos`), `origen`. Índice `(fecha, orden)`.
+**`diario_alimentacion`**: `id`, `fecha` ISO `YYYY-MM-DD`, `orden`, `alimento`, `cantidad_g` (NULL para placeholders "—"), nueve nutrientes (snapshot recalculado desde el catálogo, sin FK a `alimentos`), `origen`. Índice `(fecha, orden)`.
+
+**`parametros_diarios`**: `fecha` PK, `peso_kg`, `factor_proteina` (1.5), `factor_grasa` (1.1), `kcal_objetivo` — editables día a día — y `fibra/hierro/calcio/vitamina_c/vitamina_a` objetivo (importados de la hoja).
 
 ## 5. Arquitectura del Dashboard (FastAPI + htmx)
 
@@ -111,7 +113,7 @@ La app `app.py` sirve HTML renderizado con Jinja2 y usa htmx para actualizacione
 - **`GET /select`** → lista de ejercicios del grupo (`grupo=""` para global) con gráfica OOB.
 - **`GET /grupo/reset`** → actualiza la gráfica con el rendimiento del grupo (PFR del grupo muscular).
 - **`GET /ejercicio`** → tablas de detalle (raw + resumen por sesión) con gráfica OOB del ejercicio.
-- **`GET /alimentacion`** → página del diario nutricional (nav de fechas + editor + alta de alimento). **`GET /alimentacion/editor?fecha=`** → fragmento del editor. **`POST /alimentacion/save`** (solo `fecha`, `alimento[]`, `cantidad[]`; el servidor recalcula contra el catálogo con `ROUND_HALF_UP(catálogo_100g × g / 100)`, nunca confía en macros del cliente) y **`POST /alimentacion/eliminar`** → mutaciones OOB (`#nutrition-editor-wrap`, `#nutrition-date-navigator`). **`POST /alimento/nuevo`** → alta de alimento (OOB `#alimento-create` + `#app-config` con `alimento_map` actualizado). **`GET /alimentacion/exportar/csv`** → CSV de `diario_alimentacion`. El `#app-config` de esta página incluye `alimento_map` para la previsualización client-side.
+- **Panel de alimentación integrado en `/`** (arriba del editor de sesión; no hay página standalone). **`GET /alimentacion/editor?fecha=`** → fragmento del editor. **`POST /alimentacion/save`** (solo `fecha`, `alimento[]`, `cantidad[]` + `peso_kg`, `factor_proteina`, `factor_grasa`, `kcal_objetivo`; el servidor recalcula contra el catálogo con `ROUND_HALF_UP(catálogo_100g × g / 100)`, nunca confía en macros del cliente) y **`POST /alimentacion/eliminar`** → mutaciones OOB (`#nutrition-editor-wrap`, `#nutrition-date-navigator`). **`POST /alimento/nuevo`** → alta de alimento (OOB `#alimento-create` + `#app-config` con `alimento_map` actualizado). **`GET /alimentacion/exportar/csv`** → CSV de `diario_alimentacion`. El `#app-config` del index incluye `alimento_map` (9 nutrientes) para la previsualización client-side. Fórmulas de objetivo: `prot = peso × factor_proteina`, `grasa = peso × factor_grasa`, `kcal` editable, `carb = (kcal − 4prot − 9grasa)/4`; la fila Consumido es la suma del día.
 - La importación de Google Sheets **no es una ruta HTTP**: se ejecuta con `python scripts/import_google_sheets.py` (entrenamiento) y `python scripts/import_nutrition.py` (alimentación; idempotente, backup previo, reemplaza solo `origen='google'`).
 - Todos los handlers son `def` síncronos (FastAPI los ejecuta en threadpool); las mutaciones exigen token CSRF (`X-CSRF-Token` desde `#app-config`) y Origin del mismo sitio. Errores de dominio → 400 con aviso seguro; excepciones inesperadas → 500 genérico (log servidor).
 
