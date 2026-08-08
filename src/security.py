@@ -123,8 +123,10 @@ class CSRFProtectionMiddleware:
 
     @staticmethod
     def _forbidden():
-        body = "<div class='notice notice-error'>Sesión de seguridad vencida. " \
+        body = (
+            "<div class='notice notice-error'>Sesión de seguridad vencida. "
             "Recarga la página e intenta de nuevo.</div>"
+        )
         return body.encode(), 403
 
     async def __call__(self, scope, receive, send):
