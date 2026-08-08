@@ -1,6 +1,22 @@
 import io
+from datetime import datetime
 
 import pandas as pd
+
+
+def _iso_or_null(value) -> str | None:
+    """Convierte fecha legacy 'd/m/yy' (o 'd/m/YYYY') a ISO; None si no parsea."""
+    if value is None or pd.isna(value):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    for fmt in ("%d/%m/%y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(text, fmt).date().strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return None
 
 
 def parse_ejercicios(csv_text: str) -> pd.DataFrame:
@@ -126,7 +142,7 @@ def parse_ciclo(csv_text: str) -> pd.DataFrame:
                 {
                     "semana": week_num,
                     "dia": current_day,
-                    "fecha": dates_per_week.get(week_num),
+                    "fecha": _iso_or_null(dates_per_week.get(week_num)),
                     "set_orden": set_orden,
                     "ejercicio": str(ejercicio).strip(),
                     "reps": reps,

@@ -59,7 +59,7 @@ def test_parse_ciclo_returns_dataframe():
     assert row_1["reps"] == 6.0
     assert row_1["kg"] == 85.0
     assert row_1["rir"] == 1.0
-    assert row_1["fecha"] == "4/5/26"
+    assert row_1["fecha"] == "2026-05-04"
 
     # Check values for week 2 Lunes set 1
     row_2 = df[(df["semana"] == 2) & (df["dia"] == "LUNES") & (df["set_orden"] == 1)].iloc[0]
@@ -67,7 +67,7 @@ def test_parse_ciclo_returns_dataframe():
     assert row_2["reps"] == 6.0
     assert row_2["kg"] == 90.0
     assert row_2["rir"] == 1.0
-    assert row_2["fecha"] == "11/5/26"
+    assert row_2["fecha"] == "2026-05-11"
 
     assert len(df[df["semana"] == 1]) == 4
     assert len(df[df["semana"] == 2]) == 4
