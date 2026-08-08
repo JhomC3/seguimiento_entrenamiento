@@ -673,6 +673,68 @@ def test_v008_params_defaults(tmp_path):
     assert row == (70.0, 1.5, 1.1, 2300.0)
 
 
+def test_get_save_parametros_diarios(tmp_path):
+    from src.database import get_parametros_diarios, save_parametros_diarios
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    assert get_parametros_diarios(db_path, "2025-04-24") is None
+    save_parametros_diarios(
+        db_path,
+        "2025-04-24",
+        {
+            "peso_kg": 69.0,
+            "factor_proteina": 1.4,
+            "factor_grasa": 1.1,
+            "kcal_objetivo": 2750.0,
+            "fibra_objetivo": 38.0,
+            "hierro_objetivo": 8.0,
+            "calcio_objetivo": 1000.0,
+            "vitamina_c_objetivo": 90.0,
+            "vitamina_a_objetivo": 900.0,
+        },
+    )
+    params = get_parametros_diarios(db_path, "2025-04-24")
+    assert params["peso_kg"] == 69.0
+    assert params["factor_proteina"] == 1.4
+    assert params["kcal_objetivo"] == 2750.0
+    # UPSERT: guardar de nuevo actualiza, no duplica
+    save_parametros_diarios(db_path, "2025-04-24", {"peso_kg": 70.0})
+    params = get_parametros_diarios(db_path, "2025-04-24")
+    assert params["peso_kg"] == 70.0
+    assert params["factor_proteina"] == 1.4
+
+
+def test_replace_diario_accepts_null_cantidad(tmp_path):
+    from src.database import get_diario_by_fecha, replace_diario_by_fecha
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    replace_diario_by_fecha(
+        db_path,
+        "2025-04-24",
+        [
+            {
+                "alimento": "Nueces",
+                "cantidad_g": None,
+                "kcal": 0.0,
+                "carbohidratos": 0.0,
+                "fibra": 0.0,
+                "proteina": 0.0,
+                "grasa": 0.0,
+                "hierro": 0.0,
+                "calcio": 0.0,
+                "vitamina_c": 0.0,
+                "vitamina_a": 0.0,
+                "origen": "google",
+            }
+        ],
+    )
+    rows = get_diario_by_fecha(db_path, "2025-04-24")
+    assert rows[0]["alimento"] == "Nueces"
+    assert rows[0]["cantidad_g"] is None
+
+
 def test_load_ejercicios(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)

@@ -424,12 +424,14 @@ def get_diario_dates(db_path: str) -> list[str]:
 def _diario_row_values(conn, fecha: str, rows: list[dict]) -> list[tuple]:
     values = []
     for idx, r in enumerate(rows, start=1):
+        cantidad = r["cantidad_g"]
+        cantidad_g = float(cantidad) if cantidad is not None else None
         values.append(
             (
                 fecha,
                 int(r.get("orden") or idx),
                 str(r["alimento"]).strip(),
-                float(r["cantidad_g"]),
+                cantidad_g,
                 *(float(r[col]) for col in _DIARIO_NUTRIENT_COLUMNS),
                 str(r.get("origen") or "manual"),
             )
@@ -456,3 +458,44 @@ def delete_diario_by_fecha(db_path: str, fecha: str) -> int:
     with transaction(db_path) as conn:
         cur = conn.execute("DELETE FROM diario_alimentacion WHERE fecha = ?", (fecha,))
         return cur.rowcount
+
+
+_PARAMETROS_COLUMNS = (
+    "peso_kg",
+    "factor_proteina",
+    "factor_grasa",
+    "kcal_objetivo",
+    "fibra_objetivo",
+    "hierro_objetivo",
+    "calcio_objetivo",
+    "vitamina_c_objetivo",
+    "vitamina_a_objetivo",
+)
+
+
+def get_parametros_diarios(db_path: str, fecha: str) -> dict | None:
+    with read_connection(db_path) as conn:
+        row = conn.execute(
+            f"SELECT {', '.join(_PARAMETROS_COLUMNS)} FROM parametros_diarios WHERE fecha = ?",
+            (fecha,),
+        ).fetchone()
+    if row is None:
+        return None
+    return dict(zip(_PARAMETROS_COLUMNS, row))
+
+
+def save_parametros_diarios(db_path: str, fecha: str, params: dict) -> None:
+    """UPSERT de los parámetros del día; solo se actualizan los campos presentes."""
+    current = get_parametros_diarios(db_path, fecha) or {}
+    merged = {**current, **params}
+    with transaction(db_path) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO parametros_diarios (fecha, peso_kg, factor_proteina, "
+            "factor_grasa, kcal_objetivo, fibra_objetivo, hierro_objetivo, calcio_objetivo, "
+            "vitamina_c_objetivo, vitamina_a_objetivo) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                fecha,
+                *[float(merged.get(col, 0.0)) for col in _PARAMETROS_COLUMNS],
+            ),
+        )
