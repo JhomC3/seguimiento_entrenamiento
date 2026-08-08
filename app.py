@@ -25,9 +25,9 @@ from src.database import (
     get_plantillas,
     get_sets_by_fecha,
     init_db,
-    insert_exercise,
 )
 from src.db_connection import read_connection
+from src.exercise_service import create_exercise
 from src.models import TemplateInput
 from src.mutation_service import (
     delete_session,
@@ -288,31 +288,15 @@ def ejercicio_nuevo(
     grupo_muscular: str = Form(...),
     categoria: str = Form(...),
 ):
-    ejercicio = ejercicio.strip()
-    grupo_muscular = grupo_muscular.strip()
-    error = None
-    if not ejercicio:
-        error = "El nombre del ejercicio es obligatorio."
-    elif not grupo_muscular:
-        error = "El grupo muscular es obligatorio."
-    elif categoria not in {c["name"] for c in MUSCLE_CATEGORIES}:
-        error = "Categoría inválida."
-    elif any(e.lower() == ejercicio.lower() for e in get_exercises_catalog(DB_PATH)):
-        error = f"El ejercicio '{ejercicio}' ya existe en el catálogo."
-    if error:
-        return HTMLResponse(
-            content=notice_oob(
-                templates,
-                request,
-                target="notice-container",
-                message=error,
-                kind="notice-error",
-                dismiss=4500,
-            )
-        )
-    insert_exercise(DB_PATH, ejercicio, grupo_muscular, categoria)
+    try:
+        create_exercise(DB_PATH, ejercicio, grupo_muscular, categoria)
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
     notice_success = notice_oob(
-        templates, request, target="notice-container", message=f"Ejercicio '{ejercicio}' creado."
+        templates,
+        request,
+        target="notice-container",
+        message=f"Ejercicio '{ejercicio.strip()}' creado.",
     )
     form_html = _exercise_form_html(request)
     return HTMLResponse(

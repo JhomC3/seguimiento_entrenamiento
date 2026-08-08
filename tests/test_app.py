@@ -591,7 +591,7 @@ def test_mutating_routes_return_200(tmp_path, monkeypatch):
     assert r.status_code == 200
     r = client.post(
         "/ejercicio/nuevo",
-        data={"ejercicio": "Press", "grupo_muscular": "Pectoral", "categoria": "EMPUJE"},
+        data={"ejercicio": "Fondos", "grupo_muscular": "Pectoral", "categoria": "EMPUJE"},
     )
     assert r.status_code == 200
 
