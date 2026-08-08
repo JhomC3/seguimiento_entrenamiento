@@ -7,6 +7,17 @@
         <div class="editor-header-actions flex-none flex items-center gap-1">
             <button
                 type="button"
+                data-action="toggle-panel-collapse"
+                data-target="session-editor"
+                aria-expanded="1"
+                class="edit-toggle collapse-chevron"
+                aria-label="Colapsar panel"
+                title="Colapsar panel"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            <button
+                type="button"
                 data-action="toggle-template-form"
                 class="edit-toggle save-template-btn"
                 aria-label="Guardar como entreno"

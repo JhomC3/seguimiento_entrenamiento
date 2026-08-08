@@ -1,4 +1,6 @@
-/* session-editor.css — owns: #session-editor panel, rows, RM, edit state. */
+/* session-editor.css — owns: #session-editor panel, rows, RM, edit state.
+   Los selectores cubren también #nutrition-panel para que ambos editores
+   compartan exactamente la misma estética y mecánica. */
 
 /* Aviso del editor de sesión: superpuesto arriba del panel, más grande y atenuado */
 #editor-notice {
@@ -80,11 +82,12 @@
 }
 
 /* Hover de fila: solo cuando el modo editable está activo, en cualquier fecha */
-#session-editor[data-editmode="1"] .set-row:hover {
+#session-editor[data-editmode="1"] .set-row:hover,
+#nutrition-panel[data-editmode="1"] .nutrition-row:hover {
     background: rgba(255, 255, 255, 0.04);
 }
 
-/* Drag and drop de filas (solo en modo editable) */
+/* Drag and drop de filas (solo en modo editable, solo sesión) */
 #session-editor[data-editmode="1"] .set-row {
     cursor: grab;
 }
@@ -99,61 +102,102 @@
     background: rgba(255, 255, 255, 0.06);
 }
 
-/* Tabla de sesión: altura fija estable (variable en el panel, sobrevive a los swaps) */
-#session-editor .table-scroll {
+/* Tabla: altura fija estable (variable en el panel, sobrevive a los swaps) */
+#session-editor .table-scroll,
+#nutrition-panel .table-scroll {
     height: var(--table-h, 538px);
     scrollbar-gutter: stable;
 }
 /* Firefox no soporta ::-webkit-scrollbar: usa scrollbar estándar fino y sutil.
    (En Chrome/Safari estas propiedades anulan ::-webkit-scrollbar, por eso van aisladas.) */
 @supports not selector(::-webkit-scrollbar) {
-    #session-editor .table-scroll {
+    #session-editor .table-scroll,
+    #nutrition-panel .table-scroll {
         scrollbar-width: thin;
         scrollbar-color: rgba(255, 255, 255, 0.07) transparent;
     }
 }
-#session-editor .table-scroll table {
+#session-editor .table-scroll table,
+#nutrition-panel .table-scroll table {
     table-layout: fixed;
 }
-#session-editor .table-scroll thead th {
+#session-editor .table-scroll thead th,
+#nutrition-panel .table-scroll thead th {
     position: sticky;
     top: 0;
     background: #171717;
     z-index: 5;
 }
-#session-editor .table-scroll::-webkit-scrollbar {
+/* El thead de nutrición tiene filas tintadas (Objetivo/Consumido): su fondo
+   se hereda de la clase de cada celda en vez del sólido del editor de sesión. */
+#nutrition-panel .table-scroll thead th {
+    background: inherit;
+}
+#session-editor .table-scroll::-webkit-scrollbar,
+#nutrition-panel .table-scroll::-webkit-scrollbar {
     width: 3px;
     height: 3px;
 }
-#session-editor .table-scroll::-webkit-scrollbar-track {
+#session-editor .table-scroll::-webkit-scrollbar-track,
+#nutrition-panel .table-scroll::-webkit-scrollbar-track {
     background: transparent;
 }
-#session-editor .table-scroll::-webkit-scrollbar-thumb {
+#session-editor .table-scroll::-webkit-scrollbar-thumb,
+#nutrition-panel .table-scroll::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.07);
     border-radius: 1.5px;
 }
 
 /* Compactación de controles del editor (scoped: no afecta plantillas ni otros contextos) */
-#session-editor .editor-header-actions .edit-toggle {
+#session-editor .editor-header-actions .edit-toggle,
+#nutrition-panel .editor-header-actions .edit-toggle {
     width: 22px;
     height: 22px;
 }
-#session-editor .editor-header-actions svg {
+#session-editor .editor-header-actions svg,
+#nutrition-panel .editor-header-actions svg {
     width: 13px;
     height: 13px;
 }
 /* La columna de acciones (botones −/+) se ancla con un <col> del mismo nombre:
    sin él, table-layout: fixed la haría auto y repartiría el sobrante a la mitad. */
-#session-editor .set-actions-column {
+#session-editor .set-actions-column,
+#nutrition-panel .set-actions-column {
     width: 30px;
 }
 /* Solo en modo edición la columna de acciones existe: en readonly colapsa
-   y el ancho liberado se redistribuye a la columna auto ("Ejercicio"). */
-#session-editor[data-editmode="0"] .set-actions-column {
+   y el ancho liberado se redistribuye a la columna auto. */
+#session-editor[data-editmode="0"] .set-actions-column,
+#nutrition-panel[data-editmode="0"] .set-actions-column {
     width: 0;
 }
-#session-editor .row-actions .row-btn {
+#session-editor .row-actions .row-btn,
+#nutrition-panel .row-actions .row-btn {
     width: 14px;
     height: 14px;
     font-size: 10px;
+}
+
+/* Colapso de panel desde el header: el cuerpo se oculta, el header permanece */
+#session-editor.collapsed #session-form,
+#nutrition-panel.collapsed #nutrition-form {
+    display: none;
+}
+.collapse-chevron {
+    transition: transform .15s;
+}
+#session-editor.collapsed .collapse-chevron,
+#nutrition-panel.collapsed .collapse-chevron {
+    transform: rotate(-90deg);
+}
+
+/* Columnas de la tabla de alimentación (nutrición; la sesión reparte por defecto) */
+#nutrition-panel .food-col {
+    width: 26%;
+}
+#nutrition-panel .qty-col {
+    width: 9%;
+}
+#nutrition-panel .nutrient-col {
+    width: 7.5%;
 }

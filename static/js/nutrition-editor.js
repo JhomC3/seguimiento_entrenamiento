@@ -1,9 +1,8 @@
-// nutrition-editor.js — editor del día de alimentación, con el mismo modelo
-// de edición que el editor de sesión: modo editable con lápiz, altura fija,
-// filas +/− solo en edición, dirty-check y confirmación.
-// El servidor es la fuente autoritativa del cálculo; la previsualización usa el
-// mapa compacto `alimento_map` de #app-config (valores por 100 g) y las mismas
-// fórmulas de objetivo (Atwater 4/4/9) con redondeo half-up.
+// nutrition-editor.js — editor del día de alimentación.
+// Copia fiel del mecanismo del editor de sesión (editor.js) con ids nutrition-*:
+// modo edición con lápiz, altura fija, filas +/− solo en edición, dirty-check.
+// Extras de nutrición: preview de 9 nutrientes, filas Objetivo/Consumido en
+// vivo, parámetros (peso/factores/kcal) y eliminación del día.
 
 import { getAlimentoMap, hideConfirmDialog, showConfirmDialog } from './state.js';
 import { doNav } from './date-navigation.js';
@@ -49,7 +48,7 @@ function panel() {
     return document.getElementById('nutrition-panel');
 }
 
-function nutritionEditmode() {
+function panelEditmode() {
     return panel()?.dataset.editmode;
 }
 
@@ -59,10 +58,12 @@ function serializeNutrition() {
     const rows = Array.from(form.querySelectorAll('#nutrition-rows .nutrition-row')).map(row =>
         Array.from(row.querySelectorAll('input')).map(i => i.value)
     );
-    const params = Array.from(form.querySelectorAll('input[type="hidden"][name="peso_kg"], '
-        + 'input[type="hidden"][name="factor_proteina"], '
-        + 'input[type="hidden"][name="factor_grasa"], '
-        + 'input[type="hidden"][name="kcal_objetivo"]')).map(i => i.value);
+    const params = Array.from(
+        form.querySelectorAll('input[type="hidden"][name="peso_kg"], '
+            + 'input[type="hidden"][name="factor_proteina"], '
+            + 'input[type="hidden"][name="factor_grasa"], '
+            + 'input[type="hidden"][name="kcal_objetivo"]')
+    ).map(i => i.value);
     return JSON.stringify([rows, params]);
 }
 
@@ -116,7 +117,7 @@ function setNutritionReadonly() {
 }
 
 function enterNutritionEditMode() {
-    if (nutritionEditmode() === '1') return;
+    if (panelEditmode() === '1') return;
     const form = document.getElementById('nutrition-form');
     if (!form) return;
     form.querySelectorAll('input').forEach(el => { el.disabled = false; });
@@ -131,20 +132,24 @@ function enterNutritionEditMode() {
 }
 
 function exitNutritionEditMode() {
+    // Igual que el editor de sesión: re-render del servidor para salir de edición.
     const p = panel();
     const fecha = p?.querySelector('#nutrition-form input[name="fecha"]')?.value;
     if (nutritionIsDirty()) {
         showConfirmDialog(
-            function () { nutritionSubmitSave(); },
-            function () { refreshNutritionEditor(); }
+            function () {
+                pendingNavIso = fecha || '';
+                nutritionSubmitSave();
+            },
+            function () { doNav(fecha || '', true); }
         );
     } else {
-        refreshNutritionEditor();
+        doNav(fecha || '', true);
     }
 }
 
 function toggleNutritionEdit() {
-    if (nutritionEditmode() === '1') {
+    if (panelEditmode() === '1') {
         exitNutritionEditMode();
     } else {
         enterNutritionEditMode();
@@ -159,7 +164,7 @@ function handleNutritionState() {
 function updateEditActionsVisibility() {
     const actions = document.getElementById('nutrition-edit-actions');
     if (!actions) return;
-    const show = nutritionEditmode() === '1' && nutritionIsDirty();
+    const show = panelEditmode() === '1' && nutritionIsDirty();
     actions.classList.toggle('invisible', !show);
 }
 
@@ -183,7 +188,7 @@ export function fitNutritionRowsToPanel() {
         }
     }
     const full = theadH + ROWS_VISIBLE * rowHMeasured + (ROWS_VISIBLE - 1) * ROW_BORDER_PX + PANEL_BUFFER;
-    p.style.setProperty('--nutrition-table-h', full + 'px');
+    p.style.setProperty('--table-h', full + 'px');
 }
 
 /* ---------- Filas ---------- */
@@ -195,7 +200,7 @@ function renumber() {
 }
 
 function nutritionAddRow() {
-    if (nutritionEditmode() !== '1') return;
+    if (panelEditmode() !== '1') return;
     const tbody = document.getElementById('nutrition-rows');
     const src = tbody && tbody.querySelector('.nutrition-row');
     if (!src) return;
@@ -210,7 +215,7 @@ function nutritionAddRow() {
 }
 
 function nutritionRemoveRow(btn) {
-    if (nutritionEditmode() !== '1') return;
+    if (panelEditmode() !== '1') return;
     const row = btn.closest('.nutrition-row');
     const tbody = document.getElementById('nutrition-rows');
     if (!row || !tbody) return;
@@ -290,8 +295,8 @@ function updateConsumido() {
 }
 
 /* ---------- Eliminar día ---------- */
-function deleteDay() {
-    if (nutritionEditmode() !== '1') {
+function eliminarDia() {
+    if (panelEditmode() !== '1') {
         const notice = document.getElementById('notice-container');
         if (notice) {
             notice.innerHTML = '<div class="notice notice-error" data-dismiss="2500">Activa el modo editable primero.</div>';
@@ -333,7 +338,7 @@ function onClick(e) {
     if (action === 'nutrition-toggle-edit') {
         toggleNutritionEdit();
     } else if (action === 'nutrition-delete') {
-        deleteDay();
+        eliminarDia();
     } else if (action === 'nutrition-row-add') {
         nutritionAddRow();
     } else if (action === 'nutrition-row-remove') {
@@ -360,6 +365,10 @@ function onInput(e) {
 function onFormSubmit(e) {
     const form = e.target.closest('#nutrition-form');
     if (!form) return;
+    if (panelEditmode() !== '1') {
+        e.preventDefault();
+        return;
+    }
     form.querySelectorAll('#nutrition-rows .nutrition-row').forEach(row => {
         const inputs = row.querySelectorAll('input');
         const empty = !(inputs[0].value.trim() || inputs[1].value.trim());

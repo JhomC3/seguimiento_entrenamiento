@@ -1,32 +1,31 @@
-// panel-collapse.js — owns: barras de colapso de los paneles (Entrenamiento y
-// Alimentación). El estado se persiste en localStorage; al expandir se
-// re-ejecuta el fit de altura del panel correspondiente.
+// panel-collapse.js — owns: colapso de los paneles desde el chevron del header.
+// Toggle de la clase `collapsed` sobre el propio panel (#session-editor /
+// #nutrition-panel); el estado se persiste en localStorage y al expandir se
+// re-ejecuta el fit de altura del panel.
 
 import { fitRowsToPanel } from './editor.js';
 import { fitNutritionRowsToPanel } from './nutrition-editor.js';
 
-const PANELS = ['nutrition-panel-body', 'session-panel-body'];
+const PANELS = ['session-editor', 'nutrition-panel'];
 const KEYS = {
-    'nutrition-panel-body': 'gym.panel.nutrition',
-    'session-panel-body': 'gym.panel.session',
+    'session-editor': 'gym.panel.session',
+    'nutrition-panel': 'gym.panel.nutrition',
 };
 
-function applyCollapsed(id, collapsed) {
-    const body = document.getElementById(id);
-    if (!body) return;
-    body.classList.toggle('collapsed', collapsed);
-    const card = body.closest('.panel-collapse-card');
-    if (card) card.classList.toggle('collapsed', collapsed);
-    const btn = document.querySelector(`[data-action="toggle-panel-collapse"][data-target="${id}"]`);
+function applyCollapsed(panelId, collapsed) {
+    const root = document.getElementById(panelId);
+    if (!root) return;
+    root.classList.toggle('collapsed', collapsed);
+    const btn = root.querySelector('.collapse-chevron');
     if (btn) btn.setAttribute('aria-expanded', collapsed ? '0' : '1');
     try {
-        localStorage.setItem(KEYS[id], collapsed ? '1' : '0');
+        localStorage.setItem(KEYS[panelId], collapsed ? '1' : '0');
     } catch (err) {
-        // localStorage puede no estar disponible (modo privado): no bloquea.
+        // localStorage puede no estar disponible: no bloquea el colapso.
     }
     if (!collapsed) {
-        if (id === 'session-panel-body') fitRowsToPanel();
-        else if (id === 'nutrition-panel-body') fitNutritionRowsToPanel();
+        if (panelId === 'session-editor') fitRowsToPanel();
+        else if (panelId === 'nutrition-panel') fitNutritionRowsToPanel();
     }
 }
 
@@ -34,15 +33,16 @@ export function initPanelCollapse() {
     document.addEventListener('click', function (e) {
         const btn = e.target.closest('[data-action="toggle-panel-collapse"]');
         if (!btn) return;
-        const id = btn.dataset.target;
-        const body = document.getElementById(id);
-        if (!body) return;
-        applyCollapsed(id, !body.classList.contains('collapsed'));
+        const panelId = btn.dataset.target;
+        if (!PANELS.includes(panelId)) return;
+        const root = document.getElementById(panelId);
+        if (!root) return;
+        applyCollapsed(panelId, !root.classList.contains('collapsed'));
     });
 
-    PANELS.forEach(id => {
+    PANELS.forEach(panelId => {
         try {
-            if (localStorage.getItem(KEYS[id]) === '1') applyCollapsed(id, true);
+            if (localStorage.getItem(KEYS[panelId]) === '1') applyCollapsed(panelId, true);
         } catch (err) {
             // sin localStorage: estado por defecto expandido
         }

@@ -437,7 +437,7 @@ def main() -> None:
                 const actionColumn = editor.querySelector('#set-rows .set-actions-column');
                 return {
                     headerInsideEditor: !!actionsBox && actionsBox.right <= editorBox.right,
-                    allControlsVisible: controls.length === 3 && controls.every(b => b.getBoundingClientRect().width >= 20),
+                    allControlsVisible: controls.length === 4 && controls.every(b => b.getBoundingClientRect().width >= 20),
                     actionColumnWidth: actionColumn ? Math.round(actionColumn.getBoundingClientRect().width) : 999,
                 };
             })()""")

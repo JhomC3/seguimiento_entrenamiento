@@ -1016,10 +1016,10 @@ def test_index_renders_nutrition_panel_above_session_editor(tmp_path, monkeypatc
     assert r.text.index('id="nutrition-panel"') < r.text.index('id="session-editor"')
     assert 'id="target-params"' in r.text
     assert 'id="alimento-create"' in r.text
-    # Barras de colapso para ambos paneles
+    # Chevrons de colapso dentro de cada panel (header), sin barras externas
     assert r.text.count('data-action="toggle-panel-collapse"') == 2
-    assert 'id="nutrition-panel-body"' in r.text
-    assert 'id="session-panel-body"' in r.text
+    assert 'id="session-editor" data-editmode="0" data-target' not in r.text
+    assert "collapse-chevron" in r.text
 
 
 def test_nutrition_editor_tabla_esquema_11_columnas(tmp_path, monkeypatch):
