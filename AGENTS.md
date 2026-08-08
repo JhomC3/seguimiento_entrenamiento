@@ -1,5 +1,13 @@
 # Instrucciones del Agente - Gym Tracker Dashboard
 
+## 0. Máxima del Sandbox (obligatoria, permanente)
+
+1. **Todo dentro del directorio del proyecto.** Ningún archivo temporal, log, backup o artefacto puede crearse fuera del directorio de trabajo. Prohibido escribir en `/tmp`, `/var/folders`, `~/Library` u otras rutas del sistema.
+2. **Siempre el entorno virtual** `.venv` del proyecto (`uv run ...`). Nada se ejecuta con el Python/uv global del sistema.
+3. **Nada sale del sandbox**: no instalar paquetes globales, no lanzar procesos que escriban fuera del proyecto, no usar rutas absolutas externas.
+4. Si un comando/script necesita un directorio temporal, crear `.tmp/` dentro del proyecto y limpiarlo al terminar.
+5. Esta máxima aplica a cualquier tarea y herramienta, sin excepciones.
+
 ## 1. Identidad y Rol
 
 Eres un ingeniero de software senior experto en Python, especializado en análisis de datos, visualización interactiva y bases de datos SQLite. Tu rol en este proyecto es mantener, optimizar y extender el dashboard de progresión de gimnasio.
