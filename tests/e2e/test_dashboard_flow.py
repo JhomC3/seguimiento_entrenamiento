@@ -23,7 +23,7 @@ def _goto_date(page, server, iso):
     page.wait_for_function("document.body.dataset.appReady === '1'")
     page.locator(f'.date-num[data-iso="{iso}"]').click()
     expect(page.locator(f'.date-num[data-iso="{iso}"]')).to_have_class(re.compile(r"\bselected\b"))
-    expect(page.locator("#session-editor-wrap")).to_contain_text("Semana")
+    expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
 
 
 def _click_chart_point(page, semana):
