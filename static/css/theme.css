@@ -24,8 +24,15 @@ body {
 button {
     -webkit-tap-highlight-color: transparent;
 }
-button:focus, button:focus-visible, button:active {
-    outline: none !important;
+button:focus {
+    outline: none;
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid #e56d88 !important;
+    outline-offset: 2px;
 }
 
 /* Neon glow effects */

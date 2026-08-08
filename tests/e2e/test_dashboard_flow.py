@@ -345,6 +345,17 @@ def test_category_filters_dots_sin_saltar_editor(page, server):
     assert page.evaluate("document.querySelectorAll('.date-num .date-dot').length") >= 1
 
 
+def test_keyboard_focus_ring_visible(page, server):
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.keyboard.press("Tab")
+    has_outline = page.evaluate(
+        "() => { const e = document.activeElement; const cs = getComputedStyle(e);"
+        " return cs.outlineStyle !== 'none' && cs.outlineWidth !== '0px'; }"
+    )
+    assert has_outline
+
+
 def test_navigate_from_session_history(page, server):
     """Clic en una sesión del historial navega al editor de su fecha."""
     iso_a = _iso(8)
