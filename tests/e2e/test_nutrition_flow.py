@@ -54,7 +54,7 @@ def test_nutrition_create_edit_save_reload_delete(page, server):
     page.wait_for_selector("#notice-container .notice", timeout=5000)
     expect(page.locator("#nutrition-editor-state")).to_have_attribute("data-has-data", "1")
 
-    # 6) Recargar: fila y parámetros persisten
+    # 6) Recargar: fila y parámetros persisten; el día queda readonly
     page.reload()
     page.wait_for_function("document.body.dataset.appReady === '1'")
     expect(page.locator("#nutrition-rows .nutrition-row")).to_have_count(1)
@@ -62,7 +62,8 @@ def test_nutrition_create_edit_save_reload_delete(page, server):
     expect(page.locator("#param-peso")).to_have_value("69")
     expect(page.locator(".consumed-kcal")).to_have_text("467")
 
-    # 7) Eliminar el día con confirmación
+    # 7) Eliminar el día con confirmación (lápiz desbloquea el modo edición)
+    page.click('[data-action="nutrition-toggle-edit"]')
     page.click('[data-action="nutrition-delete"]')
     expect(page.locator("#confirm-modal")).not_to_have_class("hidden")
     page.click("#confirm-save")

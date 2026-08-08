@@ -1,0 +1,44 @@
+/* panel-collapse.css — owns: barras de colapso de los paneles. */
+
+.panel-collapse-card {
+    display: flex;
+    flex-direction: column;
+}
+
+.panel-collapse-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 8px 12px;
+    background: #171717;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px 12px 0 0;
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color .15s;
+}
+
+.panel-collapse-bar:hover {
+    color: #e56d88;
+}
+
+.panel-collapse-bar .chevron {
+    transition: transform .15s;
+}
+
+.panel-collapse-card.collapsed .panel-collapse-bar {
+    border-radius: 12px;
+}
+
+.panel-collapse-card.collapsed .panel-collapse-bar .chevron {
+    transform: rotate(-90deg);
+}
+
+.panel-collapse-body.collapsed {
+    display: none;
+}

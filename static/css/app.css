@@ -3,4 +3,6 @@
 @import "components.css";
 @import "date-navigator.css";
 @import "session-editor.css";
+@import "nutrition-editor.css";
+@import "panel-collapse.css";
 @import "templates.css";

@@ -1,5 +1,31 @@
-<div id="nutrition-editor-state" data-has-data="{{ 1 if has_data else 0 }}" hidden></div>
-<form id="nutrition-form" hx-post="/alimentacion/save" hx-swap="none" class="flex flex-col gap-2">
+<div id="nutrition-editor-state" data-readonly="{{ 1 if readonly else 0 }}" data-has-data="{{ 1 if has_data else 0 }}" hidden></div>
+<div class="flex items-center justify-between">
+    <div class="flex items-baseline gap-2 min-w-0 pl-3">
+        <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title truncate">Alimentación {{ fecha_display }}</h3>
+    </div>
+    <div class="editor-header-actions flex-none flex items-center gap-1">
+        <button
+            type="button"
+            data-action="nutrition-delete"
+            class="edit-toggle nutrition-delete-btn"
+            {% if not has_data %}hidden{% endif %}
+            aria-label="Eliminar día"
+            title="Eliminar día"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14zM10 11v6M14 11v6"></path></svg>
+        </button>
+        <button
+            type="button"
+            data-action="nutrition-toggle-edit"
+            class="edit-toggle nutrition-pencil-btn {% if readonly %}off{% else %}on{% endif %}"
+            aria-label="Editar día"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.13 2.86a3 3 0 0 0-4.17 0l-13 13L2 22l6.19-2L21.13 7a3 3 0 0 0 0-4.16zM6.77 18.57l-1.35-1.34L16.64 6 18 7.35z"></path></svg>
+        </button>
+    </div>
+</div>
+
+<form id="nutrition-form" hx-post="/alimentacion/save" hx-swap="none" class="flex flex-col gap-1 mt-1.5">
     <input type="hidden" name="fecha" value="{{ fecha_iso }}">
     <input type="hidden" name="peso_kg" value="{{ '%g'|format(parametros.peso_kg) }}">
     <input type="hidden" name="factor_proteina" value="{{ '%g'|format(parametros.factor_proteina) }}">
@@ -10,71 +36,89 @@
         <label class="flex items-center gap-2 font-bold text-neutral-300 uppercase tracking-widest">
             Peso (kg)
             <input id="param-peso" type="number" step="0.1" min="0" value="{{ '%g'|format(parametros.peso_kg) }}"
+                   {% if readonly %}disabled{% endif %}
                    class="w-20 bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-sm text-white font-black focus:outline-none transition-colors">
         </label>
         <label class="flex items-center gap-2 font-bold text-neutral-300 uppercase tracking-widest">
             Kcal
             <input id="param-kcal" type="number" step="10" min="0" value="{{ '%g'|format(parametros.kcal_objetivo) }}"
+                   {% if readonly %}disabled{% endif %}
                    class="w-24 bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-sm text-white font-black focus:outline-none transition-colors">
         </label>
         <label class="flex items-center gap-1.5 text-[10px] text-neutral-600 uppercase tracking-wider">
             Proteína ×
             <input id="param-factor-prot" type="number" step="0.1" min="0" value="{{ '%g'|format(parametros.factor_proteina) }}"
+                   {% if readonly %}disabled{% endif %}
                    class="w-14 bg-white/[0.04] rounded px-1.5 py-1 text-xs text-neutral-400 focus:outline-none transition-colors">
         </label>
         <label class="flex items-center gap-1.5 text-[10px] text-neutral-600 uppercase tracking-wider">
             Grasa ×
             <input id="param-factor-grasa" type="number" step="0.1" min="0" value="{{ '%g'|format(parametros.factor_grasa) }}"
+                   {% if readonly %}disabled{% endif %}
                    class="w-14 bg-white/[0.04] rounded px-1.5 py-1 text-xs text-neutral-400 focus:outline-none transition-colors">
         </label>
     </div>
 
-    <div class="overflow-x-auto">
+    <div class="table-scroll overflow-x-auto overflow-y-auto">
         <table class="w-full text-left border-collapse text-xs">
+            <colgroup>
+                <col class="food-col">
+                <col class="qty-col">
+                <col class="nutrient-col">
+                <col class="nutrient-col">
+                <col class="nutrient-col">
+                <col class="nutrient-col">
+                <col class="nutrient-col">
+                <col class="nutrient-col">
+                <col class="nutrient-col">
+                <col class="nutrient-col">
+                <col class="nutrient-col">
+                <col class="set-actions-column">
+            </colgroup>
             <thead>
-                <tr class="border-b border-neutral-800">
+                <tr>
                     <th class="py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Alimento</th>
-                    <th class="w-20 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Cantidad</th>
-                    <th class="w-20 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Calorías (kcal)</th>
-                    <th class="w-20 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Carbohidratos (g)</th>
-                    <th class="w-20 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Proteína (g)</th>
-                    <th class="w-20 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Grasa (g)</th>
-                    <th class="w-20 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Fibra (g)</th>
-                    <th class="w-20 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Hierro (mg)</th>
-                    <th class="w-20 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Calcio (mg)</th>
-                    <th class="w-20 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Vitamina C (mg)</th>
-                    <th class="w-20 py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Vitamina A</th>
-                    <th class="w-10 py-1 px-1.5"></th>
+                    <th class="py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Cantidad</th>
+                    <th class="py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Calorías (kcal)</th>
+                    <th class="py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Carbohidratos (g)</th>
+                    <th class="py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Proteína (g)</th>
+                    <th class="py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Grasa (g)</th>
+                    <th class="py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Fibra (g)</th>
+                    <th class="py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Hierro (mg)</th>
+                    <th class="py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Calcio (mg)</th>
+                    <th class="py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Vitamina C (mg)</th>
+                    <th class="py-1 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-right">Vitamina A</th>
+                    <th class="py-1 px-1.5"></th>
                 </tr>
                 <tr class="bg-white/[0.03] font-black text-neutral-200">
-                    <td class="py-1 px-1.5 uppercase tracking-widest text-burgundy-400">Objetivo</td>
-                    <td class="text-right py-1 px-1.5">{{ '%g'|format(parametros.peso_kg) if parametros.peso_kg else '—' }} kg</td>
-                    <td class="text-right py-1 px-1.5 target-kcal">{{ '%g'|format(objetivo.kcal) }}</td>
-                    <td class="text-right py-1 px-1.5 target-carb">{{ '%g'|format(objetivo.carbohidratos) }}</td>
-                    <td class="text-right py-1 px-1.5 target-prot">{{ '%g'|format(objetivo.proteina) }}</td>
-                    <td class="text-right py-1 px-1.5 target-fat">{{ '%g'|format(objetivo.grasa) }}</td>
-                    <td class="text-right py-1 px-1.5">{{ '%g'|format(objetivo.fibra) }}</td>
-                    <td class="text-right py-1 px-1.5">{{ '%g'|format(objetivo.hierro) }}</td>
-                    <td class="text-right py-1 px-1.5">{{ '%g'|format(objetivo.calcio) }}</td>
-                    <td class="text-right py-1 px-1.5">{{ '%g'|format(objetivo.vitamina_c) }}</td>
-                    <td class="text-right py-1 px-1.5">{{ '%g'|format(objetivo.vitamina_a) }}</td>
-                    <td></td>
+                    <th class="py-1 px-1.5 uppercase tracking-widest text-burgundy-400 text-left font-black">Objetivo</th>
+                    <th class="text-right py-1 px-1.5 font-black">{{ '%g'|format(parametros.peso_kg) if parametros.peso_kg else '—' }} kg</th>
+                    <th class="text-right py-1 px-1.5 target-kcal font-black">{{ '%g'|format(objetivo.kcal) }}</th>
+                    <th class="text-right py-1 px-1.5 target-carb font-black">{{ '%g'|format(objetivo.carbohidratos) }}</th>
+                    <th class="text-right py-1 px-1.5 target-prot font-black">{{ '%g'|format(objetivo.proteina) }}</th>
+                    <th class="text-right py-1 px-1.5 target-fat font-black">{{ '%g'|format(objetivo.grasa) }}</th>
+                    <th class="text-right py-1 px-1.5 font-black">{{ '%g'|format(objetivo.fibra) }}</th>
+                    <th class="text-right py-1 px-1.5 font-black">{{ '%g'|format(objetivo.hierro) }}</th>
+                    <th class="text-right py-1 px-1.5 font-black">{{ '%g'|format(objetivo.calcio) }}</th>
+                    <th class="text-right py-1 px-1.5 font-black">{{ '%g'|format(objetivo.vitamina_c) }}</th>
+                    <th class="text-right py-1 px-1.5 font-black">{{ '%g'|format(objetivo.vitamina_a) }}</th>
+                    <th></th>
                 </tr>
                 <tr class="bg-burgundy-700/10 font-black text-neutral-100">
-                    <td class="py-1 px-1.5 uppercase tracking-widest text-burgundy-400">Consumido</td>
-                    <td class="text-right py-1 px-1.5 consumed-grams">
+                    <th class="py-1 px-1.5 uppercase tracking-widest text-burgundy-400 text-left font-black">Consumido</th>
+                    <th class="text-right py-1 px-1.5 consumed-grams font-black">
                         {% if consumido.cantidad_g %}{{ '%g'|format(consumido.cantidad_g) }} g{% else %}—{% endif %}
-                    </td>
-                    <td class="text-right py-1 px-1.5 consumed-kcal">{{ '%g'|format(consumido.kcal) }}</td>
-                    <td class="text-right py-1 px-1.5 consumed-carb">{{ '%g'|format(consumido.carbohidratos) }}</td>
-                    <td class="text-right py-1 px-1.5 consumed-prot">{{ '%g'|format(consumido.proteina) }}</td>
-                    <td class="text-right py-1 px-1.5 consumed-fat">{{ '%g'|format(consumido.grasa) }}</td>
-                    <td class="text-right py-1 px-1.5">{{ '%g'|format(consumido.fibra) }}</td>
-                    <td class="text-right py-1 px-1.5">{{ '%g'|format(consumido.hierro) }}</td>
-                    <td class="text-right py-1 px-1.5">{{ '%g'|format(consumido.calcio) }}</td>
-                    <td class="text-right py-1 px-1.5">{{ '%g'|format(consumido.vitamina_c) }}</td>
-                    <td class="text-right py-1 px-1.5">{{ '%g'|format(consumido.vitamina_a) }}</td>
-                    <td></td>
+                    </th>
+                    <th class="text-right py-1 px-1.5 consumed-kcal font-black">{{ '%g'|format(consumido.kcal) }}</th>
+                    <th class="text-right py-1 px-1.5 consumed-carb font-black">{{ '%g'|format(consumido.carbohidratos) }}</th>
+                    <th class="text-right py-1 px-1.5 consumed-prot font-black">{{ '%g'|format(consumido.proteina) }}</th>
+                    <th class="text-right py-1 px-1.5 consumed-fat font-black">{{ '%g'|format(consumido.grasa) }}</th>
+                    <th class="text-right py-1 px-1.5 font-black">{{ '%g'|format(consumido.fibra) }}</th>
+                    <th class="text-right py-1 px-1.5 font-black">{{ '%g'|format(consumido.hierro) }}</th>
+                    <th class="text-right py-1 px-1.5 font-black">{{ '%g'|format(consumido.calcio) }}</th>
+                    <th class="text-right py-1 px-1.5 font-black">{{ '%g'|format(consumido.vitamina_c) }}</th>
+                    <th class="text-right py-1 px-1.5 font-black">{{ '%g'|format(consumido.vitamina_a) }}</th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody id="nutrition-rows" class="divide-y divide-neutral-800/40">
@@ -83,14 +127,16 @@
                     <td class="py-1 px-1.5">
                         <input
                             name="alimento" list="food-list" value="{{ r.alimento }}"
-                            class="food-select w-full min-w-36 bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 focus:outline-none transition-colors"
+                            {% if readonly %}disabled{% endif %}
+                            class="food-select w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                         >
                     </td>
                     <td class="py-1 px-1.5 text-right">
                         {% if r.cantidad_g is not none %}
                         <input
                             name="cantidad" type="number" step="1" min="1" value="{{ '%g'|format(r.cantidad_g) }}"
-                            class="cantidad-input w-full text-right bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 focus:outline-none transition-colors"
+                            {% if readonly %}disabled{% endif %}
+                            class="cantidad-input w-full text-right bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                         >
                         {% else %}
                         <span class="cantidad-input text-neutral-600">—</span>
@@ -106,7 +152,7 @@
                     <td class="nutrition-preview vitc-cell text-right py-1 px-1.5 text-neutral-400">{{ '%g'|format(r.vitamina_c) }}</td>
                     <td class="nutrition-preview vita-cell text-right py-1 px-1.5 text-neutral-400">{{ '%g'|format(r.vitamina_a) }}</td>
                     <td class="py-1 px-1.5">
-                        <div class="row-actions flex items-center justify-center gap-px opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                        <div class="row-actions flex items-center justify-center gap-px opacity-0 group-hover:opacity-100 transition-opacity duration-150 {% if readonly %}hidden{% endif %}">
                             <button type="button" data-action="nutrition-row-remove" class="row-btn" title="Eliminar fila">−</button>
                             <button type="button" data-action="nutrition-row-add" class="row-btn" title="Agregar fila">+</button>
                         </div>
@@ -117,13 +163,15 @@
                     <td class="py-1 px-1.5">
                         <input
                             name="alimento" list="food-list"
-                            class="food-select w-full min-w-36 bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 focus:outline-none transition-colors"
+                            {% if readonly %}disabled{% endif %}
+                            class="food-select w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                         >
                     </td>
                     <td class="py-1 px-1.5 text-right">
                         <input
                             name="cantidad" type="number" step="1" min="1"
-                            class="cantidad-input w-full text-right bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 focus:outline-none transition-colors"
+                            {% if readonly %}disabled{% endif %}
+                            class="cantidad-input w-full text-right bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                         >
                     </td>
                     <td class="nutrition-preview kcal-cell text-right py-1 px-1.5 text-neutral-600">—</td>
@@ -136,7 +184,7 @@
                     <td class="nutrition-preview vitc-cell text-right py-1 px-1.5 text-neutral-600">—</td>
                     <td class="nutrition-preview vita-cell text-right py-1 px-1.5 text-neutral-600">—</td>
                     <td class="py-1 px-1.5">
-                        <div class="row-actions flex items-center justify-center gap-px opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                        <div class="row-actions flex items-center justify-center gap-px opacity-0 group-hover:opacity-100 transition-opacity duration-150 {% if readonly %}hidden{% endif %}">
                             <button type="button" data-action="nutrition-row-remove" class="row-btn" title="Eliminar fila">−</button>
                             <button type="button" data-action="nutrition-row-add" class="row-btn" title="Agregar fila">+</button>
                         </div>
@@ -151,16 +199,17 @@
         {% for name in catalog %}<option value="{{ name }}">{% endfor %}
     </datalist>
 
-    <div class="flex items-center gap-2">
-        <button
-            type="submit"
-            class="h-9 px-5 bg-black/50 hover:bg-neutral-900/70 backdrop-blur-sm text-white border border-neutral-800 text-xs rounded-lg transition-colors uppercase tracking-widest font-black"
-        >Guardar día</button>
+    <div id="nutrition-edit-actions" class="mt-1 h-7 flex items-center gap-2 invisible">
         <button
             type="button"
-            data-action="nutrition-delete"
-            class="h-9 px-4 bg-black/50 hover:bg-neutral-900/70 backdrop-blur-sm text-neutral-400 border border-neutral-800 text-xs rounded-lg transition-colors uppercase tracking-widest font-black"
-            {% if not has_data %}hidden{% endif %}
-        >Eliminar día</button>
+            hx-get="/alimentacion/editor?fecha={{ fecha_iso }}"
+            hx-target="#nutrition-editor-wrap"
+            hx-swap="innerHTML"
+            class="h-7 px-4 bg-black/50 hover:bg-neutral-900/70 backdrop-blur-sm text-neutral-300 border border-neutral-800 text-xs rounded-lg transition-colors uppercase tracking-widest font-black"
+        >Cancelar</button>
+        <button
+            type="submit"
+            class="h-7 px-5 bg-black/50 hover:bg-neutral-900/70 backdrop-blur-sm text-white border border-neutral-800 text-xs rounded-lg transition-colors uppercase tracking-widest font-black"
+        >Guardar</button>
     </div>
 </form>

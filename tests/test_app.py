@@ -1011,9 +1011,15 @@ def test_index_renders_nutrition_panel_above_session_editor(tmp_path, monkeypatc
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/")
     assert r.status_code == 200
+    # Navegador arriba de todo, panel de nutrición antes del editor de sesión
+    assert r.text.index('id="date-navigator"') < r.text.index('id="nutrition-panel"')
     assert r.text.index('id="nutrition-panel"') < r.text.index('id="session-editor"')
     assert 'id="target-params"' in r.text
     assert 'id="alimento-create"' in r.text
+    # Barras de colapso para ambos paneles
+    assert r.text.count('data-action="toggle-panel-collapse"') == 2
+    assert 'id="nutrition-panel-body"' in r.text
+    assert 'id="session-panel-body"' in r.text
 
 
 def test_nutrition_editor_tabla_esquema_11_columnas(tmp_path, monkeypatch):
@@ -1083,6 +1089,8 @@ def test_alimentacion_editor_fragment(tmp_path, monkeypatch):
     assert "Consumido" in r.text
     assert "Objetivo" in r.text
     assert 'data-has-data="1"' in r.text
+    assert 'data-readonly="1"' in r.text
+    assert 'data-action="nutrition-toggle-edit"' in r.text
 
 
 def test_alimentacion_save_computes_and_returns_oob(tmp_path, monkeypatch):

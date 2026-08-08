@@ -4,6 +4,7 @@
 
 import { getCurrentIso, getPendingNav, isDirty, setCurrentIso, setPendingNav, showConfirmDialog } from './state.js';
 import { submitSave } from './editor.js';
+import { nutritionIsDirty, requestNutritionNav } from './nutrition-editor.js';
 
 let inFlightIso = null;
 
@@ -22,7 +23,15 @@ export function doNav(iso, force) {
     document.querySelectorAll('.date-num.selected').forEach(b => b.classList.remove('selected'));
     const btn = document.querySelector(`.date-num[data-iso="${iso}"]`);
     if (btn) btn.classList.add('selected');
-    htmx.ajax('GET', `/fecha/editor?fecha=${iso}`, { target: '#session-editor-wrap', swap: 'innerHTML' })
+    const jobs = [
+        htmx.ajax('GET', `/fecha/editor?fecha=${iso}`, { target: '#session-editor-wrap', swap: 'innerHTML' }),
+    ];
+    if (document.getElementById('nutrition-editor-wrap')) {
+        jobs.push(
+            htmx.ajax('GET', `/alimentacion/editor?fecha=${iso}`, { target: '#nutrition-editor-wrap', swap: 'innerHTML' })
+        );
+    }
+    Promise.all(jobs)
         .then(function () { inFlightIso = null; })
         .catch(function () { inFlightIso = null; });
     if (btn) btn.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
@@ -35,6 +44,8 @@ export function requestNavigate(iso) {
             function () { submitSave(); },
             function () { doNav(iso, true); }
         );
+    } else if (nutritionIsDirty()) {
+        requestNutritionNav(iso);
     } else {
         doNav(iso);
     }

@@ -61,28 +61,53 @@
 
         <!-- Contenido principal -->
         <main class="flex flex-col gap-6 min-w-0">
-            <!-- Panel de alimentación (arriba del editor de entrenamiento) -->
-            <section id="nutrition-panel" class="bg-neutral-900 border border-transparent rounded-xl px-2 pt-2 pb-3 flex flex-col gap-2 neon-border metallic-border">
-                <div id="nutrition-date-navigator">
-                    {{ nutrition_navigator_html | safe }}
-                </div>
-                <div id="nutrition-editor-wrap">
-                    {{ nutrition_editor_html | safe }}
-                </div>
-            </section>
-
-            <!-- Navegador de fechas -->
+            <!-- Navegador de fechas (arriba de todo; afecta a ambos paneles) -->
             <section id="date-navigator">
                 {{ navigator_html | safe }}
             </section>
 
-            <!-- Editor de sesión (tarjeta estable; el servidor solo intercambia el contenido) -->
-            <div id="session-editor" data-editmode="0" class="bg-neutral-900 border border-transparent rounded-xl px-2 pt-2 pb-2 flex flex-col gap-2 neon-border metallic-border relative">
-                <div id="editor-notice"></div>
-                <div id="save-outcome" data-ok="0" hidden></div>
-                <section id="session-editor-wrap">
-                    {{ editor_html | safe }}
-                </section>
+            <!-- Panel de alimentación (colapsable) -->
+            <div class="panel-collapse-card">
+                <button
+                    type="button"
+                    data-action="toggle-panel-collapse"
+                    data-target="nutrition-panel-body"
+                    aria-expanded="1"
+                    class="panel-collapse-bar"
+                >
+                    <span>Alimentación</span>
+                    <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div id="nutrition-panel-body" class="panel-collapse-body">
+                    <section id="nutrition-panel" data-editmode="0" class="bg-neutral-900 border border-transparent rounded-xl px-2 pt-2 pb-2 flex flex-col gap-2 neon-border metallic-border relative">
+                        <div id="nutrition-editor-wrap">
+                            {{ nutrition_editor_html | safe }}
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <!-- Editor de sesión (tarjeta estable; colapsable) -->
+            <div class="panel-collapse-card">
+                <button
+                    type="button"
+                    data-action="toggle-panel-collapse"
+                    data-target="session-panel-body"
+                    aria-expanded="1"
+                    class="panel-collapse-bar"
+                >
+                    <span>Entrenamiento</span>
+                    <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div id="session-panel-body" class="panel-collapse-body">
+                    <div id="session-editor" data-editmode="0" class="bg-neutral-900 border border-transparent rounded-xl px-2 pt-2 pb-2 flex flex-col gap-2 neon-border metallic-border relative">
+                        <div id="editor-notice"></div>
+                        <div id="save-outcome" data-ok="0" hidden></div>
+                        <section id="session-editor-wrap">
+                            {{ editor_html | safe }}
+                        </section>
+                    </div>
+                </div>
             </div>
 
             <!-- Gráfica Única -->

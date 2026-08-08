@@ -11,6 +11,7 @@ import { fitRowsToPanel, initEditorActions, initEditorRowSortable, syncEditorFro
 import { initLifecycle } from './htmx-lifecycle.js';
 import { initNutritionEditor } from './nutrition-editor.js';
 import { scheduleNotices } from './notices.js';
+import { initPanelCollapse } from './panel-collapse.js';
 import { getCsrfToken, setAlimentoMap, setCategoriaMap, setCsrfToken } from './state.js';
 import { initEntrenoDnD, initTemplateActions, initTemplateSortable } from './templates.js';
 
@@ -49,6 +50,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initEditorActions();
     initTemplateActions();
     initNutritionEditor();
+    initPanelCollapse();
     scheduleNotices();
     syncEditorFromContent();
     initEditorRowSortable();
