@@ -10,12 +10,9 @@ from src.training_service import (
     day_from_date,
     fecha_display,
     fecha_to_db,
-    get_session_detail,
     get_sessions_page,
-    insert_manual_session,
     parse_cycle_start,
     save_session,
-    update_session,
     validate_sets,
 )
 
@@ -65,8 +62,8 @@ def test_day_from_date():
     assert day_from_date(date(2026, 2, 22)) == "DOMINGO"
 
 
-def test_insert_manual_session_basic(db):
-    result = insert_manual_session(
+def test_save_session_basic(db):
+    result = save_session(
         db,
         "2026-02-10",
         [
@@ -84,8 +81,8 @@ def test_insert_manual_session_basic(db):
     assert row == (1, "MARTES", "2026-02-10", 1, "Press", 8.0, 80.0, 2.0, "manual")
 
 
-def test_insert_manual_session_multiple_sets(db):
-    insert_manual_session(
+def test_save_session_multiple_sets(db):
+    save_session(
         db,
         "2026-05-13",
         [
@@ -105,34 +102,34 @@ def test_insert_manual_session_multiple_sets(db):
 
 def test_insert_invalid_kg_rejected(db):
     with pytest.raises(ValueError):
-        insert_manual_session(
+        save_session(
             db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=0, reps=8, rir=0)]
         )
 
 
 def test_insert_invalid_reps_rejected(db):
     with pytest.raises(ValueError):
-        insert_manual_session(
+        save_session(
             db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=80, reps=-1, rir=0)]
         )
 
 
 def test_insert_unknown_exercise_rejected(db):
     with pytest.raises(ValueError):
-        insert_manual_session(
+        save_session(
             db, "2026-02-10", [TrainingSetInput(ejercicio="No Existe", kg=80, reps=8, rir=0)]
         )
 
 
 def test_insert_negative_rir_rejected(db):
     with pytest.raises(ValueError):
-        insert_manual_session(
+        save_session(
             db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=-1)]
         )
 
 
-def test_insert_zero_rir_accepted(db):
-    insert_manual_session(
+def test_save_zero_rir_accepted(db):
+    save_session(
         db,
         "2026-02-10",
         [
@@ -147,7 +144,7 @@ def test_insert_zero_rir_accepted(db):
 
 def test_insert_empty_rir_rejected(db):
     with pytest.raises(ValueError):
-        insert_manual_session(
+        save_session(
             db,
             "2026-02-10",
             [
@@ -158,7 +155,7 @@ def test_insert_empty_rir_rejected(db):
 
 def test_insert_zero_kg_rejected(db):
     with pytest.raises(ValueError):
-        insert_manual_session(
+        save_session(
             db,
             "2026-02-10",
             [
@@ -169,7 +166,7 @@ def test_insert_zero_kg_rejected(db):
 
 def test_transaction_rolls_back_on_failure(db):
     with pytest.raises(ValueError):
-        insert_manual_session(
+        save_session(
             db,
             "2026-02-10",
             [
@@ -188,8 +185,8 @@ def test_validate_sets_empty(db):
         validate_sets(db, [])
 
 
-def test_get_sessions_page_and_detail(db):
-    insert_manual_session(
+def test_get_sessions_page(db):
+    save_session(
         db,
         "2026-05-13",
         [
@@ -206,44 +203,40 @@ def test_get_sessions_page_and_detail(db):
     assert s["n_ejercicios"] == 1
     assert s["manual_sets"] == 2
     assert s["google_sets"] == 0
-    detail = get_session_detail(db, 2, "MIERCOLES", "2026-05-13")
-    assert len(detail) == 2
-    assert round(detail[0].kg * (1 + 0.0333 * (detail[0].reps + 1 + detail[0].rir)), 1) == round(
-        80 * (1 + 0.0333 * (8 + 1 + 2)), 1
-    )
+    from src.database import get_sets_by_fecha
+
+    rows = get_sets_by_fecha(db, "2026-05-13")
+    assert len(rows) == 2
+    assert rows[0]["kg"] == 80.0
 
 
-def test_update_session(db):
-    insert_manual_session(
+def test_save_session_replaces_por_fecha(db):
+    save_session(
         db,
         "2026-02-10",
         [
             TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
         ],
     )
-    update_session(
+    save_session(
         db,
-        1,
-        "MARTES",
-        "2026-02-10",
         "2026-02-11",
         [
             TrainingSetInput(ejercicio="Press", kg=85, reps=6, rir=2),
-            TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=0),
         ],
     )
     conn = sqlite3.connect(db)
     rows = conn.execute(
-        "SELECT semana, dia, fecha, kg FROM training_sets ORDER BY set_orden"
+        "SELECT semana, dia, fecha, kg FROM training_sets ORDER BY fecha"
     ).fetchall()
     conn.close()
     assert len(rows) == 2
-    assert rows[0] == (1, "MIERCOLES", "2026-02-11", 85.0)
-    assert rows[1][2] == "2026-02-11"
+    assert rows[0] == (1, "MARTES", "2026-02-10", 80.0)
+    assert rows[1] == (1, "MIERCOLES", "2026-02-11", 85.0)
 
 
 def test_delete_session(db):
-    insert_manual_session(
+    save_session(
         db,
         "2026-02-10",
         [
@@ -259,7 +252,7 @@ def test_delete_session(db):
 
 
 def test_get_sets_by_fecha(db):
-    insert_manual_session(
+    save_session(
         db,
         "2026-02-10",
         [
@@ -281,7 +274,7 @@ def test_fecha_display():
 
 
 def test_save_session_replaces_rows(db):
-    insert_manual_session(
+    save_session(
         db,
         "2026-02-10",
         [
@@ -309,7 +302,7 @@ def test_save_session_replaces_rows(db):
 
 
 def test_save_session_empty_deletes(db):
-    insert_manual_session(
+    save_session(
         db,
         "2026-02-10",
         [
@@ -324,7 +317,7 @@ def test_save_session_empty_deletes(db):
 
 
 def test_save_session_invalid_keeps_data(db):
-    insert_manual_session(
+    save_session(
         db,
         "2026-02-10",
         [

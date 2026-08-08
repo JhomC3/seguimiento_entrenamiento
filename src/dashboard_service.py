@@ -6,13 +6,14 @@ Pure orchestration: no HTTP, no template rendering. Handlers stay thin.
 import html
 import logging
 import sqlite3
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from config import CICLO_NUMERO
 from src.charts import chart_pfr_timeline
+from src.database import get_exercises_catalog, get_sets_by_fecha
 from src.db_connection import read_connection
-from src.models import ConflictError, NotFoundError, ValidationError
 from src.metrics_engine import rm_ajustado
+from src.models import ConflictError, NotFoundError, ValidationError
 from src.training_service import (
     calculate_cycle_week,
     day_from_date,
@@ -248,8 +249,6 @@ def build_session_editor(
     force_editable: bool = False,
     force_readonly: bool = False,
 ) -> SessionEditorViewModel:
-    from src.database import get_exercises_catalog, get_sets_by_fecha
-
     fecha = parse_form_date(fecha_iso)
     today = date.today()
     if rows is None:

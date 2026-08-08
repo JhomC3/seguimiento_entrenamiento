@@ -123,4 +123,4 @@ def test_get_exercise_session_summary(setup_test_db):
     s1 = df[df["sesion"] == 1].iloc[0]
     assert s1["total_sets"] == 2
     assert s1["total_tonelaje"] == 1020.0  # 2 x 85kg x 6reps
-    assert     s1["avg_rm_ajustado"] == pytest.approx(106.2, abs=0.1)
+    assert s1["avg_rm_ajustado"] == pytest.approx(106.2, abs=0.1)
