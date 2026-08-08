@@ -142,7 +142,7 @@ def _editor_html(
             name="session_editor.html",
             context={
                 "fecha_iso": vm.fecha_iso,
-                "fecha_db": vm.fecha_db,
+                "fecha_display": vm.fecha_display,
                 "semana": vm.semana,
                 "dia": vm.dia,
                 "rows": vm.rows,
