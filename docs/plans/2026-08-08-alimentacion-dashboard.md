@@ -1132,3 +1132,13 @@ uv run mypy app.py src tests
 ```
 
 Expected: todas las pruebas y puertas pasan. Si falla un e2e por disponibilidad de Chromium, reportar explícitamente esa limitación y ejecutar igualmente unidad, integración y estáticos.
+
+## Notas de ejecución (2026-08-08)
+
+Desviaciones confirmadas contra datos reales durante la implementación:
+
+1. **Codificación**: Google sirve UTF-8 sin charset; `requests.text` producía mojibake. `fetch_sheet_csv` decodifica `content` como UTF-8 con fallback Latin-1.
+2. **Catálogo con bases mixtas**: `Arepa` (base 1) y `Queso Doble Crema` (base 23) se normalizan a per-100 g (`valor × 100/base`), manteniendo un único contrato de cálculo.
+3. **Celdas en blanco del diario = 0**: la hoja trata el blanco como 0 en sus fórmulas (9 celdas reales, ej. kcal de Papa, fila sin macros de Aceite de Oliva). El importador replica ese comportamiento; solo se descartan filas truncadas al borde del rango.
+4. **`#app-config` vía OOB**: los OOB no disparan eventos por target; `app.js` relee la config tras cada `htmx:afterRequest` exitoso.
+5. **Importación real**: 62 alimentos (63 descargados, 1 duplicado) y 3.871 entradas del diario en `data/gym.db`.
