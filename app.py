@@ -279,7 +279,10 @@ def _nutrition_editor_html(
             context={
                 "fecha_iso": vm.fecha_iso,
                 "rows": vm.rows,
-                "totals": vm.totals,
+                "totals": vm.consumido,
+                "objetivo": vm.objetivo,
+                "consumido": vm.consumido,
+                "parametros": vm.parametros,
                 "catalog": vm.catalog,
                 "has_data": vm.has_data,
                 "error": vm.error,
@@ -335,6 +338,9 @@ def read_index(request: Request):
             "exercise_form_html": _exercise_form_html(request),
             "plantillas_html": _plantillas_list_html(request),
             "session_history_html": _sesiones_list_html(request),
+            "nutrition_navigator_html": _nutrition_navigator_html(request, fecha),
+            "nutrition_editor_html": _nutrition_editor_html(request, fecha),
+            "alimento_form_html": _alimento_form_html(request),
             "app_config_json": {
                 "categoria_map": get_ejercicio_categoria(DB_PATH),
                 "alimento_map": _alimento_preview_map(),

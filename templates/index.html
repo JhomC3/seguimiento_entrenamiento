@@ -20,6 +20,11 @@
                 {{ exercise_form_html | safe }}
             </div>
 
+            <!-- Nuevo alimento -->
+            <div id="alimento-create">
+                {{ alimento_form_html | safe }}
+            </div>
+
             <!-- Plantillas -->
             <div id="plantillas-section">
                 {{ plantillas_html | safe }}
@@ -56,6 +61,16 @@
 
         <!-- Contenido principal -->
         <main class="flex flex-col gap-6 min-w-0">
+            <!-- Panel de alimentación (arriba del editor de entrenamiento) -->
+            <section id="nutrition-panel" class="bg-neutral-900 border border-transparent rounded-xl px-2 pt-2 pb-3 flex flex-col gap-2 neon-border metallic-border">
+                <div id="nutrition-date-navigator">
+                    {{ nutrition_navigator_html | safe }}
+                </div>
+                <div id="nutrition-editor-wrap">
+                    {{ nutrition_editor_html | safe }}
+                </div>
+            </section>
+
             <!-- Navegador de fechas -->
             <section id="date-navigator">
                 {{ navigator_html | safe }}

@@ -11,7 +11,6 @@ from collections import deque
 
 from src.database import (
     backup_db,
-    delete_diario_by_fecha,
     delete_parametros_diarios,
     delete_plantilla,
     delete_session_by_fecha,

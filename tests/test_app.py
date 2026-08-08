@@ -1006,6 +1006,37 @@ def test_index_app_config_tiene_alimento_map(tmp_path, monkeypatch):
     assert '"alimento_map"' in r.text
 
 
+def test_index_renders_nutrition_panel_above_session_editor(tmp_path, monkeypatch):
+    db = _seed_nutrition(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/")
+    assert r.status_code == 200
+    assert r.text.index('id="nutrition-panel"') < r.text.index('id="session-editor"')
+    assert 'id="target-params"' in r.text
+    assert 'id="alimento-create"' in r.text
+
+
+def test_nutrition_editor_tabla_esquema_11_columnas(tmp_path, monkeypatch):
+    db = _seed_nutrition(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/alimentacion/editor?fecha=2025-04-24")
+    assert r.status_code == 200
+    for label in (
+        "Calorías (kcal)",
+        "Carbohidratos (g)",
+        "Proteína (g)",
+        "Grasa (g)",
+        "Fibra (g)",
+        "Hierro (mg)",
+        "Calcio (mg)",
+        "Vitamina C (mg)",
+        "Vitamina A",
+    ):
+        assert label in r.text
+    assert "Objetivo" in r.text
+    assert "Consumido" in r.text
+
+
 def test_alimentacion_standalone_page_removed(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
@@ -1049,7 +1080,8 @@ def test_alimentacion_editor_fragment(tmp_path, monkeypatch):
     assert r.status_code == 200
     assert "Avena" in r.text
     assert 'name="fecha" value="2025-04-24"' in r.text
-    assert 'id="nutrition-totals"' in r.text
+    assert "Consumido" in r.text
+    assert "Objetivo" in r.text
     assert 'data-has-data="1"' in r.text
 
 

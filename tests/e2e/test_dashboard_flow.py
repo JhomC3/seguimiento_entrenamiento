@@ -88,7 +88,7 @@ def test_unsaved_changes_confirmation(page, server):
         "Entrenamiento guardado", timeout=2000
     )
     expect(page.locator("#session-editor-wrap")).to_contain_text("Semana")
-    expect(page.locator('input[name="fecha"]')).to_have_value(_iso(2))
+    expect(page.locator('#session-form input[name="fecha"]')).to_have_value(_iso(2))
 
 
 def test_add_remove_reorder_set(page, server):
