@@ -8,6 +8,8 @@ from src.models import TrainingSetInput
 from src.training_service import (
     calculate_cycle_week,
     day_from_date,
+    fecha_display,
+    fecha_to_db,
     get_session_detail,
     get_sessions_page,
     insert_manual_session,
@@ -73,13 +75,13 @@ def test_insert_manual_session_basic(db):
     )
     assert result.semana == 1
     assert result.dia == "MARTES"
-    assert result.fecha == "10/2/26"
+    assert result.fecha == "2026-02-10"
     conn = sqlite3.connect(db)
     row = conn.execute(
         "SELECT semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen FROM training_sets"
     ).fetchone()
     conn.close()
-    assert row == (1, "MARTES", "10/2/26", 1, "Press", 8.0, 80.0, 2.0, "manual")
+    assert row == (1, "MARTES", "2026-02-10", 1, "Press", 8.0, 80.0, 2.0, "manual")
 
 
 def test_insert_manual_session_multiple_sets(db):
@@ -204,7 +206,7 @@ def test_get_sessions_page_and_detail(db):
     assert s["n_ejercicios"] == 1
     assert s["manual_sets"] == 2
     assert s["google_sets"] == 0
-    detail = get_session_detail(db, 2, "MIERCOLES", "13/5/26")
+    detail = get_session_detail(db, 2, "MIERCOLES", "2026-05-13")
     assert len(detail) == 2
     assert round(detail[0].kg * (1 + 0.0333 * (detail[0].reps + 1 + detail[0].rir)), 1) == round(
         80 * (1 + 0.0333 * (8 + 1 + 2)), 1
@@ -223,7 +225,7 @@ def test_update_session(db):
         db,
         1,
         "MARTES",
-        "10/2/26",
+        "2026-02-10",
         "2026-02-11",
         [
             TrainingSetInput(ejercicio="Press", kg=85, reps=6, rir=2),
@@ -236,8 +238,8 @@ def test_update_session(db):
     ).fetchall()
     conn.close()
     assert len(rows) == 2
-    assert rows[0] == (1, "MIERCOLES", "11/2/26", 85.0)
-    assert rows[1][2] == "11/2/26"
+    assert rows[0] == (1, "MIERCOLES", "2026-02-11", 85.0)
+    assert rows[1][2] == "2026-02-11"
 
 
 def test_delete_session(db):
@@ -248,7 +250,7 @@ def test_delete_session(db):
             TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
         ],
     )
-    deleted = delete_session(db, 1, "MARTES", "10/2/26")
+    deleted = delete_session(db, 1, "MARTES", "2026-02-10")
     assert deleted == 1
     conn = sqlite3.connect(db)
     count = conn.execute("SELECT COUNT(*) FROM training_sets").fetchone()[0]
@@ -264,10 +266,18 @@ def test_get_sets_by_fecha(db):
             TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
         ],
     )
-    rows = get_sets_by_fecha(db, "10/2/26")
+    rows = get_sets_by_fecha(db, "2026-02-10")
     assert len(rows) == 1
     assert rows[0]["ejercicio"] == "Press"
     assert rows[0]["origen"] == "manual"
+
+
+def test_fecha_to_db_devuelve_iso():
+    assert fecha_to_db(date(2026, 8, 6)) == "2026-08-06"
+
+
+def test_fecha_display():
+    assert fecha_display("2026-08-06") == "6/8/26"
 
 
 def test_save_session_replaces_rows(db):
@@ -339,7 +349,7 @@ def test_save_session_replaces_google_rows_by_fecha(db):
     conn = sqlite3.connect(db)
     conn.execute(
         "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) "
-        "VALUES (1, 'MARTES', '10/2/26', 1, 'Press', 8, 80, 1, 'google')"
+        "VALUES (1, 'MARTES', '2026-02-10', 1, 'Press', 8, 80, 1, 'google')"
     )
     conn.commit()
     conn.close()

@@ -37,11 +37,16 @@ def day_from_date(fecha: date) -> str:
 
 
 def fecha_to_db(fecha: date) -> str:
-    return f"{fecha.day}/{fecha.month}/{fecha.year % 100:02d}"
+    return fecha.strftime("%Y-%m-%d")
 
 
 def fecha_from_db(fecha: str) -> date:
-    return datetime.strptime(fecha, "%d/%m/%y").date()
+    return datetime.strptime(fecha, "%Y-%m-%d").date()
+
+
+def fecha_display(fecha_iso: str) -> str:
+    d = fecha_from_db(fecha_iso)
+    return f"{d.day}/{d.month}/{d.year % 100:02d}"
 
 
 def parse_form_date(fecha_iso: str) -> date:
