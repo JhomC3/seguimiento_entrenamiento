@@ -14,13 +14,16 @@ def init_db(db_path: str) -> None:
     run_migrations(db_path)
 
 
-def backup_db(db_path: str) -> str:
+def backup_db(db_path: str, *, keep: int = 30) -> str:
     import shutil
+
+    from src.backup_utils import prune_backups
 
     backups_dir = os.path.join(os.path.dirname(db_path) or ".", "backups")
     os.makedirs(backups_dir, exist_ok=True)
     dest = os.path.join(backups_dir, f"gym-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db")
     shutil.copy2(db_path, dest)
+    prune_backups(backups_dir, keep)
     return dest
 
 

@@ -213,6 +213,19 @@ def test_backup_only_when_pending_migrations(tmp_path):
     assert len(list(backups_dir.iterdir())) == 1
 
 
+def test_backup_prune_mantiene_ultimos_30(tmp_path):
+    from src.database import backup_db
+
+    db = str(tmp_path / "g.db")
+    init_db(db)
+    (tmp_path / "backups").mkdir(exist_ok=True)
+    for i in range(35):
+        (tmp_path / "backups" / f"gym-20260804-{100000 + i:06d}.db").touch()
+    backup_db(db)
+    backups = sorted(p.name for p in (tmp_path / "backups").glob("gym-*.db"))
+    assert len(backups) == 30
+
+
 def test_v005_recomputa_semanas_desde_fecha(tmp_path):
     from src.db_connection import connect_db, read_connection
     from src.migrations import v005_recompute_semana
