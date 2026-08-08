@@ -65,12 +65,12 @@ def test_csp_allows_required_cdn_sources(client):
     r = client.get("/")
     csp = _csp_of(r)
     for src in (
-        "https://cdn.tailwindcss.com",
         "https://unpkg.com",
         "https://cdn.jsdelivr.net",
         "https://cdn.plot.ly",
     ):
         assert src in csp
+    assert "cdn.tailwindcss.com" not in csp
 
 
 def test_headers_on_mutating_route(client):

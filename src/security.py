@@ -8,14 +8,14 @@ import time
 # Every executable script is external ('self' or pinned CDNs): the CSP allows
 # no inline scripts (no nonce, no 'unsafe-inline'). Data-only elements like
 # <script type="application/json"> (app-config, chart figure) are inert and
-# unaffected by script-src. style-src keeps 'unsafe-inline' because the Tailwind
-# CDN runtime injects <style> elements at runtime (CSS injection is not script
+# unaffected by script-src. style-src keeps 'unsafe-inline' because Plotly
+# injects <style> elements at runtime (CSS injection is not script
 # execution). See docs/architecture/security-model.md.
 CSP = (
     "default-src 'self'; "
-    "script-src 'self' https://cdn.tailwindcss.com https://unpkg.com "
+    "script-src 'self' https://unpkg.com "
     "https://cdn.jsdelivr.net https://cdn.plot.ly; "
-    "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; "
+    "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; "
     "connect-src 'self'; "
     "object-src 'none'; "

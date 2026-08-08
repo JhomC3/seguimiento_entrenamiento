@@ -496,18 +496,33 @@ def test_base_template_loads_only_module_js(tmp_path, monkeypatch):
 
 
 def test_base_template_cdn_scripts_pin_sri(tmp_path, monkeypatch):
-    """Tripwire: every third-party <script src> must carry integrity=, except the
-    Tailwind CDN runtime (JIT, dynamic response + redirect — cannot be SRI-pinned;
-    documented in docs/architecture/security-model.md)."""
+    """Tripwire: every third-party <script src> must carry integrity= and crossorigin=."""
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     with open(os.path.join(os.path.dirname(__file__), "..", "templates", "base.html")) as f:
         source = f.read()
-    for tag in re.findall(r'<script\s+src="https://[^"]+"[^>]*>', source):
-        if "cdn.tailwindcss.com" in tag:
-            continue
+    scripts = re.findall(r'<script\s+src="https://[^"]+"[^>]*>', source)
+    assert len(scripts) == 3, f"CDNs esperados: htmx, sortablejs, plotly; hay {len(scripts)}"
+    for tag in scripts:
         assert "integrity=" in tag, f"script sin SRI: {tag}"
         assert "crossorigin=" in tag, f"script sin crossorigin: {tag}"
+
+
+def test_base_template_sin_cdn_tailwind(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    with open(os.path.join(os.path.dirname(__file__), "..", "templates", "base.html")) as f:
+        source = f.read()
+    assert "cdn.tailwindcss.com" not in source
+    assert '<link rel="stylesheet" href="/static/css/tailwind.css">' in source
+
+
+def test_static_tailwind_css_served(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/static/css/tailwind.css")
+    assert r.status_code == 200
+    assert ".bg-matte-950" in r.text
 
 
 def test_index_uses_app_config_json(tmp_path, monkeypatch):
