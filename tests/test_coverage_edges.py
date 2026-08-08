@@ -154,7 +154,7 @@ def test_baselines_ignore_null_kg_reps(chart_db):
     with conn:
         conn.execute(
             "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) "
-            "VALUES (1, 'LUNES', '4/5/26', 9, 'Press', NULL, NULL, 1, 'manual')"
+            "VALUES (1, 'LUNES', '2026-05-04', 9, 'Press', NULL, NULL, 1, 'manual')"
         )
     baselines = get_exercises_baselines(chart_db)
     expected_press = round((_rm_ajustado(80, 8, 1) + _rm_ajustado(82, 6, 2)) / 2, 1)
