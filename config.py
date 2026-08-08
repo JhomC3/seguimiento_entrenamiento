@@ -14,9 +14,16 @@ GIDS: dict[str, str] = {
     "ejercicios": "2123755988",
 }
 
+NUTRITION_SHEET_ID: str = "1-qKcqrZRrINdT4Sdw_ItYvn2DtchNvj0Ehb-Nzafxrg"
 
-def get_csv_url(gid: str) -> str:
-    return f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={gid}"
+NUTRITION_GIDS: dict[str, str] = {
+    "diario": "368323682",
+    "alimentos": "1540384299",
+}
+
+
+def get_csv_url(gid: str, sheet_id: str = SHEET_ID) -> str:
+    return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
 
 
 MUSCLE_CATEGORIES: list[dict[str, str | list[str]]] = [

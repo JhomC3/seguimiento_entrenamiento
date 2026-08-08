@@ -1,13 +1,22 @@
 import requests
 
-from config import GIDS, get_csv_url
+from config import GIDS, SHEET_ID, get_csv_url
 
 
-def fetch_sheet_csv(sheet_name: str) -> str:
-    """Descarga una hoja de Google Sheets como texto CSV."""
-    if sheet_name not in GIDS:
-        raise ValueError(f"Hoja desconocida: {sheet_name}. Opciones: {list(GIDS.keys())}")
-    url = get_csv_url(GIDS[sheet_name])
+def fetch_sheet_csv(
+    sheet_name: str,
+    *,
+    gids: dict[str, str] = GIDS,
+    sheet_id: str = SHEET_ID,
+) -> str:
+    """Descarga una hoja de Google Sheets como texto CSV.
+
+    Por defecto descarga hojas del spreadsheet de entrenamiento; alimentación
+    pasa explícitamente `gids=NUTRITION_GIDS` y `sheet_id=NUTRITION_SHEET_ID`.
+    """
+    if sheet_name not in gids:
+        raise ValueError(f"Hoja desconocida: {sheet_name}. Opciones: {list(gids.keys())}")
+    url = get_csv_url(gids[sheet_name], sheet_id=sheet_id)
     response = requests.get(url, timeout=30)
     response.raise_for_status()
     return response.text
