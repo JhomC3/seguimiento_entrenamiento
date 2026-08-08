@@ -1,8 +1,8 @@
 // nutrition-editor.js — editor del día de alimentación: filas, previsualización
-// desde el catálogo y navegación por fecha.
+// de los 9 nutrientes desde el catálogo, filas Objetivo/Consumido en vivo.
 // El servidor es la fuente autoritativa del cálculo; la previsualización usa el
-// mapa compacto `alimento_map` de #app-config (valores por 100 g) con redondeo
-// half-up. Los totales se re-suman desde las celdas de previsualización.
+// mapa compacto `alimento_map` de #app-config (valores por 100 g) y las mismas
+// fórmulas de objetivo (Atwater 4/4/9) con redondeo half-up.
 
 import { getAlimentoMap, hideConfirmDialog, showConfirmDialog } from './state.js';
 
@@ -11,8 +11,24 @@ const PREVIEW_CELLS = [
     ['carbohidratos', 'carb-cell'],
     ['proteina', 'prot-cell'],
     ['grasa', 'fat-cell'],
+    ['fibra', 'fibra-cell'],
+    ['hierro', 'hierro-cell'],
+    ['calcio', 'calcio-cell'],
+    ['vitamina_c', 'vitc-cell'],
+    ['vitamina_a', 'vita-cell'],
 ];
-const TOTAL_KEYS = ['kcal', 'carbohidratos', 'proteina', 'grasa'];
+const CONSUMED_TARGETS = [
+    ['kcal', 'consumed-kcal'],
+    ['carbohidratos', 'consumed-carb'],
+    ['proteina', 'consumed-prot'],
+    ['grasa', 'consumed-fat'],
+];
+const TARGET_CELLS = [
+    ['kcal', 'target-kcal'],
+    ['carbohidratos', 'target-carb'],
+    ['proteina', 'target-prot'],
+    ['grasa', 'target-fat'],
+];
 
 let bound = false;
 
@@ -60,19 +76,56 @@ function previewRow(row) {
     });
 }
 
-function updateTotals() {
-    const bar = document.getElementById('nutrition-totals');
-    if (!bar) return;
+function paramsFromInputs() {
+    const get = id => parseFloat(document.getElementById(id)?.value) || 0;
+    return {
+        peso_kg: get('param-peso'),
+        kcal_objetivo: get('param-kcal'),
+        factor_proteina: get('param-factor-prot'),
+        factor_grasa: get('param-factor-grasa'),
+    };
+}
+
+function updateObjetivo() {
+    const p = paramsFromInputs();
+    const prot = roundHalfUp(p.peso_kg * p.factor_proteina);
+    const fat = roundHalfUp(p.peso_kg * p.factor_grasa);
+    const kcal = roundHalfUp(p.kcal_objetivo);
+    const carb = roundHalfUp((kcal - 4 * prot - 9 * fat) / 4);
+    TARGET_CELLS.forEach(([key, cls]) => {
+        const cell = document.querySelector('.' + cls);
+        if (!cell) return;
+        cell.textContent = String({ kcal, carbohidratos: carb, proteina: prot, grasa: fat }[key]);
+    });
+    const form = document.getElementById('nutrition-form');
+    if (!form) return;
+    const set = (name, value) => {
+        const input = form.querySelector('input[name="' + name + '"]');
+        if (input) input.value = String(value);
+    };
+    set('peso_kg', p.peso_kg);
+    set('kcal_objetivo', p.kcal_objetivo);
+    set('factor_proteina', p.factor_proteina);
+    set('factor_grasa', p.factor_grasa);
+}
+
+function updateConsumido() {
     const sums = { kcal: 0, carbohidratos: 0, proteina: 0, grasa: 0 };
+    let grams = 0;
     document.querySelectorAll('#nutrition-rows .nutrition-row').forEach(row => {
-        TOTAL_KEYS.forEach(key => {
+        const qtyRaw = (row.querySelector('.cantidad-input')?.value || '').trim();
+        const qty = parseFloat(qtyRaw.replace(',', '.'));
+        if (qty > 0) grams += qty;
+        CONSUMED_TARGETS.forEach(([key, cls]) => {
             sums[key] += parseFloat(row.querySelector('.' + PREVIEW_CELLS.find(c => c[0] === key)[1])?.textContent) || 0;
         });
     });
-    TOTAL_KEYS.forEach(key => {
-        const el = bar.querySelector('[data-total="' + key + '"]');
-        if (el) el.textContent = String(Math.round(sums[key]));
+    CONSUMED_TARGETS.forEach(([key, cls]) => {
+        const cell = document.querySelector('.' + cls);
+        if (cell) cell.textContent = String(Math.round(sums[key]));
     });
+    const gramsCell = document.querySelector('.consumed-grams');
+    if (gramsCell) gramsCell.textContent = grams > 0 ? Math.round(grams) + ' g' : '—';
 }
 
 function addRow() {
@@ -83,9 +136,9 @@ function addRow() {
     clone.querySelectorAll('input').forEach(i => { i.value = ''; });
     clone.querySelectorAll('.nutrition-preview').forEach(c => { c.textContent = '—'; });
     tbody.appendChild(clone);
-    renumber();
     const first = clone.querySelector('input');
     if (first) first.focus();
+    updateConsumido();
 }
 
 function removeRow(btn) {
@@ -98,8 +151,7 @@ function removeRow(btn) {
         row.querySelectorAll('input').forEach(i => { i.value = ''; });
         row.querySelectorAll('.nutrition-preview').forEach(c => { c.textContent = '—'; });
     }
-    renumber();
-    updateTotals();
+    updateConsumido();
 }
 
 function currentIso() {
@@ -164,11 +216,16 @@ function onClick(e) {
 }
 
 function onInput(e) {
-    if (!e.target.closest('#nutrition-form')) return;
-    const row = e.target.closest('.nutrition-row');
-    if (row) {
-        previewRow(row);
-        updateTotals();
+    if (e.target.closest('#target-params')) {
+        updateObjetivo();
+        return;
+    }
+    if (e.target.closest('#nutrition-form')) {
+        const row = e.target.closest('.nutrition-row');
+        if (row) {
+            previewRow(row);
+            updateConsumido();
+        }
     }
 }
 
@@ -186,7 +243,6 @@ function onFormSubmit(e) {
         const empty = !(inputs[0].value.trim() || inputs[1].value.trim());
         if (empty) row.remove();
     });
-    renumber();
 }
 
 export function initNutritionEditor() {
@@ -202,7 +258,7 @@ export function initNutritionEditor() {
 
 export function refreshNutritionEditor() {
     if (!document.getElementById('nutrition-form')) return;
-    renumber();
-    updateTotals();
+    updateObjetivo();
+    updateConsumido();
     captureBaseline();
 }

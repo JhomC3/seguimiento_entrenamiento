@@ -14,7 +14,7 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6 items-start">
         <!-- Panel lateral izquierdo -->
-        <aside class="flex flex-col gap-4 lg:sticky lg:top-6">
+        <aside class="flex flex-col gap-4 lg:sticky lg:top-6 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:pr-1 lg:scrollbar-thin">
             <!-- Nuevo ejercicio -->
             <div id="exercise-create">
                 {{ exercise_form_html | safe }}
