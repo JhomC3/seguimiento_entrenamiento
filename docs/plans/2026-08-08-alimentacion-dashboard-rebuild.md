@@ -161,3 +161,10 @@ prot = round_half_up(peso×factor_prot); grasa = round_half_up(peso×factor_gras
 2. **verify_editor y el sticky**: el aside del sidebar era más alto que su contenedor (`3418px` vs `2450px`), lo que impedía el anclaje `position: sticky`; con el panel de alimentación, la tarjeta fuente del drag quedaba fuera del viewport y el drag HTML5 no arrancaba (4 checks FAIL). Fix: `lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto` en el aside → sticky real + scroll interno → 131/131 OK.
 3. **carb objetivo del test**: con grasa 1.1 × 69 = 76, `carb = (2750 − 4·104 − 9·76)/4 = 413` (el 398 del esquema corresponde a grasa 83).
 4. **Selector colisionante**: `input[name="fecha"]` sin scope en un e2e de entrenamiento → scoped a `#session-form`.
+
+## Notas de ejecución 2 (2026-08-08) — unificación sobre el editor de entrenamiento
+
+1. **Diagnóstico con evidencia (probe de navegador)**: sin errores JS; el colapso anterior funcionaba en ambos sentidos (la percepción de fallo era el diseño de barras externas + estado persistido); altura constante ya; **bug real confirmado: el lápiz no salía de edición** (exit sin re-render).
+2. **Unificación**: el editor de alimentación es ahora una copia fiel del de sesión: `session-editor.css` con selectores extendidos a `#nutrition-panel` (sin cambiar reglas), template 1:1 (mismos paddings/clases), JS copiado byte a byte con ids `nutrition-*`; fuentes verificadas idénticas (probe: familia/12px/700 iguales).
+3. **Colapso**: chevron `collapse-chevron` en el header de ambos paneles (entrenamiento incluido, autorizado); las barras externas y los CSS duplicados se eliminaron.
+4. **verify_editor**: `controls.length === 3` → `4` (el chevron suma un control al header del entrenamiento).

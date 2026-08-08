@@ -113,17 +113,10 @@
 
 ### Nutrition dashboard (panel integrado en `/`)
 
-- El panel vive en `index.html` **arriba del editor de sesión** (`#nutrition-panel`); no existe página standalone (`GET /alimentacion` → 404).
-- `GET /alimentacion/editor?fecha=<YYYY-MM-DD>` — fragmento del editor (toda fecha editable; sin readonly).
-- `POST /alimentacion/save` — form `fecha`, `alimento[]`, `cantidad[]`, `peso_kg`, `factor_proteina`, `factor_grasa`, `kcal_objetivo`. El servidor recalcula los 9 nutrientes desde el catálogo (`ROUND_HALF_UP(catálogo_100g * g / 100)`); los parámetros se persisten en `parametros_diarios` (UPSERT). OOB: `#notice-container`, `#save-outcome`, `#nutrition-editor-wrap` (innerHTML), `#nutrition-date-navigator` (outerHTML).
-- `POST /alimentacion/eliminar` — form `fecha`; borra el día completo (los parámetros no se tocan). Mismo set OOB.
-- `POST /alimento/nuevo` — form `nombre`, `categoria` + 9 nutrientes (por 100 g). OOB: `#notice-container`, `#app-config` (script tag, outerHTML, `alimento_map` actualizado), `#alimento-create` (outerHTML).
-- `GET /alimentacion/exportar/csv` — `text/csv` de `diario_alimentacion` ordenado por `fecha, orden`.
-- `POST /undo` — entradas `alimentacion` restauran filas **y** parámetros; OOB de editor y navegador cuando la fecha coincide.
-- **Fórmulas de objetivo (servidor)**: `proteina = round(peso × factor_proteina)`, `grasa = round(peso × factor_grasa)`, `kcal = round(kcal_objetivo)` (editable), `carb = round((kcal − 4·prot − 9·grasa) / 4)`; fibra/hierro/calcio/vitC/vitA objetivo importados de la hoja.
-- **Fila Consumido** = suma del día (gramos + 9 nutrientes), calculada, nunca importada.
-- Selectores estables: `#nutrition-form`, `#nutrition-rows .nutrition-row`, `.food-select`, `.cantidad-input`, `.nutrition-preview.kcal-cell/.carb-cell/.prot-cell/.fat-cell/.fibra-cell/.hierro-cell/.calcio-cell/.vitc-cell/.vita-cell`, filas `Objetivo`/`Consumido` (`.target-*`, `.consumed-*`), `#target-params` (`#param-peso`, `#param-kcal`, `#param-factor-prot`, `#param-factor-grasa`), `#nutrition-editor-state[data-has-data]`.
-- `data-action` handlers (delegados en `nutrition-editor.js`): `nutrition-prev`, `nutrition-next`, `nutrition-date-input`, `nutrition-row-add`, `nutrition-row-remove`, `nutrition-delete`. La preview usa `alimento_map` (9 nutrientes) de `#app-config`; el servidor es autoritativo al guardar.
+- El panel vive en `index.html` **debajo del navegador de fechas y arriba del editor de sesión** (`#nutrition-panel`); no existe página standalone (`GET /alimentacion` → 404). El **navegador de fechas es compartido**: seleccionar una fecha refresca ambos editores (`/fecha/editor` + `/alimentacion/editor`); los atajos de teclado y el input de fecha afectan a ambos. Navegar con cambios sin guardar confirma primero el editor de sesión y luego el de alimentación (mismo modal).
+- El editor de alimentación es una **copia fiel del editor de sesión**: comparte `session-editor.css` (selectores `#session-editor, #nutrition-panel`), el mecanismo de edición con lápiz (`nutrition-pencil-btn`), altura fija (`--table-h` fijado en `#nutrition-panel`), filas +/− solo en edición, `#nutrition-edit-actions` (Cancelar/Guardar) y dirty-check. `exit` re-renderiza del servidor (`doNav(fecha, true)`).
+- **Colapso**: chevron `.collapse-chevron` en el header de ambos paneles (`data-action="toggle-panel-collapse"` con `data-target="session-editor"`/`"nutrition-panel"`); el cuerpo se oculta y el header permanece; estado persistido en `localStorage` (`gym.panel.session|nutrition`).
+- Selectores estables: `#nutrition-form`, `#nutrition-rows .nutrition-row`, `.food-select`, `.cantidad-input`, `.nutrition-preview.kcal-cell/.carb-cell/.prot-cell/.fat-cell/.fibra-cell/.hierro-cell/.calcio-cell/.vitc-cell/.vita-cell`, filas `Objetivo`/`Consumido` (`.target-*`, `.consumed-*`), `#target-params` (`#param-peso`, `#param-kcal`, `#param-factor-prot`, `#param-factor-grasa`), `#nutrition-editor-state[data-readonly][data-has-data]`.
 
 ---
 
