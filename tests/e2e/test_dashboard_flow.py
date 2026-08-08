@@ -26,6 +26,28 @@ def _goto_date(page, server, iso):
     expect(page.locator("#session-editor-wrap")).to_contain_text("Semana")
 
 
+def _click_chart_point(page, semana):
+    """Clic real de ratón sobre el marcador de una semana en la gráfica unificada."""
+    pos = page.evaluate(
+        """(semana) => {
+            const plotEl = document.getElementById('unified-chart-plot');
+            if (!plotEl) return null;
+            const gd = plotEl._fullData ? plotEl : null;
+            const idx = gd ? gd._fullData[0].x.indexOf(semana) : -1;
+            const pts = plotEl.querySelectorAll('.point');
+            if (idx >= 0 && idx < pts.length) {
+                pts[idx].scrollIntoView({ block: 'center' });
+                const r = pts[idx].getBoundingClientRect();
+                return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+            }
+            return null;
+        }""",
+        semana,
+    )
+    assert pos, f"no se encontró el marcador de la semana {semana}"
+    page.mouse.click(pos["x"], pos["y"])
+
+
 def test_empty_state_chart(page, server):
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
@@ -251,3 +273,62 @@ def test_dynamic_script_does_not_execute(page, server):
     )
     page.wait_for_timeout(400)
     assert page.evaluate("window.__xssProbe") is False, "la CSP debe bloquear scripts inyectados"
+
+
+def test_week_click_navigates_to_first_session_of_week(page, server):
+    """Clic real sobre el marcador de una semana lleva el editor al primer entreno de esa semana."""
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+
+    # Dos sesiones en semanas distintas (lunes 10/08 y lunes 17/08) para que el
+    # primer entreno de la semana del segundo clic sea inequívoco.
+    iso_a = _iso(4)
+    iso_b = _iso(11)
+    for iso in (iso_a, iso_b):
+        page.locator(f'.date-num[data-iso="{iso}"]').click()
+        expect(page.locator(f'.date-num[data-iso="{iso}"]')).to_have_class(
+            re.compile(r"\bselected\b")
+        )
+        _fill_row(page, 0)
+        page.click('#edit-actions button[type="submit"]')
+        expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+            "Entrenamiento guardado", timeout=2000
+        )
+
+    page.click("#cat-btn-Pectoral")
+    page.locator("#unified-chart .js-plotly-plot").first.wait_for(state="visible", timeout=5000)
+    page.locator("#unified-chart-plot .point").first.wait_for(state="visible", timeout=5000)
+
+    semana_b = (datetime.date.fromisoformat(iso_b) - datetime.date(2026, 5, 4)).days // 7 + 1
+    _click_chart_point(page, semana_b)
+    expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso_b, timeout=3000)
+
+
+def test_category_filters_dots_sin_saltar_editor(page, server):
+    """El botón de categoría filtra los dots del navegador y deja el editor en su fecha."""
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+
+    iso = _iso(3)
+    page.locator(f'.date-num[data-iso="{iso}"]').click()
+    expect(page.locator(f'.date-num[data-iso="{iso}"]')).to_have_class(re.compile(r"\bselected\b"))
+    _fill_row(page, 0)
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+
+    page.click(".today-btn")
+    expect(page.locator(f'.date-num[data-iso="{_iso(0)}"]')).to_have_class(
+        re.compile(r"\bselected\b")
+    )
+    assert page.evaluate("document.querySelectorAll('.date-num .date-dot').length") >= 1
+
+    page.click("#cat-btn-Pectoral")
+    page.wait_for_timeout(800)
+    assert page.evaluate("document.querySelectorAll('.date-num .date-dot').length") == 1
+    expect(page.locator("#session-form input[name='fecha']")).to_have_value(_iso(0), timeout=3000)
+
+    page.click("#cat-btn-Pectoral")
+    page.wait_for_timeout(800)
+    assert page.evaluate("document.querySelectorAll('.date-num .date-dot').length") >= 1

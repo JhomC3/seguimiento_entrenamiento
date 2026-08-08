@@ -94,8 +94,15 @@ def _render_body(response) -> str:
     return bytes(response.body).decode()
 
 
-def _navigator_html(request: Request, fecha_iso: str) -> str:
-    vm = build_date_navigator(DB_PATH, fecha_iso, CICLO_START_DATE, date.today())
+def _navigator_html(
+    request: Request,
+    fecha_iso: str,
+    grupo: str | None = None,
+    ejercicio: str | None = None,
+) -> str:
+    vm = build_date_navigator(
+        DB_PATH, fecha_iso, CICLO_START_DATE, date.today(), grupo=grupo, ejercicio=ejercicio
+    )
     return _render_body(
         templates.TemplateResponse(
             request=request,
@@ -213,7 +220,6 @@ def read_index(request: Request):
                 DB_PATH,
                 "systemic",
                 title=_chart_title(),
-                nonce=getattr(request.state, "csp_nonce", None),
             ),
             "navigator_html": _navigator_html(request, fecha),
             "editor_html": _editor_html(request, fecha),
@@ -222,7 +228,6 @@ def read_index(request: Request):
             "app_config_json": {
                 "categoria_map": get_ejercicio_categoria(DB_PATH),
                 "csrf_token": make_csrf_token(get_csrf_secret()),
-                "csp_nonce": getattr(request.state, "csp_nonce", ""),
             },
         },
     )
@@ -489,14 +494,13 @@ def export_csv():
 
 
 @app.get("/select", response_class=HTMLResponse)
-def select_view(request: Request, grupo: str = Query(None)):
+def select_view(request: Request, grupo: str = Query(None), fecha: str = Query(None)):
     if not grupo:
         ejercicios_list, _ = get_filters(DB_PATH)
         chart_html_frag = chart_html(
             DB_PATH,
             "systemic",
             title=_chart_title(),
-            nonce=getattr(request.state, "csp_nonce", None),
         )
         exercise_list_html = _render_body(
             templates.TemplateResponse(
@@ -509,7 +513,15 @@ def select_view(request: Request, grupo: str = Query(None)):
             )
         )
         oob_chart = chart_oob_wrapper(chart_html_frag)
-        return HTMLResponse(content=exercise_list_html + oob_chart)
+        selected = fecha or _today_iso()
+        navigator_oob = fragment_oob(
+            templates,
+            request,
+            "date-navigator",
+            _navigator_html(request, selected),
+            swap="outerHTML",
+        )
+        return HTMLResponse(content=exercise_list_html + oob_chart + navigator_oob)
 
     ejercicios_grupo = get_ejercicios_por_grupo(DB_PATH, grupo)
     chart_html_frag = chart_html(
@@ -517,7 +529,6 @@ def select_view(request: Request, grupo: str = Query(None)):
         "muscle_group",
         grupo,
         _chart_title(grupo),
-        nonce=getattr(request.state, "csp_nonce", None),
     )
     exercise_list_html = _render_body(
         templates.TemplateResponse(
@@ -530,24 +541,39 @@ def select_view(request: Request, grupo: str = Query(None)):
         )
     )
     oob_chart = chart_oob_wrapper(chart_html_frag)
-    return HTMLResponse(content=exercise_list_html + oob_chart)
+    selected = fecha or _today_iso()
+    navigator_oob = fragment_oob(
+        templates,
+        request,
+        "date-navigator",
+        _navigator_html(request, selected, grupo=grupo),
+        swap="outerHTML",
+    )
+    return HTMLResponse(content=exercise_list_html + oob_chart + navigator_oob)
 
 
 @app.get("/grupo/reset", response_class=HTMLResponse)
-def reset_grupo(request: Request, grupo: str = Query(...)):
+def reset_grupo(request: Request, grupo: str = Query(...), fecha: str = Query(None)):
     chart_html_frag = chart_html(
         DB_PATH,
         "muscle_group",
         grupo,
         _chart_title(grupo),
-        nonce=getattr(request.state, "csp_nonce", None),
     )
     oob_chart = chart_oob_wrapper(chart_html_frag)
-    return HTMLResponse(content="<div></div>" + oob_chart)
+    selected = fecha or _today_iso()
+    navigator_oob = fragment_oob(
+        templates,
+        request,
+        "date-navigator",
+        _navigator_html(request, selected, grupo=grupo),
+        swap="outerHTML",
+    )
+    return HTMLResponse(content="<div></div>" + oob_chart + navigator_oob)
 
 
 @app.get("/ejercicio", response_class=HTMLResponse)
-def get_exercise_history(request: Request, ejercicio: str = Query(...)):
+def get_exercise_history(request: Request, ejercicio: str = Query(...), fecha: str = Query(None)):
     raw_df = get_exercise_raw_data(DB_PATH, ejercicio)
     raw_data = raw_df.to_dict(orient="records") if not raw_df.empty else []
 
@@ -559,7 +585,6 @@ def get_exercise_history(request: Request, ejercicio: str = Query(...)):
         "exercise",
         ejercicio,
         _chart_title(ejercicio),
-        nonce=getattr(request.state, "csp_nonce", None),
     )
     tables_html = _render_body(
         templates.TemplateResponse(
@@ -573,4 +598,12 @@ def get_exercise_history(request: Request, ejercicio: str = Query(...)):
         )
     )
     oob_chart = chart_oob_wrapper(chart_html_frag)
-    return HTMLResponse(content=tables_html + oob_chart)
+    selected = fecha or _today_iso()
+    navigator_oob = fragment_oob(
+        templates,
+        request,
+        "date-navigator",
+        _navigator_html(request, selected, ejercicio=ejercicio),
+        swap="outerHTML",
+    )
+    return HTMLResponse(content=tables_html + oob_chart + navigator_oob)

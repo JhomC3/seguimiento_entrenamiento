@@ -19,6 +19,7 @@ OOB_FRAGMENT_TARGETS = (
     "exercise-create",
     "plantillas-section",
     "unified-chart",
+    "date-navigator",
 )
 
 STATIC_MARKERS = {
@@ -114,9 +115,11 @@ def fragment_oob(
 def chart_oob_wrapper(chart_html: str) -> str:
     """Trusted wrapper for the Plotly fragment.
 
-    chart_html comes from plotly's `fig.to_html()`, a server-generated block
-    whose data is JSON-encoded by plotly itself. It must never be built from
-    request-derived strings; this wrapper exists so the trust boundary is a
-    named, documented function rather than a scattered f-string.
+    chart_html comes from `src/dashboard_service.chart_html()`: a server-owned
+    block with the figure JSON inside an inert <script type="application/json">
+    plus the #unified-chart-plot render div (client renders with Plotly). It
+    must never be built from request-derived strings; this wrapper exists so
+    the trust boundary is a named, documented function rather than a scattered
+    f-string.
     """
     return f'<div id="unified-chart" hx-swap-oob="innerHTML">{chart_html}</div>'

@@ -3,19 +3,18 @@
 import hashlib
 import hmac
 import os
-import re
-import secrets
 import time
 
-# Inline executable scripts are gone from the templates (Task 2/6). The only
-# remaining inline script is the Plotly chart payload, which is allowed per
-# response via a nonce. style-src keeps 'unsafe-inline' because the Tailwind
+# Every executable script is external ('self' or pinned CDNs): the CSP allows
+# no inline scripts (no nonce, no 'unsafe-inline'). Data-only elements like
+# <script type="application/json"> (app-config, chart figure) are inert and
+# unaffected by script-src. style-src keeps 'unsafe-inline' because the Tailwind
 # CDN runtime injects <style> elements at runtime (CSS injection is not script
 # execution). See docs/architecture/security-model.md.
-CSP_TEMPLATE = (
+CSP = (
     "default-src 'self'; "
     "script-src 'self' https://cdn.tailwindcss.com https://unpkg.com "
-    "https://cdn.jsdelivr.net https://cdn.plot.ly 'nonce-{nonce}'; "
+    "https://cdn.jsdelivr.net https://cdn.plot.ly; "
     "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; "
     "img-src 'self' data:; "
     "connect-src 'self'; "
@@ -24,11 +23,6 @@ CSP_TEMPLATE = (
     "form-action 'self'; "
     "frame-ancestors 'none'"
 )
-
-
-def build_csp(nonce: str) -> str:
-    return CSP_TEMPLATE.format(nonce=nonce)
-
 
 DEFAULT_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -44,20 +38,7 @@ _DEV_SECRET = "dev-only-secret-do-not-use-in-production"
 
 
 class SecurityHeadersMiddleware:
-    """Adds security headers to every response (including static assets).
-
-    Generates a per-request nonce, exposes it as ``request.state.csp_nonce``
-    (used by chart fragments) and pins it in the CSP header of the same
-    response.
-
-    htmx-injected fragments execute scripts in the context of the original
-    document, whose CSP nonce was fixed at page load. To keep those scripts
-    allowed, the page sends its nonce back on every htmx request via
-    ``X-CSP-Nonce``; when present and well-formed, that nonce rules this
-    response too (CSP header + fragment scripts).
-    """
-
-    _NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+    """Adds security headers (incl. the static CSP) to every response."""
 
     def __init__(self, app):
         self.app = app
@@ -67,22 +48,12 @@ class SecurityHeadersMiddleware:
             await self.app(scope, receive, send)
             return
 
-        nonce = secrets.token_urlsafe(16)
-        for name, value in scope.get("headers", []):
-            if name.lower() == b"x-csp-nonce":
-                page_nonce = value.decode("ascii", "ignore").strip()
-                if self._NONCE_RE.fullmatch(page_nonce):
-                    nonce = page_nonce
-                break
-        scope.setdefault("state", {})["csp_nonce"] = nonce
-        csp = build_csp(nonce)
-
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
                 headers = dict(message.get("headers", []))
                 for name, value in DEFAULT_HEADERS.items():
                     headers[name.lower().encode()] = value.encode()
-                headers[b"content-security-policy"] = csp.encode()
+                headers[b"content-security-policy"] = CSP.encode()
                 message["headers"] = list(headers.items())
             await send(message)
 

@@ -27,8 +27,8 @@ accidental data loss and drive-by browser attacks, not a motivated adversary.
 - `Referrer-Policy: same-origin`
 - `X-Frame-Options: DENY` (no framing; equivalent CSP `frame-ancestors 'none'`)
 - `Content-Security-Policy` — restrictive `default-src 'self'`, explicit pinned CDN
-  origins for script/style, **no `'unsafe-inline'` in `script-src`**, per-response
-  `nonce` for the Plotly inline payload, `object-src 'none'`, `base-uri 'self'`,
+  origins for script/style, **no `'unsafe-inline'` and no nonce in `script-src`**,
+  `object-src 'none'`, `base-uri 'self'`,
   `form-action 'self'`, `connect-src 'self'`, `img-src 'self' data:`.
 
 **Inline script policy (decided in the remediation programme):**
@@ -40,11 +40,14 @@ accidental data loss and drive-by browser attacks, not a motivated adversary.
   static tokens in `static/css/palette.css`. The CDN runtime injects `<style>`
   elements, so `style-src` keeps `'unsafe-inline'` (CSS injection is not script
   execution) — documented as the only remaining global inline allowance.
-- **Plotly chart payloads** are the only inline `<script>`; each response CSP
-  carries a fresh nonce (`request.state.csp_nonce`) and the chart fragment's
-  `<script>` tag gets the same nonce. plotly JSON-escapes `</` sequences in its
-  payload (regression-tested); a runtime tripwire fails loudly if that ever
-  regresses.
+- **Plotly charts are data-driven**: the figure travels as JSON inside a
+  `<script type="application/json" id="unified-chart-data">` element (inert,
+  never executed, same pattern as `#app-config`) and `static/js/chart-interaction.js`
+  renders it client-side with `Plotly.newPlot` into `#unified-chart-plot`.
+  The payload is escaped for inline embedding (`_json_for_inline` neutralizes
+  `<`, `>`, `&`, `'` so hostile names cannot close the script element;
+  regression-tested). The CSP is therefore **static** — no nonce round-trip is
+  needed and htmx-injected fragments never contain executable inline scripts.
 - The `#app-config` block is `type="application/json"` (data, never executed;
   not subject to `script-src`).
 
@@ -82,7 +85,7 @@ runtime and the `style-src 'unsafe-inline'` allowance entirely).
 - **OOB messages and fragments render through Jinja partials**
   (`templates/partials/oob_*.html` via `src/response_fragments.py`); request
   values are never concatenated into HTML. The only `| safe` content is a
-  server-rendered Jinja fragment or the nonced Plotly payload.
+  server-rendered Jinja fragment or the Plotly figure JSON (data script).
 - Client-configurable data (exercise names, template names, dates) is rendered
   through Jinja escaping only. The former executable-JS interpolation
   (`const CATEGORIA_MAP = {{ ... | safe }}`) was replaced by the `#app-config`

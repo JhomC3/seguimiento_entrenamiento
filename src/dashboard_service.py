@@ -5,7 +5,6 @@ Pure orchestration: no HTTP, no template rendering. Handlers stay thin.
 
 import html
 import logging
-import re
 import sqlite3
 from datetime import date, datetime, timedelta
 
@@ -65,9 +64,23 @@ def get_ejercicios_por_grupo(db_path: str, grupo: str) -> list[str]:
         return []
 
 
-def fechas_con_datos(db_path: str) -> set[str]:
+def fechas_con_datos(
+    db_path: str, grupo: str | None = None, ejercicio: str | None = None
+) -> set[str]:
     with read_connection(db_path) as conn:
-        rows = conn.execute("SELECT DISTINCT fecha FROM training_sets").fetchall()
+        sql = (
+            "SELECT DISTINCT t.fecha FROM training_sets t "
+            "JOIN ejercicios e ON LOWER(t.ejercicio) = LOWER(e.ejercicio) "
+            "WHERE 1 = 1"
+        )
+        params: list = []
+        if grupo:
+            sql += " AND LOWER(e.grupo_muscular) = LOWER(?)"
+            params.append(grupo)
+        if ejercicio:
+            sql += " AND LOWER(t.ejercicio) = LOWER(?)"
+            params.append(ejercicio)
+        rows = conn.execute(sql, params).fetchall()
     out: set[str] = set()
     for (f,) in rows:
         try:
@@ -109,20 +122,33 @@ def get_first_session_date(
     return best.strftime("%Y-%m-%d") if best else None
 
 
+def _json_for_inline(serialized: str) -> str:
+    """Escapa JSON serializado para incrustarlo en <script type="application/json">.
+
+    Mismo escape que Jinja `tojson` (<, >, &, ' -> \\uXXXX): un valor hostil
+    (p.ej. un nombre de ejercicio) no puede cerrar el elemento script.
+    """
+    return (
+        serialized.replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+        .replace("'", "\\u0027")
+    )
+
+
 def chart_html(
     db_path: str,
     filter_type: str,
     filter_value: str | None = None,
     title: str = "",
-    *,
-    nonce: str | None = None,
 ) -> str:
-    """Plotly chart fragment with the panel header (same style as the editor).
+    """Plotly chart fragment: panel header + figure JSON + render target div.
 
-    The header mirrors `session_editor.html`: a burgundy h3 title plus a small
-    gray "Ciclo N" label. The h3 text is HTML-escaped (it may embed exercise or
-    group names); the Plotly body is JSON-encoded by plotly itself. Never pass
-    request-derived strings through this function without escaping.
+    La figura viaja como JSON dentro de un <script type="application/json">
+    (elemento inerte, mismo patrón que #app-config) y la renderiza el módulo
+    cliente static/js/chart-interaction.js con Plotly.newPlot. Así no hay
+    scripts ejecutables inline: la CSP no necesita nonce y los swaps de htmx
+    no dependen del manejo de scripts.
     """
     header = (
         '<div class="flex items-baseline gap-2 min-w-0 pl-3 mb-3">'
@@ -132,15 +158,12 @@ def chart_html(
     )
     fig = chart_pfr_timeline(db_path, filter_type, filter_value, "")
     if fig.data:
-        plotly_html = fig.to_html(
-            include_plotlyjs=False, full_html=False, config={"displayModeBar": False}
+        data = _json_for_inline(fig.to_json())
+        return (
+            header
+            + f'<script id="unified-chart-data" type="application/json">{data}</script>'
+            + '<div id="unified-chart-plot" class="plotly-graph-div"></div>'
         )
-        body = re.search(r"<script[^>]*>(.*?)</script>", plotly_html, re.DOTALL)
-        if body and "</script>" in body.group(1):
-            raise RuntimeError("Fragmento Plotly contiene </script> sin escapar")
-        if nonce:
-            plotly_html = plotly_html.replace("<script", f'<script nonce="{nonce}"', 1)
-        return header + plotly_html
     return (
         header
         + "<div class='flex items-center justify-center h-[300px] text-neutral-500 text-xs'>Sin datos</div>"
@@ -154,10 +177,15 @@ def _end_of_next_month(d: date) -> date:
 
 
 def build_date_navigator(
-    db_path: str, fecha_iso: str, ciclo_start: date, today: date
+    db_path: str,
+    fecha_iso: str,
+    ciclo_start: date,
+    today: date,
+    grupo: str | None = None,
+    ejercicio: str | None = None,
 ) -> DateNavigatorViewModel:
     selected = parse_form_date(fecha_iso)
-    data_dates = fechas_con_datos(db_path)
+    data_dates = fechas_con_datos(db_path, grupo, ejercicio)
     dates = []
     d = ciclo_start
     end = _end_of_next_month(today)

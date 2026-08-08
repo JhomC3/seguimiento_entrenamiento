@@ -1,9 +1,15 @@
 // dashboard-filters.js — owns: category and exercise selection and highlighting.
 // DOM owned: .category-btn, .filter-btn, #exercise-section, #history-section.
-// Public API: initDashboardFilters.
+// Public API: initDashboardFilters, getActiveFilter.
+
+import { getCurrentIso } from './state.js';
 
 let currentCategory = null;
 let currentExercise = null;
+
+function currentFechaQuery() {
+    return `fecha=${encodeURIComponent(getCurrentIso() || '')}`;
+}
 
 function highlightCategoryBtn(category) {
     document.querySelectorAll('.category-btn').forEach(btn => {
@@ -29,7 +35,7 @@ function toggleCategory(category) {
         const historySec = document.getElementById('history-section');
         if (historySec) historySec.innerHTML = '';
 
-        htmx.ajax('GET', `/select?grupo=${encodeURIComponent(category)}`, '#exercise-section');
+        htmx.ajax('GET', `/select?grupo=${encodeURIComponent(category)}&${currentFechaQuery()}`, '#exercise-section');
     }
 }
 
@@ -38,12 +44,12 @@ function toggleExercise(exercise) {
         currentExercise = null;
         highlightExerciseBtn(null);
 
-        htmx.ajax('GET', `/grupo/reset?grupo=${encodeURIComponent(currentCategory)}`, '#history-section');
+        htmx.ajax('GET', `/grupo/reset?grupo=${encodeURIComponent(currentCategory)}&${currentFechaQuery()}`, '#history-section');
     } else {
         currentExercise = exercise;
         highlightExerciseBtn(exercise);
 
-        htmx.ajax('GET', `/ejercicio?ejercicio=${encodeURIComponent(exercise)}`, '#history-section');
+        htmx.ajax('GET', `/ejercicio?ejercicio=${encodeURIComponent(exercise)}&${currentFechaQuery()}`, '#history-section');
     }
 }
 
@@ -72,7 +78,7 @@ function resetToGlobal() {
     const historySec = document.getElementById('history-section');
     if (historySec) historySec.innerHTML = '';
 
-    htmx.ajax('GET', '/select', '#exercise-section');
+    htmx.ajax('GET', `/select?${currentFechaQuery()}`, '#exercise-section');
 }
 
 export function getActiveFilter() {
@@ -100,9 +106,9 @@ export function initDashboardFilters() {
         const elt = event.detail.elt;
         if (elt && elt.id === 'exercise-create-form' && event.detail.successful) {
             if (currentCategory) {
-                htmx.ajax('GET', `/select?grupo=${encodeURIComponent(currentCategory)}`, '#exercise-section');
+                htmx.ajax('GET', `/select?grupo=${encodeURIComponent(currentCategory)}&${currentFechaQuery()}`, '#exercise-section');
             } else {
-                htmx.ajax('GET', '/select', '#exercise-section');
+                htmx.ajax('GET', `/select?${currentFechaQuery()}`, '#exercise-section');
             }
         }
     });

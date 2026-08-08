@@ -91,19 +91,25 @@
 
 ### `GET /select?grupo=<name>` (and `/select` bare)
 
-- Returns `exercise_list.html` fragment + OOB `#unified-chart` (innerHTML).
+- Returns `exercise_list.html` fragment + OOB `#unified-chart` (innerHTML) + OOB `#date-navigator` (outerHTML).
 - `grupo` empty/None → global exercise list + systemic chart; otherwise filtered by muscle group + muscle-group chart.
+- Optional `fecha` param: the navigator OOB keeps the selected date at `fecha` (fallback: today) — filters never move the editor.
 - Used with `target: '#exercise-section'` (htmx.ajax from `toggleCategory`/`resetToGlobal`).
 
 ### `GET /grupo/reset?grupo=<name>`
 
-- Returns `<div></div>` + OOB `#unified-chart` (innerHTML, muscle-group chart).
+- Returns `<div></div>` + OOB `#unified-chart` (innerHTML, muscle-group chart) + OOB `#date-navigator` (outerHTML, filtered dots).
 - Used with `target: '#history-section'` when an exercise is deselected.
 
 ### `GET /ejercicio?ejercicio=<name>`
 
-- Returns `exercise_detail.html` (raw sets table + per-session summary table) + OOB `#unified-chart` (innerHTML, exercise chart).
+- Returns `exercise_detail.html` (raw sets table + per-session summary table) + OOB `#unified-chart` (innerHTML, exercise chart) + OOB `#date-navigator` (outerHTML, filtered dots).
 - Used with `target: '#history-section'`.
+
+### `GET /semana/primer-entreno?semana=<n>[&grupo=][&ejercicio=]`
+
+- JSON `{"fecha": "<iso>"|null}`: first training date (ISO) of a cycle week, optionally filtered by the active muscle group/exercise.
+- Consumed by `chart-interaction.js` when a chart marker is clicked: the editor navigates to that week's first session (`requestNavigate`).
 
 ---
 
@@ -129,7 +135,9 @@
 | `#confirm-modal`, `#confirm-cancel`, `#confirm-save`, `#confirm-msg` | Shared confirm dialog (unsaved changes, replace, delete) |
 | `#exercise-create`, `#exercise-create-form` | New-exercise form container (OOB outerHTML target) |
 | `#exercise-section`, `#history-section` | htmx.ajax targets for category/exercise navigation |
-| `#unified-chart` | Single chart OOB target (innerHTML) |
+| `#unified-chart` | Single chart OOB target (innerHTML); contains the figure JSON and the render div |
+| `#unified-chart-data` | Inert `<script type="application/json">` carrying the Plotly figure (escaped with `_json_for_inline`); never executed |
+| `#unified-chart-plot` | Plotly render div (`plotly-graph-div`); client renders with `Plotly.newPlot` and binds `plotly_click` via `plotEl.on` |
 | `#date-navigator`, `#date-strip`, `.date-num`, `.date-dot`, `.nav-arrow`, `.today-btn` | Date navigator; `.date-num` buttons carry `data-iso` and `.selected` |
 | `#app-config` | `type="application/json"` block with `categoria_map` + `csrf_token`, parsed by `app.js` |
 | `#plantilla-applied` | Hidden marker inside editor OOB response after applying a plantilla; removed client-side to trigger baseline reset |
@@ -194,11 +202,23 @@ in `htmx-lifecycle.js`.
   (delegated listener + initial scrollIntoView).
 - **Dashboard filters (`dashboard-filters.js`):** category/exercise selection,
   highlighting, `resetToGlobal`, Esc handler, exercise-create refresh,
+  `currentFechaQuery()` (filter requests carry the current date so the
+  navigator OOB keeps the editor on its date), `getActiveFilter()`,
   `initDashboardFilters` (delegated listener).
+- **Chart interaction (`chart-interaction.js`):** `renderUnifiedChart()`
+  (JSON → `Plotly.newPlot` into `#unified-chart-plot`, re-binds `plotly_click`
+  on the plot div; Plotly events do not bubble to `document`),
+  `initChartInteractions` listens to `htmx:load` and re-renders when the
+  inserted node is `#unified-chart-plot` (covers main and OOB swaps). Clicking
+  a marker fetches `/semana/primer-entreno` (with the active filter) and
+  `requestNavigate`s to that week's first session.
 - **htmx lifecycle (`htmx-lifecycle.js`):** `initLifecycle()` wires the
   confirm-modal buttons and the delegated `htmx:afterSwap`/`afterSettle`/
   `afterRequest`, `submit` (capture, `#session-form`), `input`/`change`,
   `keydown` (Ctrl/Cmd+Z undo, Enter in template-name input → `confirmEntrenoSave`).
+  After a successful save, `updateDateDot` runs synchronously in
+  `afterRequest` (OOB swaps are already applied); `recalcRM`/`syncEditorFromContent`/
+  `fitRowsToPanel` stay deferred in a `setTimeout`.
 - **Bootstrap (`app.js`):** reads `#app-config` (`categoria_map`,
   `csrf_token`), injects `X-CSRF-Token` on every htmx request via
   `htmx:configRequest`, then runs the module initializers once on
@@ -210,7 +230,8 @@ in `htmx-lifecycle.js`.
   rendering. `src/dashboard_service.py` builds view models and translates
   errors; `src/mutation_service.py` owns backup/snapshot/undo-stack sequences;
   `src/response_fragments.py` renders OOB fragments through Jinja partials
-  (autoescaping is the only HTML boundary; chart fragments are nonced).
+  (autoescaping is the only HTML boundary; chart fragments are data-only JSON
+  with a static CSP — no nonce).
 - The in-memory `UNDO_STACK` (deque, maxlen 10) lives in `src/mutation_service.py`.
 - RM formula client + server: `kg * (1 + 0.0333 * (reps + 1 + rir))`, rounded to 1 decimal.
 - OOB responses: notices and editor markers/wrappers render via

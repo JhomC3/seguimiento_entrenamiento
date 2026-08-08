@@ -46,35 +46,19 @@ def _script_src(csp: str) -> str:
 def test_csp_header_present_and_restrictive(client):
     r = client.get("/")
     csp = _csp_of(r)
-    nonce = _nonce_of(csp)
-    from src.security import build_csp
+    from src.security import CSP
 
-    assert csp == build_csp(nonce)
+    assert csp == CSP
     assert "frame-ancestors 'none'" in csp
     assert "object-src 'none'" in csp
     assert "default-src 'self'" in csp
     assert "form-action 'self'" in csp
 
 
-def _nonce_of(csp: str) -> str:
-    import re as _re
-
-    m = _re.search(r"'nonce-([^']+)'", csp)
-    assert m, "la CSP debe incluir un nonce"
-    return m.group(1)
-
-
-_NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
-
-
-def _re_nonce_fullmatch(value: str) -> bool:
-    return bool(_NONCE_RE.fullmatch(value))
-
-
-def test_csp_has_no_unsafe_inline_in_script_src(client):
+def test_csp_has_no_inline_script_escape_hatch(client):
     script_src = _script_src(_csp_of(client.get("/")))
     assert "'unsafe-inline'" not in script_src
-    assert "'nonce-" in script_src
+    assert "'nonce-" not in script_src
 
 
 def test_csp_allows_required_cdn_sources(client):
@@ -101,12 +85,12 @@ def test_headers_on_mutating_route(client):
         },
     )
     assert r.headers["x-content-type-options"] == "nosniff"
-    from src.security import build_csp
+    from src.security import CSP
 
-    assert _csp_of(r) == build_csp(_nonce_of(_csp_of(r)))
+    assert _csp_of(r) == CSP
 
 
-def test_chart_fragment_carries_response_nonce(authed_client):
+def test_chart_fragment_has_no_executable_script(authed_client):
     authed_client.post(
         "/entrenamiento/session/save",
         data={
@@ -118,28 +102,13 @@ def test_chart_fragment_carries_response_nonce(authed_client):
         },
     )
     r = authed_client.get("/")
-    csp_nonce = _nonce_of(_csp_of(r))
-    assert f'<script nonce="{csp_nonce}"' in r.text
-    assert "'unsafe-inline'" not in _script_src(_csp_of(r))
-
-
-def test_middleware_honors_page_nonce_header(client):
-    """El nonce de la página (X-CSP-Nonce) debe regir los fragmentos OOB de htmx:
-    los scripts inyectados se validan contra el CSP del documento, no de la respuesta."""
-    from src.models import TrainingSetInput
-    from src.training_service import save_session
-
-    save_session(appmod.DB_PATH, "2026-05-04", [TrainingSetInput("Press", 80, 8, 1)])
-    r = client.get("/select", headers={"X-CSP-Nonce": "page-nonce-abc1234567890"})
-    assert _nonce_of(_csp_of(r)) == "page-nonce-abc1234567890"
-    assert '<script nonce="page-nonce-abc1234567890"' in r.text
-
-
-def test_middleware_rejects_malformed_nonce_header(client):
-    r = client.get("/select", headers={"X-CSP-Nonce": "<script>alert(1)</script>"})
-    csp_nonce = _nonce_of(_csp_of(r))
-    assert csp_nonce != "<script>alert(1)</script>"
-    assert _re_nonce_fullmatch(csp_nonce)
+    body = r.text
+    assert 'id="unified-chart-data" type="application/json"' in body
+    assert '<div id="unified-chart-plot"' in body
+    # Ningún script de la página es inline ejecutable: o es externo (src=) o es de datos.
+    for m in re.finditer(r"<script[^>]*>", body):
+        tag = m.group(0)
+        assert "src=" in tag or 'type="application/json"' in tag, tag
 
 
 def test_static_assets_have_headers(client):
@@ -394,8 +363,25 @@ def test_edit_template_domain_error_keeps_form_with_safe_message(authed_client):
     assert 'id="plantilla-edit-rows"' in r.text
 
 
+def test_json_for_inline_escapes_hostile_values():
+    """_json_for_inline debe neutralizar </script> sin romper el round-trip."""
+    import json
+
+    from src.dashboard_service import _json_for_inline
+
+    hostile = '{"name": "x</script><script>alert(1)</script>y", "apost": "it\'s"}'
+    escaped = _json_for_inline(hostile)
+    assert "<script>" not in escaped and "</script>" not in escaped
+    assert json.loads(escaped) == {"name": "x</script><script>alert(1)</script>y", "apost": "it's"}
+
+
 def test_chart_fragment_never_contains_raw_script_terminator():
-    """Tripwire: plotly must JSON-escape </script> inside chart payloads."""
+    """Tripwire: la figura viaja como JSON escapado dentro de un script de datos.
+
+    El fragmento no puede contener scripts ejecutables ni </script> crudo en el
+    JSON: el nombre hostil del ejercicio no puede cerrar el elemento."
+    """
+    import json
     import tempfile
 
     from src.dashboard_service import chart_html
@@ -409,14 +395,22 @@ def test_chart_fragment_never_contains_raw_script_terminator():
         hostile = "x</script><script>alert(1)</script>y"
         insert_exercise(db, hostile, "Pectoral", "EMPUJE")
         save_session(db, "2026-02-10", [TrainingSetInput(ejercicio=hostile, kg=80, reps=8, rir=1)])
-        html = chart_html(db, "exercise", hostile, f"Rendimiento – {hostile}", nonce="test-nonce")
+        html = chart_html(db, "exercise", hostile, f"Rendimiento – {hostile}")
         assert 'class="text-[11px] text-neutral-500 flex-none">Ciclo 1<' in html
         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html  # título escapado en el h3
         assert "<script>alert(1)</script>" not in html  # nunca crudo en el documento
-        assert '<script nonce="test-nonce"' in html
-        body = html.split("<script")[1].split("</script>")[0]
-        assert "</script>" not in body
-        assert "<script" not in body.split(">", 1)[1]
+        # El único <script> es el de datos; su contenido no cierra el elemento.
+        for m in re.finditer(r"<script[^>]*>", html):
+            assert 'type="application/json"' in m.group(0)
+        data = re.search(
+            r'<script id="unified-chart-data" type="application/json">(.*?)</script>',
+            html,
+            re.DOTALL,
+        )
+        assert data, "el fragmento debe incluir la figura JSON"
+        assert "<" not in data.group(1) and ">" not in data.group(1)
+        fig = json.loads(data.group(1))
+        assert fig["data"]  # la figura es parseable e íntegra
     finally:
         import os
 

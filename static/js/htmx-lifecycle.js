@@ -109,15 +109,19 @@ export function initLifecycle() {
             }
             const outcome = document.getElementById('save-outcome');
             if (e.detail.successful && outcome && outcome.dataset.ok === '1') {
+                // Los swaps OOB ya están aplicados en afterRequest: pintamos el
+                // dot de inmediato (el navegador puede navegar justo después y
+                // el estado debe ser visible sin esperar el setTimeout).
+                const form = document.getElementById('session-form');
+                const fechaInput = form && form.querySelector('input[name="fecha"]');
+                const fecha = fechaInput ? fechaInput.value : '';
+                const st = document.getElementById('editor-state');
+                const hasData = st && st.dataset.hasData !== undefined ? st.dataset.hasData === '1' : null;
+                if (hasData !== null) {
+                    updateDateDot(fecha, hasData);
+                    syncEditButtons();
+                }
                 setTimeout(function () {
-                    const form = document.getElementById('session-form');
-                    const fechaInput = form && form.querySelector('input[name="fecha"]');
-                    const fecha = fechaInput ? fechaInput.value : '';
-                    const st = document.getElementById('editor-state');
-                    if (st && st.dataset.hasData !== undefined) {
-                        updateDateDot(fecha, st.dataset.hasData === '1');
-                        syncEditButtons();
-                    }
                     recalcRM();
                     syncEditorFromContent();
                     fitRowsToPanel();

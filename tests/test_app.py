@@ -784,3 +784,45 @@ def test_semana_primer_entreno_sin_datos(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/semana/primer-entreno?semana=99")
     assert r.json() == {"fecha": None}
+
+
+def test_select_grupo_filtra_navegador_sin_saltar_editor(tmp_path, monkeypatch):
+    from src.models import TrainingSetInput
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    save_session(db, "2026-05-04", [TrainingSetInput("Press", 80, 8, 1)])
+    save_session(db, "2026-05-06", [TrainingSetInput("Press", 82, 8, 1)])
+    save_session(db, "2026-05-08", [TrainingSetInput("Press", 84, 8, 1)])
+    r = _client().get("/select?grupo=Pectoral&fecha=2026-06-01")
+    assert 'id="date-navigator" hx-swap-oob="outerHTML"' in r.text
+    assert "filter-jump" not in r.text
+    assert r.text.count("date-dot") == 3
+    # El navegador mantiene seleccionada la fecha actual, no la del primer entreno.
+    assert re.search(r'data-iso="2026-06-01"\s+class="date-num selected"', r.text)
+
+
+def test_select_global_restaura_dots_y_mantiene_fecha(tmp_path, monkeypatch):
+    from src.models import TrainingSetInput
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    save_session(db, "2026-05-04", [TrainingSetInput("Press", 80, 8, 1)])
+    r = _client().get("/select?fecha=2026-05-06")
+    assert "filter-jump" not in r.text
+    assert re.search(r'data-iso="2026-05-06"\s+class="date-num selected"', r.text)
+    assert r.text.count("date-dot") >= 1
+
+
+def test_ejercicio_filtra_navegador_sin_saltar_editor(tmp_path, monkeypatch):
+    from src.models import TrainingSetInput
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    save_session(db, "2026-05-04", [TrainingSetInput("Press", 80, 8, 1)])
+    save_session(db, "2026-05-05", [TrainingSetInput("Press", 82, 8, 1)])
+    r = _client().get("/ejercicio?ejercicio=Press&fecha=2026-06-01")
+    assert "filter-jump" not in r.text
+    assert 'id="date-navigator" hx-swap-oob="outerHTML"' in r.text
+    assert r.text.count("date-dot") == 2
+    assert re.search(r'data-iso="2026-06-01"\s+class="date-num selected"', r.text)

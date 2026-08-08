@@ -17,7 +17,6 @@ let applyInFlight = null;
 let dragGhost = null;
 let categoriaMap = {};
 let csrfToken = "";
-let cspNonce = "";
 let currentIso = null;
 
 export function getPendingNav() { return pendingNav; }
@@ -46,8 +45,6 @@ export function setCategoriaMap(m) { categoriaMap = m || {}; }
 export function getCategoriaMap() { return categoriaMap; }
 export function setCsrfToken(t) { csrfToken = t || ""; }
 export function getCsrfToken() { return csrfToken; }
-export function setCspNonce(n) { cspNonce = n || ""; }
-export function getCspNonce() { return cspNonce; }
 
 export function getCurrentIso() {
     if (currentIso) return currentIso;
