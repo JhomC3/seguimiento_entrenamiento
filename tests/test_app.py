@@ -975,15 +975,18 @@ def _seed_nutrition(tmp_path) -> str:
     return db
 
 
-def test_alimentacion_page_renders(tmp_path, monkeypatch):
+def test_alimentacion_standalone_page_removed(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/alimentacion")
-    assert r.status_code == 200
-    assert 'id="nutrition-form"' in r.text
-    assert 'id="nutrition-date-navigator"' in r.text
-    assert 'id="alimento-create"' in r.text
-    assert "csrf_token" in r.text
+    assert r.status_code == 404
+
+
+def test_index_no_tiene_enlace_alimentacion(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/")
+    assert 'href="/alimentacion"' not in r.text
 
 
 def test_alimentacion_editor_fragment(tmp_path, monkeypatch):

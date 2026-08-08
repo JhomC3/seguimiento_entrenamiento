@@ -434,21 +434,6 @@ def sesiones_view(request: Request):
     return HTMLResponse(content=_sesiones_list_html(request))
 
 
-@app.get("/alimentacion", response_class=HTMLResponse)
-def alimentacion_index(request: Request, fecha: str = Query(None)):
-    fecha_iso = fecha or _today_iso()
-    return templates.TemplateResponse(
-        request=request,
-        name="alimentacion.html",
-        context={
-            "navigator_html": _nutrition_navigator_html(request, fecha_iso),
-            "editor_html": _nutrition_editor_html(request, fecha_iso),
-            "alimento_form_html": _alimento_form_html(request),
-            "app_config_json": _nutrition_app_config(),
-        },
-    )
-
-
 @app.get("/alimentacion/editor", response_class=HTMLResponse)
 def alimentacion_editor(request: Request, fecha: str = Query(...)):
     return HTMLResponse(content=_nutrition_editor_html(request, fecha))
