@@ -112,6 +112,52 @@ def test_build_editor_passes_error_and_success(tmp_path):
     assert vm.success == "ok"
 
 
+def test_build_editor_objetivo_y_consumido(tmp_path):
+    from src.database import save_parametros_diarios
+
+    db = str(tmp_path / "g.db")
+    _seed(db)
+    save_parametros_diarios(
+        db,
+        "2025-04-24",
+        {
+            "peso_kg": 69.0,
+            "factor_proteina": 1.5,
+            "factor_grasa": 1.1,
+            "kcal_objetivo": 2750.0,
+            "fibra_objetivo": 38.0,
+            "hierro_objetivo": 8.0,
+            "calcio_objetivo": 1000.0,
+            "vitamina_c_objetivo": 90.0,
+            "vitamina_a_objetivo": 900.0,
+        },
+    )
+    vm = build_nutrition_editor(db, "2025-04-24")
+    assert vm.objetivo["proteina"] == 104.0
+    assert vm.objetivo["grasa"] == 76.0
+    assert vm.objetivo["carbohidratos"] == 413.0
+    assert vm.objetivo["kcal"] == 2750.0
+    assert vm.objetivo["fibra"] == 38.0
+    assert vm.consumido["kcal"] == 467.0
+    assert vm.consumido["proteina"] == 20.0
+    assert vm.consumido["cantidad_g"] == 120.0
+    assert vm.parametros["peso_kg"] == 69.0
+    assert vm.parametros["factor_proteina"] == 1.5
+
+
+def test_build_editor_defaults_params_on_empty_day(tmp_path):
+    db = str(tmp_path / "g.db")
+    _seed(db)
+    vm = build_nutrition_editor(db, "2025-04-26")
+    assert vm.parametros["peso_kg"] == 70.0
+    assert vm.parametros["factor_proteina"] == 1.5
+    assert vm.parametros["factor_grasa"] == 1.1
+    assert vm.parametros["kcal_objetivo"] == 2300.0
+    assert vm.objetivo["proteina"] == 105.0
+    assert vm.consumido["cantidad_g"] == 0.0
+    assert vm.consumido["kcal"] == 0.0
+
+
 def test_build_navigator_sorted_dates_and_selected(tmp_path):
     db = str(tmp_path / "g.db")
     _seed(db)

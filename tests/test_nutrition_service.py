@@ -185,20 +185,23 @@ class TestCreateAlimento:
 
 
 class TestTargetFormulas:
+    def _params(self, **over):
+        params = {
+            "peso_kg": 69.0,
+            "factor_proteina": 1.5,
+            "factor_grasa": 1.1,
+            "kcal_objetivo": 2750.0,
+            "fibra_objetivo": 38.0,
+            "hierro_objetivo": 8.0,
+            "calcio_objetivo": 1000.0,
+            "vitamina_c_objetivo": 90.0,
+            "vitamina_a_objetivo": 900.0,
+        }
+        params.update(over)
+        return params
+
     def test_objetivos_diarios_formula_dictada(self):
-        target = objetivos_diarios(
-            peso_kg=69,
-            factor_proteina=1.5,
-            factor_grasa=1.1,
-            kcal_objetivo=2750,
-            extras={
-                "fibra_objetivo": 38.0,
-                "hierro_objetivo": 8.0,
-                "calcio_objetivo": 1000.0,
-                "vitamina_c_objetivo": 90.0,
-                "vitamina_a_objetivo": 900.0,
-            },
-        )
+        target = objetivos_diarios(self._params())
         assert target["proteina"] == 104.0  # round_half_up(69 * 1.5)
         assert target["grasa"] == 76.0  # round_half_up(69 * 1.1)
         assert target["kcal"] == 2750.0
@@ -211,9 +214,7 @@ class TestTargetFormulas:
         assert target["vitamina_a"] == 900.0
 
     def test_objetivos_diarios_redondeo_half_up(self):
-        target = objetivos_diarios(
-            peso_kg=1, factor_proteina=1.5, factor_grasa=1.1, kcal_objetivo=2, extras={}
-        )
+        target = objetivos_diarios(self._params(peso_kg=1.0, kcal_objetivo=2.0))
         # 1*1.5 = 1.5 -> 2 (half-up); 1*1.1 = 1.1 -> 1
         assert target["proteina"] == 2.0
         assert target["grasa"] == 1.0
@@ -221,7 +222,7 @@ class TestTargetFormulas:
     def test_objetivos_carb_from_atwater_residual(self):
         # carb = (kcal - 4*prot - 9*grasa) / 4
         target = objetivos_diarios(
-            peso_kg=60, factor_proteina=1.5, factor_grasa=1.2, kcal_objetivo=2300, extras={}
+            self._params(peso_kg=60.0, factor_grasa=1.2, kcal_objetivo=2300.0)
         )
         assert target["proteina"] == 90.0
         assert target["grasa"] == 72.0

@@ -67,6 +67,9 @@ class NutritionEditorViewModel:
     has_data: bool = False
     error: str | None = None
     success: str | None = None
+    objetivo: dict[str, float] = field(default_factory=dict)
+    consumido: dict[str, float] = field(default_factory=dict)
+    parametros: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

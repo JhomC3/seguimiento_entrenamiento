@@ -84,14 +84,7 @@ _TARGET_EXTRA_FIELDS: tuple[tuple[str, str], ...] = (
 )
 
 
-def objetivos_diarios(
-    *,
-    peso_kg: float,
-    factor_proteina: float,
-    factor_grasa: float,
-    kcal_objetivo: float,
-    extras: dict,
-) -> dict[str, float]:
+def objetivos_diarios(parametros: dict[str, float]) -> dict[str, float]:
     """Objetivos del día con las fórmulas del documento (Atwater 4/4/9).
 
     proteina = round(peso x factor_proteina)
@@ -100,6 +93,10 @@ def objetivos_diarios(
     carb     = round((kcal - 4*prot - 9*grasa) / 4)
     fibra/hierro/calcio/vitC/vitA: importados de la hoja (extras).
     """
+    peso_kg = parametros["peso_kg"]
+    factor_proteina = parametros["factor_proteina"]
+    factor_grasa = parametros["factor_grasa"]
+    kcal_objetivo = parametros["kcal_objetivo"]
     proteina = _sheet_round(Decimal(str(peso_kg)) * Decimal(str(factor_proteina)))
     grasa = _sheet_round(Decimal(str(peso_kg)) * Decimal(str(factor_grasa)))
     kcal = _sheet_round(Decimal(str(kcal_objetivo)))
@@ -118,7 +115,7 @@ def objetivos_diarios(
         "grasa": grasa,
     }
     for extra_key, field in _TARGET_EXTRA_FIELDS:
-        target[field] = _sheet_round(Decimal(str(extras.get(extra_key, 0.0))))
+        target[field] = _sheet_round(Decimal(str(parametros.get(extra_key, 0.0))))
     return target
 
 

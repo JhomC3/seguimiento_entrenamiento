@@ -15,12 +15,13 @@ from src.database import (
     get_diario_by_fecha,
     get_diario_dates,
     get_exercises_catalog,
+    get_parametros_diarios,
     get_sets_by_fecha,
 )
 from src.db_connection import read_connection
 from src.metrics_engine import rm_ajustado
 from src.models import ConflictError, NotFoundError, ValidationError
-from src.nutrition_service import diary_totals
+from src.nutrition_service import diary_totals, objetivos_diarios
 from src.training_service import (
     calculate_cycle_week,
     day_from_date,
@@ -335,7 +336,7 @@ def build_nutrition_editor(
         NutritionEntryRow(
             orden=r["orden"],
             alimento=r["alimento"],
-            cantidad_g=float(r["cantidad_g"]),
+            cantidad_g=r["cantidad_g"],
             kcal=float(r["kcal"]),
             carbohidratos=float(r["carbohidratos"]),
             fibra=float(r["fibra"]),
@@ -348,15 +349,36 @@ def build_nutrition_editor(
         )
         for r in data
     ]
+    params = get_parametros_diarios(db_path, fecha_iso) or {}
+    defaults = {
+        "peso_kg": 70.0,
+        "factor_proteina": 1.5,
+        "factor_grasa": 1.1,
+        "kcal_objetivo": 2300.0,
+        "fibra_objetivo": 0.0,
+        "hierro_objetivo": 0.0,
+        "calcio_objetivo": 0.0,
+        "vitamina_c_objetivo": 0.0,
+        "vitamina_a_objetivo": 0.0,
+    }
+    parametros = {**defaults, **{k: float(v) for k, v in params.items()}}
+    objetivo = objetivos_diarios(parametros)
+    consumido = diary_totals(data)
+    consumido["cantidad_g"] = round(
+        sum(float(r["cantidad_g"]) for r in data if r["cantidad_g"] is not None), 2
+    )
     return NutritionEditorViewModel(
         fecha_iso=fecha_iso,
         fecha_display=_nutrition_fecha_display(fecha),
         rows=entry_rows,
-        totals=diary_totals(data),
+        totals=consumido,
         catalog=[a["nombre"] for a in get_alimentos_catalog(db_path)],
         has_data=bool(entry_rows),
         error=error,
         success=success,
+        objetivo=objetivo,
+        consumido=consumido,
+        parametros=parametros,
     )
 
 
