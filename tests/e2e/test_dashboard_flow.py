@@ -18,12 +18,19 @@ def _fill_row(page, row, ejercicio="Press", kg="80", reps="8", rir="1"):
     r.locator('input[name="rir"]').fill(rir)
 
 
+def _wait_editor_settled(page):
+    """El swap htmx termina tras afterSwap/afterSettle: esperar el settle evita
+    que un fill automatizado aterrice en el editor antiguo a mitad de swap."""
+    page.wait_for_timeout(120)
+
+
 def _goto_date(page, server, iso):
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
     page.locator(f'.date-num[data-iso="{iso}"]').click()
     expect(page.locator(f'.date-num[data-iso="{iso}"]')).to_have_class(re.compile(r"\bselected\b"))
     expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
+    _wait_editor_settled(page)
 
 
 def _click_chart_point(page, semana):
@@ -290,6 +297,7 @@ def test_week_click_navigates_to_first_session_of_week(page, server):
             re.compile(r"\bselected\b")
         )
         expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
+        _wait_editor_settled(page)
         _fill_row(page, 0)
         page.click('#edit-actions button[type="submit"]')
         expect(page.locator("#editor-notice .notice-success")).to_contain_text(
@@ -313,6 +321,8 @@ def test_category_filters_dots_sin_saltar_editor(page, server):
     iso = _iso(3)
     page.locator(f'.date-num[data-iso="{iso}"]').click()
     expect(page.locator(f'.date-num[data-iso="{iso}"]')).to_have_class(re.compile(r"\bselected\b"))
+    expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
+    _wait_editor_settled(page)
     _fill_row(page, 0)
     page.click('#edit-actions button[type="submit"]')
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(

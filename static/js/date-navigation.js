@@ -5,6 +5,8 @@
 import { getPendingNav, isDirty, setCurrentIso, setPendingNav, showConfirmDialog } from './state.js';
 import { submitSave } from './editor.js';
 
+let inFlightIso = null;
+
 export function doNav(iso, force) {
     if (!iso) return;
     if (force) {
@@ -12,13 +14,17 @@ export function doNav(iso, force) {
     } else if (getPendingNav()) {
         return;
     }
+    if (inFlightIso === iso) return;
+    inFlightIso = iso;
     const actions = document.getElementById('edit-actions');
     if (actions) actions.classList.add('invisible');
     setCurrentIso(iso);
     document.querySelectorAll('.date-num.selected').forEach(b => b.classList.remove('selected'));
     const btn = document.querySelector(`.date-num[data-iso="${iso}"]`);
     if (btn) btn.classList.add('selected');
-    htmx.ajax('GET', `/fecha/editor?fecha=${iso}`, { target: '#session-editor-wrap', swap: 'innerHTML' });
+    htmx.ajax('GET', `/fecha/editor?fecha=${iso}`, { target: '#session-editor-wrap', swap: 'innerHTML' })
+        .then(function () { inFlightIso = null; })
+        .catch(function () { inFlightIso = null; });
     if (btn) btn.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
 }
 
