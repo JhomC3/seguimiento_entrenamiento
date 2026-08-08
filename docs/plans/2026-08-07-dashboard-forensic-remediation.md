@@ -174,6 +174,68 @@ git add src/migrations/v004_iso_dates.py src/migrations/runner.py tests/test_dat
 git commit -m "feat: v004 migration normalizes session dates to ISO"
 ```
 
+> **Nota de numeración:** en la rama ya existe `v005_recompute_semana` (commits del trabajo de estandarización de semanas). Al ejecutar este plan, la migración ISO debe numerarse **después** de la última existente (v006) y el runner debe insertarla en orden cronológico, no forzar el número `v004` del encabezado.
+
+### Task 1.1b: Adaptar `get_first_session_date` y `fechas_con_datos` a fechas ISO
+
+> **Contexto:** ambos helpers se crearon en la sesión de gráfica unificada (clic de semana → `/semana/primer-entreno` y dots filtrados del navegador), **después** de redactarse este plan. Parsean `fecha` como `%d/%m/%y` al leer (`src/dashboard_service.py:87` y `:117`); con la v004/ISO aplicada, `strptime` lanza `ValueError` en todas las filas y ambos devuelven vacío/`None` **en silencio** (el clic de semana dejaría de navegar sin error visible). No tienen tests unitarios; la red de seguridad es el e2e `test_week_click_navigates_to_first_session_of_week`.
+
+**Files:**
+- Modify: `src/dashboard_service.py` (`fechas_con_datos` línea 87, `get_first_session_date` línea 117)
+- Test: `tests/test_app.py`
+
+**Step 1: Escribir el test que falla.**
+
+```python
+def test_get_first_session_date_con_iso(tmp_path):
+    from src.dashboard_service import get_first_session_date
+    from src.database import init_db, insert_exercise
+    from src.models import TrainingSetInput
+    from src.training_service import save_session
+
+    db = str(tmp_path / "gym.db")
+    init_db(db)
+    insert_exercise(db, "Press", "Pectoral", "EMPUJE")
+    save_session(db, "2026-08-18", [TrainingSetInput("Press", 80, 8, 1)])
+    save_session(db, "2026-08-11", [TrainingSetInput("Press", 80, 8, 1)])
+    assert get_first_session_date(db, 15, grupo="Pectoral") == "2026-08-11"
+
+
+def test_fechas_con_datos_con_iso(tmp_path):
+    from src.dashboard_service import fechas_con_datos
+    from src.database import init_db, insert_exercise
+    from src.models import TrainingSetInput
+    from src.training_service import save_session
+
+    db = str(tmp_path / "gym.db")
+    init_db(db)
+    insert_exercise(db, "Press", "Pectoral", "EMPUJE")
+    save_session(db, "2026-08-11", [TrainingSetInput("Press", 80, 8, 1)])
+    assert fechas_con_datos(db) == {"2026-08-11"}
+```
+
+**Step 2: Verificar que falla.**
+
+Run: `uv run pytest tests/test_app.py -k "first_session_date or fechas_con_datos" -v`
+
+Expected: FAIL (tras v004 el `strptime` legacy lanza `ValueError` → `None`/`set()`).
+
+**Step 3: Implementación mínima.** Con ISO zero-padded (`YYYY-MM-DD`), el orden lexicográfico es cronológico: eliminar el parseo Python y usar el valor tal cual.
+
+- `get_first_session_date` (línea 117): sustituir el bucle `strptime`/`best` por `min(fechas)` (retorna el ISO mínimo; `None` si no hay filas).
+- `fechas_con_datos` (línea 87): añadir la fecha directamente al set sin `strptime`/`strftime`.
+
+**Step 4: Verificar que pasa.**
+
+Run: `uv run pytest tests/test_app.py -k "first_session_date or fechas_con_datos" -v` → PASS. Y `uv run pytest tests/e2e/test_dashboard_flow.py::test_week_click_navigates_to_first_session_of_week -v` → PASS (tripwire del flujo completo).
+
+**Step 5: Commit.**
+
+```bash
+git add src/dashboard_service.py tests/test_app.py
+git commit -m "fix: chart week-click and navigator dots handle ISO dates"
+```
+
 ### Task 1.2: `fecha_to_db` → ISO + helper `fecha_display`
 
 **Files:**
