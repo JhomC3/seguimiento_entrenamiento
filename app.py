@@ -267,6 +267,7 @@ def _nutrition_editor_html(
                 "parametros": vm.parametros,
                 "catalog": vm.catalog,
                 "has_data": vm.has_data,
+                "readonly": vm.readonly,
                 "error": vm.error,
                 "success": vm.success,
             },
