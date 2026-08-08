@@ -88,6 +88,15 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
+
+@app.middleware("http")
+async def no_cache_static(request: Request, call_next):
+    """Revalidación de assets en desarrollo: el navegador nunca usa JS/CSS viejos."""
+    response = await call_next(request)
+    if request.url.path.startswith("/static"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
 CICLO_START_DATE = parse_cycle_start(CICLO_START)
 
 

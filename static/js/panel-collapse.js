@@ -8,8 +8,8 @@ import { fitNutritionRowsToPanel } from './nutrition-editor.js';
 
 const PANELS = ['session-editor', 'nutrition-panel'];
 const KEYS = {
-    'session-editor': 'gym.panel.session',
-    'nutrition-panel': 'gym.panel.nutrition',
+    'session-editor': 'gym.panel.session.v2',
+    'nutrition-panel': 'gym.panel.nutrition.v2',
 };
 
 function applyCollapsed(panelId, collapsed) {
