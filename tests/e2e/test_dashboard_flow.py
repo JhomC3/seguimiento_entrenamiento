@@ -289,6 +289,7 @@ def test_week_click_navigates_to_first_session_of_week(page, server):
         expect(page.locator(f'.date-num[data-iso="{iso}"]')).to_have_class(
             re.compile(r"\bselected\b")
         )
+        expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
         _fill_row(page, 0)
         page.click('#edit-actions button[type="submit"]')
         expect(page.locator("#editor-notice .notice-success")).to_contain_text(
