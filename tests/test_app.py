@@ -826,3 +826,43 @@ def test_ejercicio_filtra_navegador_sin_saltar_editor(tmp_path, monkeypatch):
     assert 'id="date-navigator" hx-swap-oob="outerHTML"' in r.text
     assert r.text.count("date-dot") == 2
     assert re.search(r'data-iso="2026-06-01"\s+class="date-num selected"', r.text)
+
+
+def test_export_csv_orden_cronologico(tmp_path, monkeypatch):
+    from src.models import TrainingSetInput
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    for iso, sets in [
+        ("2026-01-15", [TrainingSetInput("Press", 90, 7, 1)]),
+        ("2026-02-03", [TrainingSetInput("Press", 92, 7, 1)]),
+        ("2026-01-09", [TrainingSetInput("Press", 88, 7, 1)]),
+    ]:
+        save_session(db, iso, sets)
+    resp = client.get("/exportar/csv")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/csv")
+    lines = resp.text.splitlines()
+    fecha_idx = lines[0].split(",").index("fecha")
+    fechas = [ln.split(",")[fecha_idx] for ln in lines[1:]]
+    assert fechas == ["2026-01-09", "2026-01-15", "2026-02-03"]
+
+
+def test_get_first_session_date_con_iso(tmp_path):
+    from src.dashboard_service import get_first_session_date
+    from src.models import TrainingSetInput
+
+    db = _setup_db(tmp_path)
+    save_session(db, "2026-08-18", [TrainingSetInput("Press", 80, 8, 1)])
+    save_session(db, "2026-08-11", [TrainingSetInput("Press", 80, 8, 1)])
+    assert get_first_session_date(db, 15, grupo="Pectoral") == "2026-08-11"
+
+
+def test_fechas_con_datos_con_iso(tmp_path):
+    from src.dashboard_service import fechas_con_datos
+    from src.models import TrainingSetInput
+
+    db = _setup_db(tmp_path)
+    save_session(db, "2026-08-11", [TrainingSetInput("Press", 80, 8, 1)])
+    assert fechas_con_datos(db) == {"2026-08-11"}

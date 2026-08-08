@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 
 from config import CICLO_NUMERO
 from src.db_connection import read_connection
-from src.metrics_engine import calculate_pfr_timeline
+from src.metrics_engine import RM_FACTOR, calculate_pfr_timeline
 
 
 def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
@@ -24,15 +24,15 @@ def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
     if df.empty:
         return df
 
-    df["fecha_dt"] = pd.to_datetime(df["fecha"], format="%d/%m/%y", errors="coerce")
+    df["fecha_dt"] = pd.to_datetime(df["fecha"], format="%Y-%m-%d", errors="coerce")
     df["sesion"] = df.groupby("semana")["fecha_dt"].transform(
         lambda x: x.rank(method="dense").astype(int)
     )
     df["serie"] = df.groupby(["semana", "sesion"]).cumcount() + 1
 
     rir_safe = df["rir"].fillna(0)
-    df["rm"] = (df["kg"] * (1 + 0.0333 * df["reps"])).round(1)
-    df["rm_ajustado"] = (df["kg"] * (1 + 0.0333 * (df["reps"] + (1 + rir_safe)))).round(1)
+    df["rm"] = (df["kg"] * (1 + RM_FACTOR * df["reps"])).round(1)
+    df["rm_ajustado"] = (df["kg"] * (1 + RM_FACTOR * (df["reps"] + (1 + rir_safe)))).round(1)
 
     df = df.sort_values(["semana", "fecha_dt", "serie"]).reset_index(drop=True)
     return df[
@@ -147,12 +147,12 @@ def get_exercise_session_summary(db_path: str, ejercicio: str) -> pd.DataFrame:
     if df.empty:
         return df
 
-    df["fecha_dt"] = pd.to_datetime(df["fecha"], format="%d/%m/%y", errors="coerce")
+    df["fecha_dt"] = pd.to_datetime(df["fecha"], format="%Y-%m-%d", errors="coerce")
     df["sesion"] = df.groupby("semana")["fecha_dt"].transform(
         lambda x: x.rank(method="dense").astype(int)
     )
     df["tonelaje"] = df["kg"] * df["reps"]
-    df["rm_ajustado"] = (df["kg"] * (1 + 0.0333 * (df["reps"] + (1 + df["rir"].fillna(0))))).round(
+    df["rm_ajustado"] = (df["kg"] * (1 + RM_FACTOR * (df["reps"] + (1 + df["rir"].fillna(0))))).round(
         1
     )
 
@@ -277,7 +277,7 @@ def get_exercise_detail(db_path: str, ejercicio: str) -> pd.DataFrame:
         return df
 
     # Intentar parsear fechas reales
-    df["fecha_dt"] = pd.to_datetime(df["fecha"], format="%d/%m/%y", errors="coerce")
+    df["fecha_dt"] = pd.to_datetime(df["fecha"], format="%Y-%m-%d", errors="coerce")
 
     # Si hay fechas nulas por error de formato, ordenamos por semana y dia
     # Pero asumimos formato d/m/yy estable.
@@ -333,7 +333,7 @@ def get_exercise_best_rm(db_path: str, ejercicio: str) -> pd.DataFrame:
     if df.empty:
         return df
 
-    df["fecha_dt"] = pd.to_datetime(df["fecha"], format="%d/%m/%y", errors="coerce")
+    df["fecha_dt"] = pd.to_datetime(df["fecha"], format="%Y-%m-%d", errors="coerce")
     df = df.sort_values("fecha_dt").reset_index(drop=True)
     return df
 
