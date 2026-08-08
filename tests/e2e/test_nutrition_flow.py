@@ -23,10 +23,22 @@ def test_nutrition_create_edit_save_reload_delete(page, server):
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
 
-    # 1) El panel está arriba del editor de entrenamiento
+    # 1) El panel está debajo del navegador y el editor de sesión intacto
     expect(page.locator("#nutrition-panel")).to_be_visible()
     expect(page.locator("#nutrition-panel")).to_contain_text("Objetivo")
     expect(page.locator("#nutrition-panel")).to_contain_text("Consumido")
+
+    # 1b) Colapso desde el chevron del header (persiste tras recargar)
+    page.click('#nutrition-panel [data-action="toggle-panel-collapse"]')
+    expect(page.locator("#nutrition-form")).to_be_hidden()
+    page.click('#nutrition-panel [data-action="toggle-panel-collapse"]')
+    expect(page.locator("#nutrition-form")).to_be_visible()
+    page.click('#nutrition-panel [data-action="toggle-panel-collapse"]')
+    page.reload()
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    expect(page.locator("#nutrition-form")).to_be_hidden()
+    page.click('#nutrition-panel [data-action="toggle-panel-collapse"]')
+    expect(page.locator("#nutrition-form")).to_be_visible()
 
     # 2) Alta del alimento en el catálogo (sidebar)
     _fill_alimento_form(page)
