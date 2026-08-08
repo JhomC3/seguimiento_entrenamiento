@@ -71,6 +71,17 @@ The dashboard reads its historical data from a Google Sheet. Run the import scri
 uv run python scripts/import_google_sheets.py
 ```
 
+The nutrition panel imports its own public spreadsheet (`diario` and `alimentos`
+sheets) with an idempotent script that backs up first and only replaces rows with
+`origen='google'`:
+
+```bash
+uv run python scripts/import_nutrition.py
+```
+
+Both scripts honor `GYM_DB_PATH` and abort without touching the DB on fetch/parse
+errors.
+
 ## Verifying the editor UI contract
 
 ```bash

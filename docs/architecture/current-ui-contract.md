@@ -111,6 +111,18 @@
 - JSON `{"fecha": "<iso>"|null}`: first training date (ISO) of a cycle week, optionally filtered by the active muscle group/exercise.
 - Consumed by `chart-interaction.js` when a chart marker is clicked: the editor navigates to that week's first session (`requestNavigate`).
 
+### Nutrition dashboard (`/alimentacion`)
+
+- `GET /alimentacion[?fecha=<YYYY-MM-DD>]` — full page: `#nutrition-date-navigator`, `#nutrition-editor-wrap`, `#alimento-create`, `#app-config` (with `alimento_map` + `csrf_token`).
+- `GET /alimentacion/editor?fecha=<YYYY-MM-DD>` — editor fragment (any date editable; no readonly semantics).
+- `POST /alimentacion/save` — form `fecha`, `alimento[]`, `cantidad[]`; server recomputes nutrients from catalog (`ROUND_HALF_UP(catálogo_100g * g / 100)`), never trusts client macros. OOB: `#notice-container`, `#save-outcome`, `#nutrition-editor-wrap` (innerHTML), `#nutrition-date-navigator` (outerHTML).
+- `POST /alimentacion/eliminar` — form `fecha`; deletes the whole day. Same OOB set.
+- `POST /alimento/nuevo` — form `nombre`, `categoria`, nine nutrient fields (per 100 g). OOB: `#notice-container`, `#app-config` (script tag, outerHTML, updated `alimento_map`), `#alimento-create` (outerHTML).
+- `GET /alimentacion/exportar/csv` — `text/csv` of `diario_alimentacion` ordered by `fecha, orden`.
+- `POST /undo` — `alimentacion` entries: same notice/marker as `sesion` plus `#nutrition-editor-wrap` (innerHTML) and `#nutrition-date-navigator` (outerHTML) when undoing the current date.
+- `data-action` handlers (delegated in `nutrition-editor.js`): `nutrition-prev`, `nutrition-next`, `nutrition-date-input`, `nutrition-row-add`, `nutrition-row-remove`, `nutrition-delete`. Row preview uses the `alimento_map` from `#app-config`; the server stays authoritative on save.
+- Stable selectors: `#nutrition-form`, `#nutrition-rows .nutrition-row`, `.food-select`, `.cantidad-input`, `.nutrition-preview.kcal-cell/.carb-cell/.prot-cell/.fat-cell`, `#nutrition-totals [data-total="kcal|carbohidratos|proteina|grasa"]`, `#nutrition-editor-state[data-has-data]`.
+
 ---
 
 ## 2. Frontend invariants (stable selectors)
