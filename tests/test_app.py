@@ -947,9 +947,8 @@ def test_lifespan_warns_sin_csrf_secret(tmp_path, monkeypatch, caplog):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     monkeypatch.delenv("GYM_CSRF_SECRET", raising=False)
-    with caplog.at_level(logging.WARNING):
-        with TestClient(appmod.app) as c:
-            c.get("/")
+    with caplog.at_level(logging.WARNING), TestClient(appmod.app) as c:
+        c.get("/")
     assert any("GYM_CSRF_SECRET" in r.message for r in caplog.records)
 
 

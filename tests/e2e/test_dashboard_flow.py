@@ -248,9 +248,9 @@ def test_hostile_template_name_does_not_execute(page, server):
     page.locator("#plantillas-section .pt-card").first.get_by_role(
         "button", name="Eliminar"
     ).click()
-    page.wait_for_timeout(800)
-
-    assert len(dialogs) == 1, f"esperado solo el confirm del dashboard, visto: {dialogs}"
+    expect(page.locator("#confirm-modal")).to_be_visible()
+    expect(page.locator("#confirm-msg")).to_contain_text(PAYLOAD)
+    assert len(dialogs) == 0, f"no debe haber dialogs nativos, visto: {dialogs}"
 
 
 def test_hostile_exercise_notice_creates_no_image_node(page, server):
