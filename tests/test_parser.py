@@ -1,6 +1,7 @@
 import pandas as pd
+import pytest
 
-from src.parser import parse_ciclo, parse_ejercicios, parse_float
+from src.parser import parse_alimentos, parse_ciclo, parse_ejercicios, parse_float
 
 SAMPLE_EJERCICIOS_CSV = """,,
 ,Pectoral,Press Convergente
@@ -71,3 +72,70 @@ def test_parse_ciclo_returns_dataframe():
 
     assert len(df[df["semana"] == 1]) == 4
     assert len(df[df["semana"] == 2]) == 4
+
+
+SAMPLE_ALIMENTOS_CSV = """Alimento,Categoría,cantidad,Calorías (kcal),Carbohidratos (g),Fibra (g),Proteína (g),Grasa (g),Hierro (mg),Calcio (mg),Vitamina C (mg),Vitamina A
+Avena,Cereal,100,389,68,"10,0",17,"6,9","4,2",54,0,0
+Huevo,Animal,100,143,1,0,13,10,2,50,0,300
+"""
+
+ALIMENTO_COLUMNS = [
+    "nombre",
+    "categoria",
+    "kcal",
+    "carbohidratos",
+    "fibra",
+    "proteina",
+    "grasa",
+    "hierro",
+    "calcio",
+    "vitamina_c",
+    "vitamina_a",
+]
+
+
+def test_parse_alimentos_columns():
+    df = parse_alimentos(SAMPLE_ALIMENTOS_CSV)
+    assert isinstance(df, pd.DataFrame)
+    assert list(df.columns) == ALIMENTO_COLUMNS
+    assert len(df) == 2
+
+
+def test_parse_alimentos_values():
+    df = parse_alimentos(SAMPLE_ALIMENTOS_CSV)
+    avena = df[df["nombre"] == "Avena"].iloc[0]
+    assert avena["categoria"] == "Cereal"
+    assert avena["kcal"] == 389.0
+    assert avena["carbohidratos"] == 68.0
+    assert avena["fibra"] == 10.0
+    assert avena["proteina"] == 17.0
+    assert avena["grasa"] == 6.9
+    assert avena["hierro"] == 4.2
+    assert avena["calcio"] == 54.0
+    assert avena["vitamina_c"] == 0.0
+    assert avena["vitamina_a"] == 0.0
+
+
+def test_parse_alimentos_strips_names_and_categories():
+    csv_text = SAMPLE_ALIMENTOS_CSV.replace("Avena,Cereal,", "  Avena  ,  Cereal  ,")
+    df = parse_alimentos(csv_text)
+    assert df.iloc[0]["nombre"] == "Avena"
+    assert df.iloc[0]["categoria"] == "Cereal"
+
+
+def test_parse_alimentos_rejects_non_100g_base():
+    csv_text = SAMPLE_ALIMENTOS_CSV.replace("Avena,Cereal,100,", "Avena,Cereal,50,")
+    with pytest.raises(ValueError):
+        parse_alimentos(csv_text)
+
+
+def test_parse_alimentos_rejects_missing_nutrients():
+    csv_text = SAMPLE_ALIMENTOS_CSV.replace("389,68", "389,")
+    with pytest.raises(ValueError):
+        parse_alimentos(csv_text)
+
+
+def test_parse_alimentos_drops_empty_rows():
+    csv_text = SAMPLE_ALIMENTOS_CSV + "\n\n\n"
+    df = parse_alimentos(csv_text)
+    assert len(df) == 2

@@ -136,3 +136,62 @@ def parse_ciclo(csv_text: str) -> pd.DataFrame:
             )
 
     return pd.DataFrame(records)
+
+
+ALIMENTOS_NUTRIENT_COLUMNS: list[str] = [
+    "kcal",
+    "carbohidratos",
+    "fibra",
+    "proteina",
+    "grasa",
+    "hierro",
+    "calcio",
+    "vitamina_c",
+    "vitamina_a",
+]
+
+_ALIMENTOS_HEADER_MAP: dict[str, str | None] = {
+    "Alimento": "nombre",
+    "Categoría": "categoria",
+    "cantidad": None,
+    "Calorías (kcal)": "kcal",
+    "Carbohidratos (g)": "carbohidratos",
+    "Fibra (g)": "fibra",
+    "Proteína (g)": "proteina",
+    "Grasa (g)": "grasa",
+    "Hierro (mg)": "hierro",
+    "Calcio (mg)": "calcio",
+    "Vitamina C (mg)": "vitamina_c",
+    "Vitamina A": "vitamina_a",
+}
+
+
+def parse_alimentos(csv_text: str) -> pd.DataFrame:
+    """Parsea la hoja 'alimentos' -> DataFrame con columnas
+    [nombre, categoria, kcal, carbohidratos, fibra, proteina, grasa,
+    hierro, calcio, vitamina_c, vitamina_a] (valores por 100 g).
+    """
+    df_raw = pd.read_csv(io.StringIO(csv_text))
+    missing = [h for h in _ALIMENTOS_HEADER_MAP if h not in df_raw.columns]
+    if missing:
+        raise ValueError(f"Encabezados de 'alimentos' faltantes: {missing}")
+
+    records: list[dict] = []
+    for _, row in df_raw.iterrows():
+        nombre = str(row["Alimento"]).strip()
+        if not nombre or nombre == "nan":
+            continue
+        base = parse_float(row["cantidad"])
+        if base != 100.0:
+            raise ValueError(f"Alimento '{nombre}': cantidad base {base!r} != 100 g")
+        record: dict = {"nombre": nombre, "categoria": str(row["Categoría"]).strip()}
+        for header, field in _ALIMENTOS_HEADER_MAP.items():
+            if field not in ALIMENTOS_NUTRIENT_COLUMNS:
+                continue
+            value = parse_float(row[header])
+            if value is None:
+                raise ValueError(f"Alimento '{nombre}': nutriente '{header}' no parseable")
+            record[field] = value
+        records.append(record)
+
+    return pd.DataFrame(records, columns=["nombre", "categoria", *ALIMENTOS_NUTRIENT_COLUMNS])
