@@ -119,7 +119,7 @@ def create_alimento(db_path: str, alimento: AlimentoInput) -> None:
         raise ValidationError("El nombre del alimento no puede estar vacío")
     if find_alimento(db_path, nombre) is not None:
         raise ConflictError(f"El alimento '{nombre}' ya existe en el catálogo")
-    food = {"nombre": nombre, "categoria": alimento.categoria.strip()}
+    food: dict[str, float | str] = {"nombre": nombre, "categoria": alimento.categoria.strip()}
     for field in NUTRIENT_FIELDS:
         food[field] = _non_negative_float(getattr(alimento, field), field)
     insert_alimento(db_path, food)
