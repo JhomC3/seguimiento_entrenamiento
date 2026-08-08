@@ -154,3 +154,10 @@ prot = round_half_up(peso×factor_prot); grasa = round_half_up(peso×factor_gras
 ---
 
 **Riesgos:** cambio de firma de `parse_diario` rompe tests existentes (se actualizan en Task 1.2); hoja en edición viva (fixtures congelados); colisión con la otra sesión (verificar rama antes de cada commit); `build_css.sh` requiere npx (instalado).
+
+## Notas de ejecución (2026-08-08)
+
+1. **v008 en gym.db**: un arranque previo registró v008 con la condición invertida del rebuild (registrada sin aplicar); se reparó `data/gym.db` manualmente con el mismo SQL del rebuild y se re-importó (2444 filas / 158 fechas; 8/8/2026 con 29 filas tras dedup).
+2. **verify_editor y el sticky**: el aside del sidebar era más alto que su contenedor (`3418px` vs `2450px`), lo que impedía el anclaje `position: sticky`; con el panel de alimentación, la tarjeta fuente del drag quedaba fuera del viewport y el drag HTML5 no arrancaba (4 checks FAIL). Fix: `lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto` en el aside → sticky real + scroll interno → 131/131 OK.
+3. **carb objetivo del test**: con grasa 1.1 × 69 = 76, `carb = (2750 − 4·104 − 9·76)/4 = 413` (el 398 del esquema corresponde a grasa 83).
+4. **Selector colisionante**: `input[name="fecha"]` sin scope en un e2e de entrenamiento → scoped a `#session-form`.
