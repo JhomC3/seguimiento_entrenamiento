@@ -200,8 +200,8 @@ def parse_alimentos(csv_text: str) -> pd.DataFrame:
         if not nombre or nombre == "nan":
             continue
         base = parse_float(row["cantidad"])
-        if base != 100.0:
-            raise ValueError(f"Alimento '{nombre}': cantidad base {base!r} != 100 g")
+        if base is None or base <= 0:
+            raise ValueError(f"Alimento '{nombre}': cantidad base {base!r} no válida")
         record: dict = {"nombre": nombre, "categoria": str(row["Categoría"]).strip()}
         for header, field in _ALIMENTOS_HEADER_MAP.items():
             if field not in ALIMENTOS_NUTRIENT_COLUMNS:
@@ -209,7 +209,9 @@ def parse_alimentos(csv_text: str) -> pd.DataFrame:
             value = parse_float(row[header])
             if value is None:
                 raise ValueError(f"Alimento '{nombre}': nutriente '{header}' no parseable")
-            record[field] = value
+            # Normalización a valores por 100 g: la hoja mezcla bases (1 = unidad,
+            # 23 = porción); el contrato del catálogo es siempre per-100g.
+            record[field] = round(value * 100.0 / base, 2)
         records.append(record)
 
     return pd.DataFrame(records, columns=["nombre", "categoria", *ALIMENTOS_NUTRIENT_COLUMNS])
@@ -352,9 +354,10 @@ def parse_diario(csv_text: str) -> pd.DataFrame:
                 col = start + block["labels"][label]
                 value = parse_float(row[col]) if col < len(row) else None
                 if value is None:
-                    raise ValueError(
-                        f"Diario {block['fecha_iso']}: nutriente '{label}' no parseable en '{alimento}'"
-                    )
+                    # La hoja trata las celdas en blanco como 0 en sus fórmulas;
+                    # el importador replica ese comportamiento (p. ej. una fila
+                    # de Aceite de Oliva sin macros o una kcal olvidada).
+                    value = 0.0
                 record[field] = value
             order_per_date[block["fecha_iso"]] = order_per_date.get(block["fecha_iso"], 0) + 1
             record["orden"] = order_per_date[block["fecha_iso"]]

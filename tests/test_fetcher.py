@@ -46,7 +46,7 @@ def test_fetch_nutrition_sheet_forwards_nutrition_url(monkeypatch):
     captured = {}
 
     class FakeResponse:
-        text = "x,y\n1,2"
+        content = b"x,y\n1,2"
 
         def raise_for_status(self):
             return None
@@ -61,6 +61,20 @@ def test_fetch_nutrition_sheet_forwards_nutrition_url(monkeypatch):
         config.NUTRITION_GIDS["diario"], sheet_id=config.NUTRITION_SHEET_ID
     )
     assert text == "x,y\n1,2"
+
+
+def test_fetch_decodes_utf8_content(monkeypatch):
+    class FakeResponse:
+        content = "Alimento,Categoría\nAvena,Cereal\n".encode()
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setattr(fetcher.requests, "get", lambda url, timeout=30: FakeResponse())
+    text = fetch_sheet_csv(
+        "alimentos", gids=config.NUTRITION_GIDS, sheet_id=config.NUTRITION_SHEET_ID
+    )
+    assert "Categoría" in text
 
 
 def test_fetch_unknown_sheet_in_custom_map_raises():

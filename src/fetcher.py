@@ -19,4 +19,9 @@ def fetch_sheet_csv(
     url = get_csv_url(gids[sheet_name], sheet_id=sheet_id)
     response = requests.get(url, timeout=30)
     response.raise_for_status()
-    return response.text
+    # Google sirve UTF-8 sin charset en el header: requests.text lo decodificaría
+    # como Latin-1 (mojibake en tildes). Decodificar los bytes explícitamente.
+    try:
+        return response.content.decode("utf-8")
+    except UnicodeDecodeError:
+        return response.content.decode("latin-1")

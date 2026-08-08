@@ -123,10 +123,20 @@ def test_parse_alimentos_strips_names_and_categories():
     assert df.iloc[0]["categoria"] == "Cereal"
 
 
-def test_parse_alimentos_rejects_non_100g_base():
-    csv_text = SAMPLE_ALIMENTOS_CSV.replace("Avena,Cereal,100,", "Avena,Cereal,50,")
-    with pytest.raises(ValueError):
-        parse_alimentos(csv_text)
+def test_parse_alimentos_normalizes_non_100_base():
+    csv_text = (
+        "Alimento,Categoría,cantidad,Calorías (kcal),Carbohidratos (g),Fibra (g),"
+        "Proteína (g),Grasa (g),Hierro (mg),Calcio (mg),Vitamina C (mg),Vitamina A\n"
+        "Arepa,Procesado,1,69,12,2,2,1,0,10,0,0\n"
+        'Queso Doble Crema,Lácteo,23,"80,5",1,0,5,7,0,276,0,130\n'
+    )
+    df = parse_alimentos(csv_text)
+    arepa = df[df["nombre"] == "Arepa"].iloc[0]
+    assert arepa["kcal"] == 6900.0
+    assert arepa["carbohidratos"] == 1200.0
+    queso = df[df["nombre"] == "Queso Doble Crema"].iloc[0]
+    assert queso["kcal"] == 350.0
+    assert queso["calcio"] == 1200.0
 
 
 def test_parse_alimentos_rejects_missing_nutrients():
@@ -462,14 +472,17 @@ def test_parse_diario_skips_truncated_edge_rows():
     assert df.empty
 
 
-def test_parse_diario_raises_on_full_row_with_empty_cell():
-    # Fila de ancho completo con una celda vacía sí es un error de datos.
+def test_parse_diario_treats_empty_cell_as_zero():
+    # La hoja trata celdas en blanco como 0 en sus fórmulas (caso real: kcal
+    # olvidada de Papa, fila sin macros de Aceite de Oliva).
     broken = list(SAMPLE_DIARIO_ROWS[5])
     broken[3] = ""
     rows = [list(r) for r in SAMPLE_DIARIO_ROWS[:6]]
     rows[5] = broken
-    with pytest.raises(ValueError):
-        parse_diario("\n".join([",".join(r) for r in rows]) + "\n")
+    df = parse_diario("\n".join([",".join(r) for r in rows]) + "\n")
+    avena = df[(df["fecha"] == "2025-04-24") & (df["alimento"] == "Avena")].iloc[0]
+    assert avena["kcal"] == 0.0
+    assert avena["fibra"] == 12.0
     # Caso real: la hoja tiene dos bloques con la misma fecha (8/8/2026).
     # El tercer bloque repite 24/4/2025: sus entradas deben concatenarse
     # en orden al mismo día (Avena b1, Avena b3, Huevo b1).
