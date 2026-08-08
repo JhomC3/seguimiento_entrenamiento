@@ -952,6 +952,216 @@ def test_lifespan_warns_sin_csrf_secret(tmp_path, monkeypatch, caplog):
     assert any("GYM_CSRF_SECRET" in r.message for r in caplog.records)
 
 
+def _seed_nutrition(tmp_path) -> str:
+    from src.database import insert_alimento
+
+    db = _setup_db(tmp_path)
+    insert_alimento(
+        db,
+        {
+            "nombre": "Avena",
+            "categoria": "Cereal",
+            "kcal": 389.0,
+            "carbohidratos": 68.0,
+            "fibra": 10.0,
+            "proteina": 17.0,
+            "grasa": 6.9,
+            "hierro": 4.2,
+            "calcio": 54.0,
+            "vitamina_c": 0.0,
+            "vitamina_a": 0.0,
+        },
+    )
+    return db
+
+
+def test_alimentacion_page_renders(tmp_path, monkeypatch):
+    db = _seed_nutrition(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/alimentacion")
+    assert r.status_code == 200
+    assert 'id="nutrition-form"' in r.text
+    assert 'id="nutrition-date-navigator"' in r.text
+    assert 'id="alimento-create"' in r.text
+    assert "csrf_token" in r.text
+
+
+def test_alimentacion_editor_fragment(tmp_path, monkeypatch):
+    from src.database import replace_diario_by_fecha
+
+    db = _seed_nutrition(tmp_path)
+    replace_diario_by_fecha(
+        db,
+        "2025-04-24",
+        [
+            {
+                "alimento": "Avena",
+                "cantidad_g": 120.0,
+                "kcal": 467.0,
+                "carbohidratos": 82.0,
+                "fibra": 12.0,
+                "proteina": 20.0,
+                "grasa": 8.0,
+                "hierro": 5.0,
+                "calcio": 65.0,
+                "vitamina_c": 0.0,
+                "vitamina_a": 0.0,
+                "origen": "google",
+            }
+        ],
+    )
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/alimentacion/editor?fecha=2025-04-24")
+    assert r.status_code == 200
+    assert "Avena" in r.text
+    assert 'name="fecha" value="2025-04-24"' in r.text
+    assert 'id="nutrition-totals"' in r.text
+    assert 'data-has-data="1"' in r.text
+
+
+def test_alimentacion_save_computes_and_returns_oob(tmp_path, monkeypatch):
+    from src.database import get_diario_by_fecha
+
+    db = _seed_nutrition(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().post(
+        "/alimentacion/save",
+        data={"fecha": "2025-04-26", "alimento": ["Avena"], "cantidad": ["120"]},
+    )
+    assert r.status_code == 200
+    assert 'id="nutrition-editor-wrap" hx-swap-oob' in r.text
+    rows = get_diario_by_fecha(db, "2025-04-26")
+    assert len(rows) == 1
+    assert rows[0]["alimento"] == "Avena"
+    assert rows[0]["kcal"] == 467.0
+    assert rows[0]["origen"] == "manual"
+
+
+def test_alimentacion_save_unknown_food_is_400(tmp_path, monkeypatch):
+    db = _seed_nutrition(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().post(
+        "/alimentacion/save",
+        data={"fecha": "2025-04-26", "alimento": ["No Existe"], "cantidad": ["100"]},
+    )
+    assert r.status_code == 400
+    assert "Alimento no encontrado" in r.text
+
+
+def test_alimentacion_eliminar(tmp_path, monkeypatch):
+    from src.database import get_diario_by_fecha, replace_diario_by_fecha
+
+    db = _seed_nutrition(tmp_path)
+    replace_diario_by_fecha(
+        db,
+        "2025-04-26",
+        [
+            {
+                "alimento": "Avena",
+                "cantidad_g": 120.0,
+                "kcal": 467.0,
+                "carbohidratos": 82.0,
+                "fibra": 12.0,
+                "proteina": 20.0,
+                "grasa": 8.0,
+                "hierro": 5.0,
+                "calcio": 65.0,
+                "vitamina_c": 0.0,
+                "vitamina_a": 0.0,
+                "origen": "manual",
+            }
+        ],
+    )
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().post("/alimentacion/eliminar", data={"fecha": "2025-04-26"})
+    assert r.status_code == 200
+    assert get_diario_by_fecha(db, "2025-04-26") == []
+
+
+def test_alimento_nuevo(tmp_path, monkeypatch):
+    from src.database import find_alimento
+
+    db = _seed_nutrition(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().post(
+        "/alimento/nuevo",
+        data={
+            "nombre": "Aceite de Oliva",
+            "categoria": "Procesado",
+            "kcal": "819",
+            "carbohidratos": "0",
+            "fibra": "0",
+            "proteina": "0",
+            "grasa": "92",
+            "hierro": "0",
+            "calcio": "0",
+            "vitamina_c": "0",
+            "vitamina_a": "0",
+        },
+    )
+    assert r.status_code == 200
+    assert 'id="alimento-create" hx-swap-oob="outerHTML"' in r.text
+    assert find_alimento(db, "aceite de oliva") is not None
+
+
+def test_alimentacion_export_csv(tmp_path, monkeypatch):
+    from src.database import replace_diario_by_fecha
+
+    db = _seed_nutrition(tmp_path)
+    replace_diario_by_fecha(
+        db,
+        "2025-04-24",
+        [
+            {
+                "alimento": "Avena",
+                "cantidad_g": 120.0,
+                "kcal": 467.0,
+                "carbohidratos": 82.0,
+                "fibra": 12.0,
+                "proteina": 20.0,
+                "grasa": 8.0,
+                "hierro": 5.0,
+                "calcio": 65.0,
+                "vitamina_c": 0.0,
+                "vitamina_a": 0.0,
+                "origen": "google",
+            }
+        ],
+    )
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/alimentacion/exportar/csv")
+    assert r.status_code == 200
+    assert "alimento" in r.text
+    assert "Avena" in r.text
+    assert "2025-04-24" in r.text
+
+
+def test_alimentacion_save_requires_csrf(tmp_path, monkeypatch):
+    db = _seed_nutrition(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = TestClient(appmod.app).post(
+        "/alimentacion/save",
+        data={"fecha": "2025-04-26", "alimento": ["Avena"], "cantidad": ["120"]},
+    )
+    assert r.status_code == 403
+
+
+def test_undo_alimentacion_refreshes_nutrition_editor(tmp_path, monkeypatch):
+    from src.database import get_diario_by_fecha
+
+    db = _seed_nutrition(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    clear_undo_stack()
+    _client().post(
+        "/alimentacion/save",
+        data={"fecha": "2025-04-26", "alimento": ["Avena"], "cantidad": ["120"]},
+    )
+    r = _client().post("/undo", data={"fecha": "2025-04-26"})
+    assert r.status_code == 200
+    assert 'id="nutrition-editor-wrap" hx-swap-oob' in r.text
+    assert get_diario_by_fecha(db, "2025-04-26") == []
+
+
 def test_get_first_session_date_con_iso(tmp_path):
     from src.dashboard_service import get_first_session_date
     from src.models import TrainingSetInput

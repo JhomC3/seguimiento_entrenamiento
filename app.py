@@ -13,6 +13,8 @@ from config import CICLO_START, DB_PATH, MUSCLE_CATEGORIES
 from src.charts import get_exercise_raw_data, get_exercise_session_summary
 from src.dashboard_service import (
     build_date_navigator,
+    build_nutrition_date_navigator,
+    build_nutrition_editor,
     build_session_editor,
     chart_html,
     get_ejercicios_por_grupo,
@@ -22,6 +24,7 @@ from src.dashboard_service import (
     translate_error,
 )
 from src.database import (
+    get_alimentos_catalog,
     get_categories,
     get_ejercicio_categoria,
     get_exercises_catalog,
@@ -31,16 +34,19 @@ from src.database import (
 )
 from src.db_connection import read_connection
 from src.exercise_service import create_exercise
-from src.models import TemplateInput
+from src.models import AlimentoInput, TemplateInput
 from src.mutation_service import (
+    delete_diary_with_undo_snapshot,
     delete_session,
     delete_template_with_undo_snapshot,
     edit_template_with_undo_snapshot,
     reorder_templates_with_undo_snapshot,
+    save_diary_with_undo_snapshot,
     save_session_with_undo_snapshot,
     save_template_with_undo_snapshot,
     undo_last_action,
 )
+from src.nutrition_service import create_alimento, entries_from_form
 from src.response_fragments import (
     STATIC_MARKERS,
     chart_oob_wrapper,
@@ -48,6 +54,7 @@ from src.response_fragments import (
     editor_wrap_oob,
     fragment_oob,
     notice_oob,
+    nutrition_editor_wrap_oob,
     undo_result_oob,
 )
 from src.security import (
@@ -207,6 +214,86 @@ def _sesiones_list_html(request: Request) -> str:
     )
 
 
+NUTRIENT_FIELD_LABELS: list[dict[str, str]] = [
+    {"name": "kcal", "label": "kcal"},
+    {"name": "carbohidratos", "label": "Carb (g)"},
+    {"name": "fibra", "label": "Fibra (g)"},
+    {"name": "proteina", "label": "Prot (g)"},
+    {"name": "grasa", "label": "Grasa (g)"},
+    {"name": "hierro", "label": "Hierro (mg)"},
+    {"name": "calcio", "label": "Calcio (mg)"},
+    {"name": "vitamina_c", "label": "Vit C (mg)"},
+    {"name": "vitamina_a", "label": "Vit A (µg)"},
+]
+
+
+def _alimento_preview_map() -> dict[str, dict[str, float]]:
+    """Mapa compacto nombre -> macros por 100 g para previsualización client."""
+    return {
+        a["nombre"]: {k: a[k] for k in ("kcal", "carbohidratos", "fibra", "proteina", "grasa")}
+        for a in get_alimentos_catalog(DB_PATH)
+    }
+
+
+def _nutrition_navigator_html(request: Request, fecha_iso: str) -> str:
+    vm = build_nutrition_date_navigator(DB_PATH, fecha_iso)
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="nutrition_date_navigator.html",
+            context={
+                "fecha_iso": vm.selected_iso,
+                "fecha_display": _nutrition_fecha_display(vm.selected_iso),
+                "previous_iso": vm.previous_iso,
+                "next_iso": vm.next_iso,
+                "today_iso": vm.today_iso,
+            },
+        )
+    )
+
+
+def _nutrition_fecha_display(fecha_iso: str) -> str:
+    from datetime import date as _date
+
+    d = _date.fromisoformat(fecha_iso)
+    return f"{d.day}/{d.month}/{d.year}"
+
+
+def _nutrition_editor_html(
+    request: Request,
+    fecha_iso: str,
+    *,
+    error: str | None = None,
+    success: str | None = None,
+) -> str:
+    vm = build_nutrition_editor(DB_PATH, fecha_iso, error=error, success=success)
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="nutrition_editor.html",
+            context={
+                "fecha_iso": vm.fecha_iso,
+                "rows": vm.rows,
+                "totals": vm.totals,
+                "catalog": vm.catalog,
+                "has_data": vm.has_data,
+                "error": vm.error,
+                "success": vm.success,
+            },
+        )
+    )
+
+
+def _alimento_form_html(request: Request) -> str:
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="alimento_create_form.html",
+            context={"nutrient_fields": NUTRIENT_FIELD_LABELS},
+        )
+    )
+
+
 def _domain_error_response(
     request: Request, error: Exception, target: str, *, extra: str = ""
 ) -> HTMLResponse:
@@ -337,6 +424,149 @@ def ejercicio_nuevo(
 @app.get("/sesiones", response_class=HTMLResponse)
 def sesiones_view(request: Request):
     return HTMLResponse(content=_sesiones_list_html(request))
+
+
+@app.get("/alimentacion", response_class=HTMLResponse)
+def alimentacion_index(request: Request, fecha: str = Query(None)):
+    fecha_iso = fecha or _today_iso()
+    return templates.TemplateResponse(
+        request=request,
+        name="alimentacion.html",
+        context={
+            "navigator_html": _nutrition_navigator_html(request, fecha_iso),
+            "editor_html": _nutrition_editor_html(request, fecha_iso),
+            "alimento_form_html": _alimento_form_html(request),
+            "app_config_json": {
+                "alimento_map": _alimento_preview_map(),
+                "csrf_token": make_csrf_token(get_csrf_secret()),
+            },
+        },
+    )
+
+
+@app.get("/alimentacion/editor", response_class=HTMLResponse)
+def alimentacion_editor(request: Request, fecha: str = Query(...)):
+    return HTMLResponse(content=_nutrition_editor_html(request, fecha))
+
+
+@app.post("/alimentacion/save", response_class=HTMLResponse)
+def alimentacion_save(
+    request: Request,
+    fecha: str = Form(...),
+    alimento: list[str] = Form(default=[]),
+    cantidad: list[str] = Form(default=[]),
+):
+    notice = notice_oob(templates, request, target="notice-container", message="Día guardado.")
+    try:
+        entries = entries_from_form(alimento, cantidad)
+        save_diary_with_undo_snapshot(DB_PATH, fecha, entries)
+    except Exception as e:
+        return _domain_error_response(
+            request, e, "notice-container", extra=STATIC_MARKERS["outcome_fail"]
+        )
+    editor = _nutrition_editor_html(request, fecha)
+    navigator = _nutrition_navigator_html(request, fecha)
+    return HTMLResponse(
+        content=notice
+        + STATIC_MARKERS["outcome_ok"]
+        + nutrition_editor_wrap_oob(templates, request, editor)
+        + fragment_oob(
+            templates,
+            request,
+            "nutrition-date-navigator",
+            navigator,
+            swap="outerHTML",
+        )
+    )
+
+
+@app.post("/alimentacion/eliminar", response_class=HTMLResponse)
+def alimentacion_eliminar(request: Request, fecha: str = Form(...)):
+    notice = notice_oob(templates, request, target="notice-container", message="Día eliminado.")
+    try:
+        delete_diary_with_undo_snapshot(DB_PATH, fecha)
+    except Exception as e:
+        return _domain_error_response(
+            request, e, "notice-container", extra=STATIC_MARKERS["outcome_fail"]
+        )
+    editor = _nutrition_editor_html(request, fecha)
+    navigator = _nutrition_navigator_html(request, fecha)
+    return HTMLResponse(
+        content=notice
+        + STATIC_MARKERS["outcome_ok"]
+        + nutrition_editor_wrap_oob(templates, request, editor)
+        + fragment_oob(
+            templates,
+            request,
+            "nutrition-date-navigator",
+            navigator,
+            swap="outerHTML",
+        )
+    )
+
+
+@app.post("/alimento/nuevo", response_class=HTMLResponse)
+def alimento_nuevo(
+    request: Request,
+    nombre: str = Form(...),
+    categoria: str = Form(""),
+    kcal: float = Form(0),
+    carbohidratos: float = Form(0),
+    fibra: float = Form(0),
+    proteina: float = Form(0),
+    grasa: float = Form(0),
+    hierro: float = Form(0),
+    calcio: float = Form(0),
+    vitamina_c: float = Form(0),
+    vitamina_a: float = Form(0),
+):
+    try:
+        create_alimento(
+            DB_PATH,
+            AlimentoInput(
+                nombre=nombre,
+                categoria=categoria,
+                kcal=kcal,
+                carbohidratos=carbohidratos,
+                fibra=fibra,
+                proteina=proteina,
+                grasa=grasa,
+                hierro=hierro,
+                calcio=calcio,
+                vitamina_c=vitamina_c,
+                vitamina_a=vitamina_a,
+            ),
+        )
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    notice = notice_oob(
+        templates,
+        request,
+        target="notice-container",
+        message=f"Alimento '{nombre.strip()}' creado.",
+    )
+    form_html = _alimento_form_html(request)
+    return HTMLResponse(
+        content=notice
+        + fragment_oob(templates, request, "alimento-create", form_html, swap="outerHTML")
+    )
+
+
+@app.get("/alimentacion/exportar/csv", response_class=Response)
+def export_nutrition_csv():
+    with read_connection(DB_PATH) as conn:
+        df = pd.read_sql_query(
+            "SELECT fecha, orden, alimento, cantidad_g, kcal, carbohidratos, fibra, "
+            "proteina, grasa, hierro, calcio, vitamina_c, vitamina_a, origen "
+            "FROM diario_alimentacion ORDER BY fecha, orden",
+            conn,
+        )
+    csv = df.to_csv(index=False)
+    return Response(
+        content=csv,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="alimentacion.csv"'},
+    )
 
 
 @app.get("/plantillas", response_class=HTMLResponse)
@@ -481,6 +711,27 @@ def undo(request: Request, fecha: str = Form("")):
                 + history_oob
             )
         return HTMLResponse(content=notice_ok + marker + history_oob)
+    if result["kind"] == "alimentacion":
+        fecha_iso = result["fecha_iso"]
+        marker = undo_result_oob(templates, request, fecha_iso, result["has_data"])
+        if fecha == fecha_iso:
+            outcome_ok = STATIC_MARKERS["outcome_ok"]
+            editor = _nutrition_editor_html(request, fecha_iso)
+            navigator = _nutrition_navigator_html(request, fecha_iso)
+            return HTMLResponse(
+                content=notice_ok
+                + outcome_ok
+                + marker
+                + nutrition_editor_wrap_oob(templates, request, editor)
+                + fragment_oob(
+                    templates,
+                    request,
+                    "nutrition-date-navigator",
+                    navigator,
+                    swap="outerHTML",
+                )
+            )
+        return HTMLResponse(content=notice_ok + marker)
     return HTMLResponse(
         content=notice_ok
         + fragment_oob(

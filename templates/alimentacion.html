@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 py-8 flex flex-col gap-6">
+    <header class="flex items-center justify-between border-b border-neutral-800 pb-4">
+        <div class="flex items-center gap-3">
+            <h1 class="text-xl font-black tracking-[0.2em] text-white uppercase">Alimentación</h1>
+            <a
+                href="/"
+                class="text-[10px] font-bold text-neutral-500 hover:text-burgundy-400 border border-neutral-800 hover:border-burgundy-700 rounded px-2 py-1 transition-all uppercase tracking-widest"
+            >← Entrenamiento</a>
+            <a
+                href="/alimentacion/exportar/csv"
+                class="text-[10px] font-bold text-neutral-500 hover:text-burgundy-400 border border-neutral-800 hover:border-burgundy-700 rounded px-2 py-1 transition-all uppercase tracking-widest"
+            >Exportar CSV</a>
+        </div>
+    </header>
+
+    <div id="save-outcome" data-ok="0" hidden></div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6 items-start">
+        <aside class="flex flex-col gap-4 lg:sticky lg:top-6">
+            <div id="alimento-create">
+                {{ alimento_form_html | safe }}
+            </div>
+        </aside>
+
+        <main class="flex flex-col gap-4 min-w-0">
+            <section id="nutrition-date-navigator">
+                {{ navigator_html | safe }}
+            </section>
+
+            <div id="nutrition-editor" class="bg-neutral-900 border border-transparent rounded-xl px-2 pt-2 pb-3 flex flex-col gap-2 neon-border metallic-border">
+                <div id="nutrition-editor-wrap">
+                    {{ editor_html | safe }}
+                </div>
+            </div>
+
+            <p class="text-[10px] text-neutral-600 text-center -mt-2">Ctrl+Z deshacer · Los valores se recalculan desde el catálogo al guardar</p>
+        </main>
+    </div>
+</div>
+{% endblock %}

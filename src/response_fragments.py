@@ -21,6 +21,9 @@ OOB_FRAGMENT_TARGETS = (
     "unified-chart",
     "date-navigator",
     "session-history",
+    "nutrition-editor-wrap",
+    "nutrition-date-navigator",
+    "alimento-create",
 )
 
 STATIC_MARKERS = {
@@ -81,6 +84,18 @@ def editor_wrap_oob(templates: Jinja2Templates, request: Request, editor_html: s
         templates,
         request,
         "partials/oob_editor_wrap.html",
+        editor_html=editor_html,
+    )
+
+
+def nutrition_editor_wrap_oob(
+    templates: Jinja2Templates, request: Request, editor_html: str
+) -> str:
+    """Wraps the server-rendered nutrition editor fragment."""
+    return render_fragment(
+        templates,
+        request,
+        "partials/oob_nutrition_editor_wrap.html",
         editor_html=editor_html,
     )
 
