@@ -849,6 +849,27 @@ def test_export_csv_orden_cronologico(tmp_path, monkeypatch):
     assert fechas == ["2026-01-09", "2026-01-15", "2026-02-03"]
 
 
+def test_undo_restaura_origen_google(tmp_path, monkeypatch):
+    from src.db_connection import transaction
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    with transaction(db) as conn:
+        conn.execute(
+            "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) "
+            "VALUES (1, 'LUNES', '2026-08-06', 1, 'Press', 7, 90, 1.2, 'google')"
+        )
+    fecha = "2026-08-06"
+    client = _client()
+    client.post(
+        "/entrenamiento/session/save",
+        data={"fecha": fecha, "ejercicio": ["Press"], "kg": ["95"], "reps": ["6"], "rir": ["1"]},
+    )
+    client.post("/undo", data={"fecha": fecha})
+    rows = get_sets_by_fecha(db, "2026-08-06")
+    assert rows[0]["kg"] == 90 and rows[0]["origen"] == "google"
+
+
 def test_get_first_session_date_con_iso(tmp_path):
     from src.dashboard_service import get_first_session_date
     from src.models import TrainingSetInput

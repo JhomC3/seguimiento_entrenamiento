@@ -20,7 +20,7 @@ from src.database import (
 )
 from src.models import Session, Template, TemplateInput
 from src.template_service import edit_template, save_template
-from src.training_service import fecha_to_db, parse_form_date, save_session
+from src.training_service import fecha_to_db, parse_form_date, restore_session_rows, save_session
 
 logger = logging.getLogger("mutations")
 
@@ -113,7 +113,7 @@ def undo_last_action(db_path: str, fecha: str) -> dict:
     backup_or_raise(db_path)
     if entry["kind"] == "sesion":
         fecha_iso = entry["fecha_iso"]
-        save_session(db_path, fecha_iso, entry["before"])
+        restore_session_rows(db_path, fecha_iso, entry["before"])
         restored = get_sets_by_fecha(db_path, fecha_to_db(parse_form_date(fecha_iso)))
         has_data = (
             "1"

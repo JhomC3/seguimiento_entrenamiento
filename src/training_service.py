@@ -196,6 +196,30 @@ def save_session(db_path: str, fecha_iso: str, sets: list[TrainingSetInput]) -> 
     return _session_from_meta(semana, dia, fecha_db)
 
 
+def restore_session_rows(db_path: str, fecha_iso: str, rows: list) -> None:
+    """Undo restore: reinserts saved rows preserving each row's origen."""
+    fecha = parse_form_date(fecha_iso)
+    ciclo = parse_cycle_start()
+    semana = calculate_cycle_week(fecha, ciclo)
+    dia = day_from_date(fecha)
+    fecha_db = fecha_to_db(fecha)
+    kept = []
+    for raw in rows:
+        if _is_empty_row(raw):
+            continue
+        origen = str(raw.get("origen") or "manual") if isinstance(raw, dict) else "manual"
+        kept.append((_coerce_set(raw), origen))
+    cleaned = validate_sets(db_path, [s for s, _ in kept]) if kept else []
+    with transaction(db_path) as conn:
+        conn.execute("DELETE FROM training_sets WHERE fecha = ?", (fecha_db,))
+        for idx, (s, origen) in enumerate(zip(cleaned, [o for _, o in kept]), start=1):
+            conn.execute(
+                "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (semana, dia, fecha_db, idx, s.ejercicio, s.reps, s.kg, s.rir, origen),
+            )
+
+
 def get_sessions_page(db_path: str, page: int = 1, limit: int = 20) -> tuple[list[dict], int, int]:
     sessions = get_training_sessions(db_path)
     total = len(sessions)
