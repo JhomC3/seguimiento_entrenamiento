@@ -75,6 +75,53 @@ def calculate_nutrients(food: dict, cantidad_g: float) -> dict[str, float]:
     return {field: _sheet_round(Decimal(str(food[field])) * factor) for field in NUTRIENT_FIELDS}
 
 
+_TARGET_EXTRA_FIELDS: tuple[tuple[str, str], ...] = (
+    ("fibra_objetivo", "fibra"),
+    ("hierro_objetivo", "hierro"),
+    ("calcio_objetivo", "calcio"),
+    ("vitamina_c_objetivo", "vitamina_c"),
+    ("vitamina_a_objetivo", "vitamina_a"),
+)
+
+
+def objetivos_diarios(
+    *,
+    peso_kg: float,
+    factor_proteina: float,
+    factor_grasa: float,
+    kcal_objetivo: float,
+    extras: dict,
+) -> dict[str, float]:
+    """Objetivos del día con las fórmulas del documento (Atwater 4/4/9).
+
+    proteina = round(peso x factor_proteina)
+    grasa    = round(peso x factor_grasa)
+    kcal     = round(kcal_objetivo)               (editable)
+    carb     = round((kcal - 4*prot - 9*grasa) / 4)
+    fibra/hierro/calcio/vitC/vitA: importados de la hoja (extras).
+    """
+    proteina = _sheet_round(Decimal(str(peso_kg)) * Decimal(str(factor_proteina)))
+    grasa = _sheet_round(Decimal(str(peso_kg)) * Decimal(str(factor_grasa)))
+    kcal = _sheet_round(Decimal(str(kcal_objetivo)))
+    carbohidratos = _sheet_round(
+        (
+            Decimal(str(kcal_objetivo))
+            - Decimal(4) * Decimal(str(proteina))
+            - Decimal(9) * Decimal(str(grasa))
+        )
+        / Decimal(4)
+    )
+    target = {
+        "kcal": kcal,
+        "carbohidratos": carbohidratos,
+        "proteina": proteina,
+        "grasa": grasa,
+    }
+    for extra_key, field in _TARGET_EXTRA_FIELDS:
+        target[field] = _sheet_round(Decimal(str(extras.get(extra_key, 0.0))))
+    return target
+
+
 def entries_from_form(alimentos: list[str], cantidades: list[str]) -> list[NutritionEntryInput]:
     """Une las listas paralelas del formulario; filas vacías se omiten, filas
     parcialmente rellenadas fallan."""

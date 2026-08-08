@@ -22,6 +22,7 @@ from src.nutrition_service import (
     delete_diary,
     diary_totals,
     entries_from_form,
+    objetivos_diarios,
     save_diary,
 )
 
@@ -181,6 +182,51 @@ class TestCreateAlimento:
         create_alimento(db, AlimentoInput(nombre="Avena", kcal=1.0))
         with pytest.raises(ConflictError):
             create_alimento(db, AlimentoInput(nombre="avena", kcal=2.0))
+
+
+class TestTargetFormulas:
+    def test_objetivos_diarios_formula_dictada(self):
+        target = objetivos_diarios(
+            peso_kg=69,
+            factor_proteina=1.5,
+            factor_grasa=1.1,
+            kcal_objetivo=2750,
+            extras={
+                "fibra_objetivo": 38.0,
+                "hierro_objetivo": 8.0,
+                "calcio_objetivo": 1000.0,
+                "vitamina_c_objetivo": 90.0,
+                "vitamina_a_objetivo": 900.0,
+            },
+        )
+        assert target["proteina"] == 104.0  # round_half_up(69 * 1.5)
+        assert target["grasa"] == 76.0  # round_half_up(69 * 1.1)
+        assert target["kcal"] == 2750.0
+        # round_half_up((2750 - 4*104 - 9*76) / 4) = round_half_up(412.5) = 413
+        assert target["carbohidratos"] == 413.0
+        assert target["fibra"] == 38.0
+        assert target["hierro"] == 8.0
+        assert target["calcio"] == 1000.0
+        assert target["vitamina_c"] == 90.0
+        assert target["vitamina_a"] == 900.0
+
+    def test_objetivos_diarios_redondeo_half_up(self):
+        target = objetivos_diarios(
+            peso_kg=1, factor_proteina=1.5, factor_grasa=1.1, kcal_objetivo=2, extras={}
+        )
+        # 1*1.5 = 1.5 -> 2 (half-up); 1*1.1 = 1.1 -> 1
+        assert target["proteina"] == 2.0
+        assert target["grasa"] == 1.0
+
+    def test_objetivos_carb_from_atwater_residual(self):
+        # carb = (kcal - 4*prot - 9*grasa) / 4
+        target = objetivos_diarios(
+            peso_kg=60, factor_proteina=1.5, factor_grasa=1.2, kcal_objetivo=2300, extras={}
+        )
+        assert target["proteina"] == 90.0
+        assert target["grasa"] == 72.0
+        # (2300 - 360 - 648) / 4 = 323
+        assert target["carbohidratos"] == 323.0
 
 
 class TestTotals:
