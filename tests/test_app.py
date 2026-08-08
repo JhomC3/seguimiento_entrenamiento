@@ -941,6 +941,18 @@ def test_undo_incluye_oob_history(tmp_path, monkeypatch):
     assert 'id="session-history" hx-swap-oob="innerHTML"' in resp.text
 
 
+def test_lifespan_warns_sin_csrf_secret(tmp_path, monkeypatch, caplog):
+    import logging
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.delenv("GYM_CSRF_SECRET", raising=False)
+    with caplog.at_level(logging.WARNING):
+        with TestClient(appmod.app) as c:
+            c.get("/")
+    assert any("GYM_CSRF_SECRET" in r.message for r in caplog.records)
+
+
 def test_get_first_session_date_con_iso(tmp_path):
     from src.dashboard_service import get_first_session_date
     from src.models import TrainingSetInput

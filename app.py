@@ -1,3 +1,5 @@
+import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import date
 
@@ -66,6 +68,10 @@ from src.training_service import (
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db(DB_PATH)
+    if os.environ.get("GYM_CSRF_SECRET") is None:
+        logging.getLogger("security").warning(
+            "GYM_CSRF_SECRET no configurado: usando secreto de desarrollo."
+        )
     yield
 
 
