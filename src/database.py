@@ -400,6 +400,20 @@ def find_alimento(db_path: str, nombre: str) -> dict | None:
     return dict(zip(cols, row))
 
 
+def insert_alimento(db_path: str, food: dict) -> None:
+    with transaction(db_path) as conn:
+        conn.execute(
+            "INSERT INTO alimentos (nombre, categoria, kcal, carbohidratos, fibra, "
+            "proteina, grasa, hierro, calcio, vitamina_c, vitamina_a, origen) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual')",
+            (
+                food["nombre"],
+                food.get("categoria", ""),
+                *(food[col] for col in _DIARIO_NUTRIENT_COLUMNS),
+            ),
+        )
+
+
 def get_diario_by_fecha(db_path: str, fecha: str) -> list[dict]:
     with read_connection(db_path) as conn:
         rows = conn.execute(

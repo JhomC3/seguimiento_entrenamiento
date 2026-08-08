@@ -65,3 +65,28 @@ class Template:
     updated_at: str
     ejercicios: list[str] = field(default_factory=list)
     updated: bool = False
+
+
+@dataclass(frozen=True)
+class NutritionEntryInput:
+    """A food entry submitted from the nutrition form, before persistence."""
+
+    alimento: str
+    cantidad_g: float | str
+
+
+@dataclass(frozen=True)
+class AlimentoInput:
+    """A catalog food submitted from the create-food form (per 100 g)."""
+
+    nombre: str
+    categoria: str = ""
+    kcal: float = 0.0
+    carbohidratos: float = 0.0
+    fibra: float = 0.0
+    proteina: float = 0.0
+    grasa: float = 0.0
+    hierro: float = 0.0
+    calcio: float = 0.0
+    vitamina_c: float = 0.0
+    vitamina_a: float = 0.0
