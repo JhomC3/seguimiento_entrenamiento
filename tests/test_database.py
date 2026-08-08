@@ -103,7 +103,7 @@ def test_migrations_recorded_in_schema_migrations(tmp_path):
         r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()
     )
     conn.close()
-    assert versions == [1, 2, 3, 5, 6, 7]
+    assert versions == [1, 2, 3, 5, 6, 7, 8]
 
 
 def test_migrates_intermediate_state_without_orden(tmp_path):
@@ -354,13 +354,13 @@ def test_v007_nutrition_origin_defaults_to_google(tmp_path):
     conn.close()
 
 
-def test_v007_is_latest_schema_version(tmp_path):
+def test_v008_is_latest_schema_version(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
     conn = sqlite3.connect(db_path)
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 7
+    assert max_version == 8
 
 
 def test_v007_migration_idempotent(tmp_path):
@@ -610,6 +610,67 @@ def test_get_training_sessions_ordena_por_fecha_iso(tmp_path):
             )
     sessions = get_training_sessions(db)
     assert [s["fecha"] for s in sessions] == ["2026-03-01", "2026-02-10", "2026-01-15"]
+
+
+def test_v008_creates_parametros_diarios_and_nullable_qty(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    diario_cols = [r[1] for r in conn.execute("PRAGMA table_info(diario_alimentacion)").fetchall()]
+    not_null = {
+        r[1] for r in conn.execute("PRAGMA table_info(diario_alimentacion)").fetchall() if r[3] == 1
+    }
+    assert "cantidad_g" in diario_cols
+    assert "cantidad_g" not in not_null
+    params = [r[1] for r in conn.execute("PRAGMA table_info(parametros_diarios)").fetchall()]
+    for col in (
+        "peso_kg",
+        "factor_proteina",
+        "factor_grasa",
+        "kcal_objetivo",
+        "fibra_objetivo",
+        "hierro_objetivo",
+        "calcio_objetivo",
+        "vitamina_c_objetivo",
+        "vitamina_a_objetivo",
+    ):
+        assert col in params
+    max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+    conn.close()
+    assert max_version == 8
+
+
+def test_v008_preserves_diario_rows(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT INTO diario_alimentacion (fecha, orden, alimento, cantidad_g, kcal, "
+        "carbohidratos, fibra, proteina, grasa, hierro, calcio, vitamina_c, vitamina_a) "
+        "VALUES ('2025-04-24', 1, 'Avena', 120, 467, 82, 12, 20, 8, 5, 65, 0, 0)"
+    )
+    conn.commit()
+    conn.close()
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    row = conn.execute(
+        "SELECT fecha, orden, alimento, cantidad_g, kcal FROM diario_alimentacion"
+    ).fetchone()
+    conn.close()
+    assert row == ("2025-04-24", 1, "Avena", 120.0, 467.0)
+
+
+def test_v008_params_defaults(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    conn.execute("INSERT INTO parametros_diarios (fecha) VALUES ('2025-04-24')")
+    row = conn.execute(
+        "SELECT peso_kg, factor_proteina, factor_grasa, kcal_objetivo "
+        "FROM parametros_diarios WHERE fecha = '2025-04-24'"
+    ).fetchone()
+    conn.close()
+    assert row == (70.0, 1.5, 1.1, 2300.0)
 
 
 def test_load_ejercicios(tmp_path):
