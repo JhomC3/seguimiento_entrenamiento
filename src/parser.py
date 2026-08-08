@@ -1,4 +1,7 @@
+import csv
 import io
+import re
+from datetime import datetime
 
 import pandas as pd
 
@@ -195,3 +198,151 @@ def parse_alimentos(csv_text: str) -> pd.DataFrame:
         records.append(record)
 
     return pd.DataFrame(records, columns=["nombre", "categoria", *ALIMENTOS_NUTRIENT_COLUMNS])
+
+
+DIARIO_COLUMN_ORDER: list[str] = [
+    "fecha",
+    "orden",
+    "alimento",
+    "cantidad_g",
+    "kcal",
+    "carbohidratos",
+    "fibra",
+    "proteina",
+    "grasa",
+    "hierro",
+    "calcio",
+    "vitamina_c",
+    "vitamina_a",
+]
+
+_DIARIO_LABEL_MAP: dict[str, str] = {
+    "Cantidad": "cantidad_g",
+    "Calorias": "kcal",
+    "Carbohidratos": "carbohidratos",
+    "Fibra": "fibra",
+    "Proteina": "proteina",
+    "Grasa": "grasa",
+    "Hierro": "hierro",
+    "Calcio": "calcio",
+    "Vitamina C": "vitamina_c",
+    "Vitamina A": "vitamina_a",
+}
+
+
+def _normalize_label(value) -> str:
+    text = str(value).strip()
+    text = re.split(r"\s*\(", text)[0].strip()
+    accents = {
+        "á": "a",
+        "é": "e",
+        "í": "i",
+        "ó": "o",
+        "ú": "u",
+        "Á": "A",
+        "É": "E",
+        "Í": "I",
+        "Ó": "O",
+        "Ú": "U",
+    }
+    return "".join(accents.get(c, c) for c in text)
+
+
+def _is_date_cell(value) -> bool:
+    return bool(re.match(r"^\d{1,2}/\d{1,2}/\d{2,4}$", str(value).strip()))
+
+
+def _diario_date_to_iso(value: str) -> str | None:
+    text = str(value).strip()
+    for fmt in ("%d/%m/%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(text, fmt).date().strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return None
+
+
+def _parse_grams(value) -> float | None:
+    if pd.isna(value):
+        return None
+    match = re.match(r"^\s*([\d]+(?:[.,]\d+)?)\s*[gG]", str(value).strip())
+    if not match:
+        return None
+    return float(match.group(1).replace(",", "."))
+
+
+def parse_diario(csv_text: str) -> pd.DataFrame:
+    """Parsea la hoja 'diario' -> DataFrame con columnas
+    [fecha, orden, alimento, cantidad_g, kcal, carbohidratos, fibra, proteina,
+    grasa, hierro, calcio, vitamina_c, vitamina_a].
+
+    Cada bloque diario puede ordenar los nutrientes de forma distinta; el mapeo
+    se deriva de las etiquetas del encabezado de cada bloque, nunca por posición.
+    Las filas de resumen (porcentajes, objetivo, totales), los placeholders sin
+    cantidad y las filas truncadas al borde del rango exportado se descartan.
+    """
+    rows = list(csv.reader(io.StringIO(csv_text)))
+
+    header_idx: int | None = None
+    date_cols: list[tuple[int, str]] = []
+    for idx in range(min(6, len(rows))):
+        row = rows[idx]
+        found_dates = [(j, c) for j, c in enumerate(row) if _is_date_cell(c)]
+        has_cantidad = any(_normalize_label(c) == "Cantidad" for c in row)
+        if found_dates and has_cantidad:
+            header_idx = idx
+            date_cols = found_dates
+            break
+    if header_idx is None or not date_cols:
+        raise ValueError("No se encontró la fila de encabezados del diario (fechas + Cantidad)")
+
+    header_row = rows[header_idx]
+    blocks: list[dict] = []
+    for i, (col, raw_date) in enumerate(date_cols):
+        end = date_cols[i + 1][0] if i + 1 < len(date_cols) else len(header_row)
+        iso = _diario_date_to_iso(raw_date)
+        if iso is None:
+            raise ValueError(f"Fecha del diario no parseable: {raw_date!r}")
+        labels = {_normalize_label(header_row[col + offset]): offset for offset in range(end - col)}
+        missing = [lbl for lbl in _DIARIO_LABEL_MAP if lbl not in labels]
+        if missing:
+            raise ValueError(f"Bloque del diario {raw_date}: etiquetas faltantes {missing}")
+        blocks.append({"fecha_iso": iso, "start": col, "end": end, "labels": labels})
+
+    records: list[dict] = []
+    order_per_date: dict[str, int] = {}
+    for row in rows[header_idx + 1 :]:
+        for block in blocks:
+            start, end = block["start"], block["end"]
+            if start >= len(row):
+                continue
+            alimento = str(row[start]).strip()
+            if not alimento or alimento == "nan":
+                continue
+            cantidad_idx = start + block["labels"]["Cantidad"]
+            cantidad_g = _parse_grams(row[cantidad_idx]) if cantidad_idx < len(row) else None
+            if cantidad_g is None or cantidad_g <= 0:
+                continue
+            max_col = max(start + off for off in block["labels"].values())
+            if len(row) <= max_col:
+                # Fila truncada al borde del rango exportado: entrada
+                # incompleta, se descarta como los placeholders.
+                continue
+            record: dict = {
+                "fecha": block["fecha_iso"],
+                "alimento": alimento,
+                "cantidad_g": cantidad_g,
+            }
+            for label, field in _DIARIO_LABEL_MAP.items():
+                col = start + block["labels"][label]
+                value = parse_float(row[col]) if col < len(row) else None
+                if value is None:
+                    raise ValueError(
+                        f"Diario {block['fecha_iso']}: nutriente '{label}' no parseable en '{alimento}'"
+                    )
+                record[field] = value
+            order_per_date[block["fecha_iso"]] = order_per_date.get(block["fecha_iso"], 0) + 1
+            record["orden"] = order_per_date[block["fecha_iso"]]
+            records.append(record)
+
+    return pd.DataFrame(records, columns=DIARIO_COLUMN_ORDER)

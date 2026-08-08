@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from src.parser import parse_alimentos, parse_ciclo, parse_ejercicios, parse_float
+from src.parser import parse_alimentos, parse_ciclo, parse_diario, parse_ejercicios, parse_float
 
 SAMPLE_EJERCICIOS_CSV = """,,
 ,Pectoral,Press Convergente
@@ -139,3 +139,366 @@ def test_parse_alimentos_drops_empty_rows():
     csv_text = SAMPLE_ALIMENTOS_CSV + "\n\n\n"
     df = parse_alimentos(csv_text)
     assert len(df) == 2
+
+
+DIARIO_COLUMNS = [
+    "fecha",
+    "orden",
+    "alimento",
+    "cantidad_g",
+    "kcal",
+    "carbohidratos",
+    "fibra",
+    "proteina",
+    "grasa",
+    "hierro",
+    "calcio",
+    "vitamina_c",
+    "vitamina_a",
+]
+
+# Fila 1: porcentajes (resumen). Fila 2: encabezados. Fila 3: porcentajes.
+# Fila 4: objetivo. Fila 5: totales. Filas 6+: alimentos.
+# El primer bloque (24/4/2025) usa orden Fibra/Proteína/Grasa;
+# el segundo (25/4/2025) usa orden Proteína/Grasa/Fibra.
+SAMPLE_DIARIO_ROWS = [
+    [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+    ],
+    [
+        "",
+        "24/4/2025",
+        "Cantidad",
+        "Calorías (kcal)",
+        "Carbohidratos (g)",
+        "Fibra (g)",
+        "Proteína (g)",
+        "Grasa (g)",
+        "Hierro (mg)",
+        "Calcio (mg)",
+        "Vitamina C (mg)",
+        "Vitamina A",
+        "",
+        "25/4/2025",
+        "Cantidad",
+        "Calorías (kcal)",
+        "Carbohidratos (g)",
+        "Proteína (g)",
+        "Grasa (g)",
+        "Fibra (g)",
+        "Hierro (mg)",
+        "Calcio (mg)",
+        "Vitamina C (mg)",
+        "Vitamina A",
+        "",
+    ],
+    [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+    ],
+    [
+        "",
+        "",
+        "",
+        "2300",
+        "375",
+        "38",
+        "90",
+        "72",
+        "8",
+        "1000",
+        "90",
+        "900",
+        "",
+        "",
+        "2300",
+        "375",
+        "38",
+        "90",
+        "72",
+        "8",
+        "1000",
+        "90",
+        "900",
+        "",
+    ],
+    [
+        "",
+        "",
+        "",
+        "1326",
+        "210",
+        "31",
+        "44",
+        "88",
+        "18",
+        "593",
+        "60",
+        "894",
+        "",
+        "",
+        "1195",
+        "221",
+        "36",
+        "53",
+        "107",
+        "44",
+        "607",
+        "76",
+        "467",
+        "",
+    ],
+    [
+        "",
+        "Avena",
+        "120 g",
+        "467",
+        "82",
+        "12",
+        "20",
+        "8",
+        "5",
+        "65",
+        "0",
+        "0",
+        "",
+        "Avena",
+        "150 g",
+        "584",
+        "102",
+        "26",
+        "10",
+        "15",
+        "6",
+        "81",
+        "0",
+        "0",
+        "",
+    ],
+    [
+        "",
+        "Huevo",
+        "100 g",
+        "143",
+        "1",
+        "0",
+        "13",
+        "10",
+        "2",
+        "50",
+        "0",
+        "300",
+        "",
+        "Huevo",
+        "104 g",
+        "149",
+        "1",
+        "13",
+        "10",
+        "0",
+        "2",
+        "52",
+        "0",
+        "0",
+        "",
+    ],
+    [
+        "",
+        "Semillas de Chía",
+        " g",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+    ],
+    [
+        "",
+        "Tomate de Arbol",
+        "100 g",
+        "42",
+        "10",
+        "3",
+        "2",
+        "1",
+        "1",
+        "10",
+        "30",
+        "200",
+        "",
+        "Manzana Verde",
+        "90 g",
+        "47",
+        "12",
+        "0",
+        "0",
+        "2",
+        "0",
+        "5",
+        "4",
+        "3",
+        "",
+    ],
+]
+SAMPLE_DIARIO_CSV = "\n".join([",".join(row) for row in SAMPLE_DIARIO_ROWS]) + "\n"
+
+
+def test_parse_diario_columns():
+    df = parse_diario(SAMPLE_DIARIO_CSV)
+    assert isinstance(df, pd.DataFrame)
+    assert list(df.columns) == DIARIO_COLUMNS
+
+
+def test_parse_diario_orders_columns_by_block_header():
+    # El bloque 1 usa Fibra/Proteína/Grasa y el bloque 2 Proteína/Grasa/Fibra.
+    df = parse_diario(SAMPLE_DIARIO_CSV)
+    avena_1 = df[(df["fecha"] == "2025-04-24") & (df["alimento"] == "Avena")].iloc[0]
+    assert avena_1["fibra"] == 12.0
+    assert avena_1["proteina"] == 20.0
+    assert avena_1["grasa"] == 8.0
+    avena_2 = df[(df["fecha"] == "2025-04-25") & (df["alimento"] == "Avena")].iloc[0]
+    assert avena_2["fibra"] == 15.0
+    assert avena_2["proteina"] == 26.0
+    assert avena_2["grasa"] == 10.0
+
+
+def test_parse_diario_values_and_iso_dates():
+    df = parse_diario(SAMPLE_DIARIO_CSV)
+    huevo_1 = df[(df["fecha"] == "2025-04-24") & (df["alimento"] == "Huevo")].iloc[0]
+    assert huevo_1["cantidad_g"] == 100.0
+    assert huevo_1["kcal"] == 143.0
+    assert huevo_1["calcio"] == 50.0
+    assert huevo_1["vitamina_a"] == 300.0
+    tomate = df[(df["fecha"] == "2025-04-24") & (df["alimento"] == "Tomate de Arbol")].iloc[0]
+    assert tomate["vitamina_c"] == 30.0
+
+
+def test_parse_diario_skips_summary_rows_and_placeholders():
+    df = parse_diario(SAMPLE_DIARIO_CSV)
+    assert not (df["alimento"] == "Semillas de Chía").any()
+    assert df["cantidad_g"].notna().all()
+    assert not df["alimento"].str.contains("Cantidad|Calorías|Fibra", case=False).any()
+
+
+def test_parse_diario_orders_entries_by_fecha():
+    df = parse_diario(SAMPLE_DIARIO_CSV)
+    for fecha, group in df.groupby("fecha"):
+        assert list(group["orden"]) == list(range(1, len(group) + 1))
+
+
+def test_parse_diario_skips_truncated_edge_rows():
+    # Al borde del rango exportado, la última fila puede quedar cortada a
+    # media anchura (caso real del bloque final). Se descarta, no se importa
+    # con ceros ni se aborta el parseo.
+    truncated = SAMPLE_DIARIO_ROWS[5][:8]
+    rows = [list(r) for r in SAMPLE_DIARIO_ROWS[:6]]
+    rows[5] = truncated
+    df = parse_diario("\n".join([",".join(r) for r in rows]) + "\n")
+    assert not (df["alimento"] == "Avena").any()
+    assert df.empty
+
+
+def test_parse_diario_raises_on_full_row_with_empty_cell():
+    # Fila de ancho completo con una celda vacía sí es un error de datos.
+    broken = list(SAMPLE_DIARIO_ROWS[5])
+    broken[3] = ""
+    rows = [list(r) for r in SAMPLE_DIARIO_ROWS[:6]]
+    rows[5] = broken
+    with pytest.raises(ValueError):
+        parse_diario("\n".join([",".join(r) for r in rows]) + "\n")
+    # Caso real: la hoja tiene dos bloques con la misma fecha (8/8/2026).
+    # El tercer bloque repite 24/4/2025: sus entradas deben concatenarse
+    # en orden al mismo día (Avena b1, Avena b3, Huevo b1).
+    header = list(SAMPLE_DIARIO_ROWS[1])
+    avena_row = list(SAMPLE_DIARIO_ROWS[5])
+    extra_header = [
+        "",
+        "24/4/2025",
+        "Cantidad",
+        "Calorías (kcal)",
+        "Carbohidratos (g)",
+        "Fibra (g)",
+        "Proteína (g)",
+        "Grasa (g)",
+        "Hierro (mg)",
+        "Calcio (mg)",
+        "Vitamina C (mg)",
+        "Vitamina A",
+        "",
+    ]
+    extra_avena = ["", "Avena", "80 g", "311", "55", "8", "13", "5", "3", "43", "0", "0", ""]
+    rows = [list(r) for r in SAMPLE_DIARIO_ROWS]
+    rows[1] = header + extra_header
+    rows[5] = avena_row + extra_avena
+    maxlen = max(len(r) for r in rows)
+    rows = [r + [""] * (maxlen - len(r)) for r in rows]
+    df = parse_diario("\n".join([",".join(r) for r in rows]) + "\n")
+    day = df[df["fecha"] == "2025-04-24"]
+    avenas = day[day["alimento"].str.contains("Avena")]
+    assert len(avenas) == 2
+    assert list(avenas["orden"]) == [1, 2]
+    assert list(day["orden"]) == [1, 2, 3, 4]
