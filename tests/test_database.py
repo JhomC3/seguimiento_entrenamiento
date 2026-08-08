@@ -103,7 +103,7 @@ def test_migrations_recorded_in_schema_migrations(tmp_path):
         r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()
     )
     conn.close()
-    assert versions == [1, 2, 3, 5]
+    assert versions == [1, 2, 3, 5, 6]
 
 
 def test_migrates_intermediate_state_without_orden(tmp_path):
@@ -265,6 +265,30 @@ def test_v005_recompute_idempotente(tmp_path):
         v005_recompute_semana.migrate(conn)
     with read_connection(db) as conn:
         assert conn.execute("SELECT semana FROM training_sets").fetchone()[0] == 14
+
+
+def test_v006_convierte_fechas_a_iso(tmp_path):
+    from src.db_connection import connect_db, read_connection
+    from src.migrations import v006_iso_dates
+
+    db = str(tmp_path / "legacy.db")
+    with connect_db(db) as conn:
+        conn.execute(
+            "CREATE TABLE training_sets (id INTEGER PRIMARY KEY, semana INTEGER, dia TEXT, fecha TEXT, set_orden INTEGER, ejercicio TEXT, reps REAL, kg REAL, rir REAL)"
+        )
+        conn.execute(
+            "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, kg, reps, rir) VALUES (1, 'LUNES', '6/8/26', 1, 'Press', 90, 7, 1.2)"
+        )
+        conn.execute(
+            "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, kg, reps, rir) VALUES (2, 'MARTES', '10/02/2026', 1, 'Press', 90, 7, 1.2)"
+        )
+        conn.execute(
+            "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, kg, reps, rir) VALUES (3, 'MIERCOLES', 'basura', 1, 'Press', 90, 7, 1.2)"
+        )
+    v006_iso_dates.migrate(connect_db(db))
+    with read_connection(db) as conn:
+        fechas = [r[0] for r in conn.execute("SELECT fecha FROM training_sets ORDER BY id")]
+    assert fechas == ["2026-08-06", "2026-02-10", None]
 
 
 def test_load_ejercicios(tmp_path):

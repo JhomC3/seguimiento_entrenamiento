@@ -9,6 +9,7 @@ from src.migrations import (
     v002_add_origins_and_categories,
     v003_add_template_order,
     v005_recompute_semana,
+    v006_iso_dates,
 )
 
 MIGRATIONS = [
@@ -16,6 +17,7 @@ MIGRATIONS = [
     v002_add_origins_and_categories,
     v003_add_template_order,
     v005_recompute_semana,
+    v006_iso_dates,
 ]
 
 _CURRENT_VERSION = max(m.VERSION for m in MIGRATIONS)
