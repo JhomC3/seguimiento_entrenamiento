@@ -36,8 +36,9 @@ _DIARIO_ROWS = [
     [""] * 13,
     ["", "", "", "2300", "375", "38", "90", "72", "8", "1000", "90", "900", ""],
     ["", "", "", "1326", "210", "31", "44", "88", "18", "593", "60", "894", ""],
-    ["", "Avena", "120 g", "467", "82", "12", "20", "8", "5", "65", "0", "0", ""],
+    ["", "Avena", "120 g", "999", "999", "999", "999", "999", "999", "999", "999", "999", ""],
     ["", "Huevo", "100 g", "143", "1", "0", "13", "10", "2", "50", "0", "300", ""],
+    ["", "Nueces", " g", "0", "0", "0", "0", "0", "0", "0", "0", "0", ""],
 ]
 DIARIO_CSV = "\n".join([",".join(r) for r in _DIARIO_ROWS]) + "\n"
 
@@ -86,8 +87,48 @@ def test_import_is_idempotent(tmp_path, monkeypatch):
     db = str(tmp_path / "gym.db")
     conn = sqlite3.connect(db)
     assert conn.execute("SELECT COUNT(*) FROM alimentos").fetchone()[0] == 2
-    assert conn.execute("SELECT COUNT(*) FROM diario_alimentacion").fetchone()[0] == 2
+    assert conn.execute("SELECT COUNT(*) FROM diario_alimentacion").fetchone()[0] == 3
     conn.close()
+
+
+def test_import_recalculates_consumed_from_catalog(tmp_path, monkeypatch):
+    # La hoja trae Avena 120 g con valores 999 desactualizados; el consumido se
+    # recalcula desde el catálogo: 389*1.2=466.8 -> 467 kcal, 17*1.2=20.4 -> 20.
+    assert _run_import(tmp_path, monkeypatch) == 0
+    db = str(tmp_path / "gym.db")
+    conn = sqlite3.connect(db)
+    row = conn.execute(
+        "SELECT cantidad_g, kcal, proteina, grasa FROM diario_alimentacion WHERE alimento = 'Avena'"
+    ).fetchone()
+    conn.close()
+    assert row == (120.0, 467.0, 20.0, 8.0)
+
+
+def test_import_keeps_placeholder_rows(tmp_path, monkeypatch):
+    # Filas con alimento pero sin cantidad se importan como placeholder:
+    # cantidad NULL y nutrientes en 0.
+    assert _run_import(tmp_path, monkeypatch) == 0
+    db = str(tmp_path / "gym.db")
+    conn = sqlite3.connect(db)
+    row = conn.execute(
+        "SELECT cantidad_g, kcal FROM diario_alimentacion WHERE alimento = 'Nueces'"
+    ).fetchone()
+    conn.close()
+    assert row[0] is None
+    assert row[1] == 0.0
+
+
+def test_import_inserts_params_with_defaults(tmp_path, monkeypatch):
+    assert _run_import(tmp_path, monkeypatch) == 0
+    db = str(tmp_path / "gym.db")
+    conn = sqlite3.connect(db)
+    row = conn.execute(
+        "SELECT peso_kg, factor_proteina, factor_grasa, kcal_objetivo, fibra_objetivo, "
+        "hierro_objetivo, calcio_objetivo, vitamina_c_objetivo, vitamina_a_objetivo "
+        "FROM parametros_diarios WHERE fecha = '2025-04-24'"
+    ).fetchone()
+    conn.close()
+    assert row == (70.0, 1.5, 1.1, 2300.0, 38.0, 8.0, 1000.0, 90.0, 900.0)
 
 
 def test_import_preserves_manual_rows(tmp_path, monkeypatch):
