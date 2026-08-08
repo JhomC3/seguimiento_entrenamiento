@@ -47,6 +47,8 @@ target-version = "py311"
 "src/parser.py" = ["DTZ005", "DTZ007", "DTZ011"]
 "src/training_service.py" = ["DTZ005", "DTZ007", "DTZ011"]
 "scripts/verify_editor.py" = ["DTZ005", "DTZ007", "DTZ011"]
+# CLI import aborts on any fetch/parse failure without touching the DB (BLE001).
+"scripts/import_nutrition.py" = ["BLE001"]
 
 [tool.mypy]
 python_version = "3.11"
