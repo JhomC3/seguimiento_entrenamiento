@@ -168,5 +168,3 @@ def get_exercise_session_summary(db_path: str, ejercicio: str) -> pd.DataFrame:
     session_df["total_tonelaje"] = session_df["total_tonelaje"].round(1)
     session_df = session_df.sort_values(["semana", "sesion"]).reset_index(drop=True)
     return session_df
-
-

@@ -121,9 +121,6 @@ def test_chart_raw_data_rm_calculation(chart_db):
     assert get_exercise_raw_data(chart_db, "Ghost").empty
 
 
-
-
-
 # ---------------------------------------------------------------------------
 # Metrics edges
 # ---------------------------------------------------------------------------

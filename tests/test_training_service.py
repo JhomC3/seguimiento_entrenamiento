@@ -102,16 +102,12 @@ def test_save_session_multiple_sets(db):
 
 def test_insert_invalid_kg_rejected(db):
     with pytest.raises(ValueError):
-        save_session(
-            db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=0, reps=8, rir=0)]
-        )
+        save_session(db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=0, reps=8, rir=0)])
 
 
 def test_insert_invalid_reps_rejected(db):
     with pytest.raises(ValueError):
-        save_session(
-            db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=80, reps=-1, rir=0)]
-        )
+        save_session(db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=80, reps=-1, rir=0)])
 
 
 def test_insert_unknown_exercise_rejected(db):
@@ -123,9 +119,7 @@ def test_insert_unknown_exercise_rejected(db):
 
 def test_insert_negative_rir_rejected(db):
     with pytest.raises(ValueError):
-        save_session(
-            db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=-1)]
-        )
+        save_session(db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=-1)])
 
 
 def test_save_zero_rir_accepted(db):
