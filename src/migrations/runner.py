@@ -9,6 +9,7 @@ from src.migrations import (
     v002_add_origins_and_categories,
     v003_add_template_order,
     v005_recompute_semana,
+    v007_nutrition,
 )
 
 MIGRATIONS = [
@@ -16,12 +17,20 @@ MIGRATIONS = [
     v002_add_origins_and_categories,
     v003_add_template_order,
     v005_recompute_semana,
+    v007_nutrition,
 ]
 
 _CURRENT_VERSION = max(m.VERSION for m in MIGRATIONS)
 
 
-_DOMAIN_TABLES = {"ejercicios", "training_sets", "plantillas", "plantilla_sets"}
+_DOMAIN_TABLES = {
+    "ejercicios",
+    "training_sets",
+    "plantillas",
+    "plantilla_sets",
+    "alimentos",
+    "diario_alimentacion",
+}
 
 
 def _existing_tables(conn) -> set[str]:

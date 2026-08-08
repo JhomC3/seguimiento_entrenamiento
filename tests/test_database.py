@@ -267,6 +267,99 @@ def test_v005_recompute_idempotente(tmp_path):
         assert conn.execute("SELECT semana FROM training_sets").fetchone()[0] == 14
 
 
+def test_v007_creates_nutrition_tables(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    tables = [
+        t[0] for t in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    ]
+    assert "alimentos" in tables
+    assert "diario_alimentacion" in tables
+    assert "ejercicios" in tables
+    assert "training_sets" in tables
+    assert "plantillas" in tables
+    assert "plantilla_sets" in tables
+
+    alim_cols = [r[1] for r in conn.execute("PRAGMA table_info(alimentos)").fetchall()]
+    assert alim_cols == [
+        "id",
+        "nombre",
+        "categoria",
+        "kcal",
+        "carbohidratos",
+        "fibra",
+        "proteina",
+        "grasa",
+        "hierro",
+        "calcio",
+        "vitamina_c",
+        "vitamina_a",
+        "origen",
+    ]
+    diario_cols = [r[1] for r in conn.execute("PRAGMA table_info(diario_alimentacion)").fetchall()]
+    assert diario_cols == [
+        "id",
+        "fecha",
+        "orden",
+        "alimento",
+        "cantidad_g",
+        "kcal",
+        "carbohidratos",
+        "fibra",
+        "proteina",
+        "grasa",
+        "hierro",
+        "calcio",
+        "vitamina_c",
+        "vitamina_a",
+        "origen",
+    ]
+    indexes = [
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='index'").fetchall()
+    ]
+    assert "idx_diario_alimentacion_fecha_orden" in indexes
+    conn.close()
+
+
+def test_v007_nutrition_origin_defaults_to_google(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT INTO alimentos (nombre, kcal, carbohidratos, fibra, proteina, grasa, "
+        "hierro, calcio, vitamina_c, vitamina_a) "
+        "VALUES ('Avena', 389, 68, 10, 17, 6.9, 4.2, 54, 0, 0)"
+    )
+    conn.execute(
+        "INSERT INTO diario_alimentacion (fecha, orden, alimento, cantidad_g, kcal, "
+        "carbohidratos, fibra, proteina, grasa, hierro, calcio, vitamina_c, vitamina_a) "
+        "VALUES ('2025-04-24', 1, 'Avena', 120, 467, 82, 12, 20, 8, 5, 65, 0, 0)"
+    )
+    assert conn.execute("SELECT origen FROM alimentos").fetchone()[0] == "google"
+    assert conn.execute("SELECT origen FROM diario_alimentacion").fetchone()[0] == "google"
+    conn.close()
+
+
+def test_v007_is_latest_schema_version(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+    conn.close()
+    assert max_version == 7
+
+
+def test_v007_migration_idempotent(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    count = conn.execute("SELECT COUNT(*) FROM schema_migrations WHERE version = 7").fetchone()[0]
+    conn.close()
+    assert count == 1
+
+
 def test_load_ejercicios(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
