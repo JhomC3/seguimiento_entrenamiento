@@ -1,6 +1,7 @@
 import csv
 import io
 import re
+from dataclasses import dataclass
 from datetime import datetime
 
 import pandas as pd
@@ -288,15 +289,62 @@ def _parse_grams(value) -> float | None:
     return float(match.group(1).replace(",", "."))
 
 
-def parse_diario(csv_text: str) -> pd.DataFrame:
-    """Parsea la hoja 'diario' -> DataFrame con columnas
-    [fecha, orden, alimento, cantidad_g, kcal, carbohidratos, fibra, proteina,
-    grasa, hierro, calcio, vitamina_c, vitamina_a].
+@dataclass
+class DiarioParse:
+    """Resultado del parseo del diario: filas de alimentos + parámetros por fecha."""
 
-    Cada bloque diario puede ordenar los nutrientes de forma distinta; el mapeo
-    se deriva de las etiquetas del encabezado de cada bloque, nunca por posición.
-    Las filas de resumen (porcentajes, objetivo, totales), los placeholders sin
-    cantidad y las filas truncadas al borde del rango exportado se descartan.
+    df: pd.DataFrame
+    params: list[dict]
+
+
+def _cell(row: list, idx: int) -> str:
+    return str(row[idx]).strip() if idx < len(row) else ""
+
+
+def _block_signature(rows: list, block: dict, header_idx: int) -> tuple:
+    """Firma de un bloque para deduplicar días copiados en la hoja.
+
+    Incluye la fila de objetivo y las filas de alimentos (valores ordenados por
+    etiqueta, no por posición, para que el orden de columnas no importe).
+    """
+    target = rows[header_idx + 2] if len(rows) > header_idx + 2 else []
+    labels = block["labels"]
+    fields = (
+        "Calorias",
+        "Carbohidratos",
+        "Fibra",
+        "Proteina",
+        "Grasa",
+        "Hierro",
+        "Calcio",
+        "Vitamina C",
+        "Vitamina A",
+    )
+    parts: list = [_cell(target, block["start"] + labels[f]) if f in labels else "" for f in fields]
+    food_rows = []
+    for row in rows[header_idx + 4 :]:
+        alimento = _cell(row, block["start"])
+        if not alimento or alimento == "nan":
+            continue
+        cantidad = _cell(row, block["start"] + labels["Cantidad"]) if "Cantidad" in labels else ""
+        nutrients = [_cell(row, block["start"] + labels[f]) if f in labels else "" for f in fields]
+        food_rows.append((alimento, cantidad, *nutrients))
+    return (block["fecha_iso"], tuple(parts), tuple(food_rows))
+
+
+def parse_diario(csv_text: str) -> DiarioParse:
+    """Parsea la hoja 'diario' -> DiarioParse.
+
+    - `df`: columnas [fecha, orden, alimento, cantidad_g, kcal, carbohidratos,
+      fibra, proteina, grasa, hierro, calcio, vitamina_c, vitamina_a].
+    - `params`: por fecha única, los objetivos importables de la hoja
+      (kcal_objetivo, fibra/hierro/calcio/vitC/vitA objetivo).
+
+    El mapeo de nutrientes se deriva de las etiquetas del encabezado de cada
+    bloque. Los bloques con la misma fecha y el mismo contenido (días copiados,
+    p. ej. 8/8/2026 ×126) se importan una sola vez. Las filas con alimento pero
+    sin cantidad se conservan como placeholder (cantidad_g None, nutrientes 0).
+    Las filas truncadas al borde del rango exportado se descartan.
     """
     rows = list(csv.reader(io.StringIO(csv_text)))
 
@@ -326,10 +374,40 @@ def parse_diario(csv_text: str) -> pd.DataFrame:
             raise ValueError(f"Bloque del diario {raw_date}: etiquetas faltantes {missing}")
         blocks.append({"fecha_iso": iso, "start": col, "end": end, "labels": labels})
 
+    seen_signatures: set[tuple] = set()
+    params: list[dict] = []
+    for block in blocks:
+        sig = _block_signature(rows, block, header_idx)
+        if sig in seen_signatures:
+            block["skip"] = True
+            continue
+        seen_signatures.add(sig)
+        target = rows[header_idx + 2] if len(rows) > header_idx + 2 else []
+        labels = block["labels"]
+        if "Calorias" in labels:
+            kcal = parse_float(_cell(target, block["start"] + labels["Calorias"]))
+            if kcal is not None:
+                entry: dict = {"fecha": block["fecha_iso"], "kcal_objetivo": kcal}
+                for label, field in (
+                    ("Fibra", "fibra_objetivo"),
+                    ("Hierro", "hierro_objetivo"),
+                    ("Calcio", "calcio_objetivo"),
+                    ("Vitamina C", "vitamina_c_objetivo"),
+                    ("Vitamina A", "vitamina_a_objetivo"),
+                ):
+                    entry[field] = (
+                        parse_float(_cell(target, block["start"] + labels[label]))
+                        if label in labels
+                        else 0.0
+                    )
+                params.append(entry)
+
     records: list[dict] = []
     order_per_date: dict[str, int] = {}
     for row in rows[header_idx + 1 :]:
         for block in blocks:
+            if block.get("skip"):
+                continue
             start, end = block["start"], block["end"]
             if start >= len(row):
                 continue
@@ -338,12 +416,9 @@ def parse_diario(csv_text: str) -> pd.DataFrame:
                 continue
             cantidad_idx = start + block["labels"]["Cantidad"]
             cantidad_g = _parse_grams(row[cantidad_idx]) if cantidad_idx < len(row) else None
-            if cantidad_g is None or cantidad_g <= 0:
-                continue
             max_col = max(start + off for off in block["labels"].values())
             if len(row) <= max_col:
-                # Fila truncada al borde del rango exportado: entrada
-                # incompleta, se descarta como los placeholders.
+                # Fila truncada al borde del rango exportado: se descarta.
                 continue
             record: dict = {
                 "fecha": block["fecha_iso"],
@@ -354,13 +429,20 @@ def parse_diario(csv_text: str) -> pd.DataFrame:
                 col = start + block["labels"][label]
                 value = parse_float(row[col]) if col < len(row) else None
                 if value is None:
-                    # La hoja trata las celdas en blanco como 0 en sus fórmulas;
-                    # el importador replica ese comportamiento (p. ej. una fila
+                    # La hoja trata las celdas en blanco como 0 (p. ej. una fila
                     # de Aceite de Oliva sin macros o una kcal olvidada).
                     value = 0.0
                 record[field] = value
+            if cantidad_g is None or cantidad_g <= 0:
+                # Placeholder: alimento sin cantidad, nutrientes en 0.
+                record["cantidad_g"] = None
+                for field in ALIMENTOS_NUTRIENT_COLUMNS:
+                    record[field] = 0.0
             order_per_date[block["fecha_iso"]] = order_per_date.get(block["fecha_iso"], 0) + 1
             record["orden"] = order_per_date[block["fecha_iso"]]
             records.append(record)
 
-    return pd.DataFrame(records, columns=DIARIO_COLUMN_ORDER)
+    return DiarioParse(
+        df=pd.DataFrame(records, columns=DIARIO_COLUMN_ORDER),
+        params=params,
+    )

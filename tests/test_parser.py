@@ -268,6 +268,7 @@ SAMPLE_DIARIO_ROWS = [
         "900",
         "",
         "",
+        "",
         "2300",
         "375",
         "38",
@@ -418,14 +419,15 @@ SAMPLE_DIARIO_CSV = "\n".join([",".join(row) for row in SAMPLE_DIARIO_ROWS]) + "
 
 
 def test_parse_diario_columns():
-    df = parse_diario(SAMPLE_DIARIO_CSV)
+    result = parse_diario(SAMPLE_DIARIO_CSV)
+    df = result.df
     assert isinstance(df, pd.DataFrame)
     assert list(df.columns) == DIARIO_COLUMNS
 
 
 def test_parse_diario_orders_columns_by_block_header():
     # El bloque 1 usa Fibra/Proteína/Grasa y el bloque 2 Proteína/Grasa/Fibra.
-    df = parse_diario(SAMPLE_DIARIO_CSV)
+    df = parse_diario(SAMPLE_DIARIO_CSV).df
     avena_1 = df[(df["fecha"] == "2025-04-24") & (df["alimento"] == "Avena")].iloc[0]
     assert avena_1["fibra"] == 12.0
     assert avena_1["proteina"] == 20.0
@@ -437,7 +439,7 @@ def test_parse_diario_orders_columns_by_block_header():
 
 
 def test_parse_diario_values_and_iso_dates():
-    df = parse_diario(SAMPLE_DIARIO_CSV)
+    df = parse_diario(SAMPLE_DIARIO_CSV).df
     huevo_1 = df[(df["fecha"] == "2025-04-24") & (df["alimento"] == "Huevo")].iloc[0]
     assert huevo_1["cantidad_g"] == 100.0
     assert huevo_1["kcal"] == 143.0
@@ -447,15 +449,21 @@ def test_parse_diario_values_and_iso_dates():
     assert tomate["vitamina_c"] == 30.0
 
 
-def test_parse_diario_skips_summary_rows_and_placeholders():
-    df = parse_diario(SAMPLE_DIARIO_CSV)
-    assert not (df["alimento"] == "Semillas de Chía").any()
-    assert df["cantidad_g"].notna().all()
+def test_parse_diario_skips_summary_rows():
+    df = parse_diario(SAMPLE_DIARIO_CSV).df
     assert not df["alimento"].str.contains("Cantidad|Calorías|Fibra", case=False).any()
 
 
+def test_parse_diario_keeps_placeholder_rows():
+    df = parse_diario(SAMPLE_DIARIO_CSV).df
+    row = df[df["alimento"] == "Semillas de Chía"].iloc[0]
+    assert pd.isna(row["cantidad_g"])
+    assert row["kcal"] == 0.0
+    assert row["fibra"] == 0.0
+
+
 def test_parse_diario_orders_entries_by_fecha():
-    df = parse_diario(SAMPLE_DIARIO_CSV)
+    df = parse_diario(SAMPLE_DIARIO_CSV).df
     for fecha, group in df.groupby("fecha"):
         assert list(group["orden"]) == list(range(1, len(group) + 1))
 
@@ -467,7 +475,7 @@ def test_parse_diario_skips_truncated_edge_rows():
     truncated = SAMPLE_DIARIO_ROWS[5][:8]
     rows = [list(r) for r in SAMPLE_DIARIO_ROWS[:6]]
     rows[5] = truncated
-    df = parse_diario("\n".join([",".join(r) for r in rows]) + "\n")
+    df = parse_diario("\n".join([",".join(r) for r in rows]) + "\n").df
     assert not (df["alimento"] == "Avena").any()
     assert df.empty
 
@@ -479,13 +487,29 @@ def test_parse_diario_treats_empty_cell_as_zero():
     broken[3] = ""
     rows = [list(r) for r in SAMPLE_DIARIO_ROWS[:6]]
     rows[5] = broken
-    df = parse_diario("\n".join([",".join(r) for r in rows]) + "\n")
+    df = parse_diario("\n".join([",".join(r) for r in rows]) + "\n").df
     avena = df[(df["fecha"] == "2025-04-24") & (df["alimento"] == "Avena")].iloc[0]
     assert avena["kcal"] == 0.0
     assert avena["fibra"] == 12.0
-    # Caso real: la hoja tiene dos bloques con la misma fecha (8/8/2026).
-    # El tercer bloque repite 24/4/2025: sus entradas deben concatenarse
-    # en orden al mismo día (Avena b1, Avena b3, Huevo b1).
+
+
+def test_parse_diario_dedups_identical_blocks():
+    # Caso real: el 8/8/2026 está copiado 126 veces en la hoja con bloques
+    # idénticos. Solo se importa una copia de cada bloque por fecha.
+    rows = [list(r) for r in SAMPLE_DIARIO_ROWS]
+    b1_header = rows[1][:13]
+    rows[1] = b1_header + b1_header + b1_header
+    for i in (2, 3, 4, 5, 6, 7, 8):
+        rows[i] = rows[i][:13] * 3
+    df = parse_diario("\n".join([",".join(r) for r in rows]) + "\n").df
+    day = df[df["fecha"] == "2025-04-24"]
+    assert day["alimento"].str.contains("Avena").sum() == 1
+    assert list(day["orden"]) == [1, 2, 3, 4]
+
+
+def test_parse_diario_concatenates_different_blocks_same_date():
+    # Dos bloques con la misma fecha pero contenido distinto no son duplicados:
+    # sus entradas se concatenan en orden.
     header = list(SAMPLE_DIARIO_ROWS[1])
     avena_row = list(SAMPLE_DIARIO_ROWS[5])
     extra_header = [
@@ -509,9 +533,24 @@ def test_parse_diario_treats_empty_cell_as_zero():
     rows[5] = avena_row + extra_avena
     maxlen = max(len(r) for r in rows)
     rows = [r + [""] * (maxlen - len(r)) for r in rows]
-    df = parse_diario("\n".join([",".join(r) for r in rows]) + "\n")
+    df = parse_diario("\n".join([",".join(r) for r in rows]) + "\n").df
     day = df[df["fecha"] == "2025-04-24"]
     avenas = day[day["alimento"].str.contains("Avena")]
     assert len(avenas) == 2
     assert list(avenas["orden"]) == [1, 2]
-    assert list(day["orden"]) == [1, 2, 3, 4]
+    assert list(day["orden"]) == [1, 2, 3, 4, 5]
+
+
+def test_parse_diario_extracts_params_per_date():
+    result = parse_diario(SAMPLE_DIARIO_CSV)
+    by_date = {p["fecha"]: p for p in result.params}
+    assert by_date["2025-04-24"] == {
+        "fecha": "2025-04-24",
+        "kcal_objetivo": 2300.0,
+        "fibra_objetivo": 38.0,
+        "hierro_objetivo": 8.0,
+        "calcio_objetivo": 1000.0,
+        "vitamina_c_objetivo": 90.0,
+        "vitamina_a_objetivo": 900.0,
+    }
+    assert by_date["2025-04-25"]["kcal_objetivo"] == 2300.0

@@ -61,7 +61,8 @@ def main() -> int:
             "diario", gids=config.NUTRITION_GIDS, sheet_id=config.NUTRITION_SHEET_ID
         )
         df_alimentos = parse_alimentos(csv_alimentos)
-        df_diario = parse_diario(csv_diario)
+        diario = parse_diario(csv_diario)
+        df_diario = diario.df
     except Exception as exc:
         print(f"ERROR: no se pudieron descargar/parsear las hojas. Abortando. ({exc})")
         return 1
