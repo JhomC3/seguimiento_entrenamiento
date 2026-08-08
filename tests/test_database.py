@@ -103,7 +103,7 @@ def test_migrations_recorded_in_schema_migrations(tmp_path):
         r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()
     )
     conn.close()
-    assert versions == [1, 2, 3, 5]
+    assert versions == [1, 2, 3, 5, 7]
 
 
 def test_migrates_intermediate_state_without_orden(tmp_path):
