@@ -870,6 +870,62 @@ def test_undo_restaura_origen_google(tmp_path, monkeypatch):
     assert rows[0]["kg"] == 90 and rows[0]["origen"] == "google"
 
 
+def test_sesiones_view_renders_ultimas(tmp_path, monkeypatch):
+    from src.models import TrainingSetInput
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    save_session(db, "2026-08-06", [TrainingSetInput("Press", 90, 7, 1)])
+    resp = _client().get("/sesiones")
+    assert resp.status_code == 200
+    assert "2026-08-06" in resp.text and "series" in resp.text
+
+
+def test_index_incluye_historial_sesiones(tmp_path, monkeypatch):
+    from src.models import TrainingSetInput
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    save_session(db, "2026-08-06", [TrainingSetInput("Press", 90, 7, 1)])
+    resp = _client().get("/")
+    assert 'id="session-history"' in resp.text
+    assert "6/8/26" in resp.text
+
+
+def test_save_incluye_oob_history(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    resp = _client().post(
+        "/entrenamiento/session/save",
+        data={
+            "fecha": "2026-08-06",
+            "ejercicio": ["Press"],
+            "kg": ["90"],
+            "reps": ["7"],
+            "rir": ["1"],
+        },
+    )
+    assert 'id="session-history" hx-swap-oob="innerHTML"' in resp.text
+
+
+def test_undo_incluye_oob_history(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    client.post(
+        "/entrenamiento/session/save",
+        data={
+            "fecha": "2026-08-06",
+            "ejercicio": ["Press"],
+            "kg": ["90"],
+            "reps": ["7"],
+            "rir": ["1"],
+        },
+    )
+    resp = client.post("/undo", data={"fecha": "2026-08-06"})
+    assert 'id="session-history" hx-swap-oob="innerHTML"' in resp.text
+
+
 def test_get_first_session_date_con_iso(tmp_path):
     from src.dashboard_service import get_first_session_date
     from src.models import TrainingSetInput

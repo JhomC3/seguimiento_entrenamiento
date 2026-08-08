@@ -28,6 +28,19 @@ logger = logging.getLogger("dashboard")
 DOMAIN_ERRORS = (ValidationError, NotFoundError, ConflictError)
 
 
+def get_recent_sessions(db_path: str, limit: int = 10) -> list[dict]:
+    """Latest sessions (ISO sorted by SQL), each with a display date."""
+    from src.database import get_training_sessions
+
+    sessions = get_training_sessions(db_path)[:limit]
+    for s in sessions:
+        try:
+            s["fecha_display"] = fecha_display(s["fecha"])
+        except ValueError:
+            s["fecha_display"] = s["fecha"]
+    return sessions
+
+
 def get_filters(db_path: str) -> tuple[list[str], list[str]]:
     """All distinct exercises and muscle groups. Safe empty result on error."""
     try:

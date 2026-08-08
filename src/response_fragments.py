@@ -20,6 +20,7 @@ OOB_FRAGMENT_TARGETS = (
     "plantillas-section",
     "unified-chart",
     "date-navigator",
+    "session-history",
 )
 
 STATIC_MARKERS = {

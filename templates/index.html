@@ -25,6 +25,9 @@
                 {{ plantillas_html | safe }}
             </div>
 
+            <!-- Historial de sesiones -->
+            <div id="session-history">{{ session_history_html | safe }}</div>
+
             <!-- Categorías de Músculos: Empuje / Tirón / Pierna / Core -->
             <div class="flex flex-col gap-4">
                 {% for cat in muscle_categories %}

@@ -50,6 +50,8 @@ export function initDateNavigation() {
         if (!el) return;
         if (el.dataset.action === 'select-date') {
             requestNavigate(el.dataset.iso);
+        } else if (el.dataset.action === 'goto-session') {
+            requestNavigate(el.dataset.iso);
         } else if (el.dataset.action === 'jump-date') {
             jumpDate(el.dataset.iso);
         } else if (el.dataset.action === 'scroll-dates') {
