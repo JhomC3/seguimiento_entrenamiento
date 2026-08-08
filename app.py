@@ -46,7 +46,7 @@ from src.mutation_service import (
     save_template_with_undo_snapshot,
     undo_last_action,
 )
-from src.nutrition_service import create_alimento, entries_from_form
+from src.nutrition_service import NUTRIENT_FIELDS, create_alimento, entries_from_form
 from src.response_fragments import (
     STATIC_MARKERS,
     app_config_oob,
@@ -229,11 +229,8 @@ NUTRIENT_FIELD_LABELS: list[dict[str, str]] = [
 
 
 def _alimento_preview_map() -> dict[str, dict[str, float]]:
-    """Mapa compacto nombre -> macros por 100 g para previsualización client."""
-    return {
-        a["nombre"]: {k: a[k] for k in ("kcal", "carbohidratos", "fibra", "proteina", "grasa")}
-        for a in get_alimentos_catalog(DB_PATH)
-    }
+    """Mapa compacto nombre -> 9 nutrientes por 100 g para previsualización client."""
+    return {a["nombre"]: {k: a[k] for k in NUTRIENT_FIELDS} for a in get_alimentos_catalog(DB_PATH)}
 
 
 def _nutrition_app_config() -> dict:
@@ -340,6 +337,7 @@ def read_index(request: Request):
             "session_history_html": _sesiones_list_html(request),
             "app_config_json": {
                 "categoria_map": get_ejercicio_categoria(DB_PATH),
+                "alimento_map": _alimento_preview_map(),
                 "csrf_token": make_csrf_token(get_csrf_secret()),
             },
         },
@@ -445,11 +443,22 @@ def alimentacion_save(
     fecha: str = Form(...),
     alimento: list[str] = Form(default=[]),
     cantidad: list[str] = Form(default=[]),
+    peso_kg: float | None = Form(None),
+    factor_proteina: float | None = Form(None),
+    factor_grasa: float | None = Form(None),
+    kcal_objetivo: float | None = Form(None),
 ):
     notice = notice_oob(templates, request, target="notice-container", message="Día guardado.")
+    parametros = {
+        "peso_kg": peso_kg,
+        "factor_proteina": factor_proteina,
+        "factor_grasa": factor_grasa,
+        "kcal_objetivo": kcal_objetivo,
+    }
+    parametros = {k: v for k, v in parametros.items() if v is not None}
     try:
         entries = entries_from_form(alimento, cantidad)
-        save_diary_with_undo_snapshot(DB_PATH, fecha, entries)
+        save_diary_with_undo_snapshot(DB_PATH, fecha, entries, parametros=parametros or None)
     except Exception as e:
         return _domain_error_response(
             request, e, "notice-container", extra=STATIC_MARKERS["outcome_fail"]

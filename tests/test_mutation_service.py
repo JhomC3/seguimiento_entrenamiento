@@ -132,6 +132,28 @@ def test_domain_error_does_not_push_stack(tmp_path):
     assert undo_stack_size() == 0
 
 
+def test_undo_alimentacion_restores_parametros(tmp_path):
+    from src.database import get_parametros_diarios
+
+    db = _setup_db(tmp_path)
+    save_diary_with_undo_snapshot(
+        db,
+        "2025-04-24",
+        [NutritionEntryInput("Avena", "120")],
+        parametros={"peso_kg": 69.0, "kcal_objetivo": 2750.0},
+    )
+    save_diary_with_undo_snapshot(
+        db,
+        "2025-04-24",
+        [NutritionEntryInput("Avena", "150")],
+        parametros={"peso_kg": 70.0, "kcal_objetivo": 2600.0},
+    )
+    undo_last_action(db, "2025-04-24")
+    params = get_parametros_diarios(db, "2025-04-24")
+    assert params["peso_kg"] == 69.0
+    assert params["kcal_objetivo"] == 2750.0
+
+
 def test_stack_keeps_max_10_mixed_actions(tmp_path):
     db = _setup_db(tmp_path)
     for i in range(12):

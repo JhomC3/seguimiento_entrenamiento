@@ -499,3 +499,8 @@ def save_parametros_diarios(db_path: str, fecha: str, params: dict) -> None:
                 *[float(merged.get(col, 0.0)) for col in _PARAMETROS_COLUMNS],
             ),
         )
+
+
+def delete_parametros_diarios(db_path: str, fecha: str) -> None:
+    with transaction(db_path) as conn:
+        conn.execute("DELETE FROM parametros_diarios WHERE fecha = ?", (fecha,))

@@ -11,13 +11,17 @@ from collections import deque
 
 from src.database import (
     backup_db,
+    delete_diario_by_fecha,
+    delete_parametros_diarios,
     delete_plantilla,
     delete_session_by_fecha,
     get_diario_by_fecha,
+    get_parametros_diarios,
     get_sets_by_fecha,
     reorder_plantillas,
     restore_diario_rows,
     restore_entrenos,
+    save_parametros_diarios,
     snapshot_entrenos,
 )
 from src.models import Session, Template, TemplateInput
@@ -42,9 +46,25 @@ def _push_sesion(fecha_iso: str, before: list[dict], after: list[dict]) -> None:
     UNDO_STACK.append({"kind": "sesion", "fecha_iso": fecha_iso, "before": before, "after": after})
 
 
-def _push_alimentacion(fecha_iso: str, before: list[dict], after: list[dict]) -> None:
+def _push_alimentacion(
+    fecha_iso: str,
+    before: list[dict],
+    after: list[dict],
+    *,
+    params_before: dict | None = None,
+    params_after: dict | None = None,
+    params_tracked: bool = False,
+) -> None:
     UNDO_STACK.append(
-        {"kind": "alimentacion", "fecha_iso": fecha_iso, "before": before, "after": after}
+        {
+            "kind": "alimentacion",
+            "fecha_iso": fecha_iso,
+            "before": before,
+            "after": after,
+            "params_before": params_before,
+            "params_after": params_after,
+            "params_tracked": params_tracked,
+        }
     )
 
 
@@ -114,11 +134,23 @@ def reorder_templates_with_undo_snapshot(db_path: str, ordered_ids: list[int]) -
     _push_entrenos(before, snapshot_entrenos(db_path))
 
 
-def save_diary_with_undo_snapshot(db_path: str, fecha_iso: str, entries) -> None:
+def save_diary_with_undo_snapshot(
+    db_path: str, fecha_iso: str, entries, parametros: dict | None = None
+) -> None:
     before = get_diario_by_fecha(db_path, fecha_iso)
+    params_before = get_parametros_diarios(db_path, fecha_iso)
     backup_or_raise(db_path)
     save_diary(db_path, fecha_iso, entries)
-    _push_alimentacion(fecha_iso, before, get_diario_by_fecha(db_path, fecha_iso))
+    if parametros:
+        save_parametros_diarios(db_path, fecha_iso, parametros)
+    _push_alimentacion(
+        fecha_iso,
+        before,
+        get_diario_by_fecha(db_path, fecha_iso),
+        params_before=params_before,
+        params_after=get_parametros_diarios(db_path, fecha_iso),
+        params_tracked=bool(parametros),
+    )
 
 
 def delete_diary_with_undo_snapshot(db_path: str, fecha_iso: str) -> None:
@@ -152,6 +184,11 @@ def undo_last_action(db_path: str, fecha: str) -> dict:
     if entry["kind"] == "alimentacion":
         fecha_iso = entry["fecha_iso"]
         restore_diario_rows(db_path, fecha_iso, entry["before"])
+        if entry.get("params_tracked"):
+            if entry.get("params_before") is None:
+                delete_parametros_diarios(db_path, fecha_iso)
+            else:
+                save_parametros_diarios(db_path, fecha_iso, entry["params_before"])
         restored = get_diario_by_fecha(db_path, fecha_iso)
         has_data = "1" if restored else "0"
         UNDO_STACK.pop()

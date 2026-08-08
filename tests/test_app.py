@@ -975,6 +975,37 @@ def _seed_nutrition(tmp_path) -> str:
     return db
 
 
+def test_alimentacion_save_guarda_parametros_y_filas(tmp_path, monkeypatch):
+    from src.database import get_diario_by_fecha, get_parametros_diarios
+
+    db = _seed_nutrition(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().post(
+        "/alimentacion/save",
+        data={
+            "fecha": "2025-04-26",
+            "alimento": ["Avena"],
+            "cantidad": ["120"],
+            "peso_kg": "69",
+            "factor_proteina": "1.5",
+            "factor_grasa": "1.1",
+            "kcal_objetivo": "2750",
+        },
+    )
+    assert r.status_code == 200
+    assert get_diario_by_fecha(db, "2025-04-26")[0]["kcal"] == 467.0
+    params = get_parametros_diarios(db, "2025-04-26")
+    assert params["peso_kg"] == 69.0
+    assert params["kcal_objetivo"] == 2750.0
+
+
+def test_index_app_config_tiene_alimento_map(tmp_path, monkeypatch):
+    db = _seed_nutrition(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/")
+    assert '"alimento_map"' in r.text
+
+
 def test_alimentacion_standalone_page_removed(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
