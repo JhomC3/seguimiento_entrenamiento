@@ -13,7 +13,6 @@ from config import CICLO_START, DB_PATH, MUSCLE_CATEGORIES
 from src.charts import get_exercise_raw_data, get_exercise_session_summary
 from src.dashboard_service import (
     build_date_navigator,
-    build_nutrition_date_navigator,
     build_nutrition_editor,
     build_session_editor,
     chart_html,
@@ -240,23 +239,6 @@ def _nutrition_app_config() -> dict:
     }
 
 
-def _nutrition_navigator_html(request: Request, fecha_iso: str) -> str:
-    vm = build_nutrition_date_navigator(DB_PATH, fecha_iso)
-    return _render_body(
-        templates.TemplateResponse(
-            request=request,
-            name="nutrition_date_navigator.html",
-            context={
-                "fecha_iso": vm.selected_iso,
-                "fecha_display": _nutrition_fecha_display(vm.selected_iso),
-                "previous_iso": vm.previous_iso,
-                "next_iso": vm.next_iso,
-                "today_iso": vm.today_iso,
-            },
-        )
-    )
-
-
 def _nutrition_fecha_display(fecha_iso: str) -> str:
     from datetime import date as _date
 
@@ -338,7 +320,6 @@ def read_index(request: Request):
             "exercise_form_html": _exercise_form_html(request),
             "plantillas_html": _plantillas_list_html(request),
             "session_history_html": _sesiones_list_html(request),
-            "nutrition_navigator_html": _nutrition_navigator_html(request, fecha),
             "nutrition_editor_html": _nutrition_editor_html(request, fecha),
             "alimento_form_html": _alimento_form_html(request),
             "app_config_json": {
@@ -470,18 +451,10 @@ def alimentacion_save(
             request, e, "notice-container", extra=STATIC_MARKERS["outcome_fail"]
         )
     editor = _nutrition_editor_html(request, fecha)
-    navigator = _nutrition_navigator_html(request, fecha)
     return HTMLResponse(
         content=notice
         + STATIC_MARKERS["outcome_ok"]
         + nutrition_editor_wrap_oob(templates, request, editor)
-        + fragment_oob(
-            templates,
-            request,
-            "nutrition-date-navigator",
-            navigator,
-            swap="outerHTML",
-        )
     )
 
 
@@ -495,18 +468,10 @@ def alimentacion_eliminar(request: Request, fecha: str = Form(...)):
             request, e, "notice-container", extra=STATIC_MARKERS["outcome_fail"]
         )
     editor = _nutrition_editor_html(request, fecha)
-    navigator = _nutrition_navigator_html(request, fecha)
     return HTMLResponse(
         content=notice
         + STATIC_MARKERS["outcome_ok"]
         + nutrition_editor_wrap_oob(templates, request, editor)
-        + fragment_oob(
-            templates,
-            request,
-            "nutrition-date-navigator",
-            navigator,
-            swap="outerHTML",
-        )
     )
 
 
@@ -723,19 +688,11 @@ def undo(request: Request, fecha: str = Form("")):
         if fecha == fecha_iso:
             outcome_ok = STATIC_MARKERS["outcome_ok"]
             editor = _nutrition_editor_html(request, fecha_iso)
-            navigator = _nutrition_navigator_html(request, fecha_iso)
             return HTMLResponse(
                 content=notice_ok
                 + outcome_ok
                 + marker
                 + nutrition_editor_wrap_oob(templates, request, editor)
-                + fragment_oob(
-                    templates,
-                    request,
-                    "nutrition-date-navigator",
-                    navigator,
-                    swap="outerHTML",
-                )
             )
         return HTMLResponse(content=notice_ok + marker)
     return HTMLResponse(

@@ -13,7 +13,6 @@ from src.charts import chart_pfr_timeline
 from src.database import (
     get_alimentos_catalog,
     get_diario_by_fecha,
-    get_diario_dates,
     get_exercises_catalog,
     get_parametros_diarios,
     get_sets_by_fecha,
@@ -33,7 +32,6 @@ from src.view_models import (
     DateDay,
     DateNavigatorViewModel,
     EditorRow,
-    NutritionDateNavigatorViewModel,
     NutritionEditorViewModel,
     NutritionEntryRow,
     SessionEditorViewModel,
@@ -374,27 +372,10 @@ def build_nutrition_editor(
         totals=consumido,
         catalog=[a["nombre"] for a in get_alimentos_catalog(db_path)],
         has_data=bool(entry_rows),
+        readonly=bool(entry_rows) or fecha < date.today(),
         error=error,
         success=success,
         objetivo=objetivo,
         consumido=consumido,
         parametros=parametros,
-    )
-
-
-def build_nutrition_date_navigator(
-    db_path: str, fecha_iso: str, *, today: date | None = None
-) -> NutritionDateNavigatorViewModel:
-    """Navegador simple: día anterior/siguiente + input de fecha nativo."""
-    today = today or date.today()
-    try:
-        selected = parse_form_date(fecha_iso)
-    except ValidationError:
-        selected = today
-    return NutritionDateNavigatorViewModel(
-        selected_iso=selected.strftime("%Y-%m-%d"),
-        previous_iso=(selected - timedelta(days=1)).strftime("%Y-%m-%d"),
-        next_iso=(selected + timedelta(days=1)).strftime("%Y-%m-%d"),
-        today_iso=today.strftime("%Y-%m-%d"),
-        available_dates=get_diario_dates(db_path),
     )

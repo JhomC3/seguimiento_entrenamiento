@@ -1,9 +1,6 @@
 """Tests de view models y servicios de presentación nutricional."""
 
-from src.dashboard_service import (
-    build_nutrition_date_navigator,
-    build_nutrition_editor,
-)
+from src.dashboard_service import build_nutrition_editor
 from src.database import init_db, insert_alimento, replace_diario_by_fecha
 
 
@@ -101,7 +98,7 @@ def test_build_editor_future_date_is_editable(tmp_path):
     vm = build_nutrition_editor(db, "2030-01-01")
     assert vm.fecha_iso == "2030-01-01"
     assert vm.has_data is False
-    assert not hasattr(vm, "readonly")
+    assert vm.readonly is False
 
 
 def test_build_editor_passes_error_and_success(tmp_path):
@@ -158,32 +155,53 @@ def test_build_editor_defaults_params_on_empty_day(tmp_path):
     assert vm.consumido["kcal"] == 0.0
 
 
-def test_build_navigator_sorted_dates_and_selected(tmp_path):
-    db = str(tmp_path / "g.db")
-    _seed(db)
-    vm = build_nutrition_date_navigator(db, "2025-04-24")
-    assert vm.selected_iso == "2025-04-24"
-    assert vm.available_dates == ["2025-04-24", "2025-04-25"]
-    assert vm.previous_iso == "2025-04-23"
-    assert vm.next_iso == "2025-04-25"
-    assert vm.today_iso
-
-
-def test_build_navigator_falls_back_to_today_for_bad_date(tmp_path):
+def test_build_editor_readonly_con_datos(tmp_path):
     from datetime import date
 
     db = str(tmp_path / "g.db")
     _seed(db)
-    vm = build_nutrition_date_navigator(db, "basura", today=date(2025, 4, 30))
-    assert vm.selected_iso == "2025-04-30"
+    hoy = date.today().strftime("%Y-%m-%d")
+    with_conn = str(tmp_path / "g2.db")
+    init_db(with_conn)
+    replace_diario_by_fecha(
+        with_conn,
+        hoy,
+        [
+            {
+                "alimento": "Avena",
+                "cantidad_g": 120.0,
+                "kcal": 467.0,
+                "carbohidratos": 82.0,
+                "fibra": 12.0,
+                "proteina": 20.0,
+                "grasa": 8.0,
+                "hierro": 5.0,
+                "calcio": 65.0,
+                "vitamina_c": 0.0,
+                "vitamina_a": 0.0,
+                "origen": "google",
+            }
+        ],
+    )
+    vm = build_nutrition_editor(with_conn, hoy)
+    assert vm.readonly is True
 
 
-def test_build_navigator_empty_db(tmp_path):
-    from datetime import date
+def test_build_editor_readonly_futuro_vacio(tmp_path):
+    from datetime import date, timedelta
 
     db = str(tmp_path / "g.db")
-    init_db(db)
-    vm = build_nutrition_date_navigator(db, "2025-04-24", today=date(2025, 4, 30))
-    assert vm.available_dates == []
-    assert vm.previous_iso == "2025-04-23"
-    assert vm.next_iso == "2025-04-25"
+    _seed(db)
+    futuro = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
+    vm = build_nutrition_editor(db, futuro)
+    assert vm.readonly is False
+
+
+def test_build_editor_readonly_pasado_vacio(tmp_path):
+    from datetime import date, timedelta
+
+    db = str(tmp_path / "g.db")
+    _seed(db)
+    pasado = (date.today() - timedelta(days=2)).strftime("%Y-%m-%d")
+    vm = build_nutrition_editor(db, pasado)
+    assert vm.readonly is True

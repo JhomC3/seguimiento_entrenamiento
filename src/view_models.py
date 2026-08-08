@@ -65,17 +65,9 @@ class NutritionEditorViewModel:
     totals: dict[str, float]
     catalog: list[str] = field(default_factory=list)
     has_data: bool = False
+    readonly: bool = False
     error: str | None = None
     success: str | None = None
     objetivo: dict[str, float] = field(default_factory=dict)
     consumido: dict[str, float] = field(default_factory=dict)
     parametros: dict[str, float] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class NutritionDateNavigatorViewModel:
-    selected_iso: str
-    previous_iso: str
-    next_iso: str
-    today_iso: str
-    available_dates: list[str] = field(default_factory=list)

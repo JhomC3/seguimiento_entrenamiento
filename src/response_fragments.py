@@ -24,7 +24,6 @@ OOB_FRAGMENT_TARGETS = (
     "date-navigator",
     "session-history",
     "nutrition-editor-wrap",
-    "nutrition-date-navigator",
     "alimento-create",
 )
 
