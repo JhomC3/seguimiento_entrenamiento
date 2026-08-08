@@ -2,6 +2,10 @@
     <div class="flex items-center gap-2">
         <button type="button" data-action="scroll-dates" data-dir="-1" class="nav-arrow" title="Fechas anteriores">←</button>
 
+        <input type="date" id="date-jump" data-action="jump-date-input" value="{{ selected_iso }}"
+            class="h-7 px-1.5 bg-matte-950 border border-neutral-800 rounded text-[11px] text-neutral-300 focus:outline-none"
+            title="Ir a fecha">
+
         <div id="date-strip" class="flex items-center gap-0.5 overflow-x-auto flex-1 min-w-0 no-scrollbar">
             {% for d in dates %}
             <button

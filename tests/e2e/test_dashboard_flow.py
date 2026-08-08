@@ -189,10 +189,11 @@ def test_template_crud_and_reorder(page, server):
         "data-pt-id", second_id, timeout=3000
     )
 
-    page.on("dialog", lambda dialog: dialog.accept())
     page.locator("#plantillas-section .pt-card").first.get_by_role(
         "button", name="Eliminar"
     ).click()
+    expect(page.locator("#confirm-modal")).to_be_visible()
+    page.locator("#confirm-save").click()
     expect(page.locator("#plantillas-section .pt-card")).to_have_count(1, timeout=3000)
     expect(page.locator("#notice-container .notice-success")).to_contain_text(
         "Entreno eliminado", timeout=2000
@@ -345,6 +346,32 @@ def test_category_filters_dots_sin_saltar_editor(page, server):
     assert page.evaluate("document.querySelectorAll('.date-num .date-dot').length") >= 1
 
 
+def test_mobile_viewport_renders(page, server):
+    page.set_viewport_size({"width": 375, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    assert page.is_visible("#session-editor")
+    assert page.is_visible("#date-navigator")
+    can_scroll = page.evaluate(
+        "() => { const el = document.querySelector('#session-editor .table-scroll');"
+        " return el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight; }"
+    )
+    assert can_scroll
+
+
+def test_keyboard_day_shift_updates_editor(page, server):
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.click(".today-btn")
+    _wait_editor_settled(page)
+    fecha = page.input_value("#session-form input[name='fecha']")
+    page.keyboard.press("ArrowRight")
+    page.wait_for_function(
+        "(expected) => document.querySelector(\"#session-form input[name='fecha']\").value !== expected",
+        arg=fecha,
+    )
+
+
 def test_keyboard_focus_ring_visible(page, server):
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
@@ -354,6 +381,18 @@ def test_keyboard_focus_ring_visible(page, server):
         " return cs.outlineStyle !== 'none' && cs.outlineWidth !== '0px'; }"
     )
     assert has_outline
+
+
+def test_template_delete_uses_custom_modal(page, server):
+    _create_template(page, server, _iso(5), "Eliminame")
+    page.locator("#plantillas-section .pt-card").get_by_role("button", name="Eliminar").click()
+    expect(page.locator("#confirm-modal")).to_be_visible()
+    expect(page.locator("#confirm-msg")).to_contain_text("Eliminame")
+    page.locator("#confirm-save").click()
+    expect(page.locator("#plantillas-section .pt-card")).to_have_count(0, timeout=3000)
+    expect(page.locator("#notice-container .notice-success")).to_contain_text(
+        "Entreno eliminado", timeout=2000
+    )
 
 
 def test_navigate_from_session_history(page, server):
