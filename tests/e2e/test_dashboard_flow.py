@@ -332,3 +332,28 @@ def test_category_filters_dots_sin_saltar_editor(page, server):
     page.click("#cat-btn-Pectoral")
     page.wait_for_timeout(800)
     assert page.evaluate("document.querySelectorAll('.date-num .date-dot').length") >= 1
+
+
+def test_navigate_from_session_history(page, server):
+    """Clic en una sesión del historial navega al editor de su fecha."""
+    iso_a = _iso(8)
+    iso_b = _iso(9)
+    _goto_date(page, server, iso_a)
+    _fill_row(page, 0, kg="80")
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "1", timeout=5000)
+    expect(page.locator("#session-history [data-action='goto-session']")).to_have_count(
+        1, timeout=3000
+    )
+
+    _goto_date(page, server, iso_b)
+    _fill_row(page, 0, kg="90")
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "1", timeout=5000)
+    expect(page.locator("#session-history [data-action='goto-session']")).to_have_count(
+        2, timeout=3000
+    )
+
+    page.locator(f"#session-history [data-action='goto-session'][data-iso='{iso_a}']").click()
+    expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso_a, timeout=3000)
+    expect(page.locator('input[name="kg"]')).to_have_value("80")
