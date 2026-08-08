@@ -77,10 +77,6 @@ def insert_exercise(db_path: str, ejercicio: str, grupo_muscular: str, categoria
         )
 
 
-def _parse_fecha(fecha: str) -> datetime:
-    return datetime.strptime(fecha, "%d/%m/%y")
-
-
 def get_sets_by_fecha(db_path: str, fecha: str) -> list[dict]:
     with read_connection(db_path) as conn:
         rows = conn.execute(
@@ -122,28 +118,22 @@ def get_training_sessions(db_path: str) -> list[dict]:
                    SUM(CASE WHEN origen = 'manual' THEN 1 ELSE 0 END) AS manual_sets,
                    SUM(CASE WHEN origen = 'google' THEN 1 ELSE 0 END) AS google_sets
             FROM training_sets
+            WHERE fecha IS NOT NULL
             GROUP BY semana, dia, fecha
+            ORDER BY fecha DESC
         """).fetchall()
-    sessions = []
-    for r in rows:
-        try:
-            fecha_dt = _parse_fecha(r[2])
-        except ValueError:
-            continue
-        sessions.append(
-            {
-                "semana": r[0],
-                "dia": r[1],
-                "fecha": r[2],
-                "fecha_dt": fecha_dt,
-                "n_ejercicios": r[3],
-                "n_series": r[4],
-                "manual_sets": r[5] or 0,
-                "google_sets": r[6] or 0,
-            }
-        )
-    sessions.sort(key=lambda s: s["fecha_dt"], reverse=True)
-    return sessions
+    return [
+        {
+            "semana": r[0],
+            "dia": r[1],
+            "fecha": r[2],
+            "n_ejercicios": r[3],
+            "n_series": r[4],
+            "manual_sets": r[5] or 0,
+            "google_sets": r[6] or 0,
+        }
+        for r in rows
+    ]
 
 
 def get_session_sets(db_path: str, semana: int, dia: str, fecha: str) -> list[dict]:
@@ -328,27 +318,17 @@ def get_ejercicio_categoria(db_path: str) -> dict[str, str]:
 
 def get_last_session_sets(db_path: str, ejercicio: str) -> list[dict]:
     with read_connection(db_path) as conn:
-        rows = conn.execute(
-            "SELECT fecha FROM training_sets WHERE LOWER(ejercicio) = LOWER(?) AND fecha IS NOT NULL",
+        latest = conn.execute(
+            "SELECT fecha FROM training_sets WHERE LOWER(ejercicio) = LOWER(?) "
+            "AND fecha IS NOT NULL ORDER BY fecha DESC LIMIT 1",
             (ejercicio,),
-        ).fetchall()
-    latest: str | None = None
-    latest_dt = None
-    for (f,) in rows:
-        try:
-            dt = _parse_fecha(f)
-        except ValueError:
-            continue
-        if latest_dt is None or dt > latest_dt:
-            latest_dt = dt
-            latest = f
-    if latest is None:
-        return []
-    with read_connection(db_path) as conn:
+        ).fetchone()
+        if latest is None:
+            return []
         set_rows = conn.execute(
             "SELECT ejercicio, set_orden, reps, kg, rir FROM training_sets "
             "WHERE LOWER(ejercicio) = LOWER(?) AND fecha = ? ORDER BY set_orden",
-            (ejercicio, latest),
+            (ejercicio, latest[0]),
         ).fetchall()
     return [
         {"ejercicio": r[0], "set_orden": r[1], "reps": r[2], "kg": r[3], "rir": r[4]}

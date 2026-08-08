@@ -35,7 +35,7 @@ def test_init_db_preserves_existing_rows(tmp_path):
     init_db(db_path)
     conn = sqlite3.connect(db_path)
     conn.execute(
-        "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) VALUES (1, 'LUNES', '4/5/26', 1, 'Press', 6, 85, 1, 'manual')"
+        "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) VALUES (1, 'LUNES', '2026-05-04', 1, 'Press', 6, 85, 1, 'manual')"
     )
     conn.commit()
     conn.close()
@@ -68,7 +68,7 @@ def test_init_db_migrates_old_schema(tmp_path):
         );
         INSERT INTO ejercicios (grupo_muscular, ejercicio) VALUES ('Pectoral', 'Press');
         INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir)
-        VALUES (1, 'LUNES', '4/5/26', 1, 'Press', 6, 85, 1);
+        VALUES (1, 'LUNES', '2026-05-04', 1, 'Press', 6, 85, 1);
     """)
     conn.commit()
     conn.close()
@@ -180,7 +180,7 @@ def test_migrates_old_schema_keeps_rows_and_indexes(tmp_path):
         );
         INSERT INTO ejercicios (grupo_muscular, ejercicio) VALUES ('Pectoral', 'Press');
         INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir)
-        VALUES (1, 'LUNES', '4/5/26', 1, 'Press', 6, 85, 1);
+        VALUES (1, 'LUNES', '2026-05-04', 1, 'Press', 6, 85, 1);
     """)
     conn.commit()
     conn.close()
@@ -291,6 +291,23 @@ def test_v006_convierte_fechas_a_iso(tmp_path):
     assert fechas == ["2026-08-06", "2026-02-10", None]
 
 
+def test_get_training_sessions_ordena_por_fecha_iso(tmp_path):
+    from src.db_connection import transaction
+    from src.training_service import get_training_sessions
+
+    db = str(tmp_path / "g.db")
+    init_db(db)
+    for iso in ("2026-03-01", "2026-01-15", "2026-02-10"):
+        with transaction(db) as conn:
+            conn.execute(
+                "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) "
+                "VALUES (?, 'LUNES', ?, 1, 'Press', 90, 7, 1.2)",
+                (1, iso),
+            )
+    sessions = get_training_sessions(db)
+    assert [s["fecha"] for s in sessions] == ["2026-03-01", "2026-02-10", "2026-01-15"]
+
+
 def test_load_ejercicios(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
@@ -316,7 +333,7 @@ def test_load_training_data(tmp_path):
         {
             "semana": [1, 1],
             "dia": ["LUNES", "LUNES"],
-            "fecha": ["4/5/26", "4/5/26"],
+            "fecha": ["2026-05-04", "2026-05-04"],
             "set_orden": [1, 2],
             "ejercicio": ["Press Convergente", "Press Convergente"],
             "reps": [6.0, 6.0],
