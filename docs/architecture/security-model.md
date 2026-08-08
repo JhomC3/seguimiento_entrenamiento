@@ -35,11 +35,13 @@ accidental data loss and drive-by browser attacks, not a motivated adversary.
 
 - All inline event handlers and the Tailwind runtime config were removed
   (Tasks 2/6); `app.js` is the only first-party executable source.
-- **Tailwind CDN runs without inline configuration.** The custom
-  burgundy/matte utilities previously defined in `tailwind.config` are now
-  static tokens in `static/css/palette.css`. The CDN runtime injects `<style>`
-  elements, so `style-src` keeps `'unsafe-inline'` (CSS injection is not script
-  execution) — documented as the only remaining global inline allowance.
+- **Tailwind is built statically** (`scripts/build_css.sh` →
+  `static/css/tailwind.css`, committed) with the burgundy/matte palette in
+  `tailwind.config.js`. The CDN runtime is gone: `base.html` no longer loads
+  `cdn.tailwindcss.com` and the CSP does not allow it. `style-src` keeps
+  `'unsafe-inline'` because **Plotly** injects `<style>` elements at runtime
+  (CSS injection is not script execution) — documented as the only remaining
+  global inline allowance.
 - **Plotly charts are data-driven**: the figure travels as JSON inside a
   `<script type="application/json" id="unified-chart-data">` element (inert,
   never executed, same pattern as `#app-config`) and `static/js/chart-interaction.js`
@@ -63,17 +65,11 @@ with `integrity` (sha384) + `crossorigin="anonymous"` (all three CDNs serve
 | SortableJS 1.15.6 | `https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js` | `HZZ/fukV+9G8gwTNjN7zQDG0Sp7MsZy5DDN6VfY3Be7V9dvQpEpR2jF2HlyFUUjU` |
 | Plotly 2.32.0 | `https://cdn.plot.ly/plotly-2.32.0.min.js` | `7TVmlZWH60iKX5Uk7lSvQhjtcgw2tkFjuwLcXoRSR4zXTyWFJRm9aPAguMh7CIra` |
 
-**Tailwind CDN is the deliberate exception:** `cdn.tailwindcss.com` is a JIT
-runtime (dynamic response + redirect to its own version path); an integrity hash
-is not practical. A regression test enforces SRI on every other third-party
-script tag. Recompute a hash after a version bump with:
-
-```bash
-curl -s <exact-file-url> | openssl dgst -sha384 -binary | openssl base64 -A
-```
-
-For production, prefer a locally built Tailwind stylesheet (removes the CDN
-runtime and the `style-src 'unsafe-inline'` allowance entirely).
+**Static Tailwind build:** `scripts/build_css.sh` compiles
+`static/css/input.css` (Tailwind 3.4.17 vía npx, contenido: templates + JS) into
+`static/css/tailwind.css` (minified, committed). Regenerar sin diff tras tocar
+clases: `./scripts/build_css.sh && git diff --exit-code static/css/tailwind.css`.
+No third-party runtime is involved in styles.
 
 ### 2.2 Output encoding and event boundary
 
@@ -117,9 +113,13 @@ runtime and the `style-src 'unsafe-inline'` allowance entirely).
   as adequate: a cross-site attacker cannot read the token (CSP `connect-src 'self'`
   blocks token exfiltration) and cannot reach the loopback server from a browser
   without the token.
+- **CSRF window is configurable** via `GYM_CSRF_WINDOW_HOURS` (default 7 días,
+  `CSRF_WINDOW_SECONDS` en `src/security.py`); a rejected request returns 403
+  with a clear "recarga la página" notice.
 - **Before any non-loopback deployment:** Origin/token checks must stay enabled,
   the CSRF secret must come from the environment (`GYM_CSRF_SECRET`), and this
-  document must be updated with the exposure model.
+  document must be updated with the exposure model. On startup, the app logs a
+  warning while `GYM_CSRF_SECRET` is unset (dev secret active).
 
 ## 3. Before exposing on a network
 
@@ -128,9 +128,6 @@ runtime and the `style-src 'unsafe-inline'` allowance entirely).
 3. Switch server binding away from `127.0.0.1` only after 1–2 are done.
 4. Re-run the full security test suite and the browser suite against the new
    deployment origin.
-5. Re-evaluate the Tailwind CDN runtime: for production, prefer a locally built
-   Tailwind stylesheet so the CDN script and the `style-src 'unsafe-inline'`
-   allowance can also be removed.
 
 ## 4. Runbook
 
