@@ -6,6 +6,8 @@ app.py. The only `| safe` content allowed here is a pre-rendered, server-owned
 Jinja fragment (e.g. the session editor or a Plotly chart body).
 """
 
+import json
+
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
@@ -97,6 +99,24 @@ def nutrition_editor_wrap_oob(
         request,
         "partials/oob_nutrition_editor_wrap.html",
         editor_html=editor_html,
+    )
+
+
+def app_config_oob(app_config_json: dict) -> str:
+    """Replaces the #app-config script tag (server-built JSON payload).
+
+    Escapes <, > and & like Jinja's tojson so user-provided names cannot break
+    out of the JSON script block.
+    """
+    payload = (
+        json.dumps(app_config_json)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
+    return (
+        f'<script id="app-config" hx-swap-oob="outerHTML" '
+        f'type="application/json">{payload}</script>'
     )
 
 

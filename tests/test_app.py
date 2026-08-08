@@ -1146,6 +1146,31 @@ def test_alimentacion_save_requires_csrf(tmp_path, monkeypatch):
     assert r.status_code == 403
 
 
+def test_alimento_nuevo_escapes_name_in_app_config_oob(tmp_path, monkeypatch):
+    db = _seed_nutrition(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().post(
+        "/alimento/nuevo",
+        data={
+            "nombre": "</script><b>x</b>",
+            "categoria": "X",
+            "kcal": "1",
+            "carbohidratos": "0",
+            "fibra": "0",
+            "proteina": "0",
+            "grasa": "0",
+            "hierro": "0",
+            "calcio": "0",
+            "vitamina_c": "0",
+            "vitamina_a": "0",
+        },
+    )
+    assert r.status_code == 200
+    assert 'id="app-config" hx-swap-oob="outerHTML"' in r.text
+    assert "<\\u003c/script>" not in r.text
+    assert "\\u003c/script\\u003e" in r.text
+
+
 def test_undo_alimentacion_refreshes_nutrition_editor(tmp_path, monkeypatch):
     from src.database import get_diario_by_fecha
 

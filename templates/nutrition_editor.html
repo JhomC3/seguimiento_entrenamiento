@@ -21,13 +21,13 @@
                     <td class="nutrition-num py-1 px-1.5 text-neutral-600 font-bold text-center">{{ loop.index }}</td>
                     <td class="py-1 px-1.5">
                         <input
-                            name="alimento" list="food-list" required value="{{ r.alimento }}"
+                            name="alimento" list="food-list" value="{{ r.alimento }}"
                             class="food-select w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 focus:outline-none transition-colors"
                         >
                     </td>
                     <td class="py-1 px-1.5">
                         <input
-                            name="cantidad" type="number" step="1" min="1" required value="{{ '%g'|format(r.cantidad_g) }}"
+                            name="cantidad" type="number" step="1" min="1" value="{{ '%g'|format(r.cantidad_g) }}"
                             class="cantidad-input w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 focus:outline-none transition-colors"
                         >
                     </td>
@@ -35,6 +35,32 @@
                     <td class="nutrition-preview carb-cell py-1 px-1.5 text-center text-neutral-400">{{ '%g'|format(r.carbohidratos) }}</td>
                     <td class="nutrition-preview prot-cell py-1 px-1.5 text-center text-neutral-400">{{ '%g'|format(r.proteina) }}</td>
                     <td class="nutrition-preview fat-cell py-1 px-1.5 text-center text-neutral-400">{{ '%g'|format(r.grasa) }}</td>
+                    <td class="py-1 px-1.5">
+                        <div class="row-actions flex items-center justify-center gap-px opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                            <button type="button" data-action="nutrition-row-remove" class="row-btn" title="Eliminar fila">−</button>
+                            <button type="button" data-action="nutrition-row-add" class="row-btn" title="Agregar fila">+</button>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr class="nutrition-row group transition-colors duration-150">
+                    <td class="nutrition-num py-1 px-1.5 text-neutral-600 font-bold text-center">1</td>
+                    <td class="py-1 px-1.5">
+                        <input
+                            name="alimento" list="food-list"
+                            class="food-select w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 focus:outline-none transition-colors"
+                        >
+                    </td>
+                    <td class="py-1 px-1.5">
+                        <input
+                            name="cantidad" type="number" step="1" min="1"
+                            class="cantidad-input w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 focus:outline-none transition-colors"
+                        >
+                    </td>
+                    <td class="nutrition-preview kcal-cell py-1 px-1.5 text-center font-bold text-burgundy-300">—</td>
+                    <td class="nutrition-preview carb-cell py-1 px-1.5 text-center text-neutral-400">—</td>
+                    <td class="nutrition-preview prot-cell py-1 px-1.5 text-center text-neutral-400">—</td>
+                    <td class="nutrition-preview fat-cell py-1 px-1.5 text-center text-neutral-400">—</td>
                     <td class="py-1 px-1.5">
                         <div class="row-actions flex items-center justify-center gap-px opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                             <button type="button" data-action="nutrition-row-remove" class="row-btn" title="Eliminar fila">−</button>
@@ -53,10 +79,10 @@
 
     <div id="nutrition-totals" class="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg bg-black/30 border border-neutral-800 px-4 py-2.5 text-xs">
         <span class="font-bold text-neutral-400 uppercase tracking-widest">Total</span>
-        <span><span class="text-burgundy-400 font-black">{{ '%g'|format(totals.kcal) }}</span> kcal</span>
-        <span><span class="text-neutral-200 font-black">{{ '%g'|format(totals.carbohidratos) }}</span> g carb</span>
-        <span><span class="text-neutral-200 font-black">{{ '%g'|format(totals.proteina) }}</span> g prot</span>
-        <span><span class="text-neutral-200 font-black">{{ '%g'|format(totals.grasa) }}</span> g grasa</span>
+        <span><span data-total="kcal" class="text-burgundy-400 font-black">{{ '%g'|format(totals.kcal) }}</span> kcal</span>
+        <span><span data-total="carbohidratos" class="text-neutral-200 font-black">{{ '%g'|format(totals.carbohidratos) }}</span> g carb</span>
+        <span><span data-total="proteina" class="text-neutral-200 font-black">{{ '%g'|format(totals.proteina) }}</span> g prot</span>
+        <span><span data-total="grasa" class="text-neutral-200 font-black">{{ '%g'|format(totals.grasa) }}</span> g grasa</span>
     </div>
 
     <div class="flex items-center gap-2">

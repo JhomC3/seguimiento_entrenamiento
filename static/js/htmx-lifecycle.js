@@ -13,6 +13,7 @@ import {
     updateEditActions,
 } from './editor.js';
 import { scheduleNotices } from './notices.js';
+import { refreshNutritionEditor } from './nutrition-editor.js';
 import {
     confirmEntrenoSave,
     guardarPlantillaToggle,
@@ -99,7 +100,12 @@ export function initLifecycle() {
         if (ptForm && e.detail.successful) {
             guardarPlantillaToggle(false);
         }
-        if (getSaveRequested()) {
+        // El editor nutricional se re-renderiza vía OOB (save/delete/undo/nav):
+        // re-baseline para el dirty-check y totales tras cada intercambio.
+        if (e.detail.successful && document.getElementById('nutrition-form')) {
+            refreshNutritionEditor();
+        }
+        if (getSaveRequested() && document.getElementById('session-form')) {
             setSaveRequested(false);
             const undoRes = document.getElementById('undo-result');
             if (undoRes && undoRes.dataset.fecha) {

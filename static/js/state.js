@@ -16,6 +16,7 @@ let droppedOnList = false;
 let applyInFlight = null;
 let dragGhost = null;
 let categoriaMap = {};
+let alimentoMap = {};
 let csrfToken = "";
 let currentIso = null;
 
@@ -43,6 +44,8 @@ export function getDragGhost() { return dragGhost; }
 export function setDragGhost(v) { dragGhost = v; }
 export function setCategoriaMap(m) { categoriaMap = m || {}; }
 export function getCategoriaMap() { return categoriaMap; }
+export function setAlimentoMap(m) { alimentoMap = m || {}; }
+export function getAlimentoMap() { return alimentoMap; }
 export function setCsrfToken(t) { csrfToken = t || ""; }
 export function getCsrfToken() { return csrfToken; }
 
@@ -80,7 +83,7 @@ export function editorEditmode() {
 export function currentFecha() {
     const iso = getCurrentIso();
     if (iso) return iso;
-    const form = document.getElementById('session-form');
+    const form = document.getElementById('session-form') || document.getElementById('nutrition-form');
     const input = form && form.querySelector('input[name="fecha"]');
     return input ? input.value : '';
 }

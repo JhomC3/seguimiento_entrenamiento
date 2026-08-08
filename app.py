@@ -49,6 +49,7 @@ from src.mutation_service import (
 from src.nutrition_service import create_alimento, entries_from_form
 from src.response_fragments import (
     STATIC_MARKERS,
+    app_config_oob,
     chart_oob_wrapper,
     editor_state_oob,
     editor_wrap_oob,
@@ -232,6 +233,13 @@ def _alimento_preview_map() -> dict[str, dict[str, float]]:
     return {
         a["nombre"]: {k: a[k] for k in ("kcal", "carbohidratos", "fibra", "proteina", "grasa")}
         for a in get_alimentos_catalog(DB_PATH)
+    }
+
+
+def _nutrition_app_config() -> dict:
+    return {
+        "alimento_map": _alimento_preview_map(),
+        "csrf_token": make_csrf_token(get_csrf_secret()),
     }
 
 
@@ -436,10 +444,7 @@ def alimentacion_index(request: Request, fecha: str = Query(None)):
             "navigator_html": _nutrition_navigator_html(request, fecha_iso),
             "editor_html": _nutrition_editor_html(request, fecha_iso),
             "alimento_form_html": _alimento_form_html(request),
-            "app_config_json": {
-                "alimento_map": _alimento_preview_map(),
-                "csrf_token": make_csrf_token(get_csrf_secret()),
-            },
+            "app_config_json": _nutrition_app_config(),
         },
     )
 
@@ -548,6 +553,7 @@ def alimento_nuevo(
     form_html = _alimento_form_html(request)
     return HTMLResponse(
         content=notice
+        + app_config_oob(_nutrition_app_config())
         + fragment_oob(templates, request, "alimento-create", form_html, swap="outerHTML")
     )
 

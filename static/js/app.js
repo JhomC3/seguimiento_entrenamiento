@@ -9,8 +9,9 @@ import { initChartInteractions, renderUnifiedChart } from './chart-interaction.j
 import { initDateNavigation } from './date-navigation.js';
 import { fitRowsToPanel, initEditorActions, initEditorRowSortable, syncEditorFromContent } from './editor.js';
 import { initLifecycle } from './htmx-lifecycle.js';
+import { initNutritionEditor } from './nutrition-editor.js';
 import { scheduleNotices } from './notices.js';
-import { getCsrfToken, setCategoriaMap, setCsrfToken } from './state.js';
+import { getCsrfToken, setAlimentoMap, setCategoriaMap, setCsrfToken } from './state.js';
 import { initEntrenoDnD, initTemplateActions, initTemplateSortable } from './templates.js';
 
 function loadConfig() {
@@ -19,6 +20,7 @@ function loadConfig() {
     try {
         const config = JSON.parse(el.textContent);
         setCategoriaMap(config.categoria_map || {});
+        setAlimentoMap(config.alimento_map || {});
         setCsrfToken(config.csrf_token || "");
     } catch (err) {
         console.error('app-config no válido', err);
@@ -30,6 +32,13 @@ document.body.addEventListener('htmx:configRequest', function (e) {
     if (token) e.detail.headers['X-CSRF-Token'] = token;
 });
 
+// El servidor puede refrescar #app-config vía OOB (p. ej. catálogo de
+// alimentos tras un alta). Los OOB no disparan eventos por target: se
+// relee tras cada petición exitosa (los swaps OOB ya están aplicados).
+document.body.addEventListener('htmx:afterRequest', function (e) {
+    if (e.detail && e.detail.successful) loadConfig();
+});
+
 document.addEventListener('DOMContentLoaded', function () {
     loadConfig();
     initLifecycle();
@@ -39,6 +48,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initDateNavigation();
     initEditorActions();
     initTemplateActions();
+    initNutritionEditor();
     scheduleNotices();
     syncEditorFromContent();
     initEditorRowSortable();
