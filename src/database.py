@@ -354,3 +354,108 @@ def get_last_session_sets(db_path: str, ejercicio: str) -> list[dict]:
         {"ejercicio": r[0], "set_orden": r[1], "reps": r[2], "kg": r[3], "rir": r[4]}
         for r in set_rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# Alimentación: catálogo y diario
+# ---------------------------------------------------------------------------
+
+_DIARIO_NUTRIENT_COLUMNS = (
+    "kcal",
+    "carbohidratos",
+    "fibra",
+    "proteina",
+    "grasa",
+    "hierro",
+    "calcio",
+    "vitamina_c",
+    "vitamina_a",
+)
+
+
+def get_alimentos_catalog(db_path: str) -> list[dict]:
+    if not os.path.exists(db_path):
+        return []
+    with read_connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT nombre, categoria, kcal, carbohidratos, fibra, proteina, grasa, "
+            "hierro, calcio, vitamina_c, vitamina_a "
+            "FROM alimentos ORDER BY nombre"
+        ).fetchall()
+    cols = ("nombre", "categoria", *_DIARIO_NUTRIENT_COLUMNS)
+    return [dict(zip(cols, r)) for r in rows]
+
+
+def find_alimento(db_path: str, nombre: str) -> dict | None:
+    with read_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT nombre, categoria, kcal, carbohidratos, fibra, proteina, grasa, "
+            "hierro, calcio, vitamina_c, vitamina_a "
+            "FROM alimentos WHERE LOWER(nombre) = LOWER(?)",
+            (nombre.strip(),),
+        ).fetchone()
+    if row is None:
+        return None
+    cols = ("nombre", "categoria", *_DIARIO_NUTRIENT_COLUMNS)
+    return dict(zip(cols, row))
+
+
+def get_diario_by_fecha(db_path: str, fecha: str) -> list[dict]:
+    with read_connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT orden, alimento, cantidad_g, kcal, carbohidratos, fibra, proteina, "
+            "grasa, hierro, calcio, vitamina_c, vitamina_a, origen "
+            "FROM diario_alimentacion WHERE fecha = ? ORDER BY orden",
+            (fecha,),
+        ).fetchall()
+    cols = ("orden", "alimento", "cantidad_g", *_DIARIO_NUTRIENT_COLUMNS, "origen")
+    return [dict(zip(cols, r)) for r in rows]
+
+
+def get_diario_dates(db_path: str) -> list[str]:
+    if not os.path.exists(db_path):
+        return []
+    with read_connection(db_path) as conn:
+        return [
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT fecha FROM diario_alimentacion ORDER BY fecha"
+            ).fetchall()
+        ]
+
+
+def _diario_row_values(conn, fecha: str, rows: list[dict]) -> list[tuple]:
+    values = []
+    for idx, r in enumerate(rows, start=1):
+        values.append(
+            (
+                fecha,
+                int(r.get("orden") or idx),
+                str(r["alimento"]).strip(),
+                float(r["cantidad_g"]),
+                *(float(r[col]) for col in _DIARIO_NUTRIENT_COLUMNS),
+                str(r.get("origen") or "manual"),
+            )
+        )
+    return values
+
+
+def replace_diario_by_fecha(db_path: str, fecha: str, rows: list[dict]) -> None:
+    with transaction(db_path) as conn:
+        conn.execute("DELETE FROM diario_alimentacion WHERE fecha = ?", (fecha,))
+        conn.executemany(
+            "INSERT INTO diario_alimentacion (fecha, orden, alimento, cantidad_g, kcal, "
+            "carbohidratos, fibra, proteina, grasa, hierro, calcio, vitamina_c, "
+            "vitamina_a, origen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            _diario_row_values(conn, fecha, rows),
+        )
+
+
+def restore_diario_rows(db_path: str, fecha: str, rows: list[dict]) -> None:
+    replace_diario_by_fecha(db_path, fecha, rows)
+
+
+def delete_diario_by_fecha(db_path: str, fecha: str) -> int:
+    with transaction(db_path) as conn:
+        cur = conn.execute("DELETE FROM diario_alimentacion WHERE fecha = ?", (fecha,))
+        return cur.rowcount

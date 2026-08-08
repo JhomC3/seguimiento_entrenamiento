@@ -360,6 +360,204 @@ def test_v007_migration_idempotent(tmp_path):
     assert count == 1
 
 
+def _insert_alimento(conn, nombre="Avena", **overrides):
+    base = {
+        "nombre": nombre,
+        "categoria": "Cereal",
+        "kcal": 389.0,
+        "carbohidratos": 68.0,
+        "fibra": 10.0,
+        "proteina": 17.0,
+        "grasa": 6.9,
+        "hierro": 4.2,
+        "calcio": 54.0,
+        "vitamina_c": 0.0,
+        "vitamina_a": 0.0,
+    }
+    base.update(overrides)
+    cols = ",".join(base)
+    conn.execute(
+        f"INSERT INTO alimentos ({cols}) VALUES ({','.join('?' * len(base))})",
+        list(base.values()),
+    )
+
+
+def _insert_diario(conn, fecha, orden, alimento="Avena", **overrides):
+    base = {
+        "fecha": fecha,
+        "orden": orden,
+        "alimento": alimento,
+        "cantidad_g": 120.0,
+        "kcal": 467.0,
+        "carbohidratos": 82.0,
+        "fibra": 12.0,
+        "proteina": 20.0,
+        "grasa": 8.0,
+        "hierro": 5.0,
+        "calcio": 65.0,
+        "vitamina_c": 0.0,
+        "vitamina_a": 0.0,
+    }
+    base.update(overrides)
+    cols = ",".join(base)
+    conn.execute(
+        f"INSERT INTO diario_alimentacion ({cols}) VALUES ({','.join('?' * len(base))})",
+        list(base.values()),
+    )
+
+
+def test_get_alimentos_catalog_sorted(tmp_path):
+    from src.database import get_alimentos_catalog
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    _insert_alimento(conn, "Zanahoria", categoria="Vegetal")
+    _insert_alimento(conn, "Avena")
+    conn.commit()
+    conn.close()
+    catalog = get_alimentos_catalog(db_path)
+    assert [a["nombre"] for a in catalog] == ["Avena", "Zanahoria"]
+    assert catalog[0]["kcal"] == 389.0
+    assert catalog[0]["fibra"] == 10.0
+    assert "origen" not in catalog[0]
+
+
+def test_find_alimento_case_insensitive(tmp_path):
+    from src.database import find_alimento
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    _insert_alimento(conn, "Avena")
+    conn.commit()
+    conn.close()
+    found = find_alimento(db_path, "avena")
+    assert found is not None
+    assert found["nombre"] == "Avena"
+    assert found["grasa"] == 6.9
+    assert find_alimento(db_path, "No Existe") is None
+
+
+def test_replace_diario_by_fecha_only_touches_date(tmp_path):
+    from src.database import get_diario_by_fecha, replace_diario_by_fecha
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    _insert_diario(conn, "2025-04-24", 1)
+    _insert_diario(conn, "2025-04-25", 1, alimento="Huevo", kcal=143.0)
+    conn.commit()
+    conn.close()
+
+    replace_diario_by_fecha(
+        db_path,
+        "2025-04-24",
+        [
+            {
+                "alimento": "Huevo",
+                "cantidad_g": 100.0,
+                "kcal": 143.0,
+                "carbohidratos": 1.0,
+                "fibra": 0.0,
+                "proteina": 13.0,
+                "grasa": 10.0,
+                "hierro": 2.0,
+                "calcio": 50.0,
+                "vitamina_c": 0.0,
+                "vitamina_a": 300.0,
+            },
+            {
+                "alimento": "Banano",
+                "cantidad_g": 120.0,
+                "kcal": 107.0,
+                "carbohidratos": 27.0,
+                "fibra": 3.0,
+                "proteina": 1.0,
+                "grasa": 0.0,
+                "hierro": 0.0,
+                "calcio": 6.0,
+                "vitamina_c": 10.0,
+                "vitamina_a": 4.0,
+            },
+        ],
+    )
+    day = get_diario_by_fecha(db_path, "2025-04-24")
+    assert [r["alimento"] for r in day] == ["Huevo", "Banano"]
+    assert [r["orden"] for r in day] == [1, 2]
+    other = get_diario_by_fecha(db_path, "2025-04-25")
+    assert other[0]["alimento"] == "Huevo"
+    assert other[0]["origen"] == "google"
+
+
+def test_get_diario_dates_sorted_iso(tmp_path):
+    from src.database import get_diario_dates
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    _insert_diario(conn, "2025-04-24", 1)
+    _insert_diario(conn, "2025-04-25", 1, alimento="Huevo")
+    _insert_diario(conn, "2025-04-21", 1, alimento="Banano")
+    conn.commit()
+    conn.close()
+    assert get_diario_dates(db_path) == ["2025-04-21", "2025-04-24", "2025-04-25"]
+
+
+def test_delete_diario_by_fecha(tmp_path):
+    from src.database import delete_diario_by_fecha, get_diario_by_fecha
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    _insert_diario(conn, "2025-04-24", 1)
+    _insert_diario(conn, "2025-04-25", 1, alimento="Huevo")
+    conn.commit()
+    conn.close()
+    assert delete_diario_by_fecha(db_path, "2025-04-24") == 1
+    assert get_diario_by_fecha(db_path, "2025-04-24") == []
+    assert len(get_diario_by_fecha(db_path, "2025-04-25")) == 1
+
+
+def test_restore_diario_rows_preserves_orden_and_origen(tmp_path):
+    from src.database import get_diario_by_fecha, replace_diario_by_fecha, restore_diario_rows
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    _insert_diario(conn, "2025-04-24", 1)
+    _insert_diario(conn, "2025-04-24", 2, alimento="Huevo", kcal=143.0, origen="google")
+    conn.commit()
+    conn.close()
+    snapshot = get_diario_by_fecha(db_path, "2025-04-24")
+    replace_diario_by_fecha(
+        db_path,
+        "2025-04-24",
+        [
+            {
+                "alimento": "Banano",
+                "cantidad_g": 90.0,
+                "kcal": 47.0,
+                "carbohidratos": 12.0,
+                "fibra": 0.0,
+                "proteina": 0.0,
+                "grasa": 2.0,
+                "hierro": 0.0,
+                "calcio": 5.0,
+                "vitamina_c": 4.0,
+                "vitamina_a": 3.0,
+            },
+        ],
+    )
+    restore_diario_rows(db_path, "2025-04-24", snapshot)
+    restored = get_diario_by_fecha(db_path, "2025-04-24")
+    assert [(r["alimento"], r["orden"], r["origen"]) for r in restored] == [
+        ("Avena", 1, "google"),
+        ("Huevo", 2, "google"),
+    ]
+    assert restored[1]["kcal"] == 143.0
+
+
 def test_load_ejercicios(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
