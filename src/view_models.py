@@ -39,3 +39,40 @@ class SessionEditorViewModel:
     error: str | None
     success: str | None
     catalog: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class NutritionEntryRow:
+    orden: int
+    alimento: str
+    cantidad_g: float
+    kcal: float
+    carbohidratos: float
+    fibra: float
+    proteina: float
+    grasa: float
+    hierro: float
+    calcio: float
+    vitamina_c: float
+    vitamina_a: float
+
+
+@dataclass(frozen=True)
+class NutritionEditorViewModel:
+    fecha_iso: str
+    fecha_display: str
+    rows: list[NutritionEntryRow]
+    totals: dict[str, float]
+    catalog: list[str] = field(default_factory=list)
+    has_data: bool = False
+    error: str | None = None
+    success: str | None = None
+
+
+@dataclass(frozen=True)
+class NutritionDateNavigatorViewModel:
+    selected_iso: str
+    previous_iso: str
+    next_iso: str
+    today_iso: str
+    available_dates: list[str] = field(default_factory=list)

@@ -10,10 +10,17 @@ from datetime import date, timedelta
 
 from config import CICLO_NUMERO
 from src.charts import chart_pfr_timeline
-from src.database import get_exercises_catalog, get_sets_by_fecha
+from src.database import (
+    get_alimentos_catalog,
+    get_diario_by_fecha,
+    get_diario_dates,
+    get_exercises_catalog,
+    get_sets_by_fecha,
+)
 from src.db_connection import read_connection
 from src.metrics_engine import rm_ajustado
 from src.models import ConflictError, NotFoundError, ValidationError
+from src.nutrition_service import diary_totals
 from src.training_service import (
     calculate_cycle_week,
     day_from_date,
@@ -21,7 +28,15 @@ from src.training_service import (
     fecha_to_db,
     parse_form_date,
 )
-from src.view_models import DateDay, DateNavigatorViewModel, EditorRow, SessionEditorViewModel
+from src.view_models import (
+    DateDay,
+    DateNavigatorViewModel,
+    EditorRow,
+    NutritionDateNavigatorViewModel,
+    NutritionEditorViewModel,
+    NutritionEntryRow,
+    SessionEditorViewModel,
+)
 
 logger = logging.getLogger("dashboard")
 
@@ -299,3 +314,65 @@ def translate_error(error: Exception) -> tuple[str, int]:
         return str(error), 400
     logger.exception("Error inesperado en el dashboard")
     return "Ocurrió un error inesperado.", 500
+
+
+def _nutrition_fecha_display(fecha: date) -> str:
+    return f"{fecha.day}/{fecha.month}/{fecha.year}"
+
+
+def build_nutrition_editor(
+    db_path: str,
+    fecha_iso: str,
+    *,
+    error: str | None = None,
+    success: str | None = None,
+) -> NutritionEditorViewModel:
+    """Editor de un día del diario nutricional; toda fecha es editable."""
+    fecha = parse_form_date(fecha_iso)
+    fecha_iso = fecha.strftime("%Y-%m-%d")
+    data = get_diario_by_fecha(db_path, fecha_iso)
+    entry_rows = [
+        NutritionEntryRow(
+            orden=r["orden"],
+            alimento=r["alimento"],
+            cantidad_g=float(r["cantidad_g"]),
+            kcal=float(r["kcal"]),
+            carbohidratos=float(r["carbohidratos"]),
+            fibra=float(r["fibra"]),
+            proteina=float(r["proteina"]),
+            grasa=float(r["grasa"]),
+            hierro=float(r["hierro"]),
+            calcio=float(r["calcio"]),
+            vitamina_c=float(r["vitamina_c"]),
+            vitamina_a=float(r["vitamina_a"]),
+        )
+        for r in data
+    ]
+    return NutritionEditorViewModel(
+        fecha_iso=fecha_iso,
+        fecha_display=_nutrition_fecha_display(fecha),
+        rows=entry_rows,
+        totals=diary_totals(data),
+        catalog=[a["nombre"] for a in get_alimentos_catalog(db_path)],
+        has_data=bool(entry_rows),
+        error=error,
+        success=success,
+    )
+
+
+def build_nutrition_date_navigator(
+    db_path: str, fecha_iso: str, *, today: date | None = None
+) -> NutritionDateNavigatorViewModel:
+    """Navegador simple: día anterior/siguiente + input de fecha nativo."""
+    today = today or date.today()
+    try:
+        selected = parse_form_date(fecha_iso)
+    except ValidationError:
+        selected = today
+    return NutritionDateNavigatorViewModel(
+        selected_iso=selected.strftime("%Y-%m-%d"),
+        previous_iso=(selected - timedelta(days=1)).strftime("%Y-%m-%d"),
+        next_iso=(selected + timedelta(days=1)).strftime("%Y-%m-%d"),
+        today_iso=today.strftime("%Y-%m-%d"),
+        available_dates=get_diario_dates(db_path),
+    )
