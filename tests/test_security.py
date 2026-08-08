@@ -191,6 +191,31 @@ def test_csrf_token_validates_within_window():
     assert not valid_csrf_token("", secret)
 
 
+def test_csrf_window_configurable(monkeypatch):
+    import importlib
+
+    monkeypatch.setenv("GYM_CSRF_WINDOW_HOURS", "1")
+    import src.security as sec
+
+    importlib.reload(sec)
+    try:
+        assert sec.CSRF_WINDOW_SECONDS == 3600
+    finally:
+        monkeypatch.delenv("GYM_CSRF_WINDOW_HOURS", raising=False)
+        importlib.reload(sec)
+        assert sec.CSRF_WINDOW_SECONDS == 24 * 7 * 3600
+
+
+def test_csrf_token_fuera_de_ventana(monkeypatch):
+    import src.security as sec
+    from src.security import valid_csrf_token
+
+    monkeypatch.setattr(sec.time, "time", lambda: 1_000_000)
+    token = make_csrf_token(get_csrf_secret())
+    monkeypatch.setattr(sec.time, "time", lambda: 1_000_000 + sec.CSRF_WINDOW_SECONDS + 1)
+    assert not valid_csrf_token(token, get_csrf_secret())
+
+
 # ---------------------------------------------------------------------------
 # XSS rendering regressions (Task 1)
 # ---------------------------------------------------------------------------

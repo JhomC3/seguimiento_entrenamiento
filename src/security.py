@@ -31,7 +31,16 @@ DEFAULT_HEADERS = {
 }
 
 CSRF_HEADER = "X-CSRF-Token"
-CSRF_WINDOW_SECONDS = 24 * 3600
+
+
+def _window_seconds() -> int:
+    try:
+        return int(os.environ.get("GYM_CSRF_WINDOW_HOURS", str(24 * 7))) * 3600
+    except ValueError:
+        return 24 * 7 * 3600
+
+
+CSRF_WINDOW_SECONDS = _window_seconds()
 
 # Development fallback only. Set GYM_CSRF_SECRET for any non-local deployment.
 _DEV_SECRET = "dev-only-secret-do-not-use-in-production"
@@ -114,7 +123,9 @@ class CSRFProtectionMiddleware:
 
     @staticmethod
     def _forbidden():
-        return b"<div class='notice notice-error'>Solicitud rechazada.</div>", 403
+        body = "<div class='notice notice-error'>Sesión de seguridad vencida. " \
+            "Recarga la página e intenta de nuevo.</div>"
+        return body.encode(), 403
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope["method"] not in self.UNSAFE_METHODS:
