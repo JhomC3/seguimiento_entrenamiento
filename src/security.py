@@ -8,14 +8,14 @@ import time
 # Every executable script is external ('self' or pinned CDNs): the CSP allows
 # no inline scripts (no nonce, no 'unsafe-inline'). Data-only elements like
 # <script type="application/json"> (app-config, chart figure) are inert and
-# unaffected by script-src. style-src keeps 'unsafe-inline' because the Tailwind
-# CDN runtime injects <style> elements at runtime (CSS injection is not script
+# unaffected by script-src. style-src keeps 'unsafe-inline' because Plotly
+# injects <style> elements at runtime (CSS injection is not script
 # execution). See docs/architecture/security-model.md.
 CSP = (
     "default-src 'self'; "
-    "script-src 'self' https://cdn.tailwindcss.com https://unpkg.com "
+    "script-src 'self' https://unpkg.com "
     "https://cdn.jsdelivr.net https://cdn.plot.ly; "
-    "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; "
+    "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; "
     "connect-src 'self'; "
     "object-src 'none'; "
@@ -31,7 +31,16 @@ DEFAULT_HEADERS = {
 }
 
 CSRF_HEADER = "X-CSRF-Token"
-CSRF_WINDOW_SECONDS = 24 * 3600
+
+
+def _window_seconds() -> int:
+    try:
+        return int(os.environ.get("GYM_CSRF_WINDOW_HOURS", str(24 * 7))) * 3600
+    except ValueError:
+        return 24 * 7 * 3600
+
+
+CSRF_WINDOW_SECONDS = _window_seconds()
 
 # Development fallback only. Set GYM_CSRF_SECRET for any non-local deployment.
 _DEV_SECRET = "dev-only-secret-do-not-use-in-production"
@@ -114,7 +123,11 @@ class CSRFProtectionMiddleware:
 
     @staticmethod
     def _forbidden():
-        return b"<div class='notice notice-error'>Solicitud rechazada.</div>", 403
+        body = (
+            "<div class='notice notice-error'>Sesión de seguridad vencida. "
+            "Recarga la página e intenta de nuevo.</div>"
+        )
+        return body.encode(), 403
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope["method"] not in self.UNSAFE_METHODS:

@@ -156,6 +156,8 @@ and ignores anything else. No mutable state is exposed on `window`.
 | `select-exercise` | `.filter-btn` | `dashboard-filters.js` | `data-exercise` |
 | `select-date` | `.date-num` | `date-navigation.js` | `data-iso` |
 | `jump-date` | `.today-btn` | `date-navigation.js` | `data-iso` |
+| `goto-session` | `.session-history` button | `date-navigation.js` | `data-iso` |
+| `jump-date-input` | `#date-jump` (input `type=date`) | `date-navigation.js` (evento `change`) | — |
 | `scroll-dates` | `.nav-arrow` | `date-navigation.js` | `data-dir` |
 | `toggle-edit` | `.pencil-btn` | `editor.js` | — |
 | `toggle-template-form` | `.save-template-btn` | `editor.js` | — |
@@ -197,9 +199,11 @@ in `htmx-lifecycle.js`.
   `guardarPlantillaToggle`, `confirmEntrenoSave`, `ptAddRow`/`ptRemoveRow`,
   `initTemplateSortable`, `initEntrenoDnD`, `persistDragOrder` (fetch with
   `X-CSRF-Token`)), `initTemplateActions` (delegated listener).
-- **Date navigation (`date-navigation.js`):** `doNav(iso, force)`,
-  `requestNavigate(iso)`, `updateDateDot(fecha, has)`, `initDateNavigation`
-  (delegated listener + initial scrollIntoView).
+- **Date navigation (`date-navigation.js`):** `doNav(iso, force)`
+  (deduplica peticiones en vuelo al mismo iso), `requestNavigate(iso)`,
+  `updateDateDot(fecha, has)`, `shiftDay(days)`, `initDateNavigation`
+  (delegated listener + `change` del input de fecha + `keydown` global:
+  ←/→ = día, ⌘/Ctrl+←/→ = semana, ignorado si el foco está en un campo).
 - **Dashboard filters (`dashboard-filters.js`):** category/exercise selection,
   highlighting, `resetToGlobal`, Esc handler, exercise-create refresh,
   `currentFechaQuery()` (filter requests carry the current date so the

@@ -30,7 +30,7 @@ class EditorRow:
 @dataclass(frozen=True)
 class SessionEditorViewModel:
     fecha_iso: str
-    fecha_db: str
+    fecha_display: str
     semana: int
     dia: str
     rows: list[EditorRow]

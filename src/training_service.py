@@ -1,11 +1,10 @@
 import math
-import sqlite3
 from datetime import date, datetime, timedelta
 
 from config import CICLO_START
-from src.database import get_exercises_catalog, get_session_sets, get_training_sessions
+from src.database import get_exercises_catalog, get_training_sessions
 from src.db_connection import transaction
-from src.models import Session, TrainingSet, TrainingSetInput, ValidationError
+from src.models import Session, TrainingSetInput, ValidationError
 
 DIA_MAP = {
     "Monday": "LUNES",
@@ -37,11 +36,16 @@ def day_from_date(fecha: date) -> str:
 
 
 def fecha_to_db(fecha: date) -> str:
-    return f"{fecha.day}/{fecha.month}/{fecha.year % 100:02d}"
+    return fecha.strftime("%Y-%m-%d")
 
 
 def fecha_from_db(fecha: str) -> date:
-    return datetime.strptime(fecha, "%d/%m/%y").date()
+    return datetime.strptime(fecha, "%Y-%m-%d").date()
+
+
+def fecha_display(fecha_iso: str) -> str:
+    d = fecha_from_db(fecha_iso)
+    return f"{d.day}/{d.month}/{d.year % 100:02d}"
 
 
 def parse_form_date(fecha_iso: str) -> date:
@@ -118,56 +122,6 @@ def validate_sets(db_path: str, sets: list[TrainingSetInput]) -> list[TrainingSe
     return cleaned
 
 
-def _insert_sets(
-    conn: sqlite3.Connection, semana: int, dia: str, fecha: str, sets: list[TrainingSetInput]
-) -> None:
-    for idx, s in enumerate(sets, start=1):
-        conn.execute(
-            "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual')",
-            (semana, dia, fecha, idx, s.ejercicio, s.reps, s.kg, s.rir),
-        )
-
-
-def _session_from_meta(semana: int, dia: str, fecha_db: str) -> Session:
-    return Session(semana=semana, dia=dia, fecha=fecha_db)
-
-
-def insert_manual_session(db_path: str, fecha_iso: str, sets: list[TrainingSetInput]) -> Session:
-    fecha = parse_form_date(fecha_iso)
-    cycle_start = parse_cycle_start()
-    cleaned = validate_sets(db_path, sets)
-    semana = calculate_cycle_week(fecha, cycle_start)
-    dia = day_from_date(fecha)
-    fecha_db = fecha_to_db(fecha)
-    with transaction(db_path) as conn:
-        _insert_sets(conn, semana, dia, fecha_db, cleaned)
-    return _session_from_meta(semana, dia, fecha_db)
-
-
-def update_session(
-    db_path: str,
-    old_semana: int,
-    old_dia: str,
-    old_fecha: str,
-    fecha_iso: str,
-    sets: list[TrainingSetInput],
-) -> Session:
-    fecha = parse_form_date(fecha_iso)
-    cycle_start = parse_cycle_start()
-    cleaned = validate_sets(db_path, sets)
-    semana = calculate_cycle_week(fecha, cycle_start)
-    dia = day_from_date(fecha)
-    fecha_db = fecha_to_db(fecha)
-    with transaction(db_path) as conn:
-        conn.execute(
-            "DELETE FROM training_sets WHERE semana = ? AND dia = ? AND fecha = ?",
-            (old_semana, old_dia, old_fecha),
-        )
-        _insert_sets(conn, semana, dia, fecha_db, cleaned)
-    return _session_from_meta(semana, dia, fecha_db)
-
-
 def _is_empty_row(s) -> bool:
     s = _coerce_set(s)
     return not any(str(getattr(s, k, "")).strip() for k in ("ejercicio", "kg", "reps", "rir"))
@@ -188,7 +142,31 @@ def save_session(db_path: str, fecha_iso: str, sets: list[TrainingSetInput]) -> 
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual')",
                 (semana, dia, fecha_db, idx, s.ejercicio, s.reps, s.kg, s.rir),
             )
-    return _session_from_meta(semana, dia, fecha_db)
+    return Session(semana=semana, dia=dia, fecha=fecha_db)
+
+
+def restore_session_rows(db_path: str, fecha_iso: str, rows: list) -> None:
+    """Undo restore: reinserts saved rows preserving each row's origen."""
+    fecha = parse_form_date(fecha_iso)
+    ciclo = parse_cycle_start()
+    semana = calculate_cycle_week(fecha, ciclo)
+    dia = day_from_date(fecha)
+    fecha_db = fecha_to_db(fecha)
+    kept = []
+    for raw in rows:
+        if _is_empty_row(raw):
+            continue
+        origen = str(raw.get("origen") or "manual") if isinstance(raw, dict) else "manual"
+        kept.append((_coerce_set(raw), origen))
+    cleaned = validate_sets(db_path, [s for s, _ in kept]) if kept else []
+    with transaction(db_path) as conn:
+        conn.execute("DELETE FROM training_sets WHERE fecha = ?", (fecha_db,))
+        for idx, (s, origen) in enumerate(zip(cleaned, [o for _, o in kept]), start=1):
+            conn.execute(
+                "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (semana, dia, fecha_db, idx, s.ejercicio, s.reps, s.kg, s.rir, origen),
+            )
 
 
 def get_sessions_page(db_path: str, page: int = 1, limit: int = 20) -> tuple[list[dict], int, int]:
@@ -196,24 +174,3 @@ def get_sessions_page(db_path: str, page: int = 1, limit: int = 20) -> tuple[lis
     total = len(sessions)
     offset = (page - 1) * limit
     return sessions[offset : offset + limit], total, page
-
-
-def get_session_detail(db_path: str, semana: int, dia: str, fecha: str) -> list[TrainingSet]:
-    sets = get_session_sets(db_path, semana, dia, fecha)
-    result = []
-    for s in sets:
-        kg = s["kg"]
-        reps = s["reps"]
-        s["rir"] or 0
-        round(kg * (1 + 0.0333 * reps), 1) if kg and reps else None
-        result.append(
-            TrainingSet(
-                ejercicio=s["ejercicio"],
-                set_orden=s["set_orden"],
-                reps=s["reps"],
-                kg=s["kg"],
-                rir=s["rir"],
-                origen=s["origen"],
-            )
-        )
-    return result

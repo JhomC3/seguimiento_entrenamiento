@@ -496,18 +496,33 @@ def test_base_template_loads_only_module_js(tmp_path, monkeypatch):
 
 
 def test_base_template_cdn_scripts_pin_sri(tmp_path, monkeypatch):
-    """Tripwire: every third-party <script src> must carry integrity=, except the
-    Tailwind CDN runtime (JIT, dynamic response + redirect — cannot be SRI-pinned;
-    documented in docs/architecture/security-model.md)."""
+    """Tripwire: every third-party <script src> must carry integrity= and crossorigin=."""
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     with open(os.path.join(os.path.dirname(__file__), "..", "templates", "base.html")) as f:
         source = f.read()
-    for tag in re.findall(r'<script\s+src="https://[^"]+"[^>]*>', source):
-        if "cdn.tailwindcss.com" in tag:
-            continue
+    scripts = re.findall(r'<script\s+src="https://[^"]+"[^>]*>', source)
+    assert len(scripts) == 3, f"CDNs esperados: htmx, sortablejs, plotly; hay {len(scripts)}"
+    for tag in scripts:
         assert "integrity=" in tag, f"script sin SRI: {tag}"
         assert "crossorigin=" in tag, f"script sin crossorigin: {tag}"
+
+
+def test_base_template_sin_cdn_tailwind(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    with open(os.path.join(os.path.dirname(__file__), "..", "templates", "base.html")) as f:
+        source = f.read()
+    assert "cdn.tailwindcss.com" not in source
+    assert '<link rel="stylesheet" href="/static/css/tailwind.css">' in source
+
+
+def test_static_tailwind_css_served(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/static/css/tailwind.css")
+    assert r.status_code == 200
+    assert ".bg-matte-950" in r.text
 
 
 def test_index_uses_app_config_json(tmp_path, monkeypatch):
@@ -591,7 +606,7 @@ def test_mutating_routes_return_200(tmp_path, monkeypatch):
     assert r.status_code == 200
     r = client.post(
         "/ejercicio/nuevo",
-        data={"ejercicio": "Press", "grupo_muscular": "Pectoral", "categoria": "EMPUJE"},
+        data={"ejercicio": "Fondos", "grupo_muscular": "Pectoral", "categoria": "EMPUJE"},
     )
     assert r.status_code == 200
 
@@ -826,3 +841,131 @@ def test_ejercicio_filtra_navegador_sin_saltar_editor(tmp_path, monkeypatch):
     assert 'id="date-navigator" hx-swap-oob="outerHTML"' in r.text
     assert r.text.count("date-dot") == 2
     assert re.search(r'data-iso="2026-06-01"\s+class="date-num selected"', r.text)
+
+
+def test_export_csv_orden_cronologico(tmp_path, monkeypatch):
+    from src.models import TrainingSetInput
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    for iso, sets in [
+        ("2026-01-15", [TrainingSetInput("Press", 90, 7, 1)]),
+        ("2026-02-03", [TrainingSetInput("Press", 92, 7, 1)]),
+        ("2026-01-09", [TrainingSetInput("Press", 88, 7, 1)]),
+    ]:
+        save_session(db, iso, sets)
+    resp = client.get("/exportar/csv")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/csv")
+    lines = resp.text.splitlines()
+    fecha_idx = lines[0].split(",").index("fecha")
+    fechas = [ln.split(",")[fecha_idx] for ln in lines[1:]]
+    assert fechas == ["2026-01-09", "2026-01-15", "2026-02-03"]
+
+
+def test_undo_restaura_origen_google(tmp_path, monkeypatch):
+    from src.db_connection import transaction
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    with transaction(db) as conn:
+        conn.execute(
+            "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) "
+            "VALUES (1, 'LUNES', '2026-08-06', 1, 'Press', 7, 90, 1.2, 'google')"
+        )
+    fecha = "2026-08-06"
+    client = _client()
+    client.post(
+        "/entrenamiento/session/save",
+        data={"fecha": fecha, "ejercicio": ["Press"], "kg": ["95"], "reps": ["6"], "rir": ["1"]},
+    )
+    client.post("/undo", data={"fecha": fecha})
+    rows = get_sets_by_fecha(db, "2026-08-06")
+    assert rows[0]["kg"] == 90 and rows[0]["origen"] == "google"
+
+
+def test_sesiones_view_renders_ultimas(tmp_path, monkeypatch):
+    from src.models import TrainingSetInput
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    save_session(db, "2026-08-06", [TrainingSetInput("Press", 90, 7, 1)])
+    resp = _client().get("/sesiones")
+    assert resp.status_code == 200
+    assert "2026-08-06" in resp.text and "series" in resp.text
+
+
+def test_index_incluye_historial_sesiones(tmp_path, monkeypatch):
+    from src.models import TrainingSetInput
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    save_session(db, "2026-08-06", [TrainingSetInput("Press", 90, 7, 1)])
+    resp = _client().get("/")
+    assert 'id="session-history"' in resp.text
+    assert "6/8/26" in resp.text
+
+
+def test_save_incluye_oob_history(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    resp = _client().post(
+        "/entrenamiento/session/save",
+        data={
+            "fecha": "2026-08-06",
+            "ejercicio": ["Press"],
+            "kg": ["90"],
+            "reps": ["7"],
+            "rir": ["1"],
+        },
+    )
+    assert 'id="session-history" hx-swap-oob="innerHTML"' in resp.text
+
+
+def test_undo_incluye_oob_history(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    client.post(
+        "/entrenamiento/session/save",
+        data={
+            "fecha": "2026-08-06",
+            "ejercicio": ["Press"],
+            "kg": ["90"],
+            "reps": ["7"],
+            "rir": ["1"],
+        },
+    )
+    resp = client.post("/undo", data={"fecha": "2026-08-06"})
+    assert 'id="session-history" hx-swap-oob="innerHTML"' in resp.text
+
+
+def test_lifespan_warns_sin_csrf_secret(tmp_path, monkeypatch, caplog):
+    import logging
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.delenv("GYM_CSRF_SECRET", raising=False)
+    with caplog.at_level(logging.WARNING), TestClient(appmod.app) as c:
+        c.get("/")
+    assert any("GYM_CSRF_SECRET" in r.message for r in caplog.records)
+
+
+def test_get_first_session_date_con_iso(tmp_path):
+    from src.dashboard_service import get_first_session_date
+    from src.models import TrainingSetInput
+
+    db = _setup_db(tmp_path)
+    save_session(db, "2026-08-18", [TrainingSetInput("Press", 80, 8, 1)])
+    save_session(db, "2026-08-11", [TrainingSetInput("Press", 80, 8, 1)])
+    assert get_first_session_date(db, 15, grupo="Pectoral") == "2026-08-11"
+
+
+def test_fechas_con_datos_con_iso(tmp_path):
+    from src.dashboard_service import fechas_con_datos
+    from src.models import TrainingSetInput
+
+    db = _setup_db(tmp_path)
+    save_session(db, "2026-08-11", [TrainingSetInput("Press", 80, 8, 1)])
+    assert fechas_con_datos(db) == {"2026-08-11"}

@@ -2,8 +2,10 @@
 // DOM owned: #date-navigator, #date-strip, .date-num, .date-dot.
 // Public API: initDateNavigation, doNav, requestNavigate, updateDateDot.
 
-import { getPendingNav, isDirty, setCurrentIso, setPendingNav, showConfirmDialog } from './state.js';
+import { getCurrentIso, getPendingNav, isDirty, setCurrentIso, setPendingNav, showConfirmDialog } from './state.js';
 import { submitSave } from './editor.js';
+
+let inFlightIso = null;
 
 export function doNav(iso, force) {
     if (!iso) return;
@@ -12,13 +14,17 @@ export function doNav(iso, force) {
     } else if (getPendingNav()) {
         return;
     }
+    if (inFlightIso === iso) return;
+    inFlightIso = iso;
     const actions = document.getElementById('edit-actions');
     if (actions) actions.classList.add('invisible');
     setCurrentIso(iso);
     document.querySelectorAll('.date-num.selected').forEach(b => b.classList.remove('selected'));
     const btn = document.querySelector(`.date-num[data-iso="${iso}"]`);
     if (btn) btn.classList.add('selected');
-    htmx.ajax('GET', `/fecha/editor?fecha=${iso}`, { target: '#session-editor-wrap', swap: 'innerHTML' });
+    htmx.ajax('GET', `/fecha/editor?fecha=${iso}`, { target: '#session-editor-wrap', swap: 'innerHTML' })
+        .then(function () { inFlightIso = null; })
+        .catch(function () { inFlightIso = null; });
     if (btn) btn.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
 }
 
@@ -44,16 +50,49 @@ function jumpDate(iso) {
     requestNavigate(iso);
 }
 
+function shiftDay(days) {
+    const iso = getCurrentIso();
+    if (!iso) return;
+    const d = new Date(iso + 'T00:00:00');
+    d.setDate(d.getDate() + days);
+    requestNavigate(d.toISOString().slice(0, 10));
+}
+
 export function initDateNavigation() {
     document.addEventListener('click', function (e) {
         const el = e.target.closest('[data-action]');
         if (!el) return;
         if (el.dataset.action === 'select-date') {
             requestNavigate(el.dataset.iso);
+        } else if (el.dataset.action === 'goto-session') {
+            requestNavigate(el.dataset.iso);
         } else if (el.dataset.action === 'jump-date') {
             jumpDate(el.dataset.iso);
         } else if (el.dataset.action === 'scroll-dates') {
             scrollDates(parseInt(el.dataset.dir, 10) || 0);
+        }
+    });
+
+    document.addEventListener('change', function (e) {
+        const el = e.target.closest('[data-action="jump-date-input"]');
+        if (el && el.value) requestNavigate(el.value);
+    });
+
+    document.addEventListener('keydown', function (e) {
+        const inField = e.target.closest && e.target.closest('input, textarea, select');
+        if (inField) return;
+        if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            shiftDay(-1);
+        } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            shiftDay(1);
+        } else if ((e.ctrlKey || e.metaKey) && e.key === 'ArrowLeft') {
+            e.preventDefault();
+            shiftDay(-7);
+        } else if ((e.ctrlKey || e.metaKey) && e.key === 'ArrowRight') {
+            e.preventDefault();
+            shiftDay(7);
         }
     });
 

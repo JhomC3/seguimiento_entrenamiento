@@ -4,9 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gym Tracker</title>
-    <!-- Tailwind CSS CDN: runtime JIT; no SRI (respuesta dinámica + redirect).
-         Excepción documentada en docs/architecture/security-model.md §2.1 -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind compilado estáticamente (sin CDN runtime) -->
+    <link rel="stylesheet" href="/static/css/tailwind.css">
     <!-- HTMX CDN (SRI pinned) -->
     <script src="https://unpkg.com/htmx.org@1.9.10/dist/htmx.min.js" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous"></script>
     <!-- SortableJS CDN (SRI pinned) -->

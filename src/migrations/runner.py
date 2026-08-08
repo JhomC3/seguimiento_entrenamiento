@@ -9,6 +9,7 @@ from src.migrations import (
     v002_add_origins_and_categories,
     v003_add_template_order,
     v005_recompute_semana,
+    v006_iso_dates,
     v007_nutrition,
 )
 
@@ -17,6 +18,7 @@ MIGRATIONS = [
     v002_add_origins_and_categories,
     v003_add_template_order,
     v005_recompute_semana,
+    v006_iso_dates,
     v007_nutrition,
 ]
 
@@ -42,12 +44,15 @@ def _existing_tables(conn) -> set[str]:
 def _backup_before_upgrade(db_path: str, conn) -> None:
     import shutil
 
+    from src.backup_utils import prune_backups
+
     if not (_existing_tables(conn) & _DOMAIN_TABLES):
         return
     backups_dir = os.path.join(os.path.dirname(db_path) or ".", "backups")
     os.makedirs(backups_dir, exist_ok=True)
     dest = os.path.join(backups_dir, f"gym-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db")
     shutil.copy2(db_path, dest)
+    prune_backups(backups_dir, 30)
 
 
 def _applied_versions(conn) -> set[int]:

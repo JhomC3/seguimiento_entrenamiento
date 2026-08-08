@@ -18,12 +18,19 @@ def _fill_row(page, row, ejercicio="Press", kg="80", reps="8", rir="1"):
     r.locator('input[name="rir"]').fill(rir)
 
 
+def _wait_editor_settled(page):
+    """El swap htmx termina tras afterSwap/afterSettle: esperar el settle evita
+    que un fill automatizado aterrice en el editor antiguo a mitad de swap."""
+    page.wait_for_timeout(120)
+
+
 def _goto_date(page, server, iso):
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
     page.locator(f'.date-num[data-iso="{iso}"]').click()
     expect(page.locator(f'.date-num[data-iso="{iso}"]')).to_have_class(re.compile(r"\bselected\b"))
-    expect(page.locator("#session-editor-wrap")).to_contain_text("Semana")
+    expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
+    _wait_editor_settled(page)
 
 
 def _click_chart_point(page, semana):
@@ -182,10 +189,11 @@ def test_template_crud_and_reorder(page, server):
         "data-pt-id", second_id, timeout=3000
     )
 
-    page.on("dialog", lambda dialog: dialog.accept())
     page.locator("#plantillas-section .pt-card").first.get_by_role(
         "button", name="Eliminar"
     ).click()
+    expect(page.locator("#confirm-modal")).to_be_visible()
+    page.locator("#confirm-save").click()
     expect(page.locator("#plantillas-section .pt-card")).to_have_count(1, timeout=3000)
     expect(page.locator("#notice-container .notice-success")).to_contain_text(
         "Entreno eliminado", timeout=2000
@@ -240,9 +248,9 @@ def test_hostile_template_name_does_not_execute(page, server):
     page.locator("#plantillas-section .pt-card").first.get_by_role(
         "button", name="Eliminar"
     ).click()
-    page.wait_for_timeout(800)
-
-    assert len(dialogs) == 1, f"esperado solo el confirm del dashboard, visto: {dialogs}"
+    expect(page.locator("#confirm-modal")).to_be_visible()
+    expect(page.locator("#confirm-msg")).to_contain_text(PAYLOAD)
+    assert len(dialogs) == 0, f"no debe haber dialogs nativos, visto: {dialogs}"
 
 
 def test_hostile_exercise_notice_creates_no_image_node(page, server):
@@ -289,6 +297,8 @@ def test_week_click_navigates_to_first_session_of_week(page, server):
         expect(page.locator(f'.date-num[data-iso="{iso}"]')).to_have_class(
             re.compile(r"\bselected\b")
         )
+        expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
+        _wait_editor_settled(page)
         _fill_row(page, 0)
         page.click('#edit-actions button[type="submit"]')
         expect(page.locator("#editor-notice .notice-success")).to_contain_text(
@@ -312,6 +322,8 @@ def test_category_filters_dots_sin_saltar_editor(page, server):
     iso = _iso(3)
     page.locator(f'.date-num[data-iso="{iso}"]').click()
     expect(page.locator(f'.date-num[data-iso="{iso}"]')).to_have_class(re.compile(r"\bselected\b"))
+    expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
+    _wait_editor_settled(page)
     _fill_row(page, 0)
     page.click('#edit-actions button[type="submit"]')
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
@@ -332,3 +344,77 @@ def test_category_filters_dots_sin_saltar_editor(page, server):
     page.click("#cat-btn-Pectoral")
     page.wait_for_timeout(800)
     assert page.evaluate("document.querySelectorAll('.date-num .date-dot').length") >= 1
+
+
+def test_mobile_viewport_renders(page, server):
+    page.set_viewport_size({"width": 375, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    assert page.is_visible("#session-editor")
+    assert page.is_visible("#date-navigator")
+    can_scroll = page.evaluate(
+        "() => { const el = document.querySelector('#session-editor .table-scroll');"
+        " return el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight; }"
+    )
+    assert can_scroll
+
+
+def test_keyboard_day_shift_updates_editor(page, server):
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.click(".today-btn")
+    _wait_editor_settled(page)
+    fecha = page.input_value("#session-form input[name='fecha']")
+    page.keyboard.press("ArrowRight")
+    page.wait_for_function(
+        "(expected) => document.querySelector(\"#session-form input[name='fecha']\").value !== expected",
+        arg=fecha,
+    )
+
+
+def test_keyboard_focus_ring_visible(page, server):
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.keyboard.press("Tab")
+    has_outline = page.evaluate(
+        "() => { const e = document.activeElement; const cs = getComputedStyle(e);"
+        " return cs.outlineStyle !== 'none' && cs.outlineWidth !== '0px'; }"
+    )
+    assert has_outline
+
+
+def test_template_delete_uses_custom_modal(page, server):
+    _create_template(page, server, _iso(5), "Eliminame")
+    page.locator("#plantillas-section .pt-card").get_by_role("button", name="Eliminar").click()
+    expect(page.locator("#confirm-modal")).to_be_visible()
+    expect(page.locator("#confirm-msg")).to_contain_text("Eliminame")
+    page.locator("#confirm-save").click()
+    expect(page.locator("#plantillas-section .pt-card")).to_have_count(0, timeout=3000)
+    expect(page.locator("#notice-container .notice-success")).to_contain_text(
+        "Entreno eliminado", timeout=2000
+    )
+
+
+def test_navigate_from_session_history(page, server):
+    """Clic en una sesión del historial navega al editor de su fecha."""
+    iso_a = _iso(8)
+    iso_b = _iso(9)
+    _goto_date(page, server, iso_a)
+    _fill_row(page, 0, kg="80")
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "1", timeout=5000)
+    expect(page.locator("#session-history [data-action='goto-session']")).to_have_count(
+        1, timeout=3000
+    )
+
+    _goto_date(page, server, iso_b)
+    _fill_row(page, 0, kg="90")
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "1", timeout=5000)
+    expect(page.locator("#session-history [data-action='goto-session']")).to_have_count(
+        2, timeout=3000
+    )
+
+    page.locator(f"#session-history [data-action='goto-session'][data-iso='{iso_a}']").click()
+    expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso_a, timeout=3000)
+    expect(page.locator('input[name="kg"]')).to_have_value("80")

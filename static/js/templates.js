@@ -46,8 +46,10 @@ export function aplicarPlantilla(id) {
 }
 
 export function eliminarPlantilla(id, nombre) {
-    if (!confirm(`¿Eliminar el entreno "${nombre}"?`)) return;
-    htmx.ajax('POST', `/plantilla/eliminar/${id}`, { target: 'body', swap: 'none' });
+    document.getElementById('confirm-msg').textContent = `¿Eliminar el entreno "${nombre}"?`;
+    showConfirmDialog(function () {
+        htmx.ajax('POST', `/plantilla/eliminar/${id}`, { target: 'body', swap: 'none' });
+    }, null);
 }
 
 export function editarPlantilla(id) {

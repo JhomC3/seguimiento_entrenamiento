@@ -25,6 +25,9 @@
                 {{ plantillas_html | safe }}
             </div>
 
+            <!-- Historial de sesiones -->
+            <div id="session-history">{{ session_history_html | safe }}</div>
+
             <!-- Categorías de Músculos: Empuje / Tirón / Pierna / Core -->
             <div class="flex flex-col gap-4">
                 {% for cat in muscle_categories %}
@@ -66,6 +69,8 @@
                     {{ editor_html | safe }}
                 </section>
             </div>
+
+            <p class="text-[10px] text-neutral-600 text-center -mt-3">Ctrl+Z deshacer · Esc ver todo · ←/→ día · ⌘+←/→ semana</p>
 
             <!-- Gráfica Única -->
             <div id="unified-chart-container" class="bg-neutral-900 border border-transparent rounded-xl p-5 neon-border metallic-border">

@@ -35,7 +35,7 @@ def test_init_db_preserves_existing_rows(tmp_path):
     init_db(db_path)
     conn = sqlite3.connect(db_path)
     conn.execute(
-        "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) VALUES (1, 'LUNES', '4/5/26', 1, 'Press', 6, 85, 1, 'manual')"
+        "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) VALUES (1, 'LUNES', '2026-05-04', 1, 'Press', 6, 85, 1, 'manual')"
     )
     conn.commit()
     conn.close()
@@ -68,7 +68,7 @@ def test_init_db_migrates_old_schema(tmp_path):
         );
         INSERT INTO ejercicios (grupo_muscular, ejercicio) VALUES ('Pectoral', 'Press');
         INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir)
-        VALUES (1, 'LUNES', '4/5/26', 1, 'Press', 6, 85, 1);
+        VALUES (1, 'LUNES', '2026-05-04', 1, 'Press', 6, 85, 1);
     """)
     conn.commit()
     conn.close()
@@ -103,7 +103,7 @@ def test_migrations_recorded_in_schema_migrations(tmp_path):
         r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()
     )
     conn.close()
-    assert versions == [1, 2, 3, 5, 7]
+    assert versions == [1, 2, 3, 5, 6, 7]
 
 
 def test_migrates_intermediate_state_without_orden(tmp_path):
@@ -180,7 +180,7 @@ def test_migrates_old_schema_keeps_rows_and_indexes(tmp_path):
         );
         INSERT INTO ejercicios (grupo_muscular, ejercicio) VALUES ('Pectoral', 'Press');
         INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir)
-        VALUES (1, 'LUNES', '4/5/26', 1, 'Press', 6, 85, 1);
+        VALUES (1, 'LUNES', '2026-05-04', 1, 'Press', 6, 85, 1);
     """)
     conn.commit()
     conn.close()
@@ -211,6 +211,19 @@ def test_backup_only_when_pending_migrations(tmp_path):
     run_migrations(db_path)
     assert backups_dir.exists()
     assert len(list(backups_dir.iterdir())) == 1
+
+
+def test_backup_prune_mantiene_ultimos_30(tmp_path):
+    from src.database import backup_db
+
+    db = str(tmp_path / "g.db")
+    init_db(db)
+    (tmp_path / "backups").mkdir(exist_ok=True)
+    for i in range(35):
+        (tmp_path / "backups" / f"gym-20260804-{100000 + i:06d}.db").touch()
+    backup_db(db)
+    backups = sorted(p.name for p in (tmp_path / "backups").glob("gym-*.db"))
+    assert len(backups) == 30
 
 
 def test_v005_recomputa_semanas_desde_fecha(tmp_path):
@@ -558,6 +571,47 @@ def test_restore_diario_rows_preserves_orden_and_origen(tmp_path):
     assert restored[1]["kcal"] == 143.0
 
 
+def test_v006_convierte_fechas_a_iso(tmp_path):
+    from src.db_connection import connect_db, read_connection
+    from src.migrations import v006_iso_dates
+
+    db = str(tmp_path / "legacy.db")
+    with connect_db(db) as conn:
+        conn.execute(
+            "CREATE TABLE training_sets (id INTEGER PRIMARY KEY, semana INTEGER, dia TEXT, fecha TEXT, set_orden INTEGER, ejercicio TEXT, reps REAL, kg REAL, rir REAL)"
+        )
+        conn.execute(
+            "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, kg, reps, rir) VALUES (1, 'LUNES', '6/8/26', 1, 'Press', 90, 7, 1.2)"
+        )
+        conn.execute(
+            "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, kg, reps, rir) VALUES (2, 'MARTES', '10/02/2026', 1, 'Press', 90, 7, 1.2)"
+        )
+        conn.execute(
+            "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, kg, reps, rir) VALUES (3, 'MIERCOLES', 'basura', 1, 'Press', 90, 7, 1.2)"
+        )
+    v006_iso_dates.migrate(connect_db(db))
+    with read_connection(db) as conn:
+        fechas = [r[0] for r in conn.execute("SELECT fecha FROM training_sets ORDER BY id")]
+    assert fechas == ["2026-08-06", "2026-02-10", None]
+
+
+def test_get_training_sessions_ordena_por_fecha_iso(tmp_path):
+    from src.db_connection import transaction
+    from src.training_service import get_training_sessions
+
+    db = str(tmp_path / "g.db")
+    init_db(db)
+    for iso in ("2026-03-01", "2026-01-15", "2026-02-10"):
+        with transaction(db) as conn:
+            conn.execute(
+                "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) "
+                "VALUES (?, 'LUNES', ?, 1, 'Press', 90, 7, 1.2)",
+                (1, iso),
+            )
+    sessions = get_training_sessions(db)
+    assert [s["fecha"] for s in sessions] == ["2026-03-01", "2026-02-10", "2026-01-15"]
+
+
 def test_load_ejercicios(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
@@ -583,7 +637,7 @@ def test_load_training_data(tmp_path):
         {
             "semana": [1, 1],
             "dia": ["LUNES", "LUNES"],
-            "fecha": ["4/5/26", "4/5/26"],
+            "fecha": ["2026-05-04", "2026-05-04"],
             "set_orden": [1, 2],
             "ejercicio": ["Press Convergente", "Press Convergente"],
             "reps": [6.0, 6.0],

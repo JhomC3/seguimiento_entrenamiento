@@ -2,6 +2,14 @@ import pandas as pd
 
 from src.db_connection import read_connection
 
+RM_FACTOR = 0.0333
+
+
+def rm_ajustado(kg: float, reps: float, rir: float = 0.0) -> float:
+    """RM ajustado: kg * (1 + 0.0333 * (reps + 1 + rir))."""
+    return kg * (1 + RM_FACTOR * (reps + 1 + rir))
+
+
 # Palabras clave para identificar ejercicios compuestos (multiarticulares)
 COMPOUND_KEYWORDS = {
     "hack",
@@ -43,7 +51,7 @@ def get_exercises_baselines(db_path: str) -> dict[str, float]:
 
     # Calcular RM_a de cada set
     rir_safe = df["rir"].fillna(0)
-    df["rm_ajustado"] = df["kg"] * (1 + 0.0333 * (df["reps"] + 1 + rir_safe))
+    df["rm_ajustado"] = df["kg"] * (1 + RM_FACTOR * (df["reps"] + 1 + rir_safe))
 
     # Para cada ejercicio, encontrar su primera semana disponible y promediar
     for exercise, group in df.groupby("ejercicio"):
@@ -79,7 +87,7 @@ def calculate_pfr_timeline(
     baselines = get_exercises_baselines(db_path)
 
     # Parsear fechas reales y ordenar de forma cronológica
-    df["fecha_dt"] = pd.to_datetime(df["fecha"], format="%d/%m/%y", errors="coerce")
+    df["fecha_dt"] = pd.to_datetime(df["fecha"], format="%Y-%m-%d", errors="coerce")
     df = df.dropna(subset=["fecha_dt"]).sort_values("fecha_dt").reset_index(drop=True)
 
     if df.empty:
@@ -87,7 +95,7 @@ def calculate_pfr_timeline(
 
     # Calcular RM_a individual de cada set
     rir_safe = df["rir"].fillna(0)
-    df["rm_ajustado"] = df["kg"] * (1 + 0.0333 * (df["reps"] + 1 + rir_safe))
+    df["rm_ajustado"] = df["kg"] * (1 + RM_FACTOR * (df["reps"] + 1 + rir_safe))
 
     # Calcular Rendimiento Relativo (%) respecto al baseline
     df["perf_rel"] = df.apply(

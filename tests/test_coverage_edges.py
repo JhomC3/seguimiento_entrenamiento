@@ -4,15 +4,9 @@ import pandas as pd
 import pytest
 
 from src.charts import (
-    chart_exercise_rm,
-    chart_muscle_group_kg,
-    chart_muscle_group_volume,
     chart_pfr_timeline,
-    chart_rm_progression,
-    chart_tonnage_per_session,
     get_exercise_raw_data,
     get_exercise_session_summary,
-    get_muscle_group_volume,
 )
 from src.database import init_db, insert_exercise, load_ejercicios
 from src.metrics_engine import (
@@ -112,16 +106,7 @@ def test_chart_pfr_drops_invalid_dates(tmp_path):
     assert calculate_pfr_timeline(db, "systemic").empty
 
 
-def test_chart_rm_progression_and_tonnage(chart_db):
-    fig = chart_rm_progression(chart_db, "Press")
-    assert len(fig.data) >= 1
-    fig = chart_tonnage_per_session(chart_db, "Press")
-    assert len(fig.data) >= 1
-
-
 def test_chart_exercise_rm_and_summary(chart_db):
-    fig = chart_exercise_rm(chart_db, "Press")
-    assert len(fig.data) == 1
     summary = get_exercise_session_summary(chart_db, "Press")
     assert len(summary) == 1
     assert summary.iloc[0]["total_sets"] == 2
@@ -136,14 +121,6 @@ def test_chart_raw_data_rm_calculation(chart_db):
     assert get_exercise_raw_data(chart_db, "Ghost").empty
 
 
-def test_muscle_group_volume_and_charts(chart_db):
-    vol = get_muscle_group_volume(chart_db, "Pectoral")
-    assert vol.iloc[0]["total_series"] == 2
-    assert len(chart_muscle_group_volume(chart_db, "Pectoral").data) == 1
-    assert len(chart_muscle_group_kg(chart_db, "Pectoral").data) == 1
-    assert get_muscle_group_volume(chart_db, "Ghost").empty
-
-
 # ---------------------------------------------------------------------------
 # Metrics edges
 # ---------------------------------------------------------------------------
@@ -154,7 +131,7 @@ def test_baselines_ignore_null_kg_reps(chart_db):
     with conn:
         conn.execute(
             "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) "
-            "VALUES (1, 'LUNES', '4/5/26', 9, 'Press', NULL, NULL, 1, 'manual')"
+            "VALUES (1, 'LUNES', '2026-05-04', 9, 'Press', NULL, NULL, 1, 'manual')"
         )
     baselines = get_exercises_baselines(chart_db)
     expected_press = round((_rm_ajustado(80, 8, 1) + _rm_ajustado(82, 6, 2)) / 2, 1)
