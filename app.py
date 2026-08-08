@@ -16,6 +16,7 @@ from src.dashboard_service import (
     get_ejercicios_por_grupo,
     get_filters,
     get_first_session_date,
+    get_recent_sessions,
     translate_error,
 )
 from src.database import (
@@ -190,6 +191,16 @@ def _plantillas_list_html(
     )
 
 
+def _sesiones_list_html(request: Request) -> str:
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="session_history.html",
+            context={"sessions": get_recent_sessions(DB_PATH)},
+        )
+    )
+
+
 def _domain_error_response(
     request: Request, error: Exception, target: str, *, extra: str = ""
 ) -> HTMLResponse:
@@ -225,6 +236,7 @@ def read_index(request: Request):
             "editor_html": _editor_html(request, fecha),
             "exercise_form_html": _exercise_form_html(request),
             "plantillas_html": _plantillas_list_html(request),
+            "session_history_html": _sesiones_list_html(request),
             "app_config_json": {
                 "categoria_map": get_ejercicio_categoria(DB_PATH),
                 "csrf_token": make_csrf_token(get_csrf_secret()),
@@ -258,11 +270,17 @@ def entrenamiento_session_save(
         saved_rows = get_sets_by_fecha(DB_PATH, fecha_to_db(parse_form_date(fecha)))
         if saved_rows:
             return HTMLResponse(
-                content=notice_success + outcome_ok + editor_state_oob(templates, request)
+                content=notice_success
+                + outcome_ok
+                + editor_state_oob(templates, request)
+                + fragment_oob(templates, request, "session-history", _sesiones_list_html(request))
             )
         editor = _editor_html(request, fecha)
         return HTMLResponse(
-            content=notice_success + outcome_ok + editor_wrap_oob(templates, request, editor)
+            content=notice_success
+            + outcome_ok
+            + editor_wrap_oob(templates, request, editor)
+            + fragment_oob(templates, request, "session-history", _sesiones_list_html(request))
         )
     except Exception as e:
         return _domain_error_response(request, e, "editor-notice", extra=outcome_fail)
@@ -278,7 +296,12 @@ def entrenamiento_session_eliminar(request: Request, fecha: str = Form(...)):
     except Exception as e:
         return _domain_error_response(request, e, "editor-notice", extra=outcome_fail)
     editor = _editor_html(request, fecha)
-    return HTMLResponse(content=notice + outcome_ok + editor_wrap_oob(templates, request, editor))
+    return HTMLResponse(
+        content=notice
+        + outcome_ok
+        + editor_wrap_oob(templates, request, editor)
+        + fragment_oob(templates, request, "session-history", _sesiones_list_html(request))
+    )
 
 
 @app.post("/ejercicio/nuevo", response_class=HTMLResponse)
@@ -303,6 +326,11 @@ def ejercicio_nuevo(
         content=notice_success
         + fragment_oob(templates, request, "exercise-create", form_html, swap="outerHTML")
     )
+
+
+@app.get("/sesiones", response_class=HTMLResponse)
+def sesiones_view(request: Request):
+    return HTMLResponse(content=_sesiones_list_html(request))
 
 
 @app.get("/plantillas", response_class=HTMLResponse)
@@ -433,6 +461,9 @@ def undo(request: Request, fecha: str = Form("")):
     if result["kind"] == "sesion":
         fecha_iso = result["fecha_iso"]
         marker = undo_result_oob(templates, request, fecha_iso, result["has_data"])
+        history_oob = fragment_oob(
+            templates, request, "session-history", _sesiones_list_html(request)
+        )
         if fecha == fecha_iso:
             outcome_ok = STATIC_MARKERS["outcome_ok"]
             editor = _editor_html(request, fecha_iso)
@@ -441,8 +472,9 @@ def undo(request: Request, fecha: str = Form("")):
                 + outcome_ok
                 + marker
                 + editor_wrap_oob(templates, request, editor)
+                + history_oob
             )
-        return HTMLResponse(content=notice_ok + marker)
+        return HTMLResponse(content=notice_ok + marker + history_oob)
     return HTMLResponse(
         content=notice_ok
         + fragment_oob(
