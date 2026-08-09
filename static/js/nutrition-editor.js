@@ -98,6 +98,8 @@ function syncNutritionButtons() {
         trash.hidden = st.dataset.hasData !== '1';
         trash.classList.toggle('on', editable && st.dataset.hasData === '1');
     }
+    const bookmark = p.querySelector('.nutrition-template-btn');
+    if (bookmark) bookmark.classList.toggle('on', editable);
     const actions = document.getElementById('nutrition-edit-actions');
     const saveBtn = actions && actions.querySelector('button[type="submit"]');
     if (saveBtn) saveBtn.disabled = !editable;

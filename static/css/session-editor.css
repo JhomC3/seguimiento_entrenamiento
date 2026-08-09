@@ -65,10 +65,12 @@
     background: rgba(255, 255, 255, 0.14);
     box-shadow: 0 0 12px rgba(255, 255, 255, 0.25);
 }
-.delete-session-btn {
+.delete-session-btn,
+.nutrition-delete-btn {
     color: rgba(255, 255, 255, 0.30);
 }
-.delete-session-btn.on {
+.delete-session-btn.on,
+.nutrition-delete-btn.on {
     color: #ffffff;
     background: rgba(255, 255, 255, 0.14);
     box-shadow: 0 0 12px rgba(255, 255, 255, 0.25);
