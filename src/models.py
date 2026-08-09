@@ -90,3 +90,63 @@ class AlimentoInput:
     calcio: float = 0.0
     vitamina_c: float = 0.0
     vitamina_a: float = 0.0
+
+
+@dataclass(frozen=True)
+class HealthRecordInput:
+    """A single Health Connect operation from POST /sync/health-connect.
+
+    Mirrors health-sync-contract.md §4: op (UPSERT|DELETE), stable record type,
+    revision (lastModifiedTime epoch ms) for conditional updates, and a
+    versioned raw value snapshot.
+    """
+
+    op: str
+    hc_id: str
+    record_type: str
+    revision: int
+    start_epoch_ms: int | None = None
+    end_epoch_ms: int | None = None
+    data_origin_package: str | None = None
+    time_zone_offset_minutes: int | None = None
+    payload_schema_version: int = 1
+    value: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class HealthSyncPayload:
+    """Body of POST /sync/health-connect."""
+
+    schema_version: int
+    device_id: str
+    operations: list[HealthRecordInput]
+
+
+@dataclass(frozen=True)
+class OperationAck:
+    """Server-side acknowledgement for one accepted operation."""
+
+    hc_id: str
+    revision: int
+
+
+@dataclass(frozen=True)
+class RejectedOperation:
+    """Server-side rejection detail for one operation."""
+
+    hc_id: str
+    revision: int
+    reason: str
+
+
+@dataclass(frozen=True)
+class IngestResult:
+    """Result of applying one batch: exact acks per hc_id + revision."""
+
+    received: int
+    accepted: list[OperationAck]
+    rejected: list[RejectedOperation]
+
+    @property
+    def accepted_count(self) -> int:
+        return len(self.accepted)
