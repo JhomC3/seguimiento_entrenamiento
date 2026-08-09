@@ -22,3 +22,9 @@ data/*.db
 
 # Backups locales de la DB
 data/backups/
+
+# Proyecto Android (HealthSync)
+android/.gradle/
+android/app/build/
+android/local.properties
+android/sdk/
