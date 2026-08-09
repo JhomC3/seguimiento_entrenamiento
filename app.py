@@ -72,6 +72,9 @@ from src.security import (
 )
 from src.template_service import apply_template_rows
 from src.training_service import (
+    calculate_cycle_week,
+    day_from_date,
+    fecha_display,
     fecha_to_db,
     parse_cycle_start,
     parse_form_date,
@@ -341,9 +344,12 @@ def _domain_error_response(
 
 @app.get("/", response_class=HTMLResponse)
 def read_index(request: Request):
+    from datetime import date as _date
+
     ejercicios_list, grupos_list = get_filters(DB_PATH)
     categories = get_categories(DB_PATH) or MUSCLE_CATEGORIES
     fecha = _today_iso()
+    _fecha_date = _date.fromisoformat(fecha)
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -359,6 +365,9 @@ def read_index(request: Request):
             ),
             "navigator_html": _navigator_html(request, fecha),
             "editor_html": _editor_html(request, fecha),
+            "dia": day_from_date(_fecha_date),
+            "fecha_display": fecha_display(fecha),
+            "semana": calculate_cycle_week(_fecha_date, CICLO_START_DATE),
             "exercise_form_html": _exercise_form_html(request),
             "plantillas_html": _plantillas_list_html(request),
             "session_history_html": _sesiones_list_html(request),

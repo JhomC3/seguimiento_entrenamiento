@@ -695,7 +695,7 @@ def main() -> None:
             apply_xhrs.clear()
             mouse_drag(
                 page.locator("#plantillas-list .pt-card").nth(1),
-                page.locator("#session-date-title"),
+                page.locator("#session-editor .panel-title-box"),
             )
             time.sleep(1.0)
             check(

@@ -1020,10 +1020,10 @@ def test_index_renders_global_date_title_below_navigator(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/")
     assert r.status_code == 200
-    # La fecha vive dentro del editor de sesión (debajo de los botones del header)
-    assert 'id="session-date-title"' in r.text
+    # La fecha viva va entre el navegador y el panel de alimentación
+    assert r.text.index('id="session-date-title"') > r.text.index('id="date-navigator"')
+    assert r.text.index('id="session-date-title"') < r.text.index('id="nutrition-panel"')
     assert "Semana" in r.text
-    assert r.text.index('id="session-date-title"') > r.text.index('id="session-editor"')
     assert (
         "SABADO" in r.text or "DOMINGO" in r.text or date.today().strftime("%A").upper() in r.text
     )
@@ -1034,14 +1034,11 @@ def test_panels_layout_title_left_controls_right(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/")
     assert r.status_code == 200
-    # Título en caja (izquierda) + fecha y colapso (derecha) en ambos paneles
+    # Título en caja (izquierda) + colapso (derecha) en ambos paneles
     assert r.text.count('class="panel-title-box"') == 2
     assert r.text.count('data-action="toggle-panel-collapse"') == 2
-    # Fecha en la parte superior derecha del editor de sesión
-    session_part = r.text[r.text.index('id="session-editor"') :]
-    assert 'id="session-date-title"' in session_part
-    assert "Semana" in session_part
     # Botones (guardar plantilla, editar, eliminar) en el header actions
+    session_part = r.text[r.text.index('id="session-editor"') :]
     h_start = session_part.index('class="editor-header-actions')
     del_start = session_part.index("delete-session-btn", h_start)
     h_end = session_part.index("</div>", del_start) + 6
