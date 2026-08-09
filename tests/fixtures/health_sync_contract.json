@@ -1,0 +1,50 @@
+{
+  "fixture_upsert": {
+    "schema_version": 1,
+    "device_id": "android-fixture",
+    "operations": [
+      {
+        "op": "UPSERT",
+        "hc_id": "6e3b2f1a-9c4d-4b8e-8f1a-2d5c7e9a0b1c",
+        "record_type": "STEPS",
+        "revision": 1754678400000,
+        "start_epoch_ms": 1754676000000,
+        "end_epoch_ms": 1754679600000,
+        "data_origin_package": "com.samsung.health",
+        "time_zone_offset_minutes": -300,
+        "payload_schema_version": 1,
+        "value": {"count": 8123}
+      }
+    ]
+  },
+  "fixture_delete": {
+    "schema_version": 1,
+    "device_id": "android-fixture",
+    "operations": [
+      {
+        "op": "DELETE",
+        "hc_id": "3a9f2c1b-7d4e-4f0a-9b8c-1e2f3a4b5c6d",
+        "record_type": "HEART_RATE",
+        "revision": 1754679000000
+      }
+    ]
+  },
+  "fixture_update": {
+    "schema_version": 1,
+    "device_id": "android-fixture",
+    "operations": [
+      {
+        "op": "UPSERT",
+        "hc_id": "6e3b2f1a-9c4d-4b8e-8f1a-2d5c7e9a0b1c",
+        "record_type": "STEPS",
+        "revision": 1754678500000,
+        "start_epoch_ms": 1754676000000,
+        "end_epoch_ms": 1754679600000,
+        "data_origin_package": "com.samsung.health",
+        "time_zone_offset_minutes": -300,
+        "payload_schema_version": 1,
+        "value": {"count": 9123}
+      }
+    ]
+  }
+}

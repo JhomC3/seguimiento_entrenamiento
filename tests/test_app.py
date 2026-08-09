@@ -1434,7 +1434,9 @@ def test_sync_endpoint_200_with_acks_and_persisted_rows(tmp_path, monkeypatch):
     assert data["accepted_count"] == 1
     assert data["accepted"][0] == {"hc_id": "hc-1", "revision": 1754678400000}
     conn = sqlite3.connect(db)
-    row = conn.execute("SELECT record_type, value_json FROM health_records WHERE hc_id='hc-1'").fetchone()
+    row = conn.execute(
+        "SELECT record_type, value_json FROM health_records WHERE hc_id='hc-1'"
+    ).fetchone()
     conn.close()
     assert row[0] == "STEPS"
     assert '"count":8123' in row[1]
@@ -1462,3 +1464,25 @@ def test_sync_endpoint_double_post_is_idempotent(tmp_path, monkeypatch):
     count = conn.execute("SELECT COUNT(*) FROM health_records").fetchone()[0]
     conn.close()
     assert count == 1
+
+
+def test_health_connect_csv_export_excludes_deleted(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", "secret")
+    headers = {"X-Sync-Token": "secret"}
+    body = dict(_SYNC_BODY)
+    _client().post(SYNC_URL, json=body, headers=headers)
+    delete = dict(
+        body,
+        operations=[
+            {"op": "DELETE", "hc_id": "hc-1", "record_type": "STEPS", "revision": 9999999999999}
+        ],
+    )
+    _client().post(SYNC_URL, json=delete, headers=headers)
+    r = _client().get("/exportar/health-connect.csv")
+    assert r.status_code == 200
+    assert "hc_id,record_type" in r.text
+    assert "hc-1" not in r.text
+    r_all = _client().get("/exportar/health-connect.csv?incluir_borrados=1")
+    assert "hc-1" in r_all.text

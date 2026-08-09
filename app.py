@@ -1005,3 +1005,27 @@ async def health_sync_ingest(request: Request):
             ],
         }
     )
+
+
+@app.get("/exportar/health-connect.csv", response_class=Response)
+def export_health_connect_csv(incluir_borrados: bool = Query(default=False)):
+    """CSV de health_records activos ordenado por (record_type, start_epoch_ms).
+
+    Parámetro incluir_borrados=1 para auditoría de bajas (filas con deleted_at).
+    """
+    deleted_clause = "" if incluir_borrados else "WHERE deleted_at IS NULL"
+    with read_connection(DB_PATH) as conn:
+        df = pd.read_sql_query(
+            f"SELECT hc_id, record_type, start_epoch_ms, end_epoch_ms, "
+            f"last_modified_epoch_ms, data_origin_package, payload_schema_version, "
+            f"value_json, device_id, received_at, updated_at, deleted_at "
+            f"FROM health_records {deleted_clause} "
+            f"ORDER BY record_type, start_epoch_ms",
+            conn,
+        )
+    csv = df.to_csv(index=False)
+    return Response(
+        content=csv,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="health-connect.csv"'},
+    )

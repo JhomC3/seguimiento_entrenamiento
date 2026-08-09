@@ -58,9 +58,10 @@ Eres un ingeniero de software senior experto en Python, especializado en anális
   - Fragmentos por feature: `session_editor.html`, `date_navigator.html`, `plantillas_list.html`, `exercise_list.html`, `exercise_detail.html`, `exercise_create_form.html`.
 - `data/`: Contiene la base de datos local SQLite `gym.db` (regenerable) y `backups/`.
 - `tests/`: Pruebas unitarias, integración y `e2e/` (Playwright, servidor aislado + DB temporal).
-- `docs/`: Arquitectura (`current-ui-contract.md`, `security-model.md`), operaciones (`local-development.md`, `release-checklist.md`), planes.
+- `docs/`: Arquitectura (`current-ui-contract.md`, `security-model.md`, `health-sync-contract.md`), operaciones (`local-development.md`, `release-checklist.md`, `health-sync-migration.md`), planes.
 - `scripts/`: `import_google_sheets.py` (carga del CSV), `verify_editor.py` (chequeo del editor).
 - `assets/body_map.svg`: Mapa corporal (recurso visual).
+- `android/`: App HealthSync (Kotlin) — extractor de Health Connect → backend. Gradle SIEMPRE desde `android/` con `GRADLE_USER_HOME=$PWD/.gradle` y `ANDROID_HOME=$PWD/android/sdk` (sandbox). Estructura: `HealthConnectManager` (SDK), `RecordTypes.kt` (catálogo canónico de tipos con permisos vía `getReadPermission`), `data/` (Room: `health_records`, `health_sync_state`, `sync_targets`, `health_outbox`), `HealthRepository` (Changes API por tipo + outbox por destino), `HealthSyncClient` (HTTPS, lotes ≤500 ops), `SyncWorker`/`SyncScheduler` (WorkManager 1h + manual), `SecureTargetStore` (URL en DataStore, token cifrado en Keystore).
 
 ## 4. Modelo de Datos (SQLite)
 
@@ -99,6 +100,8 @@ exclusivamente con las migraciones versionadas en `src/migrations/`; no se hacen
 
 **`parametros_diarios`**: `fecha` PK, `peso_kg`, `factor_proteina` (1.5), `factor_grasa` (1.1), `kcal_objetivo` — editables día a día — y `fibra/hierro/calcio/vitamina_c/vitamina_a` objetivo (importados de la hoja).
 
+**`health_records`** (migración v010): espejo genérico de Health Connect. `hc_id` TEXT PK (id de HC, deduplicación), `record_type` (allow-list en `src/health_sync_service.py`, espejo de `RecordTypes.kt`), `start/end_epoch_ms`, `last_modified_epoch_ms` (revisión), `data_origin_package`, `payload_schema_version`, `value_json` (snapshot crudo versionado), `device_id`, `received_at`, `updated_at`, `deleted_at` (baja lógica). Índice `(record_type, start_epoch_ms)`. Las consultas y el export excluyen borradas por defecto.
+
 ## 5. Arquitectura del Dashboard (FastAPI + htmx)
 
 La app `app.py` sirve HTML renderizado con Jinja2 y usa htmx para actualizaciones parciales:
@@ -110,6 +113,8 @@ La app `app.py` sirve HTML renderizado con Jinja2 y usa htmx para actualizacione
 - **`GET /plantillas` / `POST /plantilla/guardar|editar|eliminar|reordenar` / `GET /plantilla/aplicar/{id}`** → CRUD y drag&drop de plantillas (OOB `#plantillas-section`, `#session-editor-wrap`).
 - **`POST /undo`** → deshace la última acción (pila en memoria, máx. 10).
 - **`GET /exportar/csv`** → descarga CSV de `training_sets`.
+- **`POST /sync/health-connect`** → API JSON (no htmx) de ingesta de Health Connect: autenticada con `X-Sync-Token` (`HC_SYNC_TOKEN` env; sin env → 503), exenta del CSRF de formularios **solo por igualdad exacta de ruta** (`CSRF_EXEMPT_PATHS` en `src/security.py`), lotes ≤500 ops / 1 MiB, upsert condicionado por revisión + baja lógica, acuse individual por `hc_id`+revisión (contrato en `docs/architecture/health-sync-contract.md`).
+- **`GET /exportar/health-connect.csv`** → CSV de `health_records` activos (orden `record_type, start_epoch_ms`); `?incluir_borrados=1` para auditoría de bajas.
 - **`GET /select`** → lista de ejercicios del grupo (`grupo=""` para global) con gráfica OOB.
 - **`GET /grupo/reset`** → actualiza la gráfica con el rendimiento del grupo (PFR del grupo muscular).
 - **`GET /ejercicio`** → tablas de detalle (raw + resumen por sesión) con gráfica OOB del ejercicio.

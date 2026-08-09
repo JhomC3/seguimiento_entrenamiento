@@ -87,3 +87,27 @@ errors.
 ```bash
 uv run python scripts/verify_editor.py
 ```
+
+## Health Connect sync (HealthSync)
+
+- **Android app** lives in `android/`. Everything Gradle runs from `android/`
+  with the sandbox rule: `GRADLE_USER_HOME=$PWD/.gradle` and
+  `ANDROID_HOME=$PWD/android/sdk` (SDK instalado dentro del proyecto, no se
+  commitea). Build + tests:
+  ```bash
+  export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+  export GRADLE_USER_HOME=$PWD/.gradle ANDROID_HOME=$PWD/android/sdk
+  cd android && ./gradlew assembleDebug test
+  ```
+- **Backend endpoint**: `POST /sync/health-connect` (JSON, autenticado con
+  `X-Sync-Token` = `HC_SYNC_TOKEN`). Sin el env configurado responde 503.
+  Ejemplo local:
+  ```bash
+  HC_SYNC_TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))") \
+  GYM_DB_PATH=data/gym.db uv run uvicorn app:app --host 127.0.0.1 --port 8000
+  ```
+- **Export**: `GET /exportar/health-connect.csv` (activos; `?incluir_borrados=1`
+  para auditoría de bajas).
+- **Forzar el worker desde ADB** (sin esperar la hora):
+  `adb shell cmd jobscheduler run -f com.jhomc.healthsync <job_id>`.
+- **Migración a host persistente**: `docs/operations/health-sync-migration.md`.

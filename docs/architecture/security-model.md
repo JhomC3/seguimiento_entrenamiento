@@ -134,3 +134,17 @@ No third-party runtime is involved in styles.
 - Safe local run: `uv run uvicorn app:app --host 127.0.0.1 --port 8000`
 - Verify headers: `curl -sI http://127.0.0.1:8000/ | grep -iE 'content-security|x-frame|x-content'`
 - Security tests: `uv run pytest tests/test_security.py -v`
+
+### 2.6 API sync endpoint (POST /sync/health-connect)
+
+- **Not a browser flow**: it is JSON-only and never rendered as HTML. The CSRF
+  middleware exempts **exactly** this path (`CSRF_EXEMPT_PATHS` in
+  `src/security.py`); any other path keeps full form-CSRF protection
+  (covered by tests in `tests/test_security.py`).
+- **Authentication** is the `X-Sync-Token` header compared with
+  `secrets.compare_digest` against `HC_SYNC_TOKEN` (env). Unset env → the
+  endpoint answers `503 "not configured"` (never a silent open door).
+- **Never logged**: tokens, payload values or health data. Errors return only
+  generic details; the server log records the failure without the body.
+- **Transport**: HTTPS only in the Android client (HTTP URLs are rejected
+  locally before any request); untrusted certificates fail closed.
