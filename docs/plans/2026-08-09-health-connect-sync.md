@@ -2,208 +2,267 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Construir el extractor de Health Connect que integra los datos del Galaxy Watch (Samsung Health) al dashboard: una app Android mínima en Kotlin dentro de `android/` que lee **todos los tipos de datos disponibles** de Health Connect (núcleo primero: steps, heart_rate, sleep, weight, exercise; catálogo completo después), los persiste en Room local como buffer idempotente y los reenvía por HTTPS a un endpoint nuevo de este backend (FastAPI + SQLite), donde quedan disponibles para análisis. Nada de servidor remoto, autenticación compleja, Compose avanzado ni arquitectura empresarial.
+**Goal:** Construir una app Android Kotlin dentro de `android/` que extrae y conserva **todos los tipos de `Record` disponibles para el dispositivo en la versión fijada de Health Connect**, procedentes de Samsung Health/Galaxy Watch y otras fuentes autorizadas; los replica de forma fiable al dashboard mediante FastAPI + SQLite, primero en el Mac y posteriormente en cualquier host HTTPS persistente sin reescribir la app Android.
 
-**Architecture:** 4 piezas Android sin capas extra: `HealthConnectManager` (solo el SDK), `HealthRepository` (Changes API con token único + mapeo + persistencia), `SyncWorker` (orquesta, sin lógica de negocio), `SyncScheduler` (WorkManager periódico 1h + botón manual). Sincronización diferencial con **un único changes token** para el conjunto de tipos, paginación con `hasMore`, deduplicación por `metadata.id` (UNIQUE), propagación de `DeletionChange`, fallback a rango de 30 días ante expiración del token, y token guardado **solo tras persistencia exitosa**. Room genérico (`health_records` local) como buffer para no perder datos si el Mac está apagado (el token expira a los 30 días). Backend: migración SQLite `v010` con tabla genérica `health_records` (mismo patrón de snapshot desnormalizado y `origen='health_connect'` que `import_nutrition.py`), endpoint único `POST /sync/health-connect` con token secreto `X-Sync-Token` (env `HC_SYNC_TOKEN`), persistencia idempotente con `INSERT OR IGNORE`.
+**Architecture:** La app separa la sincronización de origen (Health Connect → Room) de la entrega (Room → destino HTTP). `HealthConnectManager` encapsula el SDK, `HealthRepository` mantiene un token por tipo, aplica cambios y publica operaciones en un outbox, `SyncWorker` orquesta y `SyncScheduler` programa los trabajos. Room es la fuente local de continuidad y conoce los destinos de entrega; FastAPI recibe lotes versionados e idempotentes, aplica upserts y bajas lógicas en SQLite y confirma cada operación. No se añade Clean Architecture, Hilt, Firebase, Compose complejo ni infraestructura remota obligatoria.
 
-**Tech Stack:** Android: Kotlin, `androidx.health.connect:connect-client:1.1.0` (estable; verificar patch en el momento de implementar), `work-runtime-ktx:2.10.x`, `room:2.6.1` + KSP, `datastore-preferences:1.1.x`, OkHttp, org.json (sin librerías de serialización). Backend: Python 3.11+, FastAPI, SQLite (migraciones versionadas), pytest, ruff, mypy, uv.
+**Tech Stack:** Android: Kotlin, `androidx.health.connect:connect-client:1.1.0` (confirmar parche estable antes de fijarlo), WorkManager, Room + KSP, DataStore, Android Keystore, OkHttp y `org.json`. Backend: Python 3.11+, FastAPI, SQLite, migraciones versionadas, pytest, ruff, mypy y uv. Transporte: HTTPS con certificado confiable; nunca HTTP en builds release.
 
 ---
 
-## 1. Decisiones confirmadas con el usuario
+## 1. Decisiones confirmadas y límites reales
 
 | Decisión | Elección |
 |---|---|
-| Ubicación del código Android | **`android/` dentro de este repo** (monorepo, máxima del sandbox) |
-| Buffer local | **Room en el teléfono + reenvío** a la API (el Mac no está encendido 24/7; token HC expira a los 30 días) |
-| Alcance de datos | **Todos los tipos que Health Connect ofrezca** — catálogo canónico expansible; núcleo primero (steps, heart_rate, sleep, weight, exercise), resto por lotes en Fase 6 (misma mecánica: permiso + mapeador) |
-| Frecuencia | 1 hora + flex 15 min (ejemplo oficial de Google); ajustable tras medir consumo |
-| ExerciseSessionRecord | Se extrae como tipo de dato crudo (resumen de sesión); **sin** mapeo a `training_sets` (granularidad incompatible: series kg/reps vs. sesión) |
+| Ubicación Android | `android/` dentro de este repositorio. |
+| Alcance | Todos los `Record` soportados por la versión fijada del SDK y disponibles en el teléfono. El catálogo es explícito y versionado; no se usa reflexión ni se promete un tipo que el dispositivo/SDK no exponga. |
+| Datos sensibles | Se incluyen también los tipos con sensibilidad especial cuando el usuario los autorice en la pantalla oficial de Health Connect. La app informa qué se activó, no envía rutas/biometría/medicina sin el permiso correspondiente. |
+| Historial inicial | 30 días por defecto. El permiso de historial amplía el rango solo si el usuario lo concede. "Todos los tipos" no equivale a historial ilimitado. |
+| Modelo de datos | Registros crudos con procedencia y revisión; `ExerciseSessionRecord` no se convierte en `training_sets`. |
+| Destino inicial | FastAPI + SQLite en el Mac por HTTPS en la red privada. |
+| Destino futuro | Cualquier host HTTPS persistente. La URL no contiene ninguna suposición de Mac, IP LAN o proveedor. |
+| Frecuencia | WorkManager cada hora con flex de 15 min; ejecución eventual, no horaria exacta. Sync manual disponible. |
 
-## 2. Contexto verificado
+### Principios no negociables
 
-| Hecho | Valor |
-|---|---|
-| SDK Health Connect | `connect-client:1.1.0` estable; serie alpha 1.2.x no recomendada para producción. **Verificar patch actual al implementar** (sin acceso web en la sesión de planificación) |
-| Permiso background | `READ_HEALTH_DATA_IN_BACKGROUND` — obligatorio para WorkManager; verificar disponibilidad con `getFeatureStatus(FEATURE_READ_HEALTH_DATA_IN_BACKGROUND)` antes de programar |
-| Historial inicial | 30 días antes de otorgar permiso por defecto; permiso `PERMISSION_READ_HEALTH_DATA_HISTORY` para más (no se solicita de entrada) |
-| Token de cambios | Expira a los 30 días → el Worker debe correr con suficiente frecuencia; token **único** para el conjunto (se sincronizan juntos) |
-| Cambio del ecosistema (jun 2026) | Pasos on-device se atribuyen a un nombre de paquete sintético del dispositivo, no `"android"` — no asumir `dataOrigin.packageName` fijo |
-| Plataforma | HC integrado en Android 14+; app descargable en Android 9-13 (el Watch puede ser Android <14) |
-| Proyecto existente | Patrón de ingesta idempotente (`INSERT OR IGNORE` + `origen`), migraciones versionadas (v001-v009), CSRF en mutaciones htmx — el endpoint nuevo es API, no htmx, y debe excluirse del CSRF con su propio token |
+1. La app obtiene el estado desde Health Connect aunque el destino esté caído; la entrega nunca impide avanzar los tokens de origen una vez Room confirmó el cambio.
+2. Un registro puede insertarse, actualizarse o borrarse. Las tres operaciones se replican hasta recibir confirmación individual del servidor.
+3. `metadata.id` identifica un registro de Health Connect; además se conserva tipo, origen y `lastModifiedTime`. Un `INSERT OR IGNORE` no es suficiente para cambios posteriores.
+4. Cada tipo tiene su propio token y cursor. Revocar o no autorizar un tipo no detiene los que sí están autorizados.
+5. No se suma ni se interpreta automáticamente la información cruda. Por ejemplo, pasos de distintos orígenes pueden solaparse; cualquier métrica futura debe elegir una política de origen/agregación explícita.
+6. Toda petición release usa HTTPS. El token no se guarda en preferencias en texto plano ni se registra en logs.
 
-## 3. Scope / Non-goals / Definition of done
+## 2. Contrato de datos y migración de destino
+
+### 2.1 Catálogo completo, pero verificable
+
+`RecordTypes.kt` contendrá una entrada explícita por cada `Record` del SDK fijado. Cada entrada declara: nombre estable de tipo, clase, permiso de lectura, familia de mapeo, disponibilidad de feature y nivel de sensibilidad. Las familias son: intervalo/cantidad, instantáneo, serie de muestras, sesión, composición corporal, rutas y recursos médicos si el SDK/feature los permite.
+
+Un tipo no autorizado, no disponible o sin datos no es un error global: se refleja como estado por tipo y se omite hasta que cambie. Las rutas y recursos médicos deben tener mapeador y permiso propios, nunca caer por accidente en un JSON genérico incompleto.
+
+El lote inicial de permisos pide el **núcleo que Samsung Health realmente escribe** (pasos, frecuencia cardiaca, sueño, ejercicio, calorías, peso y composición corporal); el resto del catálogo queda como botones opcionales por familia (con explicación previa para los sensibles) que abren el diálogo oficial de Health Connect. El estado por tipo es idéntico en ambos casos; la autorización final siempre pertenece a Health Connect.
+
+### 2.2 Estado local: origen separado de entrega
+
+Room tendrá estas entidades, en una sola transacción cuando aplique:
+
+- `health_records`: `hc_id` PK, `record_type`, inicio/fin, `last_modified_epoch_ms`, `data_origin_package`, zona horaria si existe, `payload_schema_version`, `value_json`, `deleted_at`, `source_updated_at`.
+- `health_sync_state`: una fila por `record_type` con `changes_token`, estado de permiso, `last_successful_read_at` y diagnóstico seguro.
+- `sync_targets`: `target_id`, URL HTTPS normalizada, nombre, activo y `created_at`. El secreto queda fuera de Room, cifrado mediante Android Keystore.
+- `health_outbox`: `target_id`, `hc_id`, `operation` (`UPSERT`/`DELETE`), revisión, intentos y fecha. La clave única evita duplicar operaciones de la misma revisión para el mismo destino.
+
+Al cambiar a un destino nuevo se crea un `target_id` nuevo y se siembra un `UPSERT` para cada registro no borrado. Por ello un futuro servidor recibe todo lo que Room conserva sin depender del flag global `synced`. Para migrar histórico más antiguo que el buffer del móvil se exporta/importa la SQLite del Mac antes de activar el nuevo destino.
+
+### 2.3 Contrato HTTP estable
+
+`POST /sync/health-connect` acepta lotes acotados de operaciones, no una lista ilimitada de registros. Cada operación contiene `hc_id`, `record_type`, revisión, operación, metadatos de procedencia y payload versionado. La respuesta incluye los `hc_id` y revisión aceptados; Android marca como entregadas exclusivamente esas operaciones.
+
+El backend valida tamaño de cuerpo, máximo de operaciones, JSON, tipo permitido, timestamps y revisiones antes de abrir una transacción. Un lote válido se aplica atómicamente. `400`, `401` y `413` son errores permanentes visibles; errores de red y `5xx` son reintentables. Nunca se reintenta indefinidamente un payload inválido.
+
+La autenticación es un **token único** `HC_SYNC_TOKEN` en env (estilo `GYM_CSRF_WINDOW_HOURS`), enviado en `X-Sync-Token` y comparado con `secrets.compare_digest`; si el env no está definido, el endpoint responde `503`. El `device_id` que declara la app en cada operación es metadato informativo (para consultas/export), nunca material de autenticación. El contrato conserva versión (`schema_version`) para poder evolucionar sin romper instalaciones viejas.
+
+---
+
+## 3. Scope, non-goals y definición de terminado
 
 **In scope:**
-- Esqueleto Gradle en `android/` (Kotlin, una activity, sin Compose complejo).
-- Health Connect: SDK, permisos en lote (núcleo 5 tipos + background), lectura manual bajo demanda.
-- Room genérico local + deduplicación por `hc_id` + propagación de borrados.
-- Changes API incremental con token único, paginación y fallback por expiración.
-- WorkManager: periódico 1h (+ flex 15 min), constraints, `enqueueUniquePeriodicWork(UPDATE)`, botón "Sincronizar ahora".
-- Reenvío a la API con cola de pendientes (marca `synced`) y URL/token configurables en la app.
-- Backend: migración `v010`, `src/health_sync_service.py`, `POST /sync/health-connect` con `X-Sync-Token`, tests de idempotencia/seguridad.
-- Fase 6: catálogo completo de tipos con mapeadores por familia.
-- Export CSV, docs y gates.
 
-**Non-goals (v1):** mapeo de sesiones de HC a `training_sets`; análisis/gráficas de los datos HC en el dashboard; Hilt/Dagger, Clean Architecture, UseCases; worker por tipo de dato; Foreground Service; exención de batería; Firebase/Supabase; backend remoto fuera de la red local; sincronización bidireccional; tipos con requisitos especiales de privacidad (presión arterial, glucosa, ciclo menstrual) hasta Fase 6 y con confirmación explícita.
+- Esqueleto Android y catálogo completo de tipos del SDK fijado.
+- Permisos, disponibilidad y estados por tipo.
+- Backfill seguro, Changes API incremental por tipo, altas, actualizaciones y borrados.
+- Room como fuente local y outbox por destino, con entrega por lotes acotados.
+- HTTPS, secreto protegido por Keystore, configuración de destinos y resincronización a un destino nuevo.
+- Migración `v010`, servicio de ingesta, endpoint versionado, CSV y pruebas de contrato, seguridad y resiliencia.
+- WorkManager, medición local de registros/bytes/duración y documentación operativa para Mac y host futuro.
+
+**Non-goals v1:** análisis o gráficas de salud dentro del dashboard; transformar sesiones HC en series de gimnasio; sincronización bidireccional; notificaciones en tiempo real; Hilt/Dagger; Firebase/Supabase; servicio foreground; exención de batería; una migración inmediata de todo el dashboard desde SQLite a PostgreSQL.
 
 **Definition of done:**
-- `android/` compila e instala; HC detectado (`SDK_AVAILABLE`).
-- Lectura manual de steps → "steps: N" en pantalla (watch → Samsung Health → HC → Kotlin verificado en dispositivo físico).
-- 2 sincronizaciones consecutivas → 0 duplicados; borrado en HC se propaga a Room.
-- App cerrada → WorkManager ejecuta → datos nuevos aparecen en Room.
-- `POST /sync/health-connect` idempotente (reenvío → `ignored`, no duplica); token inválido → 401; payload inválido → 400.
-- Mac apagado varios días → datos acumulados en el teléfono → al volver, todo llega a SQLite.
-- Todos los tipos del catálogo elegido: permiso + mapeador + verificación.
-- Gates backend en verde (`uv run pytest -q`, `ruff format --check .`, `ruff check .`, `mypy app.py src tests`) y `./gradlew assembleDebug test` sin errores.
+
+- La app instala en Android 9+; Android 8 muestra estado no compatible sin fallar.
+- Todos los tipos expuestos por el catálogo fijado se pueden verificar como autorizado, denegado, no disponible o sincronizado; cada tipo autorizado tiene mapeo y fixture de contrato.
+- Dos syncs consecutivas no duplican; una actualización con igual `hc_id` y revisión mayor actualiza; un borrado llega al backend y desaparece de las consultas activas.
+- Una interrupción después de persistir Room, durante paginación, después de recibir el servidor o antes de marcar la operación como entregada no pierde ni duplica el estado final.
+- Mac apagado varios días: Room acumula; al volver el destino, se entrega por lotes y se vacía el outbox.
+- Al configurar un destino HTTPS nuevo, el buffer local se reenvía al nuevo `target_id` sin cambio de código Android.
+- HTTP, certificado no confiable, token ausente o token incorrecto no transmiten datos ni marcan operaciones como entregadas.
+- Backend: `uv run pytest -q`, `uv run ruff format --check .`, `uv run ruff check .`, `uv run mypy app.py src tests`. Android: `GRADLE_USER_HOME=$PWD/.gradle ./gradlew assembleDebug test` desde `android/`.
+
+---
 
 ## 4. Guardrails
 
-1. TDD: test estrecho rojo → implementación mínima → verde → commit por tarea (backend; en Android, test unitario del repository/worker con fake del cliente).
-2. Rama `feature/health-sync`; verificar `git branch --show-current` antes de cada commit. Sin commits de `data/*.db`, `backups/`, `.tmp/` ni `android/.gradle/` (`.gitignore` desde Fase 0).
-3. Máxima del sandbox: todo dentro del proyecto; `./gradlew` escribe caches en `android/.gradle` (local del repo) y `~/.gradle` solo si el wrapper lo requiere (documentado en Fase 0; sin artefactos fuera del repo).
-4. Backend: SQL parametrizado (`?`); migraciones versionadas sin editar las aplicadas; `v010` se registra tras `v009`; `origen='health_connect'` como marcador (no tocar `'google'|'manual'`).
-5. El endpoint nuevo **no** usa el CSRF de formularios htmx: se valida con `X-Sync-Token` (env `HC_SYNC_TOKEN`; si no está definido, 503). Revisar `src/security.py` para excluirlo sin debilitar las rutas htmx.
-6. La app Android funciona parcialmente sin permisos completos: sincroniza solo lo autorizado; nunca falla por un permiso faltante de un tipo no esencial (el Worker devuelve `Result.success()` con los tipos concedidos o `failure()` limpio si faltan todos + background).
-7. Verificar `git branch --show-current` y los gates de cada fase antes de avanzar.
+1. TDD: prueba roja, implementación mínima, prueba verde y commit por unidad coherente. Tests Android usan una interfaz pequeña `HealthConnectGateway` falsa; el dispositivo físico prueba la integración real.
+2. Mantener la rama actual `feature/health-sync`; no incluir `data/*.db`, `backups/`, `.tmp/`, `android/.gradle/`, `android/app/build/` ni secretos en commits.
+3. La máxima del sandbox es estricta: todos los comandos Gradle se ejecutan desde `android/` con `GRADLE_USER_HOME=$PWD/.gradle`. Nunca se permite escribir en `~/.gradle`.
+4. La migración `v010` se agrega tras `v009`; no se edita una migración aplicada. Todos los SQL usan parámetros.
+5. El middleware CSRF actual protege todos los métodos mutantes. Su bypass debe ser exclusivamente la igualdad exacta de ruta `/sync/health-connect`; el endpoint resultante exige token propio y produce JSON, no HTML. Un prefijo o bypass genérico está prohibido.
+6. Release rechaza URL no HTTPS y usa el trust store normal de Android. No se añaden clientes "trust all", desactivación de hostname verification ni permisos cleartext. La configuración de LAN debe resolver TLS mediante un certificado confiable/CA privada instalada en el teléfono o un proxy TLS local.
+7. Requests y respuestas no registran `X-Sync-Token`, `value_json` ni datos médicos. La UI solo muestra contadores, estado y errores seguros.
+8. WorkManager es oportunista: red no medida y batería no baja por defecto; el usuario puede habilitar red medida de forma explícita. No se interpreta la hora programada como garantía.
 
 ---
 
-## Phase 0 — Esqueleto del proyecto Android
+## Phase 0 — Baseline, seguridad y esqueleto Android
 
-### Task 0.1: Materializar el plan y baseline
-Guardar este documento en `docs/plans/2026-08-09-health-connect-sync.md`. Baseline backend: `uv run pytest -q` (verde, ~345), ruff, mypy. Commit `docs: add health connect sync plan`.
+### Task 0.1: Baseline y entorno reproducible
 
-### Task 0.2: Esqueleto Gradle en `android/`
-**Files:** Create `android/` (settings.gradle.kts, build.gradle.kts raíz y app, gradle wrapper, `app/src/main/AndroidManifest.xml`, `MainActivity.kt` con TextView mínimo, `.gitignore` con `.gradle/`, `build/`, `local.properties`).
-- Kotlin 2.x, `minSdk 26`, `targetSdk` = API instalada (35+), `applicationId com.jhomc.healthsync` (ajustable).
-- Dependencias declaradas (versiones a verificar al implementar): `connect-client:1.1.0`, `work-runtime-ktx:2.10.x`, `room:2.6.1` + KSP, `datastore-preferences:1.1.x`, OkHttp.
-- Manifest: permisos `READ_STEPS`, `READ_HEART_RATE`, `READ_SLEEP`, `READ_WEIGHT`, `READ_EXERCISE`, `READ_HEALTH_DATA_IN_BACKGROUND`, `INTERNET`; `<queries><package android:name="com.google.android.apps.healthdata"/></queries>`.
-- Criterio: `./gradlew assembleDebug` compila; la app abre sin crash. Commit `feat: android project skeleton`.
+**Files:** Modify `.gitignore`; create `android/` con Gradle wrapper, `settings.gradle.kts`, `build.gradle.kts`, `app/build.gradle.kts`, manifest, `MainActivity.kt` y test mínimo.
 
-## Phase 1 — Health Connect + permisos + lectura manual (prueba de humo)
+1. Ejecutar baseline backend con uv y registrar resultado sin modificar DB.
+2. Crear proyecto Kotlin con `minSdk 26`, dejando claro en UI que Health Connect requiere Android 9+; fijar `compileSdk`/`targetSdk`, Java toolchain, AGP y versiones exactas, nunca "API instalada".
+3. Añadir `android/.gradle/`, builds y `local.properties` a `.gitignore`.
+4. Compilar desde `android/` con `GRADLE_USER_HOME=$PWD/.gradle ./gradlew assembleDebug`.
+5. Commit: `feat: add reproducible android health sync skeleton`.
 
-### Task 1.1: `HealthConnectManager` — cliente, disponibilidad, feature background
-**Files:** Create `android/app/src/main/java/com/jhomc/healthsync/HealthConnectManager.kt`; Modify `MainActivity.kt`.
-- `HealthConnectClient.getOrCreate(context)`; `getSdkStatus` → estado en pantalla (`SDK_AVAILABLE` / `SDK_UNAVAILABLE_*`); `getFeatureStatus(FEATURE_READ_HEALTH_DATA_IN_BACKGROUND)`.
-- Criterio: la app muestra "Health Connect: disponible" (o guía de instalación). Commit `feat: health connect client and availability`.
+### Task 0.2: Contrato versionado y seguridad de red
 
-### Task 1.2: Permisos en lote (núcleo) + estado por tipo
-**Files:** Modify `MainActivity.kt`; Create `android/.../RecordTypes.kt`.
-- `RecordTypes.kt`: catálogo canónico núcleo `(class, HealthPermission.getReadPermission, mapeador)`: `StepsRecord`, `HeartRateRecord`, `SleepSessionRecord`, `WeightRecord`, `ExerciseSessionRecord` + background.
-- `registerForActivityResult(PermissionController.createRequestPermissionResultContract())` → solicita el lote; la UI muestra ✓ por tipo y "Permisos: N/5 + background".
-- Criterio: concesión en pantalla; permiso revocado se refleja al reabrir. Commit `feat: batch permission request with per-type state`.
+**Files:** Create `docs/architecture/health-sync-contract.md`, `android/app/src/main/res/xml/network_security_config.xml`; modify `AndroidManifest.xml`, `config.py`, `tests/test_security.py`.
 
-### Task 1.3: Lectura manual de `StepsRecord` (sin automatizar nada)
-**Files:** Modify `HealthConnectManager.kt` (read manual), `MainActivity.kt` (botón).
-- Botón "Leer pasos (24h)": `ReadRecordsRequest(StepsRecord::class, timeRangeFilter = between(now−24h, now))` → muestra "Steps: N".
-- Criterio: **dispositivo físico** (watch+teléfono): el contador coincide con Samsung Health. Sin Room, sin WorkManager todavía. Commit `feat: manual steps read`.
+1. Escribir fixtures JSON de `UPSERT`, `DELETE`, actualización y respuesta con acuses por operación.
+2. Definir `schema_version`, tamaño/límite inicial de lote y campos obligatorios; no codificar IP de Mac.
+3. Configurar release para HTTPS únicamente y debug para un host de desarrollo explícito si es imprescindible, nunca con permisos cleartext globales.
+4. Añadir prueba que demuestre que el bypass CSRF no aplica a otras rutas y que `/sync/health-connect` exige su propia credencial.
+5. Commit: `docs: define secure health sync contract`.
 
-## Phase 2 — Persistencia, deduplicación y sincronización diferencial
+## Phase 1 — Catálogo completo, permisos y lectura de humo
 
-### Task 2.1: Room genérico local
-**Files:** Create `android/.../data/HealthDatabase.kt` (`health_records`: `hc_id` TEXT PK, `tipo`, `start_epoch_ms`, `end_epoch_ms`, `value_json`, `synced` INT, `created_at`); DAO con `upsertAll` (`INSERT OR REPLACE`), `deleteByHcIds`, `getPending` (`synced=0`), `markSynced`.
-- Criterio: test unitario del DAO: insertar 2 veces el mismo `hc_id` → 1 fila. Commit `feat: room local buffer with dedup`.
+### Task 1.1: Cliente y catálogo completo
 
-### Task 2.2: Mapeadores de los 5 tipos núcleo
-**Files:** Create `android/.../data/RecordMappers.kt`.
-- `Record → Map<String, Any?>` por familia: base (start/end, `dataOrigin`, `metadata.id`), series (pasos count), muestras (HR `samples` → array {bpm, time}), sesiones (exercise/sleep: title, duración, tipos de ejercicio).
-- Criterio: mapeo determinista y serializable con org.json. Commit `feat: mappers for core record types`.
+**Files:** Create `android/app/src/main/java/com/jhomc/healthsync/HealthConnectManager.kt`, `RecordTypes.kt`, `HealthConnectGateway.kt`; modify `MainActivity.kt`.
 
-### Task 2.3: `HealthRepository` — Changes API incremental
-**Files:** Create `android/.../HealthRepository.kt`, `ChangesTokenStore.kt` (DataStore).
-- Flujo: token nulo → lectura histórica 30 días por rango (paginación `pageToken`) → persistir → `getChangesToken(ChangesTokenRequest(recordTypes))` guardado **solo tras persistir**; token existente → loop `getChanges(token)` paginando `hasMore`: `UpsertionChange` → upsert, `DeletionChange` → delete, filtrar `dataOrigin` propio; `ChangesTokenExpiredException` → fallback rango 30 días + token nuevo; `SecurityException` → propagar como fallo permanente.
-- Criterio: test con cliente fake: upserts/borrados aplicados, token avanzado solo en éxito, 2 syncs → 0 duplicados. Commit `feat: incremental changes sync with token`.
+1. Escribir test de catálogo: no permite tipo duplicado, todo tipo tiene permiso/familia y los tipos especiales están etiquetados.
+2. Implementar cliente, `getSdkStatus`, feature status y catálogo explícito de cada `Record` soportado por la dependencia fijada.
+3. Añadir estado por tipo: no disponible, no autorizado, listo, sincronizado o error seguro.
+4. En dispositivo real, comprobar disponibilidad y que la pantalla muestra el catálogo, no solo cinco tipos.
+5. Commit: `feat: add complete health connect record catalog`.
 
-### Task 2.4: Botón "Sincronizar ahora" (one-time)
-**Files:** Modify `MainActivity.kt`, `SyncScheduler.kt` (nuevo).
-- `OneTimeWorkRequestBuilder<SyncWorker>` con constraints de red + `setExpedited`; resultado visible en pantalla (contadores por tipo).
-- Criterio: ejecutar sync manual dos veces seguidas → "nuevos: 0" la segunda; borrar un registro en Samsung Health → aparece en la segunda sync como borrado. Commit `feat: manual one-time sync`.
+### Task 1.2: Permisos completos y humo de pasos
 
-## Phase 3 — WorkManager periódico en segundo plano
+**Files:** Modify `MainActivity.kt`, `HealthConnectManager.kt`; test `RecordTypesTest.kt`.
 
-### Task 3.1: `SyncWorker` + scheduler periódico
-**Files:** Create `android/.../SyncWorker.kt`; Modify `SyncScheduler.kt`.
-- `doWork()`: `getSdkStatus` ≠ SDK_AVAILABLE → `failure()`; permisos+background (feature status) → si faltan todos, `failure()` limpio; si faltan tipos no esenciales, sincroniza los concedidos; `repository.sync()` → `Result.success()`; excepción de red/temporal → `Result.retry()` (backoff exponencial 30 min); `SecurityException` → `failure()`.
-- `PeriodicWorkRequestBuilder(1h, flex 15 min)` + `Constraints(red conectada, batería no baja)` + `enqueueUniquePeriodicWork("health_connect_sync", UPDATE)`.
-- **Files:** Modify `MainActivity.kt` — tras concesión de permisos → `scheduleHealthSync()`. Sin receiver BOOT (WorkManager lo cubre) ni Foreground Service.
-- Criterio: **MVP-8**: cerrar la app → esperar → datos nuevos de Samsung Health aparecen en Room. Commit `feat: periodic background sync worker`.
+1. Solicitar en lote el **núcleo** (tipos que Samsung Health escribe: pasos, FC, sueño, ejercicio, calorías, peso, composición); el resto del catálogo aparece como botones opcionales por familia que piden permisos por separado (con explicación previa para los sensibles); refrescar el estado al volver a foreground.
+2. Implementar el botón de pasos de 24 h mediante `aggregate(StepsRecord.COUNT_TOTAL)`, no sumando `readRecords`, para evitar doble conteo de orígenes solapados.
+3. Comprobar en teléfono real el resultado agregado y registrar los tipos que Samsung Health realmente llena.
+4. Commit: `feat: request core health permissions with optional catalog`.
 
-## Phase 4 — Backend: ingesta idempotente
+## Phase 2 — Room: fuente de origen, cambios y outbox
 
-### Task 4.1: Migración `v010_health_connect`
-**Files:** Create `src/migrations/v010_health_connect.py`; Modify `src/migrations/runner.py`, `tests/test_database.py`.
-- Tabla genérica (patrón snapshot de `v007`):
-  ```sql
-  CREATE TABLE IF NOT EXISTS health_records (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      hc_id TEXT NOT NULL UNIQUE,
-      tipo TEXT NOT NULL,
-      start_epoch_ms INTEGER NOT NULL,
-      end_epoch_ms INTEGER,
-      value_json TEXT NOT NULL,
-      dispositivo TEXT NOT NULL DEFAULT 'android',
-      origen TEXT NOT NULL DEFAULT 'health_connect',
-      recibido_at TEXT NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_health_records_tipo_start ON health_records(tipo, start_epoch_ms);
-  ```
-- Registrar tras v009; añadir a `_DOMAIN_TABLES`. Tests: `MAX(version)==10`, UNIQUE(hc_id) duplicado → rechazo. Commit `feat: v010 health records table`.
+### Task 2.1: Esquema local y operaciones de entrega
 
-### Task 4.2: Modelo y servicio de ingesta
-**Files:** Modify `src/models.py`; Create `src/health_sync_service.py`; Modify `src/database.py`; `tests/test_health_sync_service.py`.
-- `HealthRecordInput(hc_id, tipo, start_epoch_ms, end_epoch_ms|None, value: dict)` + `HealthSyncPayload(device, records)` tipados; `ValidationError` para hc_id vacío, timestamp no int, `value` no dict, tipo fuera del catálogo.
-- `ingest_health_records(db, payload) -> IngestResult(inserted, ignored)` con `INSERT OR IGNORE` (patrón `import_nutrition.py`); `recibido_at` ISO server-side.
-- Tests: payload válido → inserted; reenvío idéntico → ignored (0 duplicados); tipo desconocido → `ValidationError`. Commit `feat: health ingest service with idempotent insert`.
+**Files:** Create `android/.../data/HealthDatabase.kt`, DAOs y entidades; tests Room instrumentados.
 
-### Task 4.3: Ruta API con token secreto
-**Files:** Modify `app.py`, `config.py`, `src/security.py` (excluir endpoint del CSRF htmx sin debilitar el resto), `tests/test_app.py`.
-- `config.py`: `HC_SYNC_TOKEN = os.environ.get("HC_SYNC_TOKEN", "")`; si vacío → la ruta devuelve 503 "no configurado".
-- `POST /sync/health-connect`: header `X-Sync-Token` requerido (comparación de strings segura) → 401 si no coincide; body validado por servicio → 400 con aviso seguro en caso de `ValidationError`; 200 `{inserted, ignored, received}`.
-- Tests: sin env → 503; token incorrecto → 401; correcto + payload → 200 e inserts; doble POST → `ignored>0`. Commit `feat: sync endpoint with token auth`.
+1. Escribir pruebas de upsert por `hc_id` + revisión, borrado lógico, deduplicación de outbox y semilla para un `target_id` nuevo.
+2. Implementar las cuatro tablas locales descritas en §2.2; `INSERT OR REPLACE` no se usa si puede borrar relaciones o perder revisiones.
+3. En una transacción, actualizar registro y crear/reemplazar la operación de outbox de igual revisión para cada destino activo.
+4. Probar que cambiar de destino genera replay de registros activos sin afectar el destino anterior.
+5. Commit: `feat: add health source store and target-aware outbox`.
 
-### Task 4.4: Verificación end-to-end del pipeline
-Criterio: con la app en Fase 3 lista, URL del Mac (LAN) configurada → los datos del teléfono llegan a SQLite; export temporal por SQL (`SELECT tipo, COUNT(*)`) coincide con la pantalla de la app. Sin commit de BD. Commit `test: e2e sync from device to sqlite`.
+### Task 2.2: Mapeadores de todas las familias
 
-## Phase 5 — Reenvío de pendientes y configuración en la app
+**Files:** Create `RecordMappers.kt`, fixtures por familia y tests unitarios.
 
-### Task 5.1: Cola de reenvío en `HealthRepository`
-- Tras `sync()` exitoso: subir `getPending()` a la API (`POST /sync/health-connect` con URL+token de config); `markSynced` solo con 2xx; fallo de red → queda pendiente y el Worker reintenta en la siguiente corrida (backoff ya cubierto).
-- Criterio: **MVP-9**: Mac apagado 2 días → el teléfono acumula; al encender el Mac, la siguiente corrida sube todo (0 pérdidas). Commit `feat: pending upload queue`.
+1. Escribir fixtures deterministas para intervalo, instantáneo, serie, sesión, composición, ruta y recurso médico disponible.
+2. Implementar JSON determinista con `hc_id`, revisión, origen, tiempo y payload versionado. Nunca serializar una clase HC por reflexión ni descartar un campo complejo silenciosamente.
+3. Rechazar localmente un tipo del catálogo sin mapeador y mostrar diagnóstico, sin bloquear los demás tipos.
+4. Commit: `feat: map complete health record catalog`.
 
-### Task 5.2: URL y token configurables en pantalla
-**Files:** Modify `MainActivity.kt` (dos campos + persistencia en DataStore).
-- Campos: `http://192.168.x.x:8000` y token; la sync manual usa la config guardada.
-- Criterio: cambiar la URL y sincronizar sin rebuild. Commit `feat: configurable api url and token`.
+### Task 2.3: Changes API por tipo y recuperación segura
 
-## Phase 6 — Catálogo completo de tipos
+**Files:** Create `HealthRepository.kt`, `ChangesTokenStore.kt`; tests con `HealthConnectGateway` falso.
 
-### Task 6.1: Ampliar `RecordTypes.kt` y permisos
-- Incorporar por lotes los tipos restantes que Samsung Health escribe: calorías (activas/totales), distancia, velocidad, cadencia, potencia, FC reposo, HRV (RMSSD), SpO₂, temperatura, frecuencia respiratoria, pisos, composición corporal (masa grasa/magra/IMC/agua/hueso), altura.
-- Cada entrada: `(class, permiso, mapeador)`; mapeadores por familia (muestras, series, sesiones, métricas instantáneas).
-- Los tipos con requisitos especiales (presión arterial, glucosa, ciclo) quedan marcados como `REVIEW` y se piden con confirmación explícita del usuario antes de activarlos (no se incluyen en el lote por defecto).
-- Criterio: por cada lote: permiso concedido, mapeo verificado en BD real, `value_json` coherente. Commits por lote (`feat: extended record catalog batch N`).
+1. Escribir pruebas para token nulo, paginación, update, delete, permiso revocado, expiración y crash entre página/token.
+2. Para un tipo sin token: crear token de cambios, hacer backfill de 30 días por páginas, persistir y drenar cambios desde aquel token; esto elimina la ventana entre backfill y token.
+3. Para un token existente: procesar `UpsertionChange`/`DeletionChange`, persistir la página y su siguiente token de manera transaccional. Tratar la expiración por **ambas vías** del SDK fijado — la señal `changesTokenExpired` de la respuesta y la excepción `ChangesTokenExpiredException` — verificando cuáles expone la versión concreta de `connect-client`; no descartar ninguna por anticipado.
+4. En expiración, releer desde la última lectura segura o los últimos 30 días, deduplicar por id/revisión y reservar token nuevo.
+5. Commit: `feat: sync all health types incrementally`.
 
-## Phase 7 — Export, documentación y cierre
+## Phase 3 — Backend idempotente, actualizado y con bajas
 
-### Task 7.1: Export CSV de `health_records`
-- `GET /exportar/health-connect.csv` (patrón del export existente) con columnas `tipo, hc_id, start_epoch_ms, end_epoch_ms, value_json, dispositivo, recibido_at`.
-- Test: CSV generado con filas ordenadas por `(tipo, start_epoch_ms)`. Commit `feat: health records csv export`.
+### Task 3.1: Migración `v010_health_connect`
 
-### Task 7.2: Docs
-- `AGENTS.md`: sección HealthSync (estructura `android/`, catálogo de tipos, ruta `/sync/health-connect`, `HC_SYNC_TOKEN`, tabla `health_records`).
-- `docs/architecture/security-model.md`: endpoint de API con token propio fuera del CSRF htmx.
-- `docs/operations/local-development.md`: cómo correr la app, URL/token, ADB para forzar el worker (`adb shell cmd jobscheduler run`).
-- Commit `docs: health sync contract and operations`.
+**Files:** Create `src/migrations/v010_health_connect.py`; modify `src/migrations/runner.py`, `tests/test_database.py`.
 
-### Task 7.3: Gates finales y smoke
-- Backend: `uv run pytest -q`, ruff, mypy. Android: `./gradlew assembleDebug test`.
-- Smoke real: watch → Samsung Health → HC → Room → API → SQLite; export CSV; análisis pandas básico sobre `health_records` (una consulta de ejemplo).
-- Commit `chore: final gates`.
+1. Escribir pruebas que esperan versión 10, PK `hc_id`, índice `(record_type, start_epoch_ms)`, actualización y baja lógica.
+2. Crear `health_records` con `hc_id TEXT PRIMARY KEY`, `record_type`, tiempos, `last_modified_epoch_ms`, `data_origin_package`, `payload_schema_version`, `value_json`, `device_id`, `received_at`, `updated_at` y `deleted_at` nullable.
+3. Añadir la tabla a `_DOMAIN_TABLES` para backup antes de migrar.
+4. Commit: `feat: add versioned health record mirror schema`.
 
-### Task 7.4: Integración (solo con aprobación explícita del usuario)
-`git merge main` si pasó tiempo → gates → merge a `main` → `git branch -d feature/health-sync`. Commit final + reporte.
+### Task 3.2: Servicio de ingesta y contrato de acuse
+
+**Files:** Modify `src/models.py`, `src/database.py`; create `src/health_sync_service.py`, `tests/test_health_sync_service.py`.
+
+1. Escribir pruebas de batch válido, replay idéntico, revisión mayor, revisión vieja, delete, body excesivo, tipo inválido y rollback total ante fila inválida.
+2. Implementar validación estricta y `INSERT ... ON CONFLICT(hc_id) DO UPDATE` condicionado por revisión. La baja actualiza `deleted_at`; consultas y export por defecto excluyen filas borradas.
+3. Devolver el acuse exacto por `hc_id` y revisión, no solo contadores globales.
+4. Commit: `feat: mirror health changes with upserts and deletes`.
+
+### Task 3.3: Endpoint autenticado y aislado del CSRF HTML
+
+**Files:** Modify `app.py`, `config.py`, `src/security.py`, `tests/test_app.py`, `tests/test_security.py`.
+
+1. Escribir pruebas de 503 sin credencial configurada, 401 ante token inválido, 400/413 ante payload inválido, JSON correcto y bypass exacto de CSRF.
+2. Implementar `POST /sync/health-connect` con límite de request, autenticación constante y transacción del servicio.
+3. Verificar que rutas htmx siguen necesitando CSRF y que ningún token ni payload aparece en logs/respuestas de error.
+4. Commit: `feat: add secure health sync endpoint`.
+
+## Phase 4 — Entrega HTTP, destinos y scheduling
+
+### Task 4.1: Cliente HTTPS y configuración protegida
+
+**Files:** Create `HealthSyncClient.kt`, `SecureTargetStore.kt`; modify `MainActivity.kt`; tests unitarios.
+
+1. Escribir pruebas para URL HTTP rechazada, URL HTTPS aceptada, certificado fallido, token ausente y rotación de destino.
+2. Guardar URL, `target_id` y preferencias no secretas en DataStore; cifrar el token mediante clave Android Keystore. El campo UI de token se enmascara.
+3. Usar OkHttp con validación TLS normal, timeout acotado, lotes por registros y bytes y respuesta de acuse individual.
+4. Marcar entregado exclusivamente lo confirmado por el servidor; errores permanentes se muestran y no se reintentan en bucle.
+5. Commit: `feat: upload health outbox to secure configurable target`.
+
+### Task 4.2: Cambio de destino y plan de salida del Mac
+
+**Files:** Modify `HealthRepository.kt`, `MainActivity.kt`; create `docs/operations/health-sync-migration.md`; tests unitarios.
+
+1. Escribir prueba: cambiar destino genera el seed del buffer actual para el nuevo `target_id` y no reescribe la fuente Health Connect.
+2. Implementar confirmación visible con número de registros que se reenviarán, estado de progreso y opción de cancelar antes de comenzar.
+3. Documentar migración Mac → host persistente: backup consistente de SQLite, restauración en volumen persistente, configuración TLS/credencial nueva, cambio de destino, validación de conteos e histórico de rollback.
+4. Aclarar que mantener FastAPI + SQLite en un único host persistente no requiere cambio Android; migrar el dashboard entero a PostgreSQL es un proyecto separado.
+5. Commit: `feat: support health sync target migration`.
+
+### Task 4.3: Worker manual y periódico eficiente
+
+**Files:** Create `SyncWorker.kt`, `SyncScheduler.kt`; modify `MainActivity.kt`; tests con WorkManager.
+
+1. Escribir pruebas para tipos parciales, sin permisos, red caída, 5xx, 401, outbox grande y progreso manual.
+2. Orquestar: sincronizar fuente autorizada, entregar outbox por lotes y reportar contadores por tipo/bytes/duración sin datos sensibles.
+3. Programar trabajo único periódico 1 h/flex 15 min con red no medida y batería no baja; manual one-time puede ser expedited con `OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST`.
+4. Reintentar únicamente fallos temporales. Permiso faltante o URL/token inválidos quedan en estado accionable; no producen tráfico ni backoff infinito.
+5. Validar en dispositivo real ejecución eventual con app cerrada; no usar la hora exacta como criterio.
+6. Commit: `feat: schedule efficient resilient health sync`.
+
+## Phase 5 — Verificación completa, export y operación
+
+### Task 5.1: Pruebas de resiliencia y contrato cruzado
+
+**Files:** Create fixtures compartidos Android/Python; modify tests Android y `tests/test_health_sync_service.py`.
+
+1. Ejecutar las mismas fixtures serializadas por Android contra el servicio Python.
+2. Probar cortes: crash después de Room, timeout después de commit remoto, expiración de token, actualización y borrado antes/después de upload, Mac apagado y cambio de destino.
+3. Medir registros, bytes, duración y tamaño de Room con FC y sesiones reales; ajustar únicamente límite de lote/frecuencia si hay evidencia de consumo relevante.
+4. Commit: `test: verify end to end health sync recovery`.
+
+### Task 5.2: Export y documentación
+
+**Files:** Modify `app.py`, `tests/test_app.py`, `AGENTS.md`, `docs/architecture/security-model.md`, `docs/operations/local-development.md`.
+
+1. Implementar `GET /exportar/health-connect.csv` para registros activos, ordenado por tipo/tiempo, con opción explícita documentada para auditoría de bajas.
+2. Documentar catálogo, contrato, modelo de seguridad, HTTPS LAN, operación Gradle dentro del sandbox, respaldo y migración a host permanente.
+3. Ejecutar gates backend y Android, smoke real watch → Samsung Health → Health Connect → Room → HTTPS → SQLite y cambio a segundo destino de prueba.
+4. Commit: `docs: complete health sync operations and migration guide`.
+
+### Task 5.3: Integración
+
+Solo con aprobación explícita del usuario: actualizar desde `main` si es necesario, ejecutar gates, integrar y reportar los resultados. No eliminar ramas, backups ni datos sin autorización específica.
 
 ---
 
-**Riesgos:** Health Connect no es testeable en emulador estándar (dispositivo físico obligatorio para validar fases 1-3); Samsung Health puede retrasar la aparición de datos (la ventana de solapamiento y la idempotencia lo absorben); versiones de dependencias a confirmar al implementar (sin acceso web en planificación); el Watch puede correr Android <14 (requiere la app Health Connect descargada); el cambio de `dataOrigin` sintético (jun 2026) invalida cualquier filtro por paquete; `HC_SYNC_TOKEN` sin configurar degrada la ruta a 503 (documentado, no silencioso).
+**Riesgos y mitigaciones:** Health Connect requiere dispositivo físico para validar integración real; Samsung Health puede retrasar la publicación de registros, absorbida por tokens, revisiones y replay. Los tokens expiran a los 30 días: el backfill deduplicado recupera el estado legible, pero el historial anterior al permiso requiere autorización de historial. Desde la actualización de Health Connect de junio de 2026, los pasos capturados en el propio dispositivo se atribuyen a un nombre de paquete sintético específico del dispositivo en lugar de `"android"`: `data_origin_package` se conserva como metadato, pero **no se asume ningún valor fijo** para filtrar ni deduplicar. Un host LAN HTTPS necesita un certificado confiable y el dashboard no debe exponerse públicamente sin una capa de autenticación adicional. Datos de series o rutas pueden aumentar tamaño de Room: los lotes, la red no medida, los límites y las métricas locales controlan el coste sin eliminar datos no entregados.
