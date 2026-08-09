@@ -1027,9 +1027,10 @@ def test_panel_titles_are_static(tmp_path, monkeypatch):
     r = _client().get("/")
     assert r.status_code == 200
     # El editor de sesión tiene título estático "Entrenamiento" sin fecha
-    session_title = r.text[r.text.index('<h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title truncate">') :]
-    assert ">Entrenamiento</h3>" in session_title
-    assert "SABADO" not in session_title.split("</h3>")[0]
+    editor_html = r.text[r.text.index('id="session-editor"') :]
+    session_h3 = editor_html[editor_html.index("<h3") : editor_html.index("</h3>")]
+    assert "Entrenamiento" in session_h3
+    assert "SABADO" not in session_h3
     # La fecha vive en el título global, no en los paneles
     assert 'id="session-date-title"' in r.text
 
