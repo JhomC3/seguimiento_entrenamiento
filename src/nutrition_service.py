@@ -13,8 +13,11 @@ from decimal import ROUND_HALF_UP, Decimal
 from src.database import (
     delete_diario_by_fecha,
     find_alimento,
+    find_plantilla_alimentacion_by_nombre,
     insert_alimento,
+    insert_plantilla_alimentacion,
     replace_diario_by_fecha,
+    update_plantilla_alimentacion_rows,
 )
 from src.models import (
     AlimentoInput,
@@ -174,3 +177,46 @@ def diary_totals(rows: list[dict]) -> dict[str, float]:
     return {
         field: round(sum(float(r.get(field) or 0.0) for r in rows), 2) for field in NUTRIENT_FIELDS
     }
+
+
+def save_meal_template(db_path: str, nombre: str, rows: list[dict]) -> None:
+    """Guarda (o reemplaza por nombre) una plantilla de alimentación."""
+    nombre = nombre.strip()
+    if not nombre:
+        raise ValidationError("El nombre de la plantilla no puede estar vacío")
+    clean: list[dict] = []
+    for r in rows:
+        alimento = str(r.get("alimento") or "").strip()
+        if not alimento:
+            raise ValidationError("Plantilla con alimento vacío")
+        cantidad = _positive_float(str(r.get("cantidad_g") or 0), "Cantidad")
+        clean.append({"alimento": alimento, "cantidad_g": cantidad})
+    if not clean:
+        raise ValidationError("La plantilla debe tener al menos un alimento")
+    existing = find_plantilla_alimentacion_by_nombre(db_path, nombre)
+    if existing is not None:
+        update_plantilla_alimentacion_rows(db_path, existing, clean)
+    else:
+        insert_plantilla_alimentacion(db_path, nombre, clean)
+
+
+def apply_meal_template(db_path: str, plantilla_id: int) -> list[dict]:
+    """Filas de la plantilla con los nutrientes recalculados del catálogo."""
+    from src.database import get_plantillas_alimentacion
+
+    template = next(
+        (p for p in get_plantillas_alimentacion(db_path) if p["id"] == plantilla_id),
+        None,
+    )
+    if template is None:
+        raise NotFoundError(f"Plantilla de alimentación no encontrada: {plantilla_id}")
+    rows: list[dict] = []
+    for r in template["alimentos"]:
+        food = find_alimento(db_path, r["alimento"])
+        row: dict = {"alimento": r["alimento"], "cantidad_g": r["cantidad_g"]}
+        if food is not None:
+            row.update(calculate_nutrients(food, r["cantidad_g"]))
+        else:
+            row.update({field: 0.0 for field in NUTRIENT_FIELDS})
+        rows.append(row)
+    return rows

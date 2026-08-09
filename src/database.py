@@ -504,3 +504,90 @@ def save_parametros_diarios(db_path: str, fecha: str, params: dict) -> None:
 def delete_parametros_diarios(db_path: str, fecha: str) -> None:
     with transaction(db_path) as conn:
         conn.execute("DELETE FROM parametros_diarios WHERE fecha = ?", (fecha,))
+
+
+# ---------------------------------------------------------------------------
+# Plantillas de alimentación
+# ---------------------------------------------------------------------------
+
+
+def get_plantillas_alimentacion(db_path: str) -> list[dict]:
+    if not os.path.exists(db_path):
+        return []
+    with read_connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT id, nombre FROM plantillas_alimentacion ORDER BY orden, nombre"
+        ).fetchall()
+        result = []
+        for pid, nombre in rows:
+            alimentos = [
+                {"alimento": a, "cantidad_g": c}
+                for a, c in conn.execute(
+                    "SELECT alimento, cantidad_g FROM plantilla_alimentos "
+                    "WHERE plantilla_id = ? ORDER BY orden",
+                    (pid,),
+                )
+            ]
+            result.append({"id": pid, "nombre": nombre, "alimentos": alimentos})
+        return result
+
+
+def find_plantilla_alimentacion_by_nombre(db_path: str, nombre: str) -> int | None:
+    with read_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT id FROM plantillas_alimentacion WHERE LOWER(nombre) = LOWER(?)",
+            (nombre.strip(),),
+        ).fetchone()
+        return row[0] if row else None
+
+
+def insert_plantilla_alimentacion(db_path: str, nombre: str, rows: list[dict]) -> int:
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with transaction(db_path) as conn:
+        max_row = conn.execute(
+            "SELECT COALESCE(MAX(orden), 0) FROM plantillas_alimentacion"
+        ).fetchone()
+        orden = (max_row[0] or 0) + 1
+        cur = conn.execute(
+            "INSERT INTO plantillas_alimentacion (nombre, created_at, updated_at, orden) "
+            "VALUES (?, ?, ?, ?)",
+            (nombre, now, now, orden),
+        )
+        pid = cur.lastrowid
+        if pid is None:
+            raise RuntimeError("No se pudo crear la plantilla de alimentación.")
+        for idx, r in enumerate(rows, start=1):
+            conn.execute(
+                "INSERT INTO plantilla_alimentos (plantilla_id, orden, alimento, cantidad_g) "
+                "VALUES (?, ?, ?, ?)",
+                (pid, idx, r["alimento"], r["cantidad_g"]),
+            )
+        return pid
+
+
+def update_plantilla_alimentacion_rows(db_path: str, plantilla_id: int, rows: list[dict]) -> None:
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with transaction(db_path) as conn:
+        conn.execute(
+            "UPDATE plantillas_alimentacion SET updated_at = ? WHERE id = ?",
+            (now, plantilla_id),
+        )
+        conn.execute("DELETE FROM plantilla_alimentos WHERE plantilla_id = ?", (plantilla_id,))
+        for idx, r in enumerate(rows, start=1):
+            conn.execute(
+                "INSERT INTO plantilla_alimentos (plantilla_id, orden, alimento, cantidad_g) "
+                "VALUES (?, ?, ?, ?)",
+                (plantilla_id, idx, r["alimento"], r["cantidad_g"]),
+            )
+
+
+def delete_plantilla_alimentacion(db_path: str, plantilla_id: int) -> None:
+    with transaction(db_path) as conn:
+        conn.execute("DELETE FROM plantilla_alimentos WHERE plantilla_id = ?", (plantilla_id,))
+        conn.execute("DELETE FROM plantillas_alimentacion WHERE id = ?", (plantilla_id,))
+
+
+def reorder_plantillas_alimentacion(db_path: str, ordered_ids: list[int]) -> None:
+    with transaction(db_path) as conn:
+        for pos, pid in enumerate(ordered_ids, start=1):
+            conn.execute("UPDATE plantillas_alimentacion SET orden = ? WHERE id = ?", (pos, pid))

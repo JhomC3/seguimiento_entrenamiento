@@ -5,8 +5,10 @@ import pytest
 from src.database import (
     find_alimento,
     get_diario_by_fecha,
+    get_plantillas_alimentacion,
     init_db,
     insert_alimento,
+    insert_plantilla_alimentacion,
 )
 from src.models import (
     AlimentoInput,
@@ -17,6 +19,7 @@ from src.models import (
 )
 from src.nutrition_service import (
     NUTRIENT_FIELDS,
+    apply_meal_template,
     calculate_nutrients,
     create_alimento,
     delete_diary,
@@ -24,6 +27,7 @@ from src.nutrition_service import (
     entries_from_form,
     objetivos_diarios,
     save_diary,
+    save_meal_template,
 )
 
 
@@ -228,6 +232,48 @@ class TestTargetFormulas:
         assert target["grasa"] == 72.0
         # (2300 - 360 - 648) / 4 = 323
         assert target["carbohidratos"] == 323.0
+
+
+class TestMealTemplates:
+    def test_save_meal_template_upserts_by_name(self, tmp_path):
+        db = str(tmp_path / "g.db")
+        init_db(db)
+        insert_alimento(db, _catalog_avena())
+        save_meal_template(db, "Desayuno", [{"alimento": "Avena", "cantidad_g": 120.0}])
+        save_meal_template(db, "Desayuno", [{"alimento": "Avena", "cantidad_g": 150.0}])
+        plantillas = get_plantillas_alimentacion(db)
+        assert len(plantillas) == 1
+        assert plantillas[0]["alimentos"][0]["cantidad_g"] == 150.0
+
+    def test_save_meal_template_valida_nombre_y_filas(self, tmp_path):
+        db = str(tmp_path / "g.db")
+        init_db(db)
+        with pytest.raises(ValidationError):
+            save_meal_template(db, "  ", [{"alimento": "Avena", "cantidad_g": 100.0}])
+        with pytest.raises(ValidationError):
+            save_meal_template(db, "X", [{"alimento": "", "cantidad_g": 100.0}])
+
+    def test_apply_meal_template_computes_nutrients(self, tmp_path):
+        db = str(tmp_path / "g.db")
+        init_db(db)
+        insert_alimento(db, _catalog_avena())
+        pid = insert_plantilla_alimentacion(
+            db, "Desayuno", [{"alimento": "Avena", "cantidad_g": 120.0}]
+        )
+        rows = apply_meal_template(db, pid)
+        assert rows[0]["alimento"] == "Avena"
+        assert rows[0]["cantidad_g"] == 120.0
+        assert rows[0]["kcal"] == 467.0
+        assert rows[0]["proteina"] == 20.0
+
+    def test_apply_meal_template_unknown_food_zeroes(self, tmp_path):
+        db = str(tmp_path / "g.db")
+        init_db(db)
+        pid = insert_plantilla_alimentacion(
+            db, "X", [{"alimento": "No Existe", "cantidad_g": 100.0}]
+        )
+        rows = apply_meal_template(db, pid)
+        assert rows[0]["kcal"] == 0.0
 
 
 class TestTotals:
