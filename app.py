@@ -1,3 +1,5 @@
+import hmac
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -9,7 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from config import CICLO_START, DB_PATH, MUSCLE_CATEGORIES
+from config import CICLO_START, DB_PATH, HC_SYNC_TOKEN, MUSCLE_CATEGORIES
 from src.charts import get_exercise_raw_data, get_exercise_session_summary
 from src.dashboard_service import (
     build_date_navigator,
@@ -34,7 +36,8 @@ from src.database import (
 )
 from src.db_connection import read_connection
 from src.exercise_service import create_exercise
-from src.models import AlimentoInput, TemplateInput
+from src.health_sync_service import MAX_BODY_BYTES, ingest_health_records, parse_payload
+from src.models import AlimentoInput, TemplateInput, ValidationError
 from src.mutation_service import (
     delete_diary_with_undo_snapshot,
     delete_session,
@@ -967,3 +970,38 @@ def get_exercise_history(request: Request, ejercicio: str = Query(...), fecha: s
         swap="outerHTML",
     )
     return HTMLResponse(content=tables_html + oob_chart + navigator_oob)
+
+
+@app.post("/sync/health-connect")
+async def health_sync_ingest(request: Request):
+    """API ingestion endpoint (JSON, not htmx): CSRF-exempt by exact path in
+    src/security.py; authenticated with X-Sync-Token (HC_SYNC_TOKEN env)."""
+    if not HC_SYNC_TOKEN:
+        return JSONResponse({"detail": "Endpoint no configurado (HC_SYNC_TOKEN)"}, status_code=503)
+    token = request.headers.get("X-Sync-Token", "")
+    if not token or not hmac.compare_digest(token, HC_SYNC_TOKEN):
+        return JSONResponse({"detail": "Token inválido"}, status_code=401)
+    raw_body = await request.body()
+    if len(raw_body) > MAX_BODY_BYTES:
+        return JSONResponse({"detail": "Lote excesivo"}, status_code=413)
+    try:
+        payload = parse_payload(json.loads(raw_body))
+    except (json.JSONDecodeError, ValidationError) as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    try:
+        result = ingest_health_records(DB_PATH, payload)
+    except Exception:
+        logging.getLogger("health_sync").exception("ingesta fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse(
+        {
+            "schema_version": 1,
+            "received": result.received,
+            "accepted_count": result.accepted_count,
+            "accepted": [{"hc_id": a.hc_id, "revision": a.revision} for a in result.accepted],
+            "rejected": [
+                {"hc_id": r.hc_id, "revision": r.revision, "reason": r.reason}
+                for r in result.rejected
+            ],
+        }
+    )

@@ -1376,3 +1376,89 @@ def test_fechas_con_datos_con_iso(tmp_path):
     db = _setup_db(tmp_path)
     save_session(db, "2026-08-11", [TrainingSetInput("Press", 80, 8, 1)])
     assert fechas_con_datos(db) == {"2026-08-11"}
+
+
+SYNC_URL = "/sync/health-connect"
+_SYNC_BODY = {
+    "schema_version": 1,
+    "device_id": "android-test",
+    "operations": [
+        {
+            "op": "UPSERT",
+            "hc_id": "hc-1",
+            "record_type": "STEPS",
+            "revision": 1754678400000,
+            "start_epoch_ms": 1754676000000,
+            "end_epoch_ms": 1754679600000,
+            "data_origin_package": "com.samsung.health",
+            "time_zone_offset_minutes": -300,
+            "payload_schema_version": 1,
+            "value": {"count": 8123},
+        }
+    ],
+}
+
+
+def test_sync_endpoint_503_when_not_configured(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", "")
+    r = _client().post(SYNC_URL, json=_SYNC_BODY, headers={"X-Sync-Token": "x"})
+    assert r.status_code == 503
+
+
+def test_sync_endpoint_401_with_wrong_token(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", "secret")
+    r = _client().post(SYNC_URL, json=_SYNC_BODY, headers={"X-Sync-Token": "wrong"})
+    assert r.status_code == 401
+
+
+def test_sync_endpoint_401_without_token(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", "secret")
+    r = _client().post(SYNC_URL, json=_SYNC_BODY)
+    assert r.status_code == 401
+
+
+def test_sync_endpoint_200_with_acks_and_persisted_rows(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", "secret")
+    r = _client().post(SYNC_URL, json=_SYNC_BODY, headers={"X-Sync-Token": "secret"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["received"] == 1
+    assert data["accepted_count"] == 1
+    assert data["accepted"][0] == {"hc_id": "hc-1", "revision": 1754678400000}
+    conn = sqlite3.connect(db)
+    row = conn.execute("SELECT record_type, value_json FROM health_records WHERE hc_id='hc-1'").fetchone()
+    conn.close()
+    assert row[0] == "STEPS"
+    assert '"count":8123' in row[1]
+
+
+def test_sync_endpoint_400_with_invalid_payload(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", "secret")
+    bad = {"schema_version": 1, "device_id": "x", "operations": [{"op": "ALIEN"}]}
+    r = _client().post(SYNC_URL, json=bad, headers={"X-Sync-Token": "secret"})
+    assert r.status_code == 400
+
+
+def test_sync_endpoint_double_post_is_idempotent(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", "secret")
+    headers = {"X-Sync-Token": "secret"}
+    first = _client().post(SYNC_URL, json=_SYNC_BODY, headers=headers)
+    second = _client().post(SYNC_URL, json=_SYNC_BODY, headers=headers)
+    assert first.status_code == second.status_code == 200
+    assert second.json()["accepted_count"] == 1
+    conn = sqlite3.connect(db)
+    count = conn.execute("SELECT COUNT(*) FROM health_records").fetchone()[0]
+    conn.close()
+    assert count == 1
