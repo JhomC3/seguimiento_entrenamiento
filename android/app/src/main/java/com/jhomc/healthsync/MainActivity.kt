@@ -2,7 +2,9 @@ package com.jhomc.healthsync
 
 import android.os.Build
 import android.os.Bundle
+import android.text.InputType
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -10,6 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.lifecycle.lifecycleScope
+import com.jhomc.healthsync.data.SecureTargetStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -20,8 +23,12 @@ class MainActivity : ComponentActivity() {
         HealthConnectManager(RealHealthConnectGateway(this))
     }
 
+    private val targetStore: SecureTargetStore by lazy { SecureTargetStore(this) }
+
     private lateinit var permissionLauncher: ActivityResultLauncher<Set<String>>
     private lateinit var statusView: TextView
+    private lateinit var urlInput: EditText
+    private lateinit var tokenInput: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -76,6 +83,34 @@ class MainActivity : ComponentActivity() {
         }
         root.addView(stepsButton)
 
+        // --- Destino HTTPS (config local; el token va cifrado al Keystore) ---
+        root.addView(TextView(this).apply { text = "\nDestino HTTPS (URL del servidor)" })
+        urlInput = EditText(this).apply {
+            hint = "https://mac.local:8443/sync/health-connect"
+            inputType = InputType.TYPE_TEXT_VARIATION_URI
+        }
+        root.addView(urlInput)
+        tokenInput = EditText(this).apply {
+            hint = "Token de sincronización (X-Sync-Token)"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        root.addView(tokenInput)
+
+        val saveTargetButton = Button(this).apply {
+            text = "Guardar destino y programar sync"
+            setOnClickListener { saveTarget() }
+        }
+        root.addView(saveTargetButton)
+
+        val syncNowButton = Button(this).apply {
+            text = "Sincronizar ahora"
+            setOnClickListener {
+                SyncScheduler.syncNow(this@MainActivity)
+                statusView.text = "Sync programada (WorkManager). Revisa en unos segundos."
+            }
+        }
+        root.addView(syncNowButton)
+
         setContentView(ScrollView(this).apply { addView(root) })
 
         permissionLauncher = registerForActivityResult(
@@ -83,6 +118,7 @@ class MainActivity : ComponentActivity() {
             ActivityResultCallbackAdapter { refreshStates() },
         )
         refreshStates()
+        loadTarget()
     }
 
     override fun onResume() {
@@ -96,6 +132,37 @@ class MainActivity : ComponentActivity() {
     private fun requestPermissions(permissions: Set<String>) {
         if (permissions.isEmpty()) return
         permissionLauncher.launch(permissions)
+    }
+
+    private fun saveTarget() {
+        val url = urlInput.text.toString().trim()
+        val token = tokenInput.text.toString().trim()
+        lifecycleScope.launch {
+            val client = HealthSyncClient()
+            when {
+                url.isEmpty() -> statusView.text = "URL requerida."
+                client.validateTargetUrl(url).isFailure ->
+                    statusView.text = "URL inválida: usa https:// (HTTP está prohibido)."
+                token.isEmpty() -> statusView.text = "Token requerido."
+                else -> {
+                    withContext(Dispatchers.IO) {
+                        targetStore.saveTarget(url, "default")
+                        targetStore.saveToken(token)
+                    }
+                    SyncScheduler.schedulePeriodic(this@MainActivity)
+                    statusView.text = "Destino guardado y sync periódica programada (1h)."
+                }
+            }
+        }
+    }
+
+    private fun loadTarget() {
+        lifecycleScope.launch {
+            val target = withContext(Dispatchers.IO) { targetStore.target() }
+            val tokenSet = withContext(Dispatchers.IO) { targetStore.token() != null }
+            urlInput.setText(target?.url ?: "")
+            if (tokenSet) statusView.text = "Destino configurado. Token: guardado (cifrado)."
+        }
     }
 
     private fun refreshStates() {
@@ -143,11 +210,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/**
- * android.app.Activity cannot register lifecycle observers without the
- * lifecycle-runtime; ComponentActivity requires a plain (result) -> Unit
- * callback, so adapt it here.
- */
 private class ActivityResultCallbackAdapter(
     private val onResult: (Set<String>) -> Unit,
 ) : androidx.activity.result.ActivityResultCallback<Set<String>> {

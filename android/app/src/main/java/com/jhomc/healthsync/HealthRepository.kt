@@ -11,6 +11,7 @@ import com.jhomc.healthsync.data.HealthDao
 import com.jhomc.healthsync.data.HealthDatabase
 import com.jhomc.healthsync.data.HealthRecordEntity
 import com.jhomc.healthsync.data.RecordMappers
+import com.jhomc.healthsync.data.SyncTargetEntity
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
@@ -20,6 +21,13 @@ data class TypeSyncResult(
     val deletes: Int = 0,
     val backfilled: Int = 0,
     val tokenAdvanced: Boolean = false,
+)
+
+data class UploadResult(
+    val targetId: Long,
+    val delivered: Int,
+    val failed: Int,
+    val permanentError: String? = null,
 )
 
 /** Token expired signal, per the 1.1.0 SDK contract (changesTokenExpired + exception). */
@@ -47,6 +55,78 @@ class HealthRepository(
         } else {
             drainChanges(entry, existing)
         }
+    }
+
+    /**
+     * Source phase: sync every authorized type. A single revoked permission
+     * never blocks the rest (principle 4).
+     */
+    suspend fun syncAuthorizedTypes(): List<TypeSyncResult> {
+        val granted = gateway.grantedPermissions()
+        return RecordTypes.all.mapNotNull { entry ->
+            if (entry.permission !in granted) return@mapNotNull null
+            try {
+                syncType(entry)
+            } catch (e: SecurityException) {
+                tokenStore.markPermissionLost(entry.typeName)
+                null
+            }
+        }
+    }
+
+    /**
+     * Delivery phase: upload pending outbox ops for every active target in
+     * bounded batches. Only server-confirmed ops are marked delivered;
+     * permanent errors stop the batch loop for that target.
+     */
+    suspend fun uploadPending(
+        client: HealthSyncClient,
+        target: SyncTargetEntity,
+        token: String,
+        deviceId: String,
+    ): UploadResult {
+        var delivered = 0
+        var failed = 0
+        while (true) {
+            val batch = dao.pendingOps(target.targetId, MAX_BATCH_OPERATIONS)
+            if (batch.isEmpty()) break
+            val records = batch.associate { it.hcId to dao.getRecord(it.hcId) }
+            val payload = client.buildBatchPayload(deviceId, batch, records)
+            when (val outcome = client.postBatch(target.url, token, payload)) {
+                is UploadOutcome.Accepted -> db.withTransaction {
+                    outcome.acked.forEach { dao.ackOp(target.targetId, it.hcId, it.revision) }
+                    outcome.rejected.forEach { dao.dropOp(target.targetId, it.hcId) }
+                }
+                is UploadOutcome.PermanentError ->
+                    return UploadResult(target.targetId, delivered, failed + batch.size, outcome.detail)
+                is UploadOutcome.TransientError -> {
+                    db.withTransaction { batch.forEach { dao.bumpAttempt(target.targetId, it.hcId) } }
+                    failed += batch.size
+                    return UploadResult(target.targetId, delivered, failed)
+                }
+            }
+            delivered += batch.size
+        }
+        return UploadResult(target.targetId, delivered, failed)
+    }
+
+    /** Replay the active buffer into a brand-new target (seed, not re-sync). */
+    suspend fun seedNewTarget(targetId: Long) {
+        dao.seedTarget(targetId, now().toEpochMilli())
+    }
+
+    /**
+     * Resolves the configured URL to a sync_targets row. A NEW URL gets a new
+     * target_id and a seed of every active record (replay of the buffer, the
+     * Health Connect source is never re-read). Same URL reuses the row.
+     */
+    suspend fun ensureTarget(url: String, name: String): SyncTargetEntity {
+        dao.activeTargets().firstOrNull { it.url == url }?.let { return it }
+        val targetId = dao.upsertTarget(
+            SyncTargetEntity(0, url, name, active = true, createdAtEpochMs = now().toEpochMilli()),
+        )
+        dao.seedTarget(targetId, now().toEpochMilli())
+        return dao.getTarget(targetId) ?: throw IllegalStateException("target no creado")
     }
 
     private suspend fun firstSync(entry: RecordTypeEntry): TypeSyncResult {

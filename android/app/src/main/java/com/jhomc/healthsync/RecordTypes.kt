@@ -132,6 +132,9 @@ object RecordTypes {
         all.filterNot { it.core }.groupBy { it.family }
 
     fun byTypeName(typeName: String): RecordTypeEntry? = all.firstOrNull { it.typeName == typeName }
+
+    fun byClass(recordClass: KClass<out Record>): RecordTypeEntry? =
+        all.firstOrNull { it.recordClass == recordClass }
 }
 
 private fun entry(

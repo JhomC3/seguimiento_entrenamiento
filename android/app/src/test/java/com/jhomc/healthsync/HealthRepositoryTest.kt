@@ -138,4 +138,74 @@ class HealthRepositoryTest {
         repo.syncType(stepsEntry)
         assertEquals(2, db.healthDao().allActiveRecords().size)
     }
+
+    @Test
+    fun `ensure target seeds new target once and reuses same url`() = runBlocking {
+        gateway.backfillQueue.add(listOf(Fixtures.steps("hc-1", t0, t1, count = 100)))
+        repo.syncType(stepsEntry)
+        val first = repo.ensureTarget("https://mac.local:8443/sync/health-connect", "mac")
+        assertEquals(1, db.healthDao().pendingOps(first.targetId, 100).size)
+        val reused = repo.ensureTarget("https://mac.local:8443/sync/health-connect", "mac")
+        assertEquals(first.targetId, reused.targetId)
+        val changed = repo.ensureTarget("https://newhost:8443/sync/health-connect", "nuevo")
+        assertTrue(changed.targetId != first.targetId)
+        assertEquals(1, db.healthDao().pendingOps(changed.targetId, 100).size)
+        assertEquals(1, db.healthDao().pendingOps(first.targetId, 100).size)
+    }
+
+    @Test
+    fun `upload pending drains outbox on success and keeps it on 401`() = runBlocking {
+        val server = okhttp3.mockwebserver.MockWebServer()
+        server.enqueue(
+            okhttp3.mockwebserver.MockResponse().setResponseCode(401)
+                .setBody("""{"detail":"Token inválido"}"""),
+        )
+        server.start()
+        try {
+            val client = HealthSyncClient(
+                http = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                    .build(),
+            )
+            gateway.backfillQueue.add(listOf(Fixtures.steps("hc-1", t0, t1, count = 100)))
+            repo.syncType(stepsEntry)
+            val target = repo.ensureTarget(server.url("/sync/health-connect").toString(), "test")
+            val result = repo.uploadPending(client, target, token = "wrong", deviceId = "d")
+            assertTrue("esperado permanente, fue: $result", result.permanentError != null)
+            assertEquals(1, db.healthDao().pendingOps(target.targetId, 100).size)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `upload pending acks and clears outbox`() = runBlocking {
+        val server = okhttp3.mockwebserver.MockWebServer()
+        server.enqueue(
+            okhttp3.mockwebserver.MockResponse().setResponseCode(200).setBody(
+                """{"schema_version":1,"received":1,"accepted_count":1,
+                   "accepted":[{"hc_id":"hc-1","revision":${t1.toEpochMilli()}}],
+                   "rejected":[]}""",
+            ),
+        )
+        server.start()
+        try {
+            val client = HealthSyncClient(
+                http = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                    .build(),
+            )
+            gateway.backfillQueue.add(listOf(Fixtures.steps("hc-1", t0, t1, count = 100)))
+            repo.syncType(stepsEntry)
+            val target = repo.ensureTarget(server.url("/sync/health-connect").toString(), "test")
+            assertEquals(1, db.healthDao().pendingOps(target.targetId, 100).size)
+            val result = repo.uploadPending(client, target, token = "secret", deviceId = "d")
+            assertEquals(1, result.delivered)
+            assertEquals(0, db.healthDao().pendingOps(target.targetId, 100).size)
+        } finally {
+            server.shutdown()
+        }
+    }
 }
