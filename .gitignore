@@ -28,3 +28,6 @@ android/.gradle/
 android/app/build/
 android/local.properties
 android/sdk/
+
+# Cache Gradle del directorio raíz (residuo de arranque; el real vive en android/.gradle)
+.gradle/
