@@ -790,7 +790,7 @@ def test_plantillas_alimentacion_crud(tmp_path):
     assert plantillas[0]["alimentos"] == [{"alimento": "Avena", "cantidad_g": 120.0}]
 
     update_plantilla_alimentacion_rows(db_path, pid1, [{"alimento": "Avena", "cantidad_g": 150.0}])
-    assert get_plantillas_alimentacion(db_path)[1]["alimentos"][0]["cantidad_g"] == 150.0
+    assert get_plantillas_alimentacion(db_path)[0]["alimentos"][0]["cantidad_g"] == 150.0
 
     reorder_plantillas_alimentacion(db_path, [pid1, pid2])
     assert [p["nombre"] for p in get_plantillas_alimentacion(db_path)] == ["Desayuno", "Cena"]
