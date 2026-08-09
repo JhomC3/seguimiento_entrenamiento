@@ -1021,6 +1021,19 @@ def test_index_renders_global_date_title_below_navigator(tmp_path, monkeypatch):
     assert "SABADO" in r.text or "DOMINGO" in r.text or date.today().strftime("%A").upper() in r.text
 
 
+def test_panel_titles_are_static(tmp_path, monkeypatch):
+    db = _seed_nutrition(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/")
+    assert r.status_code == 200
+    # El editor de sesión tiene título estático "Entrenamiento" sin fecha
+    session_title = r.text[r.text.index('<h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title truncate">') :]
+    assert ">Entrenamiento</h3>" in session_title
+    assert "SABADO" not in session_title.split("</h3>")[0]
+    # La fecha vive en el título global, no en los paneles
+    assert 'id="session-date-title"' in r.text
+
+
 def test_index_renders_nutrition_panel_above_session_editor(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
