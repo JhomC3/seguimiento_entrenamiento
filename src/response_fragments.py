@@ -25,6 +25,7 @@ OOB_FRAGMENT_TARGETS = (
     "session-history",
     "nutrition-editor-wrap",
     "alimento-create",
+    "nutrition-templates-section",
 )
 
 STATIC_MARKERS = {

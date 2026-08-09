@@ -28,6 +28,7 @@ from src.database import (
     get_ejercicio_categoria,
     get_exercises_catalog,
     get_plantillas,
+    get_plantillas_alimentacion,
     get_sets_by_fecha,
     init_db,
 )
@@ -45,7 +46,13 @@ from src.mutation_service import (
     save_template_with_undo_snapshot,
     undo_last_action,
 )
-from src.nutrition_service import NUTRIENT_FIELDS, create_alimento, entries_from_form
+from src.nutrition_service import (
+    NUTRIENT_FIELDS,
+    apply_meal_template,
+    create_alimento,
+    entries_from_form,
+    save_meal_template,
+)
 from src.response_fragments import (
     STATIC_MARKERS,
     app_config_oob,
@@ -276,14 +283,36 @@ def _nutrition_fecha_display(fecha_iso: str) -> str:
     return f"{d.day}/{d.month}/{d.year}"
 
 
+def _plantillas_alimentacion_list_html(request: Request, fecha_iso: str) -> str:
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="plantillas_alimentacion_list.html",
+            context={
+                "plantillas": get_plantillas_alimentacion(DB_PATH),
+                "selected_iso": fecha_iso,
+            },
+        )
+    )
+
+
 def _nutrition_editor_html(
     request: Request,
     fecha_iso: str,
     *,
+    rows: list[dict] | None = None,
+    force_editable: bool = False,
     error: str | None = None,
     success: str | None = None,
 ) -> str:
-    vm = build_nutrition_editor(DB_PATH, fecha_iso, error=error, success=success)
+    vm = build_nutrition_editor(
+        DB_PATH,
+        fecha_iso,
+        rows=rows,
+        force_editable=force_editable,
+        error=error,
+        success=success,
+    )
     return _render_body(
         templates.TemplateResponse(
             request=request,
@@ -353,6 +382,7 @@ def read_index(request: Request):
             "plantillas_html": _plantillas_list_html(request),
             "session_history_html": _sesiones_list_html(request),
             "nutrition_editor_html": _nutrition_editor_html(request, fecha),
+            "nutrition_templates_html": _plantillas_alimentacion_list_html(request, fecha),
             "alimento_form_html": _alimento_form_html(request),
             "app_config_json": {
                 "categoria_map": get_ejercicio_categoria(DB_PATH),
@@ -554,6 +584,81 @@ def alimento_nuevo(
         + app_config_oob(_nutrition_app_config())
         + fragment_oob(templates, request, "alimento-create", form_html, swap="outerHTML")
     )
+
+
+@app.post("/alimentacion/plantilla/guardar", response_class=HTMLResponse)
+def plantilla_alimentacion_guardar(
+    request: Request,
+    nombre: str = Form(...),
+    alimento: list[str] = Form(default=[]),
+    cantidad: list[str] = Form(default=[]),
+):
+    try:
+        entries = entries_from_form(alimento, cantidad)
+        rows = [
+            {"alimento": e.alimento, "cantidad_g": float(e.cantidad_g)} for e in entries
+        ]
+        save_meal_template(DB_PATH, nombre, rows)
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    notice = notice_oob(
+        templates, request, target="notice-container", message="Plantilla guardada."
+    )
+    return HTMLResponse(
+        content=notice
+        + fragment_oob(
+            templates,
+            request,
+            "nutrition-templates-section",
+            _plantillas_alimentacion_list_html(request, _today_iso()),
+            swap="outerHTML",
+        )
+    )
+
+
+@app.post("/alimentacion/plantilla/eliminar/{plantilla_id}", response_class=HTMLResponse)
+def plantilla_alimentacion_eliminar(request: Request, plantilla_id: int):
+    from src.database import delete_plantilla_alimentacion
+
+    try:
+        delete_plantilla_alimentacion(DB_PATH, plantilla_id)
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    return HTMLResponse(
+        content=fragment_oob(
+            templates,
+            request,
+            "nutrition-templates-section",
+            _plantillas_alimentacion_list_html(request, _today_iso()),
+            swap="outerHTML",
+        )
+    )
+
+
+@app.post("/alimentacion/plantilla/reordenar", response_class=HTMLResponse)
+def plantilla_alimentacion_reordenar(request: Request, id: list[int] = Form(default=[])):
+    from src.database import reorder_plantillas_alimentacion
+
+    try:
+        reorder_plantillas_alimentacion(DB_PATH, id)
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    return HTMLResponse(content="")
+
+
+@app.get("/alimentacion/plantilla/aplicar/{plantilla_id}", response_class=HTMLResponse)
+def plantilla_alimentacion_aplicar(
+    request: Request, plantilla_id: int, fecha: str = Query(...)
+):
+    try:
+        rows = apply_meal_template(DB_PATH, plantilla_id)
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    editor = _nutrition_editor_html(request, fecha, rows=rows, force_editable=True)
+    notice = notice_oob(
+        templates, request, target="notice-container", message="Plantilla aplicada."
+    )
+    return HTMLResponse(content=notice + nutrition_editor_wrap_oob(templates, request, editor))
 
 
 @app.get("/alimentacion/exportar/csv", response_class=Response)

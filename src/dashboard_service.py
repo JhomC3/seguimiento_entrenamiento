@@ -323,13 +323,16 @@ def build_nutrition_editor(
     db_path: str,
     fecha_iso: str,
     *,
+    rows: list[dict] | None = None,
+    force_editable: bool = False,
     error: str | None = None,
     success: str | None = None,
 ) -> NutritionEditorViewModel:
     """Editor de un día del diario nutricional; toda fecha es editable."""
     fecha = parse_form_date(fecha_iso)
     fecha_iso = fecha.strftime("%Y-%m-%d")
-    data = get_diario_by_fecha(db_path, fecha_iso)
+    db_data = get_diario_by_fecha(db_path, fecha_iso)
+    data = rows if rows is not None else db_data
     entry_rows = [
         NutritionEntryRow(
             orden=r["orden"],
@@ -371,8 +374,8 @@ def build_nutrition_editor(
         rows=entry_rows,
         totals=consumido,
         catalog=[a["nombre"] for a in get_alimentos_catalog(db_path)],
-        has_data=bool(entry_rows),
-        readonly=bool(entry_rows) or fecha < date.today(),
+        has_data=bool(db_data),
+        readonly=(bool(db_data) or fecha < date.today()) and not force_editable,
         error=error,
         success=success,
         objetivo=objetivo,

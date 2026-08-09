@@ -1105,6 +1105,45 @@ def test_nutrition_editor_tabla_esquema_11_columnas(tmp_path, monkeypatch):
     assert "Consumido" in r.text
 
 
+def test_nutrition_templates_routes(tmp_path, monkeypatch):
+    from src.database import insert_plantilla_alimentacion
+
+    db = _seed_nutrition(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+
+    # Guardar plantilla desde el día
+    r = _client().post(
+        "/alimentacion/plantilla/guardar",
+        data={"nombre": "Desayuno", "alimento": ["Avena"], "cantidad": ["120"]},
+    )
+    assert r.status_code == 200
+    assert 'id="nutrition-templates-section" hx-swap-oob' in r.text
+    assert "Desayuno" in r.text
+
+    # Lista en el sidebar del index
+    r = _client().get("/")
+    assert 'id="nutrition-templates-section"' in r.text
+    assert "Desayuno" in r.text
+
+    # Aplicar plantilla a una fecha vacía: filas con nutrientes, editable
+    r = _client().get("/alimentacion/plantilla/aplicar/1?fecha=2025-04-26")
+    assert r.status_code == 200
+    assert "Avena" in r.text
+    assert 'data-readonly="0"' in r.text
+    assert 'value="120"' in r.text
+
+    # Reordenar
+    pid2 = insert_plantilla_alimentacion(db, "Cena", [{"alimento": "Avena", "cantidad_g": 100.0}])
+    r = _client().post("/alimentacion/plantilla/reordenar", data={"id": [str(pid2), "1"]})
+    assert r.status_code == 200
+
+    # Eliminar
+    r = _client().post(f"/alimentacion/plantilla/eliminar/{pid2}")
+    assert r.status_code == 200
+    assert "Desayuno" in r.text
+    assert "Cena" not in r.text
+
+
 def test_alimentacion_standalone_page_removed(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)

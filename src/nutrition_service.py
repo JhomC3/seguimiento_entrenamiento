@@ -211,9 +211,13 @@ def apply_meal_template(db_path: str, plantilla_id: int) -> list[dict]:
     if template is None:
         raise NotFoundError(f"Plantilla de alimentación no encontrada: {plantilla_id}")
     rows: list[dict] = []
-    for r in template["alimentos"]:
+    for idx, r in enumerate(template["alimentos"], start=1):
         food = find_alimento(db_path, r["alimento"])
-        row: dict = {"alimento": r["alimento"], "cantidad_g": r["cantidad_g"]}
+        row: dict = {
+            "orden": idx,
+            "alimento": r["alimento"],
+            "cantidad_g": r["cantidad_g"],
+        }
         if food is not None:
             row.update(calculate_nutrients(food, r["cantidad_g"]))
         else:
