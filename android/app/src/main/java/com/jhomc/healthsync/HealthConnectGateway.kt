@@ -5,10 +5,16 @@ import androidx.activity.result.contract.ActivityResultContract
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.AggregateRequest
+import androidx.health.connect.client.request.ChangesTokenRequest
+import androidx.health.connect.client.request.ReadRecordsRequest
+import androidx.health.connect.client.response.ChangesResponse
+import androidx.health.connect.client.response.ReadRecordsResponse
 import androidx.health.connect.client.time.TimeRangeFilter
 import java.time.Instant
+import kotlin.reflect.KClass
 
 /**
  * Small seam around the Health Connect SDK so repositories and workers can be
@@ -20,6 +26,16 @@ interface HealthConnectGateway {
     suspend fun backgroundReadAvailable(): Boolean
     suspend fun stepsCountTotal(start: Instant, end: Instant): Long?
     fun permissionContract(): ActivityResultContract<Set<String>, Set<String>>
+
+    // Phase 2: differential sync
+    suspend fun getChangesToken(recordTypes: Set<KClass<out Record>>): String
+    suspend fun getChanges(token: String): ChangesResponse
+    suspend fun readRecords(
+        recordType: KClass<out Record>,
+        start: Instant,
+        end: Instant,
+        pageToken: String?,
+    ): ReadRecordsResponse<Record>
 }
 
 class RealHealthConnectGateway(context: Context) : HealthConnectGateway {
@@ -44,6 +60,30 @@ class RealHealthConnectGateway(context: Context) : HealthConnectGateway {
             ),
         )
         return response[StepsRecord.COUNT_TOTAL]
+    }
+
+    override suspend fun getChangesToken(recordTypes: Set<KClass<out Record>>): String =
+        client.getChangesToken(ChangesTokenRequest(recordTypes))
+
+    override suspend fun getChanges(token: String): ChangesResponse =
+        client.getChanges(token)
+
+    override suspend fun readRecords(
+        recordType: KClass<out Record>,
+        start: Instant,
+        end: Instant,
+        pageToken: String?,
+    ): ReadRecordsResponse<Record> {
+        val response = client.readRecords(
+            ReadRecordsRequest(
+                recordType = recordType,
+                timeRangeFilter = TimeRangeFilter.between(start, end),
+                pageSize = 500,
+                pageToken = pageToken,
+            ),
+        )
+        @Suppress("UNCHECKED_CAST")
+        return response as ReadRecordsResponse<Record>
     }
 
     override fun permissionContract(): ActivityResultContract<Set<String>, Set<String>> =
