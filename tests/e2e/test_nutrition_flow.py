@@ -122,8 +122,14 @@ def test_nutrition_templates_save_reorder_apply(page, server):
         _time.sleep(0.25)
     card = page.locator("#nutrition-templates .pt-card").first
     panel = page.locator("#nutrition-panel")
-    card.drag_to(panel, source_position={"x": 60, "y": 16}, target_position={"x": 100, "y": 100})
+    card.drag_to(panel, source_position={"x": 60, "y": 16}, target_position={"x": 200, "y": 300})
     page.wait_for_selector("#notice-container .notice", timeout=5000)
+    print(
+        "NAV_FECHA:",
+        page.evaluate(
+            "document.querySelector('#nutrition-form input[type=hidden][name=fecha]')?.value"
+        ),
+    )
     expect(page.locator('#nutrition-rows input[name="alimento"]').first).to_have_value("Avena")
 
     # 3) Reordenar por drag entre tarjetas (crear una segunda plantilla)
@@ -140,3 +146,49 @@ def test_nutrition_templates_save_reorder_apply(page, server):
     page.reload()
     page.wait_for_function("document.body.dataset.appReady === '1'")
     expect(page.locator("#nutrition-templates .pt-card").first).to_contain_text("Cena")
+
+
+def test_nutrition_prefill_empty_day(page, server):
+    import datetime as dt
+
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+
+    # 1) Alta del alimento y guardar hoy con Avena 120 g y peso 69
+    _fill_alimento_form(page)
+    page.wait_for_selector("#notice-container .notice", timeout=5000)
+    _fill_nutrition_day(page)
+    page.fill("#param-peso", "69")
+    page.click('#nutrition-form button[type="submit"]')
+    page.wait_for_selector("#notice-container .notice", timeout=5000)
+    expect(page.locator("#nutrition-editor-state")).to_have_attribute("data-has-data", "1")
+
+    # 2) Día siguiente (vacío) navegando por el date-jump en la página completa
+    # (el fragmento directo no lleva #app-config -> sin token CSRF no guarda).
+    import time as _time
+
+    manana = (dt.date.today() + dt.timedelta(days=1)).strftime("%Y-%m-%d")
+    page.evaluate(
+        f"const el = document.querySelector('#date-jump'); el.value = '{manana}'; "
+        "el.dispatchEvent(new Event('change', { bubbles: true }));"
+    )
+    for _ in range(40):
+        if page.evaluate(
+            "document.querySelector('#nutrition-form input[name=\"fecha\"]')?.value === "
+            + repr(manana)
+        ):
+            break
+        _time.sleep(0.25)
+    expect(page.locator('#nutrition-rows input[name="alimento"]').first).to_have_value("Avena")
+    expect(page.locator('#nutrition-rows input[name="cantidad"]').first).to_have_value("120")
+    expect(page.locator("#param-peso")).to_have_value("69")
+    expect(page.locator("#nutrition-editor-state")).to_have_attribute("data-has-data", "0")
+    expect(page.locator("body")).to_contain_text("Datos del")
+
+    # 3) Modificar y guardar el día precargado -> pasa a tener datos (el botón
+    # Guardar se muestra con cambios; el fragmento no tiene #notice-container).
+    page.locator('#nutrition-rows input[name="cantidad"]').first.fill("130")
+    page.click('#nutrition-form button[type="submit"]')
+    expect(page.locator("#nutrition-editor-state")).to_have_attribute(
+        "data-has-data", "1", timeout=5000
+    )

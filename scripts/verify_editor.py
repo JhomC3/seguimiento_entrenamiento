@@ -437,7 +437,7 @@ def main() -> None:
                 const actionColumn = editor.querySelector('#set-rows .set-actions-column');
                 return {
                     headerInsideEditor: !!actionsBox && actionsBox.right <= editorBox.right,
-                    allControlsVisible: controls.length === 1 && controls.every(b => b.getBoundingClientRect().width >= 20),
+                    allControlsVisible: controls.length === 3 && controls.every(b => b.getBoundingClientRect().width >= 20),
                     actionColumnWidth: actionColumn ? Math.round(actionColumn.getBoundingClientRect().width) : 999,
                 };
             })()""")
@@ -694,7 +694,8 @@ def main() -> None:
             check("cancelar tras drop restaura fila vacía", nrows() == 1 and em() == "1")
             apply_xhrs.clear()
             mouse_drag(
-                page.locator("#plantillas-list .pt-card").nth(1), page.locator("#session-editor h3")
+                page.locator("#plantillas-list .pt-card").nth(1),
+                page.locator("#session-date-title"),
             )
             time.sleep(1.0)
             check(
