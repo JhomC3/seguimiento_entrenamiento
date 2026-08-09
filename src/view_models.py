@@ -71,3 +71,5 @@ class NutritionEditorViewModel:
     objetivo: dict[str, float] = field(default_factory=dict)
     consumido: dict[str, float] = field(default_factory=dict)
     parametros: dict[str, float] = field(default_factory=dict)
+    prefilled: bool = False
+    prefill_source: str | None = None

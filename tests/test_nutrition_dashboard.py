@@ -86,8 +86,10 @@ def test_build_editor_with_data(tmp_path):
 def test_build_editor_empty_day(tmp_path):
     db = str(tmp_path / "g.db")
     _seed(db)
-    vm = build_nutrition_editor(db, "2025-04-26")
+    # Día sin datos ni días previos: filas vacías
+    vm = build_nutrition_editor(db, "2025-01-01")
     assert vm.has_data is False
+    assert vm.prefilled is False
     assert vm.rows == []
     assert all(vm.totals[f] == 0.0 for f in ("kcal", "carbohidratos", "fibra", "proteina", "grasa"))
 
@@ -145,7 +147,7 @@ def test_build_editor_objetivo_y_consumido(tmp_path):
 def test_build_editor_defaults_params_on_empty_day(tmp_path):
     db = str(tmp_path / "g.db")
     _seed(db)
-    vm = build_nutrition_editor(db, "2025-04-26")
+    vm = build_nutrition_editor(db, "2025-01-01")
     assert vm.parametros["peso_kg"] == 70.0
     assert vm.parametros["factor_proteina"] == 1.5
     assert vm.parametros["factor_grasa"] == 1.1
@@ -153,6 +155,71 @@ def test_build_editor_defaults_params_on_empty_day(tmp_path):
     assert vm.objetivo["proteina"] == 105.0
     assert vm.consumido["cantidad_g"] == 0.0
     assert vm.consumido["kcal"] == 0.0
+
+
+def test_build_editor_prefill_empty_day_from_previous(tmp_path):
+    from src.database import save_parametros_diarios
+
+    db = str(tmp_path / "g.db")
+    _seed(db)  # día 2025-04-24 con Avena 120g
+    save_parametros_diarios(
+        db,
+        "2025-04-24",
+        {
+            "peso_kg": 69.0,
+            "factor_proteina": 1.5,
+            "factor_grasa": 1.1,
+            "kcal_objetivo": 2750.0,
+            "fibra_objetivo": 38.0,
+            "hierro_objetivo": 8.0,
+            "calcio_objetivo": 1000.0,
+            "vitamina_c_objetivo": 90.0,
+            "vitamina_a_objetivo": 900.0,
+        },
+    )
+    vm = build_nutrition_editor(db, "2025-04-25")  # vacío, tras 2025-04-25? NO: 2025-04-26
+    # 2025-04-25 tiene datos en _seed -> usar 2025-04-27 (vacío tras ambos)
+    vm = build_nutrition_editor(db, "2025-04-27")
+    assert vm.has_data is False
+    assert vm.prefilled is True
+    assert vm.prefill_source == "2025-04-25"
+    assert [r.alimento for r in vm.rows] == ["Avena"]
+    assert vm.rows[0].cantidad_g == 100.0
+    assert vm.parametros["peso_kg"] == 70.0  # sin parámetros previos -> defaults
+
+
+def test_build_editor_prefill_no_previous_day(tmp_path):
+    db = str(tmp_path / "g.db")
+    init_db(db)
+    vm = build_nutrition_editor(db, "2025-04-24")
+    assert vm.prefilled is False
+    assert vm.prefill_source is None
+    assert vm.rows == []
+
+
+def test_build_editor_no_prefill_when_saved_data(tmp_path):
+    db = str(tmp_path / "g.db")
+    _seed(db)
+    vm = build_nutrition_editor(db, "2025-04-24")
+    assert vm.has_data is True
+    assert vm.prefilled is False
+    assert vm.prefill_source is None
+
+
+def test_build_editor_prefill_surfaces_previous_params(tmp_path):
+    from src.database import save_parametros_diarios
+
+    db = str(tmp_path / "g.db")
+    _seed(db)
+    save_parametros_diarios(
+        db,
+        "2025-04-25",
+        {"peso_kg": 69.0, "factor_proteina": 1.4, "kcal_objetivo": 2750.0},
+    )
+    vm = build_nutrition_editor(db, "2025-04-27")
+    assert vm.parametros["peso_kg"] == 69.0
+    assert vm.parametros["factor_proteina"] == 1.4
+    assert vm.parametros["kcal_objetivo"] == 2750.0
 
 
 def test_build_editor_readonly_con_datos(tmp_path):

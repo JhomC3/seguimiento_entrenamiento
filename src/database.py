@@ -591,3 +591,12 @@ def reorder_plantillas_alimentacion(db_path: str, ordered_ids: list[int]) -> Non
     with transaction(db_path) as conn:
         for pos, pid in enumerate(ordered_ids, start=1):
             conn.execute("UPDATE plantillas_alimentacion SET orden = ? WHERE id = ?", (pos, pid))
+
+
+def get_prev_diary_date(db_path: str, fecha: str) -> str | None:
+    """Última fecha con datos anterior a `fecha` (para prefill)."""
+    with read_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT MAX(fecha) FROM diario_alimentacion WHERE fecha < ?", (fecha,)
+        ).fetchone()
+        return row[0] if row and row[0] else None

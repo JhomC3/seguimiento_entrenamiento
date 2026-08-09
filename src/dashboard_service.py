@@ -15,6 +15,7 @@ from src.database import (
     get_diario_by_fecha,
     get_exercises_catalog,
     get_parametros_diarios,
+    get_prev_diary_date,
     get_sets_by_fecha,
 )
 from src.db_connection import read_connection
@@ -333,6 +334,12 @@ def build_nutrition_editor(
     fecha_iso = fecha.strftime("%Y-%m-%d")
     db_data = get_diario_by_fecha(db_path, fecha_iso)
     data = rows if rows is not None else db_data
+    prefill_source: str | None = None
+    if rows is None and not db_data:
+        # Día vacío: precargar los últimos datos guardados (día previo más cercano).
+        prefill_source = get_prev_diary_date(db_path, fecha_iso)
+        if prefill_source is not None:
+            data = get_diario_by_fecha(db_path, prefill_source)
     entry_rows = [
         NutritionEntryRow(
             orden=r["orden"],
@@ -351,6 +358,8 @@ def build_nutrition_editor(
         for r in data
     ]
     params = get_parametros_diarios(db_path, fecha_iso) or {}
+    if not params and prefill_source is not None:
+        params = get_parametros_diarios(db_path, prefill_source) or {}
     defaults = {
         "peso_kg": 70.0,
         "factor_proteina": 1.5,
@@ -381,4 +390,6 @@ def build_nutrition_editor(
         objetivo=objetivo,
         consumido=consumido,
         parametros=parametros,
+        prefilled=prefill_source is not None,
+        prefill_source=prefill_source,
     )
