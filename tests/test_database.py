@@ -103,7 +103,7 @@ def test_migrations_recorded_in_schema_migrations(tmp_path):
         r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()
     )
     conn.close()
-    assert versions == [1, 2, 3, 5, 6, 7, 8, 9]
+    assert versions == [1, 2, 3, 5, 6, 7, 8, 9, 10]
 
 
 def test_migrates_intermediate_state_without_orden(tmp_path):
@@ -384,7 +384,7 @@ def test_v009_creates_meal_templates(tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM plantilla_alimentos").fetchone()[0] == 0
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 9
+    assert max_version == 10
 
 
 def test_v009_is_latest_schema_version(tmp_path):
@@ -393,7 +393,7 @@ def test_v009_is_latest_schema_version(tmp_path):
     conn = sqlite3.connect(db_path)
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 9
+    assert max_version == 10
 
 
 def test_v007_migration_idempotent(tmp_path):
@@ -670,7 +670,7 @@ def test_v008_creates_parametros_diarios_and_nullable_qty(tmp_path):
         assert col in params
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 9
+    assert max_version == 10
 
 
 def test_v008_preserves_diario_rows(tmp_path):
@@ -839,4 +839,35 @@ def test_load_training_data(tmp_path):
     assert len(rows) == 2
     assert rows[0] == (1, "LUNES", 6.0, 85.0, 1.0)
     assert origens == [("google",)]
+    conn.close()
+
+
+def test_v010_health_records_schema(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(health_records)").fetchall()}
+    assert {
+        "hc_id",
+        "record_type",
+        "start_epoch_ms",
+        "end_epoch_ms",
+        "last_modified_epoch_ms",
+        "data_origin_package",
+        "payload_schema_version",
+        "value_json",
+        "device_id",
+        "received_at",
+        "updated_at",
+        "deleted_at",
+    } <= cols
+    max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+    assert max_version == 10
+    pk_cols = {r[1] for r in conn.execute("PRAGMA table_info(health_records)").fetchall() if r[5] == 1}
+    assert pk_cols == {"hc_id"}
+    index_cols = {
+        (r[2], r[1]) for r in conn.execute("PRAGMA index_info(idx_health_records_type_start)").fetchall()
+    }
+    assert ("record_type", 1) in index_cols
+    assert ("start_epoch_ms", 2) in index_cols
     conn.close()
