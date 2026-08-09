@@ -1020,38 +1020,38 @@ def test_index_renders_global_date_title_below_navigator(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/")
     assert r.status_code == 200
+    # La fecha vive dentro del editor de sesión (debajo de los botones del header)
     assert 'id="session-date-title"' in r.text
     assert "Semana" in r.text
-    assert r.text.index('id="date-navigator"') < r.text.index('id="session-date-title"')
-    assert r.text.index('id="session-date-title"') < r.text.index('id="nutrition-panel"')
-    # El título incluye el día actual (8/8/2026 = sábado)
+    assert r.text.index('id="session-date-title"') > r.text.index('id="session-editor"')
     assert (
         "SABADO" in r.text or "DOMINGO" in r.text or date.today().strftime("%A").upper() in r.text
     )
 
 
-def test_panels_layout_topbar_and_bottombar(tmp_path, monkeypatch):
+def test_panels_layout_title_left_controls_right(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/")
     assert r.status_code == 200
-    # Chevron de colapso en el topbar de cada panel
-    assert 'class="panel-topbar"' in r.text
+    # Título en caja (izquierda) + fecha y colapso (derecha) en ambos paneles
+    assert r.text.count('class="panel-title-box"') == 2
     assert r.text.count('data-action="toggle-panel-collapse"') == 2
-    # Editar/eliminar en la barra inferior, fuera del header actions
+    # Fecha en la parte superior derecha del editor de sesión
     session_part = r.text[r.text.index('id="session-editor"') :]
-    header_actions = session_part[
-        session_part.index('class="editor-header-actions') : session_part.index(
-            "</div>", session_part.index('class="editor-header-actions')
-        )
-        + 6
-    ]
+    assert 'id="session-date-title"' in session_part
+    assert "Semana" in session_part
+    # Botones (guardar plantilla, editar, eliminar) en el header actions
+    h_start = session_part.index('class="editor-header-actions')
+    del_start = session_part.index("delete-session-btn", h_start)
+    h_end = session_part.index("</div>", del_start) + 6
+    header_actions = session_part[h_start:h_end]
     assert "save-template-btn" in header_actions
-    assert "pencil-btn" not in header_actions
-    assert "delete-session-btn" not in header_actions
-    assert 'class="panel-bottombar"' in r.text
-    assert "pencil-btn" in r.text
-    assert "delete-session-btn" in r.text
+    assert "pencil-btn" in header_actions
+    assert "delete-session-btn" in header_actions
+    # Sin topbar ni bottombar (controles en el header)
+    assert 'class="panel-topbar"' not in r.text
+    assert 'class="panel-bottombar"' not in r.text
 
 
 def test_panel_titles_are_static(tmp_path, monkeypatch):

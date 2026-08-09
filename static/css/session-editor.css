@@ -181,9 +181,10 @@
     font-size: 10px;
 }
 
-/* Colapso de panel desde el topbar: el contenido se oculta, el topbar permanece */
-#session-editor.collapsed .panel-content,
-#nutrition-panel.collapsed .panel-content {
+/* Colapso de panel: se oculta todo salvo la primera fila del header
+   (caja de título + fecha + chevron), que permanece para re-expandir. */
+#session-editor.collapsed .panel-content > *:not(:first-child),
+#nutrition-panel.collapsed .panel-content > *:not(:first-child) {
     display: none;
 }
 .collapse-chevron {
@@ -194,35 +195,13 @@
     transform: rotate(-90deg);
 }
 
-/* Topbar: fila fina con el botón de colapso integrada en el card */
-#session-editor .panel-topbar,
-#nutrition-panel .panel-topbar {
-    display: flex;
-    align-items: center;
-    padding: 2px 6px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-#session-editor .panel-topbar .edit-toggle,
-#nutrition-panel .panel-topbar .edit-toggle {
-    width: 20px;
-    height: 20px;
-}
-#session-editor .panel-topbar svg,
-#nutrition-panel .panel-topbar svg {
-    width: 12px;
-    height: 12px;
-}
-
-/* Bottombar: botones de editar/eliminar centrados */
-#session-editor .panel-bottombar,
-#nutrition-panel .panel-bottombar {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 6px 0 2px;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
-    margin-top: 2px;
+/* Caja del título del panel (izquierda superior) */
+#session-editor .panel-title-box,
+#nutrition-panel .panel-title-box {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.25);
+    padding: 5px 12px;
 }
 
 /* Columnas de la tabla de alimentación (nutrición; la sesión reparte por defecto) */
