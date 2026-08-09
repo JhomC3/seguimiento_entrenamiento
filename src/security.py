@@ -32,6 +32,11 @@ DEFAULT_HEADERS = {
 
 CSRF_HEADER = "X-CSRF-Token"
 
+# API endpoints with their own credential are exempted from the form-CSRF
+# checks. The exemption is an EXACT path match, never a prefix: a path like
+# /sync/other keeps full CSRF protection. See health-sync-contract.md.
+CSRF_EXEMPT_PATHS: frozenset = frozenset({"/sync/health-connect"})
+
 
 def _window_seconds() -> int:
     try:
@@ -131,6 +136,9 @@ class CSRFProtectionMiddleware:
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope["method"] not in self.UNSAFE_METHODS:
+            await self.app(scope, receive, send)
+            return
+        if scope.get("path", "") in CSRF_EXEMPT_PATHS:
             await self.app(scope, receive, send)
             return
         headers = {k.lower().decode(): v.decode() for k, v in scope.get("headers", [])}

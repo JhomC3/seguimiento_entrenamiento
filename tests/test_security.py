@@ -440,3 +440,29 @@ def test_chart_fragment_never_contains_raw_script_terminator():
         import os
 
         os.unlink(db)
+
+
+SYNC_PATH = "/sync/health-connect"
+
+
+def test_sync_path_bypasses_csrf_exactly(client):
+    """El endpoint API con credencial propia no debe caer bajo el CSRF htmx.
+
+    En esta fase la ruta aún no existe: un 404/503 demuestra que el middleware
+    CSRF no lo bloqueó (403). El contrato de credencial propia se prueba en
+    Task 3.3.
+    """
+    r = client.post(SYNC_PATH, json={})
+    assert r.status_code != 403
+
+
+def test_sync_prefix_paths_still_csrf_protected(client):
+    """El bypass es por igualdad exacta de ruta, nunca por prefijo."""
+    r = client.post("/sync/other", json={})
+    assert r.status_code == 403
+
+
+def test_other_mutations_still_require_csrf(client):
+    """El resto de rutas mutantes del dashboard conservan el CSRF intacto."""
+    r = client.post("/entrenamiento/session/save", data={})
+    assert r.status_code == 403
