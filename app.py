@@ -65,6 +65,9 @@ from src.security import (
 )
 from src.template_service import apply_template_rows
 from src.training_service import (
+    calculate_cycle_week,
+    day_from_date,
+    fecha_display,
     fecha_to_db,
     parse_cycle_start,
     parse_form_date,
@@ -248,6 +251,23 @@ def _nutrition_app_config() -> dict:
     }
 
 
+def _date_title_html(request: Request, fecha_iso: str) -> str:
+    from datetime import date as _date
+
+    d = _date.fromisoformat(fecha_iso)
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="date_title.html",
+            context={
+                "dia": day_from_date(d),
+                "fecha_display": fecha_display(fecha_iso),
+                "semana": calculate_cycle_week(d, CICLO_START_DATE),
+            },
+        )
+    )
+
+
 def _nutrition_fecha_display(fecha_iso: str) -> str:
     from datetime import date as _date
 
@@ -326,6 +346,7 @@ def read_index(request: Request):
                 title=_chart_title(),
             ),
             "navigator_html": _navigator_html(request, fecha),
+            "date_title_html": _date_title_html(request, fecha),
             "editor_html": _editor_html(request, fecha),
             "exercise_form_html": _exercise_form_html(request),
             "plantillas_html": _plantillas_list_html(request),

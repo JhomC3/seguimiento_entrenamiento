@@ -1006,6 +1006,21 @@ def test_index_app_config_tiene_alimento_map(tmp_path, monkeypatch):
     assert '"alimento_map"' in r.text
 
 
+def test_index_renders_global_date_title_below_navigator(tmp_path, monkeypatch):
+    from datetime import date
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/")
+    assert r.status_code == 200
+    assert 'id="session-date-title"' in r.text
+    assert "Semana" in r.text
+    assert r.text.index('id="date-navigator"') < r.text.index('id="session-date-title"')
+    assert r.text.index('id="session-date-title"') < r.text.index('id="nutrition-panel"')
+    # El título incluye el día actual (8/8/2026 = sábado)
+    assert "SABADO" in r.text or "DOMINGO" in r.text or date.today().strftime("%A").upper() in r.text
+
+
 def test_index_renders_nutrition_panel_above_session_editor(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
