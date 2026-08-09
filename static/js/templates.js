@@ -42,7 +42,7 @@ export function aplicarPlantilla(id) {
     if (getApplyInFlight() === key) return;
     setApplyInFlight(key);
     setTimeout(function () { if (getApplyInFlight() === key) setApplyInFlight(null); }, 600);
-    htmx.ajax('GET', `/plantilla/aplicar/${id}?fecha=${fecha}`, { target: '#session-editor-wrap', swap: 'none' });
+    htmx.ajax('GET', `/plantilla/aplicar/${id}?fecha=${fecha}`, { target: 'body', swap: 'none' });
 }
 
 export function eliminarPlantilla(id, nombre) {

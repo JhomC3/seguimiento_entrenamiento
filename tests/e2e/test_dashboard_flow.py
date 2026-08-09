@@ -153,11 +153,18 @@ def test_apply_template(page, server):
     iso = _iso(4)
     _goto_date(page, server, iso)
     expect(page.locator("#session-editor")).to_have_attribute("data-editmode", "1")
+    expect(page.locator("#editor-state")).to_have_attribute("data-has-data", "0")
     page.locator("#plantillas-section .pt-card").get_by_role("button", name="Aplicar").click()
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entreno aplicado", timeout=3000
     )
+    # El contenido aplicado aterriza en el editor (el día pasa a tener datos) y el
+    # marcador interno del swap se consume.
+    expect(page.locator("#editor-state")).to_have_attribute("data-has-data", "1", timeout=3000)
+    expect(page.locator("#plantilla-applied")).to_have_count(0)
     expect(page.locator("#set-rows .ej-select").first).to_have_value("Press")
+    # Aplicar deja el editor guardable: baseline limpio y #edit-actions visible.
+    expect(page.locator("#edit-actions")).not_to_have_class(re.compile(r"\binvisible\b"))
 
 
 def test_template_crud_and_reorder(page, server):

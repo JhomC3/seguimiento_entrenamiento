@@ -71,6 +71,12 @@ export function initLifecycle() {
                 }
                 initEditorRowSortable();
                 fitRowsToPanel();
+            } else if (e.detail.target === document.body && document.getElementById('plantilla-applied')) {
+                syncEditorFromContent();
+                document.getElementById('plantilla-applied').remove();
+                setPlantillaAppliedPending(true);
+                initEditorRowSortable();
+                fitRowsToPanel();
             } else if (e.detail.target.id === 'plantillas-section') {
                 initTemplateSortable();
             }
