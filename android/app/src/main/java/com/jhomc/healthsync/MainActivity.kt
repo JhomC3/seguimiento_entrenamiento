@@ -50,11 +50,17 @@ class MainActivity : ComponentActivity() {
             setOnClickListener { requestPermissions(manager.corePermissions()) }
         }
 
+        val openHcButton = Button(this).apply {
+            text = "Abrir Health Connect (permisos manuales)"
+            setOnClickListener { openHealthConnect() }
+        }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 24, 24, 24)
             addView(statusView)
             addView(coreButton)
+            addView(openHcButton)
         }
 
         // Botones opcionales por familia (nunca en el lote inicial).
@@ -115,7 +121,10 @@ class MainActivity : ComponentActivity() {
 
         permissionLauncher = registerForActivityResult(
             permissionContract(),
-            ActivityResultCallbackAdapter { refreshStates() },
+            ActivityResultCallbackAdapter { granted ->
+                statusView.text = "Permisos concedidos: ${granted.size} tipos."
+                refreshStates()
+            },
         )
         refreshStates()
         loadTarget()
@@ -131,7 +140,31 @@ class MainActivity : ComponentActivity() {
 
     private fun requestPermissions(permissions: Set<String>) {
         if (permissions.isEmpty()) return
-        permissionLauncher.launch(permissions)
+        try {
+            permissionLauncher.launch(permissions)
+        } catch (e: Exception) {
+            // MIUI bloquea a veces el lanzamiento de la pantalla de Health
+            // Connect; nunca dejar el fallo en silencio.
+            statusView.text = "No se pudo abrir Health Connect ($e).\n" +
+                "Usa el botón 'Abrir Health Connect' y concede los permisos desde allí, " +
+                "o activa 'Abrir ventanas en segundo plano' para HealthSync en Ajustes de MIUI."
+        }
+    }
+
+    private fun openHealthConnect() {
+        val launcher = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
+            `package` = "com.google.android.apps.healthdata"
+        }
+        val playStore = android.content.Intent(
+            android.content.Intent.ACTION_VIEW,
+            android.net.Uri.parse("market://details?id=com.google.android.apps.healthdata"),
+        )
+        val resolved = launcher.resolveActivity(packageManager)
+        runCatching {
+            startActivity(if (resolved != null) launcher else playStore)
+        }.onFailure {
+            statusView.text = "No se pudo abrir Health Connect: $it"
+        }
     }
 
     private fun saveTarget() {
@@ -158,55 +191,77 @@ class MainActivity : ComponentActivity() {
 
     private fun loadTarget() {
         lifecycleScope.launch {
-            val target = withContext(Dispatchers.IO) { targetStore.target() }
-            val tokenSet = withContext(Dispatchers.IO) { targetStore.token() != null }
-            urlInput.setText(target?.url ?: "")
-            if (tokenSet) statusView.text = "Destino configurado. Token: guardado (cifrado)."
+            try {
+                val target = withContext(Dispatchers.IO) { targetStore.target() }
+                val tokenSet = withContext(Dispatchers.IO) { targetStore.token() != null }
+                urlInput.setText(target?.url ?: "")
+                if (tokenSet) statusView.text = "Destino configurado. Token: guardado (cifrado)."
+            } catch (e: Exception) {
+                statusView.text = "No se pudo leer la configuración: $e"
+            }
         }
     }
 
     private fun refreshStates() {
         lifecycleScope.launch {
-            val compatible = withContext(Dispatchers.IO) { manager.isCompatible() }
-            if (!compatible) {
-                statusView.text = "Health Connect no disponible en este dispositivo."
-                return@launch
-            }
-            val background = withContext(Dispatchers.IO) { manager.backgroundReadAvailable() }
-            val states = withContext(Dispatchers.IO) { manager.typeStates() }
-            val granted = states.count { it.status != TypeStatus.NOT_AUTHORIZED }
-            val sb = StringBuilder()
-            sb.append("Health Connect: disponible\n")
-            sb.append("Lectura en segundo plano: ${if (background) "disponible" else "NO disponible"}\n")
-            sb.append("Permisos: $granted/${states.size}\n\n")
-            states.forEach { state ->
-                sb.append(
-                    "${statusMark(state.status)} ${state.entry.typeName} " +
-                        "(${state.entry.family.name.lowercase()})" +
-                        if (state.entry.sensitivity == Sensitivity.SENSITIVE) " [sensible]" else "",
-                )
+            try {
+                val compatible = withContext(Dispatchers.IO) { manager.isCompatible() }
+                if (!compatible) {
+                    val detail = withContext(Dispatchers.IO) { manager.providerDetail() }
+                    val installed = detail.installedVersionCode?.toString() ?: "no instalada"
+                    statusView.text = "Health Connect: NO disponible (SDK status ${manager.sdkStatus()}).\n" +
+                        "Proveedor ${detail.packageName}: v$installed " +
+                        "(mínimo requerido v${detail.minRequiredVersionCode}).\n" +
+                        "Pulsa 'Abrir Health Connect' para instalarla/actualizarla."
+                    return@launch
+                }
+                val background = withContext(Dispatchers.IO) { manager.backgroundReadAvailable() }
+                val detail = withContext(Dispatchers.IO) { manager.providerDetail() }
+                val states = withContext(Dispatchers.IO) { manager.typeStates() }
+                val granted = states.count { it.status == TypeStatus.READY || it.status == TypeStatus.SYNCED }
+                val sb = StringBuilder()
+                sb.append("Health Connect: disponible")
+                detail.installedVersionCode?.let { sb.append(" (v$it)") }
                 sb.append("\n")
+                sb.append("Lectura en segundo plano: ${if (background) "disponible" else "NO disponible"}\n")
+                sb.append("Permisos: $granted/${states.size}\n\n")
+                states.forEach { state ->
+                    sb.append(
+                        "${statusText(state.status)} ${state.entry.typeName} " +
+                            "(${state.entry.family.name.lowercase()})" +
+                            if (state.entry.sensitivity == Sensitivity.SENSITIVE) " [sensible]" else "",
+                    )
+                    sb.append("\n")
+                }
+                statusView.text = sb.toString()
+            } catch (e: Exception) {
+                // El servicio de Health Connect puede no responder durante el
+                // arranque; la app nunca debe morir por ello.
+                statusView.text = "Health Connect: pendiente de conectar… ($e)"
             }
-            statusView.text = sb.toString()
         }
     }
 
     private fun readStepsSmoke() {
         lifecycleScope.launch {
-            val count = withContext(Dispatchers.IO) { manager.stepsLast24h() }
-            statusView.text = if (count != null) {
-                "Pasos últimas 24h (agregado): $count"
-            } else {
-                "Sin datos de pasos en las últimas 24h (o permiso no concedido)."
+            try {
+                val count = withContext(Dispatchers.IO) { manager.stepsLast24h() }
+                statusView.text = if (count != null) {
+                    "Pasos últimas 24h (agregado): $count"
+                } else {
+                    "Sin datos de pasos en las últimas 24h (o permiso no concedido)."
+                }
+            } catch (e: Exception) {
+                statusView.text = "Fallo al leer pasos: $e"
             }
         }
     }
 
-    private fun statusMark(status: TypeStatus): String = when (status) {
-        TypeStatus.READY, TypeStatus.SYNCED -> "✓"
-        TypeStatus.NOT_AUTHORIZED -> "○"
-        TypeStatus.NOT_AVAILABLE -> "✗"
-        TypeStatus.ERROR -> "!"
+    private fun statusText(status: TypeStatus): String = when (status) {
+        TypeStatus.READY, TypeStatus.SYNCED -> "OK "
+        TypeStatus.NOT_AUTHORIZED -> "SIN"
+        TypeStatus.NOT_AVAILABLE -> "N/D"
+        TypeStatus.ERROR -> "ERR"
     }
 }
 

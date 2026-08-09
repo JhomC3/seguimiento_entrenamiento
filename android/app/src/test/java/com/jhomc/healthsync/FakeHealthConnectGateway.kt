@@ -67,4 +67,10 @@ class FakeHealthConnectGateway : HealthConnectGateway {
         val page = backfillQueue.removeAt(0)
         return ReadRecordsResponse(page, if (backfillQueue.isNotEmpty()) "page-token-${tokenCounter}" else null)
     }
+
+    override suspend fun providerDetail() = ProviderDetail(
+        packageName = "com.google.android.apps.healthdata",
+        installedVersionCode = 1752L,
+        minRequiredVersionCode = 1000L,
+    )
 }

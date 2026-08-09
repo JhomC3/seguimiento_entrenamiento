@@ -36,7 +36,16 @@ interface HealthConnectGateway {
         end: Instant,
         pageToken: String?,
     ): ReadRecordsResponse<Record>
+
+    // Phase 5: provider diagnostics
+    suspend fun providerDetail(): ProviderDetail
 }
+
+data class ProviderDetail(
+    val packageName: String,
+    val installedVersionCode: Long?,
+    val minRequiredVersionCode: Long,
+)
 
 class RealHealthConnectGateway(context: Context) : HealthConnectGateway {
 
@@ -88,4 +97,27 @@ class RealHealthConnectGateway(context: Context) : HealthConnectGateway {
 
     override fun permissionContract(): ActivityResultContract<Set<String>, Set<String>> =
         PermissionController.createRequestPermissionResultContract()
+
+    override suspend fun providerDetail(): ProviderDetail {
+        val installed = runCatching {
+            appContext.packageManager.getPackageInfo(
+                HealthConnectProvider.PACKAGE_NAME,
+                0,
+            ).longVersionCode
+        }.getOrNull()
+        return ProviderDetail(
+            packageName = HealthConnectProvider.PACKAGE_NAME,
+            installedVersionCode = installed,
+            minRequiredVersionCode = HealthConnectProvider.MIN_VERSION_CODE,
+        )
+    }
+}
+
+/**
+ * Health Connect provider constants for connect-client 1.1.0. The SDK marks
+ * DEFAULT_PROVIDER_* as internal; values verified from the 1.1.0 AAR bytecode.
+ */
+object HealthConnectProvider {
+    const val PACKAGE_NAME = "com.google.android.apps.healthdata"
+    const val MIN_VERSION_CODE = 68_623L
 }

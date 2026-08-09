@@ -47,6 +47,8 @@ class HealthConnectManager(private val gateway: HealthConnectGateway) {
         val start = end.minusSeconds(24 * 3600)
         return gateway.stepsCountTotal(start, end)
     }
+
+    suspend fun providerDetail(): ProviderDetail = gateway.providerDetail()
 }
 
 object HealthPermissions {
