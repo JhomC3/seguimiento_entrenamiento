@@ -999,6 +999,13 @@ def test_alimentacion_save_guarda_parametros_y_filas(tmp_path, monkeypatch):
     assert params["kcal_objetivo"] == 2750.0
 
 
+def test_index_app_config_tiene_ciclo_start(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/")
+    assert '"ciclo_start"' in r.text
+
+
 def test_index_app_config_tiene_alimento_map(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)

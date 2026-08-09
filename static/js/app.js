@@ -12,7 +12,7 @@ import { initLifecycle } from './htmx-lifecycle.js';
 import { initNutritionEditor } from './nutrition-editor.js';
 import { scheduleNotices } from './notices.js';
 import { initPanelCollapse } from './panel-collapse.js';
-import { getCsrfToken, setAlimentoMap, setCategoriaMap, setCsrfToken } from './state.js';
+import { getCsrfToken, setAlimentoMap, setCategoriaMap, setCicloStart, setCsrfToken } from './state.js';
 import { initEntrenoDnD, initTemplateActions, initTemplateSortable } from './templates.js';
 
 function loadConfig() {
@@ -22,6 +22,7 @@ function loadConfig() {
         const config = JSON.parse(el.textContent);
         setCategoriaMap(config.categoria_map || {});
         setAlimentoMap(config.alimento_map || {});
+        setCicloStart(config.ciclo_start || "");
         setCsrfToken(config.csrf_token || "");
     } catch (err) {
         console.error('app-config no válido', err);

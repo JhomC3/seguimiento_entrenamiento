@@ -356,6 +356,7 @@ def read_index(request: Request):
             "app_config_json": {
                 "categoria_map": get_ejercicio_categoria(DB_PATH),
                 "alimento_map": _alimento_preview_map(),
+                "ciclo_start": CICLO_START_DATE.isoformat(),
                 "csrf_token": make_csrf_token(get_csrf_secret()),
             },
         },

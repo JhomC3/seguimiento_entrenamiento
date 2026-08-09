@@ -17,6 +17,7 @@ let applyInFlight = null;
 let dragGhost = null;
 let categoriaMap = {};
 let alimentoMap = {};
+let cicloStart = "";
 let csrfToken = "";
 let currentIso = null;
 
@@ -46,6 +47,8 @@ export function setCategoriaMap(m) { categoriaMap = m || {}; }
 export function getCategoriaMap() { return categoriaMap; }
 export function setAlimentoMap(m) { alimentoMap = m || {}; }
 export function getAlimentoMap() { return alimentoMap; }
+export function setCicloStart(v) { cicloStart = v || ""; }
+export function getCicloStart() { return cicloStart; }
 export function setCsrfToken(t) { csrfToken = t || ""; }
 export function getCsrfToken() { return csrfToken; }
 

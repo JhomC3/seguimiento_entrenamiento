@@ -2,11 +2,42 @@
 // DOM owned: #date-navigator, #date-strip, .date-num, .date-dot.
 // Public API: initDateNavigation, doNav, requestNavigate, updateDateDot.
 
-import { getCurrentIso, getPendingNav, isDirty, setCurrentIso, setPendingNav, showConfirmDialog } from './state.js';
+import { getCicloStart, getCurrentIso, getPendingNav, isDirty, setCurrentIso, setPendingNav, showConfirmDialog } from './state.js';
 import { submitSave } from './editor.js';
 import { nutritionIsDirty, requestNutritionNav } from './nutrition-editor.js';
 
+const DIA_MAP = {
+    0: 'DOMINGO',
+    1: 'LUNES',
+    2: 'MARTES',
+    3: 'MIERCOLES',
+    4: 'JUEVES',
+    5: 'VIERNES',
+    6: 'SABADO',
+};
+
 let inFlightIso = null;
+
+function updateDateTitle(iso) {
+    const el = document.getElementById('session-date-title');
+    if (!el) return;
+    const [y, m, d] = iso.split('-').map(Number);
+    const fecha = new Date(Date.UTC(y, m - 1, d));
+    const h3 = el.querySelector('h3');
+    if (h3) h3.textContent = DIA_MAP[fecha.getUTCDay()] + ' ' + d + '/' + m + '/' + String(y % 100).padStart(2, '0');
+    const span = el.querySelector('span');
+    if (!span) return;
+    const start = getCicloStart();
+    let semana = 1;
+    if (start) {
+        const [sy, sm, sd] = start.split('-').map(Number);
+        const s = new Date(Date.UTC(sy, sm - 1, sd));
+        const lunes = new Date(s);
+        lunes.setUTCDate(s.getUTCDate() - ((s.getUTCDay() + 6) % 7));
+        semana = Math.max(1, Math.floor((fecha - lunes) / 86400000 / 7) + 1);
+    }
+    span.textContent = 'Semana ' + semana;
+}
 
 export function doNav(iso, force) {
     if (!iso) return;
@@ -17,6 +48,7 @@ export function doNav(iso, force) {
     }
     if (inFlightIso === iso) return;
     inFlightIso = iso;
+    updateDateTitle(iso);
     const actions = document.getElementById('edit-actions');
     if (actions) actions.classList.add('invisible');
     setCurrentIso(iso);

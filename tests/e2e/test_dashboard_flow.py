@@ -27,9 +27,13 @@ def _wait_editor_settled(page):
 def _goto_date(page, server, iso):
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
+    before = page.locator("#session-date-title h3").inner_text()
     page.locator(f'.date-num[data-iso="{iso}"]').click()
     expect(page.locator(f'.date-num[data-iso="{iso}"]')).to_have_class(re.compile(r"\bselected\b"))
     expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
+    # El título global cambia con la navegación
+    expect(page.locator("#session-date-title h3")).not_to_have_text(before)
+    expect(page.locator("#session-date-title")).to_contain_text("Semana")
     _wait_editor_settled(page)
 
 
@@ -87,7 +91,7 @@ def test_unsaved_changes_confirmation(page, server):
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    expect(page.locator("#session-editor-wrap")).to_contain_text("Semana")
+    expect(page.locator("#session-date-title")).to_contain_text("Semana")
     expect(page.locator('#session-form input[name="fecha"]')).to_have_value(_iso(2))
 
 
