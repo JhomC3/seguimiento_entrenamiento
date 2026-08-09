@@ -152,18 +152,28 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openHealthConnect() {
-        val launcher = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
-            `package` = "com.google.android.apps.healthdata"
+        val packageName = "com.google.android.apps.healthdata"
+        val enabled = runCatching {
+            packageManager.getApplicationEnabledSetting(packageName)
+        }.getOrDefault(android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DEFAULT)
+        if (enabled == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
+            statusView.text = "Health Connect está DESHABILITADA.\n" +
+                "Vé a Ajustes > Apps > Health Connect > Habilitar, y reintenta."
+            return
         }
         val playStore = android.content.Intent(
             android.content.Intent.ACTION_VIEW,
-            android.net.Uri.parse("market://details?id=com.google.android.apps.healthdata"),
+            android.net.Uri.parse("market://details?id=$packageName"),
         )
-        val resolved = launcher.resolveActivity(packageManager)
+        val launcher = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
+            addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+            `package` = packageName
+        }
         runCatching {
-            startActivity(if (resolved != null) launcher else playStore)
+            startActivity(launcher)
         }.onFailure {
-            statusView.text = "No se pudo abrir Health Connect: $it"
+            runCatching { startActivity(playStore) }
+                .onFailure { statusView.text = "No se pudo abrir Health Connect: $it" }
         }
     }
 
