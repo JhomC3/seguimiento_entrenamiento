@@ -150,7 +150,9 @@ def ingest_health_records(db_path: str, payload: HealthSyncPayload) -> IngestRes
     return IngestResult(received=len(payload.operations), accepted=accepted, rejected=rejected)
 
 
-def _apply_upsert(conn, op: HealthRecordInput, device_id: str, now: str, accepted, rejected) -> None:
+def _apply_upsert(
+    conn, op: HealthRecordInput, device_id: str, now: str, accepted, rejected
+) -> None:
     cursor = conn.execute(
         """
         INSERT INTO health_records (

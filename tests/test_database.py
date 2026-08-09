@@ -863,10 +863,13 @@ def test_v010_health_records_schema(tmp_path):
     } <= cols
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     assert max_version == 10
-    pk_cols = {r[1] for r in conn.execute("PRAGMA table_info(health_records)").fetchall() if r[5] == 1}
+    pk_cols = {
+        r[1] for r in conn.execute("PRAGMA table_info(health_records)").fetchall() if r[5] == 1
+    }
     assert pk_cols == {"hc_id"}
     index_cols = {
-        (r[2], r[1]) for r in conn.execute("PRAGMA index_info(idx_health_records_type_start)").fetchall()
+        (r[2], r[1])
+        for r in conn.execute("PRAGMA index_info(idx_health_records_type_start)").fetchall()
     }
     assert ("record_type", 1) in index_cols
     assert ("start_epoch_ms", 2) in index_cols

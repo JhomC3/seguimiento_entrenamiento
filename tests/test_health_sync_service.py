@@ -69,14 +69,18 @@ def test_replay_identical_is_acked_without_rewrite(tmp_path):
     init_db(db)
     payload = _payload([_upsert("a", 100, count=100)])
     ingest_health_records(db, payload)
-    first_updated = sqlite3.connect(db).execute(
-        "SELECT updated_at FROM health_records WHERE hc_id = 'a'"
-    ).fetchone()[0]
+    first_updated = (
+        sqlite3.connect(db)
+        .execute("SELECT updated_at FROM health_records WHERE hc_id = 'a'")
+        .fetchone()[0]
+    )
     result = ingest_health_records(db, payload)
     assert result.accepted_count == 1
-    second_updated = sqlite3.connect(db).execute(
-        "SELECT updated_at FROM health_records WHERE hc_id = 'a'"
-    ).fetchone()[0]
+    second_updated = (
+        sqlite3.connect(db)
+        .execute("SELECT updated_at FROM health_records WHERE hc_id = 'a'")
+        .fetchone()[0]
+    )
     assert first_updated == second_updated
 
 
