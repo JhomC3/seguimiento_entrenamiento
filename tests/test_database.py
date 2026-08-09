@@ -103,7 +103,7 @@ def test_migrations_recorded_in_schema_migrations(tmp_path):
         r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()
     )
     conn.close()
-    assert versions == [1, 2, 3, 5, 6, 7, 8]
+    assert versions == [1, 2, 3, 5, 6, 7, 8, 9]
 
 
 def test_migrates_intermediate_state_without_orden(tmp_path):
@@ -354,13 +354,46 @@ def test_v007_nutrition_origin_defaults_to_google(tmp_path):
     conn.close()
 
 
-def test_v008_is_latest_schema_version(tmp_path):
+def test_v009_creates_meal_templates(tmp_path):
+    from src.db_connection import connect_db
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = connect_db(db_path)
+    tables = [t[0] for t in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+    assert "plantillas_alimentacion" in tables
+    assert "plantilla_alimentos" in tables
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(plantillas_alimentacion)").fetchall()]
+    assert "nombre" in cols and "orden" in cols
+    alim_cols = [r[1] for r in conn.execute("PRAGMA table_info(plantilla_alimentos)").fetchall()]
+    assert "plantilla_id" in alim_cols and "cantidad_g" in alim_cols
+    # FK CASCADE (connect_db activa foreign_keys)
+    conn.execute(
+        "INSERT INTO plantillas_alimentacion (nombre, created_at, updated_at, orden) "
+        "VALUES ('Desayuno', '', '', 1)"
+    )
+    pid = conn.execute("SELECT id FROM plantillas_alimentacion").fetchone()[0]
+    conn.execute(
+        "INSERT INTO plantilla_alimentos (plantilla_id, orden, alimento, cantidad_g) "
+        "VALUES (?, 1, 'Avena', 120)",
+        (pid,),
+    )
+    conn.commit()
+    conn.execute("DELETE FROM plantillas_alimentacion WHERE id = ?", (pid,))
+    conn.commit()
+    assert conn.execute("SELECT COUNT(*) FROM plantilla_alimentos").fetchone()[0] == 0
+    max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
+    conn.close()
+    assert max_version == 9
+
+
+def test_v009_is_latest_schema_version(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
     conn = sqlite3.connect(db_path)
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 8
+    assert max_version == 9
 
 
 def test_v007_migration_idempotent(tmp_path):
@@ -637,7 +670,7 @@ def test_v008_creates_parametros_diarios_and_nullable_qty(tmp_path):
         assert col in params
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 8
+    assert max_version == 9
 
 
 def test_v008_preserves_diario_rows(tmp_path):

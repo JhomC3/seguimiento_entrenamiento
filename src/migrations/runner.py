@@ -12,6 +12,7 @@ from src.migrations import (
     v006_iso_dates,
     v007_nutrition,
     v008_nutrition_daily_params,
+    v009_nutrition_meal_templates,
 )
 
 MIGRATIONS = [
@@ -22,6 +23,7 @@ MIGRATIONS = [
     v006_iso_dates,
     v007_nutrition,
     v008_nutrition_daily_params,
+    v009_nutrition_meal_templates,
 ]
 
 _CURRENT_VERSION = max(m.VERSION for m in MIGRATIONS)
@@ -35,6 +37,8 @@ _DOMAIN_TABLES = {
     "alimentos",
     "diario_alimentacion",
     "parametros_diarios",
+    "plantillas_alimentacion",
+    "plantilla_alimentos",
 }
 
 
