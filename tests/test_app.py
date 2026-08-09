@@ -1025,7 +1025,33 @@ def test_index_renders_global_date_title_below_navigator(tmp_path, monkeypatch):
     assert r.text.index('id="date-navigator"') < r.text.index('id="session-date-title"')
     assert r.text.index('id="session-date-title"') < r.text.index('id="nutrition-panel"')
     # El título incluye el día actual (8/8/2026 = sábado)
-    assert "SABADO" in r.text or "DOMINGO" in r.text or date.today().strftime("%A").upper() in r.text
+    assert (
+        "SABADO" in r.text or "DOMINGO" in r.text or date.today().strftime("%A").upper() in r.text
+    )
+
+
+def test_panels_layout_topbar_and_bottombar(tmp_path, monkeypatch):
+    db = _seed_nutrition(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/")
+    assert r.status_code == 200
+    # Chevron de colapso en el topbar de cada panel
+    assert 'class="panel-topbar"' in r.text
+    assert r.text.count('data-action="toggle-panel-collapse"') == 2
+    # Editar/eliminar en la barra inferior, fuera del header actions
+    session_part = r.text[r.text.index('id="session-editor"') :]
+    header_actions = session_part[
+        session_part.index('class="editor-header-actions') : session_part.index(
+            "</div>", session_part.index('class="editor-header-actions')
+        )
+        + 6
+    ]
+    assert "save-template-btn" in header_actions
+    assert "pencil-btn" not in header_actions
+    assert "delete-session-btn" not in header_actions
+    assert 'class="panel-bottombar"' in r.text
+    assert "pencil-btn" in r.text
+    assert "delete-session-btn" in r.text
 
 
 def test_panel_titles_are_static(tmp_path, monkeypatch):

@@ -100,6 +100,7 @@ async def no_cache_static(request: Request, call_next):
         response.headers["Cache-Control"] = "no-cache"
     return response
 
+
 CICLO_START_DATE = parse_cycle_start(CICLO_START)
 
 
