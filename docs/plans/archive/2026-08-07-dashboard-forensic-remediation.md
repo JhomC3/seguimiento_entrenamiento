@@ -1,5 +1,7 @@
 # Dashboard Forensic Remediation Implementation Plan
 
+> **Estado:** CONCLUIDO (2026-08-09) — implementado y verificado en `main`. Evidencia: `src/backup_utils.py`, `static/css/tailwind.css`, `GET /sesiones`, `GYM_CSRF_WINDOW_HOURS`, migraciones v005/v006 (ISO + recompute semana).
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Remediación forense del dashboard: normalizar las fechas de sesión a ISO (elimina la clase de bugs de ordenamiento), centralizar la fórmula RMₐ, retener backups, eliminar código muerto, añadir historial de sesiones y endurecer seguridad/UX (Tailwind estático, CSRF configurable, focus-visible, navegación por teclado) sin cambiar la identidad visual ni el contrato htmx existente.

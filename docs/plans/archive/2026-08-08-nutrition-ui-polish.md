@@ -1,5 +1,7 @@
 # Nutrition UI Polish Implementation Plan
 
+> **Estado:** CONCLUIDO (2026-08-09) — implementado y verificado en `main`. Evidencia: migración v009 (plantillas de alimentación), prefill en `build_nutrition_editor`, `#session-date-title`, commits de 2026-08-08/09.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Reordenar la cabecera del dashboard (título de fecha global debajo del navegador, títulos de panel estáticos, colapso arriba, editar/eliminar abajo en ambos paneles), añadir plantillas de alimentación con drag&drop (guardar/reordenar/aplicar como en entrenamiento) y precargar en cada día vacío los últimos datos guardados (alimentos y parámetros peso/factores/kcal).

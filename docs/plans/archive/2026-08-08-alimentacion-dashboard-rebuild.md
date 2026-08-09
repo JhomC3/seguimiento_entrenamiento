@@ -1,5 +1,7 @@
 # Panel de Alimentación — Rebuild Implementation Plan
 
+> **Estado:** CONCLUIDO (2026-08-09) — implementado y verificado en `main`. Evidencia: migraciones v007/v008, panel de alimentación en `/` con parámetros por día, notas de ejecución al final.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Rehacer el panel de alimentación sobre la rama `feature/nutrition-dashboard`: integrado en la página principal (arriba del editor de entrenamiento), con tabla de día idéntica al esquema del usuario (fila Objetivo calculada desde peso/factores editables, fila Consumido = suma del día, 9 nutrientes por alimento recalculados desde el catálogo), eliminando la página standalone, corrigiendo los 126 bloques duplicados del 8/8/2026 y conservando filas placeholder.

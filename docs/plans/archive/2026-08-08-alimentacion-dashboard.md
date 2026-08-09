@@ -1,5 +1,7 @@
 # Panel de Alimentación Implementation Plan
 
+> **Estado:** CONCLUIDO (2026-08-09) — implementado y posteriormente **reemplazado**: la página standalone `/alimentacion` se eliminó cuando el panel se integró en `/` por `2026-08-08-alimentacion-dashboard-rebuild.md`.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Añadir un panel independiente `/alimentacion` para consultar y editar el diario nutricional, importando las hojas públicas `diario` y `alimentos` de Google Sheets sin alterar el panel de entrenamiento.
