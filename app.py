@@ -595,9 +595,7 @@ def plantilla_alimentacion_guardar(
 ):
     try:
         entries = entries_from_form(alimento, cantidad)
-        rows = [
-            {"alimento": e.alimento, "cantidad_g": float(e.cantidad_g)} for e in entries
-        ]
+        rows = [{"alimento": e.alimento, "cantidad_g": float(e.cantidad_g)} for e in entries]
         save_meal_template(DB_PATH, nombre, rows)
     except Exception as e:
         return _domain_error_response(request, e, "notice-container")
@@ -647,9 +645,7 @@ def plantilla_alimentacion_reordenar(request: Request, id: list[int] = Form(defa
 
 
 @app.get("/alimentacion/plantilla/aplicar/{plantilla_id}", response_class=HTMLResponse)
-def plantilla_alimentacion_aplicar(
-    request: Request, plantilla_id: int, fecha: str = Query(...)
-):
+def plantilla_alimentacion_aplicar(request: Request, plantilla_id: int, fecha: str = Query(...)):
     try:
         rows = apply_meal_template(DB_PATH, plantilla_id)
     except Exception as e:

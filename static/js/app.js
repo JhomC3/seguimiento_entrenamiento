@@ -10,6 +10,7 @@ import { initDateNavigation } from './date-navigation.js';
 import { fitRowsToPanel, initEditorActions, initEditorRowSortable, syncEditorFromContent } from './editor.js';
 import { initLifecycle } from './htmx-lifecycle.js';
 import { initNutritionEditor } from './nutrition-editor.js';
+import { initNutritionTemplatesDnD } from './nutrition-templates.js';
 import { scheduleNotices } from './notices.js';
 import { initPanelCollapse } from './panel-collapse.js';
 import { getCsrfToken, setAlimentoMap, setCategoriaMap, setCicloStart, setCsrfToken } from './state.js';
@@ -51,6 +52,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initEditorActions();
     initTemplateActions();
     initNutritionEditor();
+    initNutritionTemplatesDnD();
     initPanelCollapse();
     scheduleNotices();
     syncEditorFromContent();

@@ -82,3 +82,61 @@ def test_nutrition_create_edit_save_reload_delete(page, server):
     page.wait_for_selector("#notice-container .notice", timeout=5000)
     expect(page.locator("#nutrition-editor-state")).to_have_attribute("data-has-data", "0")
     expect(page.locator('#nutrition-rows input[name="alimento"]')).to_have_value("")
+
+
+def _fill_nutrition_day(page):
+    # Prepara el día con una fila Avena 120 g. El toggle en un día editable
+    # re-renderiza del servidor: esperar el settle antes de llenar.
+    page.click('#nutrition-panel [data-action="nutrition-toggle-edit"]')
+    page.wait_for_timeout(500)
+    row = page.locator("#nutrition-rows .nutrition-row").last
+    row.locator('input[name="alimento"]').fill("Avena")
+    row.locator('input[name="cantidad"]').fill("120")
+
+
+def test_nutrition_templates_save_reorder_apply(page, server):
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.on("console", lambda m: print("CONSOLE", m.text) if m.type == "error" else None)
+
+    # 1) Guardar plantilla desde el header del editor
+    _fill_nutrition_day(page)
+    page.click('[data-action="nutrition-toggle-template-form"]')
+    page.fill('#save-meal-template-form input[name="nombre"]', "Desayuno")
+    page.click('[data-action="confirm-meal-template-save"]')
+    page.wait_for_selector("#notice-container .notice", timeout=5000)
+    expect(page.locator("#nutrition-templates")).to_contain_text("Desayuno")
+
+    # 2) Aplicar por drag sobre el panel (otra fecha, sin datos)
+    page.evaluate(
+        "const el = document.querySelector('#date-jump'); el.value = '2026-08-09'; "
+        "el.dispatchEvent(new Event('change', { bubbles: true }));"
+    )
+    import time as _time
+
+    for _ in range(40):
+        if page.evaluate(
+            "document.querySelector('#nutrition-form input[name=\"fecha\"]')?.value === '2026-08-09'"
+        ):
+            break
+        _time.sleep(0.25)
+    card = page.locator("#nutrition-templates .pt-card").first
+    panel = page.locator("#nutrition-panel")
+    card.drag_to(panel, source_position={"x": 60, "y": 16}, target_position={"x": 100, "y": 100})
+    page.wait_for_selector("#notice-container .notice", timeout=5000)
+    expect(page.locator('#nutrition-rows input[name="alimento"]').first).to_have_value("Avena")
+
+    # 3) Reordenar por drag entre tarjetas (crear una segunda plantilla)
+    _fill_nutrition_day(page)
+    page.click('[data-action="nutrition-toggle-template-form"]')
+    page.fill('#save-meal-template-form input[name="nombre"]', "Cena")
+    page.click('[data-action="confirm-meal-template-save"]')
+    page.wait_for_selector("#notice-container .notice", timeout=5000)
+    expect(page.locator("#nutrition-templates .pt-card")).to_have_count(2)
+    first = page.locator("#nutrition-templates .pt-card").first
+    second = page.locator("#nutrition-templates .pt-card").nth(1)
+    second.drag_to(first, source_position={"x": 60, "y": 16}, target_position={"x": 60, "y": 16})
+    page.wait_for_timeout(600)
+    page.reload()
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    expect(page.locator("#nutrition-templates .pt-card").first).to_contain_text("Cena")

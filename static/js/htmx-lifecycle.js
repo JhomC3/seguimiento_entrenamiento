@@ -14,6 +14,7 @@ import {
 } from './editor.js';
 import { scheduleNotices } from './notices.js';
 import { refreshNutritionEditor } from './nutrition-editor.js';
+import { refreshNutritionTemplatesDnD } from './nutrition-templates.js';
 import {
     confirmEntrenoSave,
     guardarPlantillaToggle,
@@ -105,6 +106,7 @@ export function initLifecycle() {
         if (e.detail.successful && document.getElementById('nutrition-form')) {
             refreshNutritionEditor();
         }
+        refreshNutritionTemplatesDnD();
         if (getSaveRequested() && document.getElementById('session-form')) {
             setSaveRequested(false);
             const undoRes = document.getElementById('undo-result');

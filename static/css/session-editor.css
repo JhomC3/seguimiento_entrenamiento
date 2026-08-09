@@ -55,10 +55,12 @@
 .edit-toggle.off:hover {
     color: rgba(255, 255, 255, 0.7);
 }
-.save-template-btn {
+.save-template-btn,
+.nutrition-template-btn {
     color: rgba(255, 255, 255, 0.35);
 }
-.save-template-btn.on {
+.save-template-btn.on,
+.nutrition-template-btn.on {
     color: #ffffff;
     background: rgba(255, 255, 255, 0.14);
     box-shadow: 0 0 12px rgba(255, 255, 255, 0.25);
@@ -72,8 +74,9 @@
     box-shadow: 0 0 12px rgba(255, 255, 255, 0.25);
 }
 
-/* Destino de drop de entrenos (editor en modo editable) */
-#session-editor.drop-target {
+/* Destino de drop de entrenos/plantillas (editor en modo editable) */
+#session-editor.drop-target,
+#nutrition-panel.drop-target {
     outline: 2px dashed rgba(229, 109, 136, 0.55);
     outline-offset: -2px;
 }
