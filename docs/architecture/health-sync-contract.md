@@ -108,3 +108,31 @@ rechazadas para ese destino.
 evolucionar sin romper instalaciones viejas. El servidor responde siempre con su
 `schema_version`; si el cliente es más nuevo, degrada o rechaza con `400` y un
 motivo accionable.
+
+## 8. Requisito del manifest: handler de política de privacidad
+
+El proveedor de Health Connect (versiones 2025+) **solo registra apps que
+declaran el handler del intent de política de privacidad**. Sin él, la app NO
+aparece en "Permisos de las apps" de Health Connect y el diálogo de permisos se
+abre vacío (verificado en dispositivo: Redmi/Android 13, HC v268669; causa
+resuelta alineando el manifest con `android/health-samples`).
+
+La app DEBE declarar en su manifest:
+
+```xml
+<!-- En la Activity principal -->
+<intent-filter>
+    <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+</intent-filter>
+<intent-filter>
+    <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+    <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+</intent-filter>
+
+<!-- En <queries> -->
+<intent>
+    <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+</intent>
+```
+
+Guard de regresión: `ManifestContractTest` falla si se elimina la declaración.
