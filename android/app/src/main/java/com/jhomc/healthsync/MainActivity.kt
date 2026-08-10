@@ -117,6 +117,12 @@ class MainActivity : ComponentActivity() {
         }
         root.addView(syncNowButton)
 
+        val diagnosticsButton = Button(this).apply {
+            text = "Diagnóstico (ver qué ve el sistema)"
+            setOnClickListener { runDiagnostics() }
+        }
+        root.addView(diagnosticsButton)
+
         setContentView(ScrollView(this).apply { addView(root) })
 
         permissionLauncher = registerForActivityResult(
@@ -264,6 +270,59 @@ class MainActivity : ComponentActivity() {
             } catch (e: Exception) {
                 statusView.text = "Fallo al leer pasos: $e"
             }
+        }
+    }
+
+    private fun runDiagnostics() {
+        lifecycleScope.launch {
+            val sb = StringBuilder()
+            // 1) Qué permisos ve el SISTEMA en el APK instalado de HealthSync.
+            val requested = runCatching {
+                packageManager.getPackageInfo(
+                    packageName,
+                    android.content.pm.PackageManager.GET_PERMISSIONS,
+                ).requestedPermissions?.toList() ?: emptyList()
+            }.getOrDefault(emptyList())
+            val healthPerms = requested.filter { it.startsWith("android.permission.health.") }
+            sb.append("Permisos health que el sistema ve en HealthSync:\n")
+            sb.append(if (healthPerms.isEmpty()) "  NINGUNO\n" else "  ${healthPerms.size}: ${healthPerms.joinToString(", ")}\n")
+            sb.append("\n")
+
+            // 2) El intent de permisos: ¿lo resuelve el sistema a alguna activity?
+            try {
+                val contract = androidx.health.connect.client.PermissionController
+                    .createRequestPermissionResultContract()
+                val intent = contract.createIntent(this@MainActivity, manager.corePermissions())
+                val resolved = intent.resolveActivity(packageManager)
+                sb.append("Intent de permisos: ${intent.action}\n")
+                sb.append("  paquete: ${intent.`package`}\n")
+                sb.append(
+                    if (resolved != null) {
+                        "  RESUELTO a: ${resolved.flattenToString()}\n"
+                    } else {
+                        "  NO RESUELTO (el sistema no encuentra la pantalla de permisos)\n"
+                    },
+                )
+            } catch (e: Exception) {
+                sb.append("Error al construir el intent de permisos: $e\n")
+            }
+
+            // 3) Estado del proveedor.
+            val detail = withContext(Dispatchers.IO) { manager.providerDetail() }
+            sb.append("\nProveedor: ${detail.packageName}\n")
+            sb.append("  instalado v${detail.installedVersionCode ?: "NO"}\n")
+            sb.append("  mínimo requerido v${detail.minRequiredVersionCode}\n")
+            sb.append("  SDK status: ${manager.sdkStatus()}\n")
+
+            // 4) Launcher del proveedor (¿existe activity principal?)
+            val launcherIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
+                addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+                `package` = detail.packageName
+            }
+            val launcher = launcherIntent.resolveActivity(packageManager)
+            sb.append("  launcher HC: ${if (launcher != null) launcher.flattenToString() else "NO existe (por eso no hay icono)"}\n")
+
+            statusView.text = sb.toString()
         }
     }
 
