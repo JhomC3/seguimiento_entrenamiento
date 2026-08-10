@@ -22,6 +22,12 @@
 
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
+
+        <!-- Requisito del contrato del proveedor: resolver el intent de la
+             política de privacidad del diálogo de permisos de Health Connect. -->
+        <intent>
+            <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+        </intent>
     </queries>
 
     <application
@@ -34,6 +40,19 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Health Connect: el diálogo de permisos envía este intent para
+                 mostrar la política de privacidad de la app (requerido por el
+                 contrato del proveedor; sin él HC no registra la app). -->
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+
+            <!-- Health Connect: gestión de permisos en Android 14+. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
         </activity>
     </application>

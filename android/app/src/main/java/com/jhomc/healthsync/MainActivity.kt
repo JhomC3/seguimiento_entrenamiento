@@ -32,6 +32,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (intent?.action == RATIONALE_ACTION) {
+            showPrivacyPolicy()
+            return
+        }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             setContentView(
                 TextView(this).apply {
@@ -148,6 +152,39 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshStates()
+    }
+
+    /**
+     * Health Connect (ACTION_SHOW_PERMISSIONS_RATIONALE): pantalla de política
+     * de privacidad exigida por el contrato del proveedor cuando el usuario
+     * toca el enlace en el diálogo de permisos.
+     */
+    private fun showPrivacyPolicy() {
+        val privacyView = TextView(this).apply {
+            text = "Privacidad de HealthSync\n\n" +
+                "HealthSync lee tus datos de salud (pasos, frecuencia cardíaca, " +
+                "sueño, ejercicio, peso y composición) SOLO para tu propio " +
+                "análisis personal.\n\n" +
+                "Los datos se envían únicamente a tu servidor personal (por " +
+                "defecto, tu propio Mac en tu red) mediante HTTPS con un token " +
+                "secreto. No se comparten con terceros, no se venden y no salen " +
+                "de tu infraestructura.\n\n" +
+                "Puedes revocar los permisos en cualquier momento desde " +
+                "Health Connect."
+            textSize = 16f
+            setPadding(32, 32, 32, 32)
+        }
+        val okButton = Button(this).apply {
+            text = "Entendido"
+            setOnClickListener { finish() }
+        }
+        setContentView(
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(privacyView)
+                addView(okButton)
+            },
+        )
     }
 
     private fun permissionContract(): ActivityResultContract<Set<String>, Set<String>> =
@@ -340,6 +377,10 @@ class MainActivity : ComponentActivity() {
         TypeStatus.NOT_AUTHORIZED -> "SIN"
         TypeStatus.NOT_AVAILABLE -> "N/D"
         TypeStatus.ERROR -> "ERR"
+    }
+
+    companion object {
+        private const val RATIONALE_ACTION = "androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE"
     }
 }
 
