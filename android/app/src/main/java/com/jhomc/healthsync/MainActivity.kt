@@ -55,12 +55,21 @@ class MainActivity : ComponentActivity() {
             setOnClickListener { openHealthConnect() }
         }
 
+        val singlePermissionButton = Button(this).apply {
+            text = "Probar: pedir SOLO pasos (1 permiso)"
+            setOnClickListener {
+                val stepsPermission = RecordTypes.byTypeName("STEPS")?.permission ?: return@setOnClickListener
+                requestPermissions(setOf(stepsPermission))
+            }
+        }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 24, 24, 24)
             addView(statusView)
             addView(coreButton)
             addView(openHcButton)
+            addView(singlePermissionButton)
         }
 
         // Botones opcionales por familia (nunca en el lote inicial).
