@@ -1,5 +1,6 @@
 package com.jhomc.healthsync
 
+import android.os.RemoteException
 import androidx.health.connect.client.changes.DeletionChange
 import androidx.health.connect.client.changes.UpsertionChange
 import androidx.health.connect.client.records.Record
@@ -12,6 +13,7 @@ import com.jhomc.healthsync.data.HealthDatabase
 import com.jhomc.healthsync.data.HealthRecordEntity
 import com.jhomc.healthsync.data.RecordMappers
 import com.jhomc.healthsync.data.SyncTargetEntity
+import java.io.IOException
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
@@ -56,6 +58,16 @@ class HealthRepository(
             drainChanges(entry, existing)
         }
     }
+
+    /**
+     * Structural fallback: the Changes API depends on the provider generation
+     * (verified on-device: aggregate works, getChangesToken raises
+     * RemoteException against providers newer than the SDK). When Changes is
+     * unavailable, the type syncs in range mode (paginated 30-day backfill,
+     * idempotent by hc_id + revision).
+     */
+    private fun isChangesUnavailable(e: Exception): Boolean =
+        e is RemoteException || e is IOException || e is SecurityException
 
     /**
      * Source phase: sync every authorized type. A single revoked permission
@@ -132,7 +144,15 @@ class HealthRepository(
     private suspend fun firstSync(entry: RecordTypeEntry): TypeSyncResult {
         // 1) Reserve the changes token BEFORE the backfill, so changes that
         //    arrive while backfilling are drained afterwards (no gap window).
-        val reserved = gateway.getChangesToken(setOf(entry.recordClass))
+        val reserved = try {
+            gateway.getChangesToken(setOf(entry.recordClass))
+        } catch (e: RemoteException) {
+            return TypeSyncResult(entry.typeName, backfilled = backfill(entry))
+        } catch (e: IOException) {
+            return TypeSyncResult(entry.typeName, backfilled = backfill(entry))
+        } catch (e: SecurityException) {
+            return TypeSyncResult(entry.typeName, backfilled = backfill(entry))
+        }
         // 2) Backfill last 30 days, paginated, persisted per page.
         val backfilled = backfill(entry)
         // 3) Drain everything that happened since the reserved token.
@@ -176,6 +196,16 @@ class HealthRepository(
             } catch (e: ChangesTokenExpiredException) {
                 recoverFromExpiry(entry)
                 return TypeSyncResult(entry.typeName, tokenAdvanced = true)
+            } catch (e: RemoteException) {
+                // Changes API no disponible con este proveedor: modo rango.
+                val backfilled = backfill(entry)
+                return TypeSyncResult(entry.typeName, backfilled = backfilled)
+            } catch (e: IOException) {
+                val backfilled = backfill(entry)
+                return TypeSyncResult(entry.typeName, backfilled = backfilled)
+            } catch (e: SecurityException) {
+                val backfilled = backfill(entry)
+                return TypeSyncResult(entry.typeName, backfilled = backfilled)
             }
             if (response.changesTokenExpired) {
                 recoverFromExpiry(entry)

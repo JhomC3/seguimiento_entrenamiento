@@ -487,9 +487,24 @@ class MainActivity : ComponentActivity() {
                 withContext(Dispatchers.IO) {
                     gateway.getChangesToken(setOf(androidx.health.connect.client.records.StepsRecord::class))
                 }
-                sb.append("3. getChangesToken(STEPS): OK\n")
+                sb.append("3. getChangesToken(STEPS): OK\n\n")
             } catch (e: Exception) {
-                sb.append("3. getChangesToken: FALLO\n${fullErrorChain(e)}\n")
+                sb.append("3. getChangesToken: FALLO\n${fullErrorChain(e)}\n\n")
+            }
+            // 4) Lectura por rango (el modo de respaldo estructural)
+            try {
+                val now = java.time.Instant.now()
+                val page = withContext(Dispatchers.IO) {
+                    gateway.readRecords(
+                        androidx.health.connect.client.records.StepsRecord::class,
+                        now.minusSeconds(86400),
+                        now,
+                        null,
+                    )
+                }
+                sb.append("4. readRecords(STEPS 24h): OK (${page.records.size} registros)\n")
+            } catch (e: Exception) {
+                sb.append("4. readRecords: FALLO\n${fullErrorChain(e)}\n")
             }
             statusView.text = sb.toString()
         }
