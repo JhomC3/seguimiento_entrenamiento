@@ -76,4 +76,19 @@ class HealthRepositorySchedulingTest {
         assertEquals(0, gateway.readLog.size)
         assertEquals(0, gateway.changesLog.size)
     }
+
+    @Test
+    fun `rate limit sets cooldown and the type is skipped while cooling`() = runBlocking {
+        // READ_STEPS cubre STEPS + STEPS_CADENCE (permisos compartidos en el SDK
+        // 1.1.0, verificado en la Task 3). Se usa SLEEP_SESSION: permiso único,
+        // un solo tipo candidato → determinista.
+        gateway.granted = setOf(RecordTypes.byTypeName("SLEEP_SESSION")!!.permission)
+        gateway.failNextTokenWithRateLimit = true
+        runCatching { repo.syncAuthorizedTypes() } // run 1: SLEEP_SESSION → rate limit → cooldown (re-lanza por diseño)
+        // El tipo quedó en enfriamiento: una ejecución inmediata no lo toca (cero llamadas).
+        gateway.tokenLog.clear(); gateway.readLog.clear(); gateway.changesLog.clear()
+        repo.syncAuthorizedTypes()
+        assertEquals(0, gateway.tokenLog.size) // criterio 5: una ventana de enfriamiento → cero llamadas fallidas
+        assertEquals(0, gateway.readLog.size)
+    }
 }
