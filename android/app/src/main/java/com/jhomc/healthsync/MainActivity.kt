@@ -270,6 +270,9 @@ class MainActivity : ComponentActivity() {
                 val target = withContext(Dispatchers.IO) { targetStore.target() }
                 val tokenSet = withContext(Dispatchers.IO) { targetStore.token() != null }
                 urlInput.setText(target?.url ?: "")
+                // El token guardado nunca se vuelca al campo (seguridad);
+                // se muestra un marcador para que no parezca vacío.
+                tokenInput.setText(if (tokenSet) "(guardado — no se muestra)" else "")
                 if (tokenSet) statusView.text = "Destino configurado. Token: guardado (cifrado)."
             } catch (e: Exception) {
                 statusView.text = "No se pudo leer la configuración: $e"
@@ -387,19 +390,24 @@ class MainActivity : ComponentActivity() {
 
     private fun showSyncState() {
         lifecycleScope.launch {
-            val infos = withContext(Dispatchers.IO) {
-                androidx.work.WorkManager.getInstance(this@MainActivity)
-                    .getWorkInfosForUniqueWorkFlow("health_connect_sync")
-                    .first()
+            val wm = androidx.work.WorkManager.getInstance(this@MainActivity)
+            val periodic = withContext(Dispatchers.IO) {
+                wm.getWorkInfosForUniqueWorkFlow("health_connect_sync").first()
+            }
+            val oneTime = withContext(Dispatchers.IO) {
+                wm.getWorkInfosForUniqueWorkFlow("health_connect_sync_now").first()
             }
             val sb = StringBuilder("Estado del worker de sync:\n")
-            if (infos.isEmpty()) {
-                sb.append("  nunca se programó (pulsa 'Guardar destino' o 'Sincronizar ahora')\n")
+            sb.append("Periódico (1h): ")
+            sb.append(periodic.firstOrNull()?.state ?: "nunca programado")
+            sb.append("\n")
+            val now = oneTime.firstOrNull()
+            if (now == null) {
+                sb.append("Manual: nunca ejecutado (pulsa 'Sincronizar ahora')\n")
             } else {
-                val info = infos.first()
-                sb.append("  estado: ${info.state}\n")
-                sb.append("  intentos: ${info.runAttemptCount}\n")
-                info.outputData.keyValueMap.forEach { (k, v) -> sb.append("  $k: $v\n") }
+                sb.append("Manual: ${now.state}\n")
+                sb.append("  intentos: ${now.runAttemptCount}\n")
+                now.outputData.keyValueMap.forEach { (k, v) -> sb.append("  $k: $v\n") }
             }
             statusView.text = sb.toString()
             android.widget.Toast.makeText(this@MainActivity, "Estado en el panel superior", android.widget.Toast.LENGTH_SHORT).show()
