@@ -136,6 +136,12 @@ class MainActivity : ComponentActivity() {
         }
         root.addView(diagnosticsButton)
 
+        val syncStateButton = Button(this).apply {
+            text = "Estado de la sync (WorkManager)"
+            setOnClickListener { showSyncState() }
+        }
+        root.addView(syncStateButton)
+
         setContentView(ScrollView(this).apply { addView(root) })
 
         permissionLauncher = registerForActivityResult(
@@ -375,6 +381,28 @@ class MainActivity : ComponentActivity() {
             sb.append("  launcher HC: ${if (launcher != null) launcher.flattenToString() else "NO existe (por eso no hay icono)"}\n")
 
             statusView.text = sb.toString()
+        }
+    }
+
+    private fun showSyncState() {
+        lifecycleScope.launch {
+            val infos = withContext(Dispatchers.IO) {
+                kotlinx.coroutines.flow.first(
+                    androidx.work.WorkManager.getInstance(this@MainActivity)
+                        .getWorkInfosForUniqueWorkFlow("health_connect_sync"),
+                )
+            }
+            val sb = StringBuilder("Estado del worker de sync:\n")
+            if (infos.isEmpty()) {
+                sb.append("  nunca se programó (pulsa 'Guardar destino' o 'Sincronizar ahora')\n")
+            } else {
+                val info = infos.first()
+                sb.append("  estado: ${info.state}\n")
+                sb.append("  intentos: ${info.runAttemptCount}\n")
+                info.outputData.keyValueMap.forEach { (k, v) -> sb.append("  $k: $v\n") }
+            }
+            statusView.text = sb.toString()
+            android.widget.Toast.makeText(this@MainActivity, "Estado en el panel superior", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 

@@ -3,6 +3,7 @@ package com.jhomc.healthsync
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
 import androidx.work.CoroutineWorker
+import androidx.work.Data
 import androidx.work.WorkerParameters
 import com.jhomc.healthsync.data.ChangesTokenStore
 import com.jhomc.healthsync.data.HealthDatabase
@@ -16,6 +17,9 @@ import kotlinx.coroutines.withContext
  * Orchestrates source sync (Health Connect -> Room) and delivery (Room ->
  * HTTPS target). Delivery never blocks source progress: source tokens advance
  * once Room commits; a down target simply keeps the outbox pending.
+ *
+ * Every exit path carries diagnostic output data so the UI can explain what
+ * happened (no USB debugging needed on the device).
  */
 class SyncWorker(
     appContext: Context,
@@ -26,7 +30,9 @@ class SyncWorker(
         val context = applicationContext
         val gateway = RealHealthConnectGateway(context)
         if (HealthConnectClient.getSdkStatus(context) != HealthConnectClient.SDK_AVAILABLE) {
-            return@withContext Result.failure() // no Health Connect on this device
+            return@withContext Result.failure(
+                Data.Builder().putString("reason", "health_connect_no_disponible").build(),
+            )
         }
         val db = HealthDatabaseBuilder.get(context)
         val repo = HealthRepository(db, gateway, ChangesTokenStore(db.healthDao()), Instant::now)
@@ -36,27 +42,47 @@ class SyncWorker(
             // 1) Source: authorized types only; revoked types never block.
             val granted = gateway.grantedPermissions()
             if (granted.isEmpty()) {
-                return@withContext Result.failure() // user must grant from the app
+                return@withContext Result.failure(
+                    Data.Builder().putString("reason", "sin_permisos").build(),
+                )
             }
-            repo.syncAuthorizedTypes()
+            val sourceResults = repo.syncAuthorizedTypes()
 
             // 2) Delivery: only if a target is configured.
             val target = store.target()
             val token = store.token()
-            if (target != null && token != null) {
-                if (client.validateTargetUrl(target.url).isFailure) {
-                    return@withContext Result.failure() // permanent config error
-                }
-                val targetRow = repo.ensureTarget(target.url, target.name)
-                repo.uploadPending(client, targetRow, token, store.deviceId())
+            if (target == null || token == null) {
+                return@withContext Result.success(
+                    Data.Builder()
+                        .putInt("types_synced", sourceResults.size)
+                        .putString("notice", "sin_destino_configurado").build(),
+                )
             }
-            Result.success()
+            if (client.validateTargetUrl(target.url, allowHttp = true).isFailure) {
+                return@withContext Result.failure(
+                    Data.Builder().putString("reason", "url_invalida: ${target.url}").build(),
+                )
+            }
+            val targetRow = repo.ensureTarget(target.url, target.name)
+            val upload = repo.uploadPending(client, targetRow, token, store.deviceId())
+            Result.success(
+                Data.Builder()
+                    .putInt("types_synced", sourceResults.size)
+                    .putInt("delivered", upload.delivered)
+                    .putInt("failed", upload.failed)
+                    .putString("permanent_error", upload.permanentError ?: "")
+                    .build(),
+            )
         } catch (e: SecurityException) {
-            Result.failure() // permissions revoked mid-run
+            Result.failure(Data.Builder().putString("reason", "permisos_revocados").build())
         } catch (e: IOException) {
-            Result.retry()
+            Result.retry(Data.Builder().putString("reason", "red: ${e.message}").build())
         } catch (e: Exception) {
-            if (runAttemptCount < 3) Result.retry() else Result.failure()
+            if (runAttemptCount < 3) {
+                Result.retry(Data.Builder().putString("reason", "${e::class.simpleName}: ${e.message}").build())
+            } else {
+                Result.failure(Data.Builder().putString("reason", "${e::class.simpleName}: ${e.message}").build())
+            }
         }
     }
 }
