@@ -16,7 +16,7 @@
 | 3 — Backend v010 + ingesta + endpoint | ✅ Completa | `494d370`, `872aedc`, `d61bd5b`; 379 tests; smoke curl OK |
 | 4 — Entrega HTTP, destinos, worker | ✅ Completa | `6cac5f7`; outbox por destino + seed; `HealthSyncClient` testado |
 | 5 — Resiliencia, export, docs | ✅ Completa | `bb713a9`, `0e76ce2`; fixtures cruzados; CSV; docs operativas |
-| Optimización de cuota y scheduling incremental | ⏳ Pendiente | Diseño objetivo en Notas §3.1; requiere cursor, prioridades y checkpoints persistidos |
+| Optimización de cuota y scheduling incremental | ✅ Completa | `b12ad70`, `6d04d5d`, `478ba07`, `cf5fc2c`; cursor round-robin persistido, bootstrap reanudable, cooldown, pacing y prioridades adaptativas; 6 criterios verificados |
 | Smoke real en dispositivo | 🔄 En curso | Permisos OK, agregación OK; **bloqueado por rate limit** (notas §3) |
 | Integración a `main` (Task 5.3) | ⏳ Pendiente | Requiere aprobación explícita del usuario |
 
@@ -373,6 +373,8 @@ Estos intervalos son objetivos, no garantías de WorkManager. Un tipo inicialmen
 5. Un rate limit no provoca más de una llamada fallida por ventana de enfriamiento.
 6. El conjunto completo de tipos autorizados termina siendo revisado dentro de sus intervalos, sin exigir que todos se consulten en la misma ejecución.
 
+**Estado (2026-08-11):** implementado en `feature/health-sync` (Tasks 1–8 de `docs/plans/2026-08-11-health-sync-quota-scheduling.md`); los 6 criterios tienen tests dedicados (58 unit tests en verde).
+
 ### 4. Entorno MIUI (Redmi Note 8)
 
 - El icono de Health Connect **no aparece en el cajón de apps** (MIUI lo oculta; el launcher existe); se accede a HC desde Samsung Health.
@@ -394,6 +396,6 @@ Estos intervalos son objetivos, no garantías de WorkManager. Un tipo inicialmen
 
 ### 7. Pendientes
 
-- Smoke end-to-end real (Watch → Samsung Health → HC → Room → HTTP → SQLite del Mac) — **bloqueado por la cuota** (sección 3).
+- Smoke end-to-end real (Watch → Samsung Health → HC → Room → HTTP → SQLite del Mac) — **pendiente**: con el nuevo APK (Tasks 1–8), "Sincronizar AHORA (directo)" avanza por tipos sin ráfagas y sin quemar la cuota; verificar en dispositivo.
 - Verificación de `data_origin_package` real con pasos on-device.
 - Integración a `main` (Task 5.3) — solo con aprobación explícita del usuario.
