@@ -1016,6 +1016,8 @@ def test_index_app_config_tiene_alimento_map(tmp_path, monkeypatch):
 def test_index_renders_global_date_title_below_navigator(tmp_path, monkeypatch):
     from datetime import date
 
+    from src.training_service import DIA_MAP
+
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/")
@@ -1024,9 +1026,8 @@ def test_index_renders_global_date_title_below_navigator(tmp_path, monkeypatch):
     assert r.text.index('id="session-date-title"') > r.text.index('id="date-navigator"')
     assert r.text.index('id="session-date-title"') < r.text.index('id="nutrition-panel"')
     assert "Semana" in r.text
-    assert (
-        "SABADO" in r.text or "DOMINGO" in r.text or date.today().strftime("%A").upper() in r.text
-    )
+    # El día se renderiza en español con el nombre real de hoy (locale-independiente)
+    assert DIA_MAP[date.today().weekday()] in r.text
 
 
 def test_panels_layout_title_left_controls_right(tmp_path, monkeypatch):

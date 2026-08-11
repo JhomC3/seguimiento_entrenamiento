@@ -6,15 +6,16 @@ from src.database import get_exercises_catalog, get_training_sessions
 from src.db_connection import transaction
 from src.models import Session, TrainingSetInput, ValidationError
 
-DIA_MAP = {
-    "Monday": "LUNES",
-    "Tuesday": "MARTES",
-    "Wednesday": "MIERCOLES",
-    "Thursday": "JUEVES",
-    "Friday": "VIERNES",
-    "Saturday": "SABADO",
-    "Sunday": "DOMINGO",
-}
+# Índice = fecha.weekday() (0=lunes..6=domingo): independiente del locale del host.
+DIA_MAP = [
+    "LUNES",
+    "MARTES",
+    "MIERCOLES",
+    "JUEVES",
+    "VIERNES",
+    "SABADO",
+    "DOMINGO",
+]
 
 
 def parse_cycle_start(value: str = CICLO_START) -> date:
@@ -32,7 +33,7 @@ def calculate_cycle_week(fecha: date, cycle_start: date) -> int:
 
 
 def day_from_date(fecha: date) -> str:
-    return DIA_MAP[fecha.strftime("%A")]
+    return DIA_MAP[fecha.weekday()]
 
 
 def fecha_to_db(fecha: date) -> str:

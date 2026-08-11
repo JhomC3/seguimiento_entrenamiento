@@ -85,12 +85,16 @@ def test_nutrition_create_edit_save_reload_delete(page, server):
 
 
 def _fill_nutrition_day(page):
-    # Prepara el día con una fila Avena 120 g. El toggle en un día editable
-    # re-renderiza del servidor: esperar el settle antes de llenar.
-    page.click('#nutrition-panel [data-action="nutrition-toggle-edit"]')
-    page.wait_for_timeout(500)
+    # Prepara el día con una fila Avena 120 g. Tras aplicar una plantilla el
+    # editor viene en modo edición (force_editable): el toggle entonces SALDRÍA
+    # de edición (re-render readonly en fechas pasadas), así que solo se entra
+    # en edición si el input sigue disabled.
     row = page.locator("#nutrition-rows .nutrition-row").last
-    row.locator('input[name="alimento"]').fill("Avena")
+    alimento = row.locator('input[name="alimento"]')
+    if alimento.is_disabled():
+        page.click('#nutrition-panel [data-action="nutrition-toggle-edit"]')
+        page.wait_for_timeout(500)
+    alimento.fill("Avena")
     row.locator('input[name="cantidad"]').fill("120")
 
 
