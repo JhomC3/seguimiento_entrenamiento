@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContract
 import androidx.lifecycle.lifecycleScope
 import com.jhomc.healthsync.data.SecureTargetStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -387,10 +388,9 @@ class MainActivity : ComponentActivity() {
     private fun showSyncState() {
         lifecycleScope.launch {
             val infos = withContext(Dispatchers.IO) {
-                kotlinx.coroutines.flow.first(
-                    androidx.work.WorkManager.getInstance(this@MainActivity)
-                        .getWorkInfosForUniqueWorkFlow("health_connect_sync"),
-                )
+                androidx.work.WorkManager.getInstance(this@MainActivity)
+                    .getWorkInfosForUniqueWorkFlow("health_connect_sync")
+                    .first()
             }
             val sb = StringBuilder("Estado del worker de sync:\n")
             if (infos.isEmpty()) {
