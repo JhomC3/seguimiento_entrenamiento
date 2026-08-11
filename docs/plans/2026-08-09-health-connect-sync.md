@@ -16,6 +16,7 @@
 | 3 — Backend v010 + ingesta + endpoint | ✅ Completa | `494d370`, `872aedc`, `d61bd5b`; 379 tests; smoke curl OK |
 | 4 — Entrega HTTP, destinos, worker | ✅ Completa | `6cac5f7`; outbox por destino + seed; `HealthSyncClient` testado |
 | 5 — Resiliencia, export, docs | ✅ Completa | `bb713a9`, `0e76ce2`; fixtures cruzados; CSV; docs operativas |
+| Optimización de cuota y scheduling incremental | ⏳ Pendiente | Diseño objetivo en Notas §3.1; requiere cursor, prioridades y checkpoints persistidos |
 | Smoke real en dispositivo | 🔄 En curso | Permisos OK, agregación OK; **bloqueado por rate limit** (notas §3) |
 | Integración a `main` (Task 5.3) | ⏳ Pendiente | Requiere aprobación explícita del usuario |
 
@@ -38,7 +39,7 @@
 | Modelo de datos | Registros crudos con procedencia y revisión; `ExerciseSessionRecord` no se convierte en `training_sets`. |
 | Destino inicial | FastAPI + SQLite en el Mac por HTTPS en la red privada. |
 | Destino futuro | Cualquier host HTTPS persistente. La URL no contiene ninguna suposición de Mac, IP LAN o proveedor. |
-| Frecuencia | WorkManager cada hora con flex de 15 min; ejecución eventual, no horaria exacta. Sync manual disponible. |
+| Frecuencia | WorkManager despierta de forma eventual (objetivo 1 h), pero un planificador por tipo decide qué toca leer; sync manual disponible. |
 
 ### Principios no negociables
 
@@ -64,7 +65,7 @@ El lote inicial de permisos pide el **núcleo que Samsung Health realmente escri
 Room tendrá estas entidades, en una sola transacción cuando aplique:
 
 - `health_records`: `hc_id` PK, `record_type`, inicio/fin, `last_modified_epoch_ms`, `data_origin_package`, zona horaria si existe, `payload_schema_version`, `value_json`, `deleted_at`, `source_updated_at`.
-- `health_sync_state`: una fila por `record_type` con `changes_token`, estado de permiso, `last_successful_read_at` y diagnóstico seguro.
+- `health_sync_state`: una fila por `record_type` con `changes_token`, estado de permiso, `last_successful_read_at`, `next_due_at`, prioridad, `cooldown_until`, progreso de bootstrap/checkpoint y diagnóstico seguro. El cursor round-robin global también se persiste para no seleccionar siempre el primer tipo.
 - `sync_targets`: `target_id`, URL HTTPS normalizada, nombre, activo y `created_at`. El secreto queda fuera de Room, cifrado mediante Android Keystore.
 - `health_outbox`: `target_id`, `hc_id`, `operation` (`UPSERT`/`DELETE`), revisión, intentos y fecha. La clave única evita duplicar operaciones de la misma revisión para el mismo destino.
 
@@ -192,6 +193,7 @@ La autenticación es un **token único** `HC_SYNC_TOKEN` en env (estilo `GYM_CSR
 2. Para un tipo sin token: crear token de cambios, hacer backfill de 30 días por páginas, persistir y drenar cambios desde aquel token; esto elimina la ventana entre backfill y token.
 3. Para un token existente: procesar `UpsertionChange`/`DeletionChange`, persistir la página y su siguiente token de manera transaccional. Tratar la expiración por **ambas vías** del SDK fijado — la señal `changesTokenExpired` de la respuesta y la excepción `ChangesTokenExpiredException` — verificando cuáles expone la versión concreta de `connect-client`; no descartar ninguna por anticipado.
 4. En expiración, releer desde la última lectura segura o los últimos 30 días, deduplicar por id/revisión y reservar token nuevo.
+5. Persistir el checkpoint de cada página del bootstrap y el `next_due_at`/`cooldown_until` después de cada resultado; una interrupción no puede reiniciar el historial completo.
 5. Commit: `feat: sync all health types incrementally`.
 
 ## Phase 3 — Backend idempotente, actualizado y con bajas
@@ -250,11 +252,13 @@ La autenticación es un **token único** `HC_SYNC_TOKEN` en env (estilo `GYM_CSR
 **Files:** Create `SyncWorker.kt`, `SyncScheduler.kt`; modify `MainActivity.kt`; tests con WorkManager.
 
 1. Escribir pruebas para tipos parciales, sin permisos, red caída, 5xx, 401, outbox grande y progreso manual.
-2. Orquestar: sincronizar fuente autorizada, entregar outbox por lotes y reportar contadores por tipo/bytes/duración sin datos sensibles.
-3. Programar trabajo único periódico 1 h/flex 15 min con red no medida y batería no baja; manual one-time puede ser expedited con `OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST`.
+2. Orquestar: sincronizar únicamente los tipos autorizados cuyo `next_due_at` haya vencido, entregar outbox por lotes y reportar contadores por tipo/bytes/duración sin datos sensibles.
+3. Programar trabajo único periódico 1 h/flex 15 min con red no medida y batería no baja; el trabajo no implica que se consulte todo el catálogo. El manual one-time puede ser expedited con `OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST`.
 4. Reintentar únicamente fallos temporales. Permiso faltante o URL/token inválidos quedan en estado accionable; no producen tráfico ni backoff infinito.
 5. Validar en dispositivo real ejecución eventual con app cerrada; no usar la hora exacta como criterio.
-6. Commit: `feat: schedule efficient resilient health sync`.
+6. Aplicar un presupuesto por ejecución: como máximo 1–2 tipos o el límite de páginas/tiempo configurado. Persistir el progreso después de cada página y continuar en la siguiente ejecución.
+7. Usar rotación round-robin entre tipos autorizados que estén pendientes; no seleccionar siempre el primer tipo del catálogo.
+8. Commit: `feat: schedule efficient resilient health sync`.
 
 ## Phase 5 — Verificación completa, export y operación
 
@@ -325,7 +329,7 @@ Solo con aprobación explícita del usuario: actualizar desde `main` si es neces
 **Mitigaciones YA implementadas** (`f7d5f1c`, `f50ff9d`, `75d9b39`):
 - Detección de rate limit → `RateLimitedException` (no reintenta en el mismo bucle).
 - Fallback estructural: Changes API como primario; ante `RemoteException` no-rate-limit → **modo rango** (backfill 30 días paginado, dedup por revisión); el fallback es red de seguridad, no el camino principal (la doc recomienda Changes).
-- Throttle: `MAX_TYPES_PER_RUN = 3` tipos por corrida.
+- Throttle temporal: `MAX_TYPES_PER_RUN = 1` mientras se verifica la cuota; el diseño definitivo usa presupuesto y rotación persistidos por tipo (Notas §3.1).
 - `SyncExecutor` compartido (worker + botón directo) con reporte estructurado; UI con mensaje claro de cuota y cadena de causas completa del error.
 
 **Plan inmediato (aplicado en `580941f`, 2026-08-10; pendiente solo la verificación en dispositivo):**
@@ -337,6 +341,37 @@ Solo con aprobación explícita del usuario: actualizar desde `main` si es neces
 6. ⏳ Si tras 24 h sin workers la cuota sigue agotada → evaluar el límite diario (declaración de datos en Play Console / uso estabilizado) — no antes.
 
 **Verificación pendiente en el teléfono (Redmi Note 8):** instalar el nuevo APK, abrir la app una vez (cancela workers al arrancar), esperar 1–2 h a que la cuota se reponga y pulsar **una sola vez** "Sincronizar AHORA (directo)". Compilado y 43 tests unitarios Android en verde (`580941f`).
+
+### 3.1 Diseño objetivo para reducir llamadas sin perder datos
+
+La sincronización debe conservar todos los tipos autorizados, pero no consultar todo el catálogo en cada ejecución. El objetivo es que la primera carga sea progresiva y que el funcionamiento normal sea incremental.
+
+**Regla inmediata:** `HealthRepository` debe filtrar los tipos autorizados y seleccionar el siguiente tipo pendiente **antes** de invocar `syncType()`. Aplicar `.take()` después de `mapNotNull` no limita las llamadas: el `map` ya se evaluó completo. El cursor de rotación debe persistirse; de lo contrario, limitar a uno dejaría `STEPS` como único tipo sincronizado para siempre.
+
+**Primera carga (bootstrap):** para cada tipo autorizado sin token, reservar primero el token, leer el historial inicial de 30 días por páginas y persistir un checkpoint tras cada página. Después se drenan los cambios desde el token reservado. Si la app, el proceso o el destino fallan, la siguiente ejecución continúa desde Room; nunca repite automáticamente los 30 días completos por un error de red o cuota.
+
+**Funcionamiento normal:** cada tipo conserva su token y `next_due_at`. Cuando vence, se usa exclusivamente la Changes API y se procesan sus páginas hasta agotarlas o hasta alcanzar el presupuesto de la ejecución. El token intermedio se guarda de forma transaccional. La documentación oficial recomienda tokens separados por tipo, especialmente cuando los tipos se consumen de forma independiente o un permiso puede revocarse.
+
+**Prioridad adaptativa, sin excluir datos:**
+
+- Tipos de alta actividad (pasos, frecuencia cardiaca, sueño, sesiones, calorías): objetivo cada 4–6 horas.
+- Tipos de actividad ocasional (distancia, hidratación, nutrición y similares): objetivo diario.
+- Tipos de baja frecuencia (peso, composición corporal, constantes y datos médicos): objetivo semanal.
+
+Estos intervalos son objetivos, no garantías de WorkManager. Un tipo inicialmente desconocido empieza en prioridad media; si produce cambios recientes, sube de prioridad, y si permanece vacío varias rondas, baja a prioridad fría. Ningún tipo autorizado se elimina. Todos los intervalos deben ser inferiores a la caducidad de tokens de 30 días.
+
+**Presupuesto y transporte:** una ejecución procesa como máximo 1–2 tipos, o el límite menor entre páginas, registros y tiempo configurado. La extracción Health Connect → Room no depende de la red. Room acumula el outbox y el cliente HTTP solo transmite cuando hay operaciones pendientes, en lotes limitados por 500 operaciones y por bytes. Así un Mac apagado no provoca relecturas ni bloquea el avance del origen.
+
+**Rate limit y errores:** ante una respuesta limitada se guarda `retry_after`/enfriamiento y se termina con éxito diagnóstico; no se hace `retry` inmediato ni se activa un backfill de 30 días. Los fallos temporales de red se reintentan con backoff acotado, y los fallos permanentes quedan visibles sin generar tráfico repetido. La cuota de Health Connect varía por operación y por primer/segundo plano, por lo que el contador local debe medir llamadas, páginas, registros, bytes y duración.
+
+**Criterios de aceptación adicionales:**
+
+1. Una ejecución que empieza con 38 tipos autorizados no invoca más de los tipos seleccionados por el presupuesto.
+2. Cinco ejecuciones consecutivas recorren tipos distintos mediante el cursor persistido.
+3. Un bootstrap interrumpido continúa en la página pendiente y no vuelve a leer páginas confirmadas.
+4. Una sincronización incremental sin cambios no ejecuta backfill ni genera HTTP.
+5. Un rate limit no provoca más de una llamada fallida por ventana de enfriamiento.
+6. El conjunto completo de tipos autorizados termina siendo revisado dentro de sus intervalos, sin exigir que todos se consulten en la misma ejecución.
 
 ### 4. Entorno MIUI (Redmi Note 8)
 
