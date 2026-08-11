@@ -125,7 +125,7 @@ class MainActivity : ComponentActivity() {
             text = "Sincronizar ahora"
             setOnClickListener {
                 SyncScheduler.syncNow(this@MainActivity)
-                statusView.text = "Sync programada (WorkManager). Revisa en unos segundos."
+                showMessage("Sync programada. Los datos llegarán en segundos.")
             }
         }
         root.addView(syncNowButton)
@@ -235,20 +235,26 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             val client = HealthSyncClient()
             when {
-                url.isEmpty() -> statusView.text = "URL requerida."
-                client.validateTargetUrl(url).isFailure ->
-                    statusView.text = "URL inválida: usa https:// (HTTP está prohibido)."
-                token.isEmpty() -> statusView.text = "Token requerido."
+                url.isEmpty() -> showMessage("URL requerida.")
+                client.validateTargetUrl(url, allowHttp = BuildConfig.DEBUG).isFailure ->
+                    showMessage("URL inválida: usa https:// (HTTP solo en versiones de prueba).")
+                token.isEmpty() -> showMessage("Token requerido.")
                 else -> {
                     withContext(Dispatchers.IO) {
                         targetStore.saveTarget(url, "default")
                         targetStore.saveToken(token)
                     }
                     SyncScheduler.schedulePeriodic(this@MainActivity)
-                    statusView.text = "Destino guardado y sync periódica programada (1h)."
+                    showMessage("Destino guardado y sync periódica programada (1h).")
                 }
             }
         }
+    }
+
+    /** Mensaje visible siempre (Toast) + en el panel de estado. */
+    private fun showMessage(message: String) {
+        statusView.text = message
+        android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show()
     }
 
     private fun loadTarget() {

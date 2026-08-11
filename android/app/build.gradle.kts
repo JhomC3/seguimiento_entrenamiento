@@ -8,6 +8,10 @@ android {
     namespace = "com.jhomc.healthsync"
     compileSdk = 36
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         applicationId = "com.jhomc.healthsync"
         minSdk = 26

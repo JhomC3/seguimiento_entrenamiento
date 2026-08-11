@@ -33,12 +33,16 @@ class HealthSyncClient(
     private val nowEpochMs: () -> Long = { System.currentTimeMillis() },
 ) {
 
-    fun validateTargetUrl(url: String): Result<Unit> {
+    fun validateTargetUrl(url: String, allowHttp: Boolean = false): Result<Unit> {
         val parsed = runCatching { java.net.URI(url) }.getOrNull()
             ?: return Result.failure(IllegalArgumentException("URL inválida"))
         return when (parsed.scheme) {
             "https" -> Result.success(Unit)
-            "http" -> Result.failure(IllegalArgumentException("HTTP está prohibido; usa HTTPS"))
+            "http" -> if (allowHttp) {
+                Result.success(Unit)
+            } else {
+                Result.failure(IllegalArgumentException("HTTP está prohibido; usa HTTPS"))
+            }
             null -> Result.failure(IllegalArgumentException("URL sin esquema; usa https://"))
             else -> Result.failure(IllegalArgumentException("Esquema no soportado: ${parsed.scheme}"))
         }
