@@ -13,13 +13,19 @@ class ChangesTokenStore(private val dao: HealthDao) {
         dao.getState(recordType)?.changesToken
 
     suspend fun save(recordType: String, token: String, nowMs: Long) {
+        val current = dao.getState(recordType)
         dao.upsertState(
-            HealthSyncStateEntity(
-                recordType = recordType,
+            current?.copy(
                 changesToken = token,
                 permissionGranted = true,
                 lastSuccessfulReadAtEpochMs = nowMs,
-            ),
+            )
+                ?: HealthSyncStateEntity(
+                    recordType = recordType,
+                    changesToken = token,
+                    permissionGranted = true,
+                    lastSuccessfulReadAtEpochMs = nowMs,
+                ),
         )
     }
 
