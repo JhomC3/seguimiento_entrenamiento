@@ -26,7 +26,7 @@ data class TypeSyncResult(
 )
 
 /** Types synced per run to stay inside the provider's per-hour quota. */
-const val MAX_TYPES_PER_RUN = 3
+const val MAX_TYPES_PER_RUN = 1
 
 data class UploadResult(
     val targetId: Long,

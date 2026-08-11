@@ -52,10 +52,35 @@ class RealHealthConnectGateway(context: Context) : HealthConnectGateway {
     private val appContext = context.applicationContext
     private val client: HealthConnectClient = HealthConnectClient.getOrCreate(appContext)
 
+    // Granted-permission cache: refreshStates() runs on every onResume and a
+    // binder call per screen refresh is wasteful (and a quota call).
+    @Volatile
+    private var cachedGranted: Set<String>? = null
+    @Volatile
+    private var cachedGrantedAtMs: Long = 0L
+
+    companion object {
+        private const val PERMISSION_CACHE_TTL_MS = 15_000L
+    }
+
     override suspend fun sdkStatus(): Int = HealthConnectClient.getSdkStatus(appContext)
 
-    override suspend fun grantedPermissions(): Set<String> =
-        client.permissionController.getGrantedPermissions()
+    override suspend fun grantedPermissions(): Set<String> {
+        val nowMs = System.currentTimeMillis()
+        cachedGranted?.let { cached ->
+            if (nowMs - cachedGrantedAtMs < PERMISSION_CACHE_TTL_MS) return cached
+        }
+        val fresh = client.permissionController.getGrantedPermissions()
+        cachedGranted = fresh
+        cachedGrantedAtMs = nowMs
+        return fresh
+    }
+
+    /** Call after the permission flow returns so the next read is fresh. */
+    fun invalidatePermissionCache() {
+        cachedGranted = null
+        cachedGrantedAtMs = 0L
+    }
 
     override suspend fun backgroundReadAvailable(): Boolean =
         client.features.getFeatureStatus(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND) ==

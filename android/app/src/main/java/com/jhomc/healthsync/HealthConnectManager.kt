@@ -48,6 +48,9 @@ class HealthConnectManager(private val gateway: HealthConnectGateway) {
         return gateway.stepsCountTotal(start, end)
     }
 
+    /** Exposes the underlying gateway for cache invalidation after permission flows. */
+    fun gateway(): HealthConnectGateway = gateway
+
     suspend fun providerDetail(): ProviderDetail = gateway.providerDetail()
 }
 

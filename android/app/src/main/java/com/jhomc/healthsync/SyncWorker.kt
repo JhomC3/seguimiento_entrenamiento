@@ -23,9 +23,15 @@ class SyncWorker(
             val report = SyncExecutor.run(applicationContext)
             if (report.notice != null) {
                 when (report.notice) {
-                    // Rate limit: retry later via WorkManager backoff (30 min
-                    // exponential), never hammer the provider.
-                    "rate_limited" -> Result.retry()
+                    // Rate limit: succeed (no retry). Retrying from background
+                    // keeps the provider's quota exhausted, since the
+                    // background limit is stricter than foreground. Next run
+                    // happens on the next schedule/manual trigger.
+                    "rate_limited" -> Result.success(
+                        Data.Builder()
+                            .putString("reason", "rate_limited")
+                            .build(),
+                    )
                     "sin_permisos", "health_connect_no_disponible" ->
                         Result.failure(Data.Builder().putString("reason", report.notice).build())
                     else ->
@@ -46,6 +52,10 @@ class SyncWorker(
                         .build(),
                 )
             }
+        } catch (e: RateLimitedException) {
+            // Defensive: the executor normally converts this to a notice;
+            // if it ever escapes, do NOT retry (see above).
+            Result.success(Data.Builder().putString("reason", "rate_limited").build())
         } catch (e: SecurityException) {
             Result.failure(Data.Builder().putString("reason", "permisos_revocados").build())
         } catch (e: IOException) {

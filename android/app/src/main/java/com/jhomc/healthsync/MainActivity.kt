@@ -37,6 +37,9 @@ class MainActivity : ComponentActivity() {
             showPrivacyPolicy()
             return
         }
+        // Mientras dure la investigación de la cuota: los workers cancelados
+        // al arrancar evitan reintentos de fondo que mantienen el rate limit.
+        SyncScheduler.cancelAll(this)
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             setContentView(
                 TextView(this).apply {
@@ -160,6 +163,7 @@ class MainActivity : ComponentActivity() {
         permissionLauncher = registerForActivityResult(
             permissionContract(),
             ActivityResultCallbackAdapter { granted ->
+                (manager.gateway() as? RealHealthConnectGateway)?.invalidatePermissionCache()
                 statusView.text = "Permisos concedidos: ${granted.size} tipos."
                 refreshStates()
             },

@@ -46,6 +46,18 @@ object SyncScheduler {
             request,
         )
     }
+
+    /**
+     * Cancel both periodic and one-time sync work. Used at app startup while
+     * the Health Connect quota investigation is open: a worker running in
+     * background (retries or hourly schedule) can keep the quota exhausted,
+     * since the provider's background limit is stricter than foreground.
+     * With workers cancelled, sync is exclusively manual ("sync now" button).
+     */
+    fun cancelAll(context: Context) {
+        WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_WORK)
+        WorkManager.getInstance(context).cancelUniqueWork("health_connect_sync_now")
+    }
 }
 
 /** Single Room instance per process (WorkManager may run without the UI). */
