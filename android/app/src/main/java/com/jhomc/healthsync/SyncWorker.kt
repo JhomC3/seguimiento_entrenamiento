@@ -76,12 +76,16 @@ class SyncWorker(
         } catch (e: SecurityException) {
             Result.failure(Data.Builder().putString("reason", "permisos_revocados").build())
         } catch (e: IOException) {
-            Result.retry(Data.Builder().putString("reason", "red: ${e.message}").build())
+            Result.retry()
         } catch (e: Exception) {
             if (runAttemptCount < 3) {
-                Result.retry(Data.Builder().putString("reason", "${e::class.simpleName}: ${e.message}").build())
+                Result.retry()
             } else {
-                Result.failure(Data.Builder().putString("reason", "${e::class.simpleName}: ${e.message}").build())
+                Result.failure(
+                    Data.Builder()
+                        .putString("reason", "${e::class.simpleName}: ${e.message}")
+                        .build(),
+                )
             }
         }
     }
