@@ -37,7 +37,11 @@ object SyncExecutor {
         if (granted.isEmpty()) {
             return SyncReport(0, 0, 0, notice = "sin_permisos")
         }
-        val sourceResults = repo.syncAuthorizedTypes()
+        val sourceResults = try {
+            repo.syncAuthorizedTypes()
+        } catch (e: RateLimitedException) {
+            return SyncReport(0, 0, 0, notice = "rate_limited")
+        }
 
         val target = store.target()
         if (target == null) {

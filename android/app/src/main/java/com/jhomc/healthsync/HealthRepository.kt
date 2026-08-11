@@ -25,6 +25,9 @@ data class TypeSyncResult(
     val tokenAdvanced: Boolean = false,
 )
 
+/** Types synced per run to stay inside the provider's per-hour quota. */
+const val MAX_TYPES_PER_RUN = 3
+
 data class UploadResult(
     val targetId: Long,
     val delivered: Int,
@@ -34,6 +37,21 @@ data class UploadResult(
 
 /** Token expired signal, per the 1.1.0 SDK contract (changesTokenExpired + exception). */
 class ChangesTokenExpiredException(message: String) : RuntimeException(message)
+
+/**
+ * Health Connect enforces per-app usage quotas (new apps start with a low
+ * per-hour limit). Raised when the provider replies "rate limited"; callers
+ * must NOT retry immediately — wait for the quota to replenish.
+ */
+class RateLimitedException(message: String) : RuntimeException(message)
+
+private fun Throwable.isRateLimited(): Boolean =
+    this is RemoteException &&
+        (message?.contains("ate limited", ignoreCase = true) == true ||
+            message?.contains("uota", ignoreCase = true) == true)
+
+private fun Throwable.asRateLimitedOrSelf(): Throwable =
+    if (isRateLimited()) RateLimitedException(message ?: "rate limited") else this
 
 /**
  * Differential sync per record type. Delivery never blocks source progress:
@@ -70,8 +88,9 @@ class HealthRepository(
         e is RemoteException || e is IOException || e is SecurityException
 
     /**
-     * Source phase: sync every authorized type. A single revoked permission
-     * never blocks the rest (principle 4).
+     * Source phase: sync authorized types, throttled. Health Connect gives new
+     * apps a low per-hour quota; a single run touching every type would burn
+     * it. MAX_TYPES_PER_RUN types per run; the rest sync in later runs.
      */
     suspend fun syncAuthorizedTypes(): List<TypeSyncResult> {
         val granted = gateway.grantedPermissions()
@@ -83,7 +102,7 @@ class HealthRepository(
                 tokenStore.markPermissionLost(entry.typeName)
                 null
             }
-        }
+        }.take(MAX_TYPES_PER_RUN)
     }
 
     /**
@@ -147,6 +166,7 @@ class HealthRepository(
         val reserved = try {
             gateway.getChangesToken(setOf(entry.recordClass))
         } catch (e: RemoteException) {
+            if (e.isRateLimited()) throw e.asRateLimitedOrSelf()
             return TypeSyncResult(entry.typeName, backfilled = backfill(entry))
         } catch (e: IOException) {
             return TypeSyncResult(entry.typeName, backfilled = backfill(entry))
@@ -172,7 +192,11 @@ class HealthRepository(
         var pageToken: String? = null
         var total = 0
         do {
-            val page: ReadRecordsResponse<Record> = gateway.readRecords(entry.recordClass, start, end, pageToken)
+            val page: ReadRecordsResponse<Record> = try {
+                gateway.readRecords(entry.recordClass, start, end, pageToken)
+            } catch (e: RemoteException) {
+                throw e.asRateLimitedOrSelf()
+            }
             val entities = page.records.map { toEntity(it) }
             db.withTransaction { dao.applyBackfillPage(entities, now().toEpochMilli()) }
             total += entities.size
@@ -197,6 +221,7 @@ class HealthRepository(
                 recoverFromExpiry(entry)
                 return TypeSyncResult(entry.typeName, tokenAdvanced = true)
             } catch (e: RemoteException) {
+                if (e.isRateLimited()) throw e.asRateLimitedOrSelf()
                 // Changes API no disponible con este proveedor: modo rango.
                 val backfilled = backfill(entry)
                 return TypeSyncResult(entry.typeName, backfilled = backfilled)
@@ -244,8 +269,7 @@ class HealthRepository(
         db.withTransaction { tokenStore.save(entry.typeName, fresh, now().toEpochMilli()) }
     }
 
-    private fun toEntity(record: Record): HealthRecordEntity {
-        val entry = RecordTypes.byClass(record::class)
+    private fun toEntity(record: Record): HealthRecordEntity {        val entry = RecordTypes.byClass(record::class)
             ?: throw IllegalArgumentException("Tipo fuera del catálogo: ${record::class.simpleName}")
         val json = RecordMappers.toPayload(record)
         return HealthRecordEntity(

@@ -23,6 +23,9 @@ class SyncWorker(
             val report = SyncExecutor.run(applicationContext)
             if (report.notice != null) {
                 when (report.notice) {
+                    // Rate limit: retry later via WorkManager backoff (30 min
+                    // exponential), never hammer the provider.
+                    "rate_limited" -> Result.retry()
                     "sin_permisos", "health_connect_no_disponible" ->
                         Result.failure(Data.Builder().putString("reason", report.notice).build())
                     else ->

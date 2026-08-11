@@ -432,6 +432,12 @@ class MainActivity : ComponentActivity() {
             showMessage("Sincronizando…")
             try {
                 val report = withContext(Dispatchers.IO) { SyncExecutor.run(this@MainActivity) }
+                if (report.notice == "rate_limited") {
+                    statusView.text = "Cuota de Health Connect agotada (rate limit).\n" +
+                        "Health Connect limita las llamadas por hora de las apps nuevas.\n" +
+                        "Espera unos minutos y vuelve a pulsar el botón."
+                    return@launch
+                }
                 val msg = buildString {
                     append("Tipos leídos: ${report.typesSynced} | Entregados: ${report.delivered}")
                     if (report.failed > 0) append(" | Fallos: ${report.failed}")
