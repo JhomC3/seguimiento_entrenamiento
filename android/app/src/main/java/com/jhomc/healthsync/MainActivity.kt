@@ -137,6 +137,12 @@ class MainActivity : ComponentActivity() {
         }
         root.addView(directSyncButton)
 
+        val binderDiagButton = Button(this).apply {
+            text = "Diagnóstico del binder (paso a paso)"
+            setOnClickListener { runBinderDiagnostics() }
+        }
+        root.addView(binderDiagButton)
+
         val diagnosticsButton = Button(this).apply {
             text = "Diagnóstico (ver qué ve el sistema)"
             setOnClickListener { runDiagnostics() }
@@ -434,8 +440,58 @@ class MainActivity : ComponentActivity() {
                 }
                 showMessage(msg)
             } catch (e: Exception) {
-                showMessage("Error de sync: ${e::class.simpleName}: ${e.message}")
+                // Error completo con cadena de causas en el panel (sin cortes).
+                statusView.text = "Error de sync:\n" + fullErrorChain(e)
             }
+        }
+    }
+
+    /** Cadena de causas (x: Clase: mensaje) hasta 5 niveles. */
+    private fun fullErrorChain(e: Throwable): String {
+        val sb = StringBuilder()
+        var current: Throwable? = e
+        var depth = 0
+        while (current != null && depth < 5) {
+            sb.append("$depth: ${current::class.java.simpleName}: ${current.message}\n")
+            current = current.cause
+            depth++
+        }
+        return sb.toString()
+    }
+
+    /** Ejecuta el binder de Health Connect paso a paso para localizar el fallo. */
+    private fun runBinderDiagnostics() {
+        lifecycleScope.launch {
+            val gateway = RealHealthConnectGateway(this@MainActivity)
+            val sb = StringBuilder("Diagnóstico del binder (1/2/3):\n")
+            // 1) Permisos concedidos (binder básico)
+            try {
+                val granted = withContext(Dispatchers.IO) { gateway.grantedPermissions() }
+                sb.append("1. getGrantedPermissions: OK (${granted.size})\n")
+                sb.append("   ${granted.joinToString(", ")}\n\n")
+            } catch (e: Exception) {
+                sb.append("1. getGrantedPermissions: FALLO\n${fullErrorChain(e)}\n\n")
+            }
+            // 2) Agregación de pasos 24h (binder + lectura de datos)
+            try {
+                val now = java.time.Instant.now()
+                val steps = withContext(Dispatchers.IO) {
+                    gateway.stepsCountTotal(now.minusSeconds(86400), now)
+                }
+                sb.append("2. aggregate pasos 24h: ${steps ?: "null (sin datos o sin permiso)"}\n\n")
+            } catch (e: Exception) {
+                sb.append("2. aggregate: FALLO\n${fullErrorChain(e)}\n\n")
+            }
+            // 3) Changes API (la operación más nueva del protocolo)
+            try {
+                withContext(Dispatchers.IO) {
+                    gateway.getChangesToken(setOf(androidx.health.connect.client.records.StepsRecord::class))
+                }
+                sb.append("3. getChangesToken(STEPS): OK\n")
+            } catch (e: Exception) {
+                sb.append("3. getChangesToken: FALLO\n${fullErrorChain(e)}\n")
+            }
+            statusView.text = sb.toString()
         }
     }
 
