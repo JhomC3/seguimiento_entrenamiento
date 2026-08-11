@@ -131,6 +131,12 @@ class MainActivity : ComponentActivity() {
         }
         root.addView(syncNowButton)
 
+        val directSyncButton = Button(this).apply {
+            text = "Sincronizar AHORA (directo, sin WorkManager)"
+            setOnClickListener { runDirectSync() }
+        }
+        root.addView(directSyncButton)
+
         val diagnosticsButton = Button(this).apply {
             text = "Diagnóstico (ver qué ve el sistema)"
             setOnClickListener { runDiagnostics() }
@@ -411,6 +417,25 @@ class MainActivity : ComponentActivity() {
             }
             statusView.text = sb.toString()
             android.widget.Toast.makeText(this@MainActivity, "Estado en el panel superior", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Ejecuta el pipeline completo en primer plano; resultado visible al instante. */
+    private fun runDirectSync() {
+        lifecycleScope.launch {
+            showMessage("Sincronizando…")
+            try {
+                val report = withContext(Dispatchers.IO) { SyncExecutor.run(this@MainActivity) }
+                val msg = buildString {
+                    append("Tipos leídos: ${report.typesSynced} | Entregados: ${report.delivered}")
+                    if (report.failed > 0) append(" | Fallos: ${report.failed}")
+                    report.notice?.let { append(" | Aviso: $it") }
+                    report.permanentError?.let { append(" | Error: $it") }
+                }
+                showMessage(msg)
+            } catch (e: Exception) {
+                showMessage("Error de sync: ${e::class.simpleName}: ${e.message}")
+            }
         }
     }
 
