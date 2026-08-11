@@ -10,6 +10,8 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
  * Local source of continuity: origin state (health_records + health_sync_state)
@@ -39,6 +41,18 @@ data class HealthSyncStateEntity(
     @ColumnInfo(name = "changes_token") val changesToken: String? = null,
     @ColumnInfo(name = "permission_granted") val permissionGranted: Boolean = false,
     @ColumnInfo(name = "last_successful_read_at_epoch_ms") val lastSuccessfulReadAtEpochMs: Long? = null,
+    @ColumnInfo(name = "next_due_at_epoch_ms") val nextDueAtEpochMs: Long? = null,
+    @ColumnInfo(name = "cooldown_until_epoch_ms") val cooldownUntilEpochMs: Long? = null,
+    @ColumnInfo(name = "priority") val priority: Int = 1,
+    @ColumnInfo(name = "bootstrap_page_token") val bootstrapPageToken: String? = null,
+    @ColumnInfo(name = "bootstrap_start_epoch_ms") val bootstrapStartEpochMs: Long? = null,
+    @ColumnInfo(name = "empty_runs") val emptyRuns: Int = 0,
+)
+
+@Entity(tableName = "sync_meta")
+data class SyncMetaEntity(
+    @PrimaryKey @ColumnInfo(name = "meta_key") val key: String,
+    @ColumnInfo(name = "meta_value") val value: String,
 )
 
 @Entity(tableName = "sync_targets")
@@ -83,6 +97,12 @@ interface HealthDao {
 
     @Query("SELECT * FROM health_sync_state WHERE record_type = :recordType")
     suspend fun getState(recordType: String): HealthSyncStateEntity?
+
+    @Query("SELECT * FROM sync_meta WHERE meta_key = :key")
+    suspend fun getMeta(key: String): SyncMetaEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putMeta(meta: SyncMetaEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertTarget(target: SyncTargetEntity): Long
@@ -193,10 +213,26 @@ interface HealthDao {
         HealthSyncStateEntity::class,
         SyncTargetEntity::class,
         HealthOutboxEntity::class,
+        SyncMetaEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class HealthDatabase : RoomDatabase() {
     abstract fun healthDao(): HealthDao
+}
+
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE health_sync_state ADD COLUMN next_due_at_epoch_ms INTEGER")
+        db.execSQL("ALTER TABLE health_sync_state ADD COLUMN cooldown_until_epoch_ms INTEGER")
+        db.execSQL("ALTER TABLE health_sync_state ADD COLUMN priority INTEGER NOT NULL DEFAULT 1")
+        db.execSQL("ALTER TABLE health_sync_state ADD COLUMN bootstrap_page_token TEXT")
+        db.execSQL("ALTER TABLE health_sync_state ADD COLUMN bootstrap_start_epoch_ms INTEGER")
+        db.execSQL("ALTER TABLE health_sync_state ADD COLUMN empty_runs INTEGER NOT NULL DEFAULT 0")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS sync_meta (" +
+                "meta_key TEXT NOT NULL PRIMARY KEY, meta_value TEXT NOT NULL)"
+        )
+    }
 }
