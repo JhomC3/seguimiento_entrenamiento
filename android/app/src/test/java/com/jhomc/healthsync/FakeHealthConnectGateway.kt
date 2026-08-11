@@ -1,5 +1,6 @@
 package com.jhomc.healthsync
 
+import android.os.RemoteException
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.response.ChangesResponse
@@ -19,6 +20,14 @@ class FakeHealthConnectGateway : HealthConnectGateway {
     val changesQueue = mutableListOf<ChangesResponse>()
     var tokenCounter = 0
 
+    // -- Registro de llamadas para aserciones de presupuesto/rotación --
+    val tokenLog = mutableListOf<String>()                       // typeName por getChangesToken
+    val readLog = mutableListOf<Pair<String, String?>>()          // (typeName, pageToken) por readRecords
+    val changesLog = mutableListOf<String>()                      // token por getChanges
+    var failNextTokenWithRateLimit = false                       // getChangesToken → RemoteException rate-limited
+    var failReadsWithRateLimit = false                           // readRecords → RemoteException rate-limited
+    val pageStore = mutableMapOf<String?, List<Record>>()         // paginación determinista para bootstrap (null = primera página)
+
     /** When true, getChanges throws AFTER returning a page (crash before commit). */
     var crashAfterGetChanges = false
 
@@ -35,10 +44,16 @@ class FakeHealthConnectGateway : HealthConnectGateway {
 
     override suspend fun getChangesToken(recordTypes: Set<KClass<out Record>>): String {
         tokenCounter++
+        tokenLog += recordTypes.mapNotNull { RecordTypes.byClass(it)?.typeName }
+        if (failNextTokenWithRateLimit) {
+            failNextTokenWithRateLimit = false
+            throw RemoteException("Rate limited request quota has been exceeded")
+        }
         return "token-$tokenCounter"
     }
 
     override suspend fun getChanges(token: String): ChangesResponse {
+        changesLog += token
         val cached = pageCache[token]
         if (cached != null) {
             if (crashAfterGetChanges) {
@@ -63,9 +78,22 @@ class FakeHealthConnectGateway : HealthConnectGateway {
         end: Instant,
         pageToken: String?,
     ): ReadRecordsResponse<Record> {
-        if (backfillQueue.isEmpty()) return ReadRecordsResponse(emptyList(), null)
-        val page = backfillQueue.removeAt(0)
-        return ReadRecordsResponse(page, if (backfillQueue.isNotEmpty()) "page-token-${tokenCounter}" else null)
+        readLog += (RecordTypes.byClass(recordType)?.typeName ?: "?") to pageToken
+        if (failReadsWithRateLimit) {
+            failReadsWithRateLimit = false
+            throw RemoteException("Rate limited request quota has been exceeded")
+        }
+        if (backfillQueue.isNotEmpty()) {
+            val page = backfillQueue.removeAt(0)
+            return ReadRecordsResponse(page, if (backfillQueue.isNotEmpty()) "page-token-${tokenCounter}" else null)
+        }
+        val records = pageStore[pageToken].orEmpty()
+        val next = when {
+            pageToken == null && pageStore.containsKey("pt-1") -> "pt-1"
+            pageToken == "pt-1" && pageStore.containsKey("pt-2") -> "pt-2"
+            else -> null
+        }
+        return ReadRecordsResponse(records, next)
     }
 
     override suspend fun providerDetail() = ProviderDetail(

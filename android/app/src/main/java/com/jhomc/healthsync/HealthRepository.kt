@@ -11,11 +11,14 @@ import com.jhomc.healthsync.data.ChangesTokenStore
 import com.jhomc.healthsync.data.HealthDao
 import com.jhomc.healthsync.data.HealthDatabase
 import com.jhomc.healthsync.data.HealthRecordEntity
+import com.jhomc.healthsync.data.HealthSyncStateEntity
 import com.jhomc.healthsync.data.RecordMappers
+import com.jhomc.healthsync.data.SyncMetaEntity
 import com.jhomc.healthsync.data.SyncTargetEntity
 import java.io.IOException
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import kotlinx.coroutines.delay
 
 data class TypeSyncResult(
     val recordType: String,
@@ -27,6 +30,9 @@ data class TypeSyncResult(
 
 /** Types synced per run to stay inside the provider's per-hour quota. */
 const val MAX_TYPES_PER_RUN = 1
+
+/** sync_meta key holding the persisted round-robin cursor. */
+private const val ROTATION_META_KEY = "round_robin_index"
 
 data class UploadResult(
     val targetId: Long,
@@ -63,7 +69,14 @@ class HealthRepository(
     private val gateway: HealthConnectGateway,
     private val tokenStore: ChangesTokenStore,
     private val now: () -> Instant = Instant::now,
+    private val pacer: suspend () -> Unit = { delay(PACING_DEFAULT_MS) },
 ) {
+    companion object {
+        const val PACING_DEFAULT_MS = 2_000L
+    }
+
+    /** Slows the page loop so bursts never blow the provider's per-window quota. */
+    private suspend fun pace() = pacer()
 
     private val dao: HealthDao = db.healthDao()
 
@@ -88,22 +101,61 @@ class HealthRepository(
         e is RemoteException || e is IOException || e is SecurityException
 
     /**
-     * Source phase: sync authorized types, throttled. Health Connect gives new
-     * apps a low per-hour quota; a single run touching every type would burn
-     * it. MAX_TYPES_PER_RUN types per run; the rest sync in later runs.
+     * Source phase: sync ONLY the authorized types whose next_due_at has passed
+     * and that are not cooling down, budgeted to MAX_TYPES_PER_RUN. Candidates are
+     * ordered by due time and the selection rotates from the persisted cursor so
+     * no type starves. If nothing is due, no Health Connect call happens at all.
      */
     suspend fun syncAuthorizedTypes(): List<TypeSyncResult> {
         val granted = gateway.grantedPermissions()
-        return RecordTypes.all.mapNotNull { entry ->
-            if (entry.permission !in granted) return@mapNotNull null
+        val nowMs = now().toEpochMilli()
+        val candidates = RecordTypes.all
+            .filter { it.permission in granted }
+            .map { entry -> entry to dao.getState(entry.typeName) }
+            .filter { (_, st) ->
+                val cooldown = st?.cooldownUntilEpochMs
+                cooldown == null || cooldown <= nowMs
+            }
+            .filter { (_, st) ->
+                val due = st?.nextDueAtEpochMs
+                due == null || due <= nowMs
+            }
+            .sortedWith(
+                compareBy<Pair<RecordTypeEntry, HealthSyncStateEntity?>> { it.second?.nextDueAtEpochMs ?: 0L }
+                    .thenBy { it.first.typeName },
+            )
+        if (candidates.isEmpty()) return emptyList()
+
+        val cursor = rotationCursor()
+        val start = cursor % candidates.size
+        val rotated = candidates.drop(start) + candidates.take(start)
+        val selected = rotated.take(MAX_TYPES_PER_RUN)
+        saveRotationCursor((cursor + selected.size) % candidates.size)
+
+        val results = mutableListOf<TypeSyncResult>()
+        for ((entry, _) in selected) {
             try {
-                syncType(entry)
+                val result = syncType(entry)
+                tokenStore.markSynced(entry.typeName, result.hadChanges(), now().toEpochMilli())
+                results += result
+            } catch (e: RateLimitedException) {
+                tokenStore.markCooldown(entry.typeName, now().toEpochMilli())
+                throw e
             } catch (e: SecurityException) {
                 tokenStore.markPermissionLost(entry.typeName)
-                null
             }
-        }.take(MAX_TYPES_PER_RUN)
+        }
+        return results
     }
+
+    private suspend fun rotationCursor(): Int =
+        dao.getMeta(ROTATION_META_KEY)?.value?.toIntOrNull() ?: 0
+
+    private suspend fun saveRotationCursor(value: Int) {
+        runCatching { dao.putMeta(SyncMetaEntity(ROTATION_META_KEY, value.toString())) }
+    }
+
+    private fun TypeSyncResult.hadChanges(): Boolean = upserts + deletes + backfilled > 0
 
     /**
      * Delivery phase: upload pending outbox ops for every active target in
