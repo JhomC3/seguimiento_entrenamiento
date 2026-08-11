@@ -20,6 +20,11 @@ uv run uvicorn app:app --host 127.0.0.1 --port 8000
 - **Default binding is loopback-only** (`127.0.0.1`). Do not expose the dashboard
   on a network without the security review in
   `docs/architecture/security-model.md` (no authentication exists).
+- Binding `--host 0.0.0.0` (LAN access, e.g. phone browser) works too: the CSRF
+  Origin check validates against the request's `Host` header, so any hostname
+  (`127.0.0.1`, `localhost`, the machine's LAN IP) is accepted. Outside loopback
+  you **must** set `GYM_CSRF_SECRET`; see `security-model.md` §3 before any
+  non-loopback use.
 - The app initializes the DB on startup: creates the file if missing and applies
   pending migrations (`src/migrations/`). Before any pending migration runs on a
   pre-existing database, a timestamped backup is written to `data/backups/`.

@@ -113,6 +113,25 @@ No third-party runtime is involved in styles.
   as adequate: a cross-site attacker cannot read the token (CSP `connect-src 'self'`
   blocks token exfiltration) and cannot reach the loopback server from a browser
   without the token.
+- **Origin validation compares against the request's `Host` header**, not the
+  socket bind address (`scope['server']` in uvicorn is the bind address, so
+  `--host 0.0.0.0` would never match a browser Origin). `Host` is set by the
+  browser from the URL and cannot be altered by XHR/fetch — the same trust level
+  as `Origin` (OWASP/Django pattern). This makes the check work for any hostname
+  used to reach the server (`127.0.0.1`, `localhost`, `0.0.0.0`, LAN IP); the
+  token check is unaffected and still mandatory. Without a `Host` header
+  (HTTP/1.0) the check falls back to `scope['server']`.
+- **macOS note:** on Darwin, `getsockname()` on an accepted socket returns the
+  concrete local address (`127.0.0.1`) even when the listener binds `0.0.0.0`
+  (verified empirically; differs from Linux). Combined with the old
+  `scope['server']`-based check, this rejected browsers that opened
+  `http://0.0.0.0:8000` while the server expected `http://127.0.0.1:8000`.
+  With the `Host`-header check, any URL the client actually used is accepted.
+- **Rejections are logged** with the cause (`CSRF reject (origin)` vs
+  `CSRF reject (token)`, including `origin`/`host`/`path`), so a 403 diagnosis
+  is a single server-log line.
+- **Use `http://127.0.0.1:8000`** (or `localhost`) in the browser — not the
+  `http://0.0.0.0:8000` address uvicorn prints at startup.
 - **CSRF window is configurable** via `GYM_CSRF_WINDOW_HOURS` (default 7 días,
   `CSRF_WINDOW_SECONDS` en `src/security.py`); a rejected request returns 403
   with a clear "recarga la página" notice.

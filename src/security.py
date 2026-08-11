@@ -2,8 +2,11 @@
 
 import hashlib
 import hmac
+import logging
 import os
 import time
+
+logger = logging.getLogger("security")
 
 # Every executable script is external ('self' or pinned CDNs): the CSP allows
 # no inline scripts (no nonce, no 'unsafe-inline'). Data-only elements like
@@ -101,18 +104,29 @@ def valid_csrf_token(token: str, secret: str) -> bool:
     return hmac.compare_digest(sig, expected)
 
 
-def _same_origin(origin: str, scope) -> bool:
+def _same_origin(
+    origin: str, scheme: str, host_header: str | None, server: tuple[str, int | None] | None
+) -> bool:
+    """True si Origin == scheme://<Host header> (sin Host, contra scheme://<server>).
+
+    El Host header refleja la autoridad que el cliente usó realmente: el navegador
+    lo fija desde la URL y XHR/fetch no pueden alterarlo (mismo nivel de confianza
+    que Origin; patrón OWASP/Django). scope['server'] en uvicorn es la dirección de
+    bind del socket: con --host 0.0.0.0 sería '0.0.0.0' y jamás coincidiría con el
+    Origin del navegador (127.0.0.1, localhost, IP LAN).
+    """
     if origin == "null":
         return False
     try:
-        scheme = scope["scheme"]
-        server = scope.get("server") or ("", 0)
-        server_host = server[0]
-        server_port = server[1] if len(server) > 1 else 0
-        expected = f"{scheme}://{server_host}"
+        if host_header:
+            return origin == f"{scheme}://{host_header}"
+        if not server:
+            return False
+        host, port = server
+        expected = f"{scheme}://{host}"
         default_port = "80" if scheme == "http" else "443"
-        if server_port and str(server_port) != default_port:
-            expected += f":{server_port}"
+        if port and str(port) != default_port:
+            expected += f":{port}"
         return origin == expected
     except (TypeError, ValueError):
         return False
@@ -143,15 +157,29 @@ class CSRFProtectionMiddleware:
             return
         headers = {k.lower().decode(): v.decode() for k, v in scope.get("headers", [])}
         origin = headers.get("origin")
-        if origin and not _same_origin(origin, scope):
+        token = headers.get(CSRF_HEADER.lower())
+        if origin and not _same_origin(
+            origin, scope["scheme"], headers.get("host"), scope.get("server")
+        ):
+            logger.warning(
+                "CSRF reject (origin): origin=%r host=%r path=%s",
+                origin,
+                headers.get("host"),
+                scope.get("path", ""),
+            )
+            body, status = self._forbidden()
+        elif not token or not valid_csrf_token(token, get_csrf_secret()):
+            logger.warning(
+                "CSRF reject (token): present=%s origin=%r host=%r path=%s",
+                bool(token),
+                origin,
+                headers.get("host"),
+                scope.get("path", ""),
+            )
             body, status = self._forbidden()
         else:
-            token = headers.get(CSRF_HEADER.lower())
-            if not token or not valid_csrf_token(token, get_csrf_secret()):
-                body, status = self._forbidden()
-            else:
-                await self.app(scope, receive, send)
-                return
+            await self.app(scope, receive, send)
+            return
         await self._send_response(scope, receive, send, body, status)
 
     @staticmethod

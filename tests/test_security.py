@@ -9,6 +9,36 @@ import app as appmod
 from src.security import get_csrf_secret, make_csrf_token
 
 
+def _run(coro):
+    """Ejecuta una corrutina en un event loop de un hilo propio (sin asyncio.run()).
+
+    Los tests e2e (Playwright sync) dejan un event loop en marcha en el hilo
+    principal, y en CPython ningún loop puede correr mientras haya otro en el
+    mismo hilo (ni asyncio.run() ni run_until_complete): estos tests deben
+    funcionar en cualquier orden de ejecución de pytest.
+    """
+    import asyncio
+    import threading
+
+    outcome = {}
+
+    def runner() -> None:
+        loop = asyncio.new_event_loop()
+        try:
+            outcome["value"] = loop.run_until_complete(coro)
+        except BaseException as exc:  # noqa: BLE001 - propagar también CancelledError
+            outcome["error"] = exc
+        finally:
+            loop.close()
+
+    thread = threading.Thread(target=runner)
+    thread.start()
+    thread.join()
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
+
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     from src.database import init_db, insert_exercise
@@ -169,6 +199,169 @@ def test_same_origin_post_accepted(authed_client):
     r = authed_client.post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
     assert r.status_code == 200
     assert "Entreno guardado" in r.text
+
+
+@pytest.mark.parametrize(
+    ("origin", "host_header"),
+    [
+        ("http://127.0.0.1:8000", "127.0.0.1:8000"),
+        ("http://localhost:8000", "localhost:8000"),
+        ("http://192.168.1.6:8000", "192.168.1.6:8000"),
+        ("http://[::1]:8000", "[::1]:8000"),
+        ("http://localhost", "localhost"),
+    ],
+)
+def test_same_origin_matches_host_header_with_wildcard_bind(origin, host_header):
+    """El Origin se valida contra el Host header real del cliente, no contra la
+    dirección de bind del socket (uvicorn: scope['server'] == ('0.0.0.0', 8000))."""
+    from src.security import _same_origin
+
+    assert _same_origin(origin, "http", host_header, ("0.0.0.0", 8000))
+
+
+def test_same_origin_rejects_mismatch_and_null():
+    from src.security import _same_origin
+
+    assert not _same_origin("https://evil.example", "http", "127.0.0.1:8000", ("0.0.0.0", 8000))
+    assert not _same_origin("null", "http", "127.0.0.1:8000", ("0.0.0.0", 8000))
+
+
+def test_same_origin_falls_back_to_scope_server_without_host_header():
+    """Sin Host header (HTTP/1.0) se conserva el comportamiento previo."""
+    from src.security import _same_origin
+
+    assert _same_origin("http://0.0.0.0:8000", "http", None, ("0.0.0.0", 8000))
+    assert _same_origin("http://127.0.0.1:8000", "http", None, ("127.0.0.1", 8000))
+    assert not _same_origin("http://evil.example", "http", None, ("127.0.0.1", 8000))
+    assert not _same_origin("http://127.0.0.1:8000", "http", None, None)
+
+
+def test_middleware_accepts_origin_matching_host_with_wildcard_bind():
+    """Reproduce el escenario uvicorn --host 0.0.0.0 + acceso por 127.0.0.1:
+    Origin == Host header pasa aunque scope['server'] sea la dirección de bind."""
+
+    from src.security import CSRFProtectionMiddleware, get_csrf_secret, make_csrf_token
+
+    called = []
+
+    async def inner_app(scope, receive, send):
+        called.append(scope["path"])
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def run_scope(scope) -> int:
+        status = {}
+
+        async def send(message):
+            if message["type"] == "http.response.start":
+                status["code"] = message["status"]
+
+        middleware = CSRFProtectionMiddleware(inner_app)
+        await middleware(scope, receive, send)
+        return status.get("code", 0)
+
+    base = {
+        "type": "http",
+        "method": "POST",
+        "path": "/entrenamiento/session/save",
+        "raw_path": b"/entrenamiento/session/save",
+        "query_string": b"",
+        "scheme": "http",
+        "server": ("0.0.0.0", 8000),
+        "client": ("127.0.0.1", 1234),
+    }
+    token = make_csrf_token(get_csrf_secret())
+    ok_headers = [
+        (b"host", b"127.0.0.1:8000"),
+        (b"origin", b"http://127.0.0.1:8000"),
+        (b"x-csrf-token", token.encode()),
+    ]
+    assert _run(run_scope({**base, "headers": ok_headers})) == 200
+    assert called == ["/entrenamiento/session/save"]
+
+    evil_headers = [
+        (b"host", b"127.0.0.1:8000"),
+        (b"origin", b"https://evil.example"),
+        (b"x-csrf-token", token.encode()),
+    ]
+    assert _run(run_scope({**base, "headers": evil_headers})) == 403
+    assert called == ["/entrenamiento/session/save"]
+
+    no_token_headers = [
+        (b"host", b"127.0.0.1:8000"),
+        (b"origin", b"http://127.0.0.1:8000"),
+    ]
+    assert _run(run_scope({**base, "headers": no_token_headers})) == 403
+    assert called == ["/entrenamiento/session/save"]
+
+
+def test_middleware_logs_rejection_reason(caplog):
+    """El rechazo CSRF se registra en el log del servidor con la causa (origin/token)."""
+    import logging
+
+    from src.security import CSRFProtectionMiddleware
+
+    async def inner_app(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def run_scope(scope) -> int:
+        status = {}
+
+        async def send(message):
+            if message["type"] == "http.response.start":
+                status["code"] = message["status"]
+
+        await CSRFProtectionMiddleware(inner_app)(scope, receive, send)
+        return status.get("code", 0)
+
+    base = {
+        "type": "http",
+        "method": "POST",
+        "path": "/alimentacion/save",
+        "raw_path": b"/alimentacion/save",
+        "query_string": b"",
+        "scheme": "http",
+        "server": ("127.0.0.1", 8000),
+        "client": ("127.0.0.1", 1234),
+    }
+    with caplog.at_level(logging.WARNING, logger="security"):
+        assert (
+            _run(
+                run_scope(
+                    {
+                        **base,
+                        "headers": [
+                            (b"host", b"127.0.0.1:8000"),
+                            (b"origin", b"https://evil.example"),
+                            (b"x-csrf-token", b"x"),
+                        ],
+                    }
+                )
+            )
+            == 403
+        )
+        _run(
+            run_scope(
+                {
+                    **base,
+                    "headers": [
+                        (b"host", b"127.0.0.1:8000"),
+                        (b"origin", b"http://127.0.0.1:8000"),
+                    ],
+                }
+            )
+        )
+    origin_line = [r for r in caplog.records if "CSRF reject (origin)" in r.message]
+    token_line = [r for r in caplog.records if "CSRF reject (token)" in r.message]
+    assert origin_line and "https://evil.example" in origin_line[0].message
+    assert token_line and "present=False" in token_line[0].message
 
 
 def test_get_does_not_require_token(client):
