@@ -2,6 +2,23 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
+> **Estado (2026-08-10):** Phases 0–5 **implementadas** (35 commits en `feature/health-sync`).
+> Backend verificado end-to-end (tests, gates y smoke local). App Android funcional en
+> dispositivo (permisos concedidos, agregación de pasos OK). **Pendiente:** smoke real
+> completo (datos del teléfono → Mac), bloqueado por el **rate limiting de Health Connect**
+> (ver Notas de ejecución §3), e integración a `main` (Task 5.3, con aprobación explícita).
+
+| Fase | Estado | Evidencia |
+|---|---|---|
+| 0 — Baseline, seguridad y esqueleto | ✅ Completa | `317c50a`, `aa6b97a`; APK compila; contrato v1 + CSRF exacto |
+| 1 — Catálogo, permisos, humo | ✅ Completa | `1929f06`, `bc076ef`; 38 tipos verificados contra el AAR; permisos concedidos en dispositivo |
+| 2 — Room, mapeadores, Changes | ✅ Completa | `16ad760`, `863904d`, `f5a75fc`; 31 tests Android |
+| 3 — Backend v010 + ingesta + endpoint | ✅ Completa | `494d370`, `872aedc`, `d61bd5b`; 379 tests; smoke curl OK |
+| 4 — Entrega HTTP, destinos, worker | ✅ Completa | `6cac5f7`; outbox por destino + seed; `HealthSyncClient` testado |
+| 5 — Resiliencia, export, docs | ✅ Completa | `bb713a9`, `0e76ce2`; fixtures cruzados; CSV; docs operativas |
+| Smoke real en dispositivo | 🔄 En curso | Permisos OK, agregación OK; **bloqueado por rate limit** (notas §3) |
+| Integración a `main` (Task 5.3) | ⏳ Pendiente | Requiere aprobación explícita del usuario |
+
 **Goal:** Construir una app Android Kotlin dentro de `android/` que extrae y conserva **todos los tipos de `Record` disponibles para el dispositivo en la versión fijada de Health Connect**, procedentes de Samsung Health/Galaxy Watch y otras fuentes autorizadas; los replica de forma fiable al dashboard mediante FastAPI + SQLite, primero en el Mac y posteriormente en cualquier host HTTPS persistente sin reescribir la app Android.
 
 **Architecture:** La app separa la sincronización de origen (Health Connect → Room) de la entrega (Room → destino HTTP). `HealthConnectManager` encapsula el SDK, `HealthRepository` mantiene un token por tipo, aplica cambios y publica operaciones en un outbox, `SyncWorker` orquesta y `SyncScheduler` programa los trabajos. Room es la fuente local de continuidad y conoce los destinos de entrega; FastAPI recibe lotes versionados e idempotentes, aplica upserts y bajas lógicas en SQLite y confirma cada operación. No se añade Clean Architecture, Hilt, Firebase, Compose complejo ni infraestructura remota obligatoria.
@@ -265,4 +282,81 @@ Solo con aprobación explícita del usuario: actualizar desde `main` si es neces
 
 ---
 
-**Riesgos y mitigaciones:** Health Connect requiere dispositivo físico para validar integración real; Samsung Health puede retrasar la publicación de registros, absorbida por tokens, revisiones y replay. Los tokens expiran a los 30 días: el backfill deduplicado recupera el estado legible, pero el historial anterior al permiso requiere autorización de historial. Desde la actualización de Health Connect de junio de 2026, los pasos capturados en el propio dispositivo se atribuyen a un nombre de paquete sintético específico del dispositivo en lugar de `"android"`: `data_origin_package` se conserva como metadato, pero **no se asume ningún valor fijo** para filtrar ni deduplicar. Un host LAN HTTPS necesita un certificado confiable y el dashboard no debe exponerse públicamente sin una capa de autenticación adicional. Datos de series o rutas pueden aumentar tamaño de Room: los lotes, la red no medida, los límites y las métricas locales controlan el coste sin eliminar datos no entregados.
+**Riesgos y mitigaciones:** Health Connect requiere dispositivo físico para validar integración real; Samsung Health puede retrasar la publicación de registros, absorbida por tokens, revisiones y replay. Los tokens expiran a los 30 días: el backfill deduplicado recupera el estado legible, pero el historial anterior al permiso requiere autorización de historial. Desde la actualización de Health Connect de junio de 2026, los pasos capturados en el propio dispositivo se atribuyen a un nombre de paquete sintético específico del dispositivo en lugar de `"android"`: `data_origin_package` se conserva como metadato, pero **no se asume ningún valor fijo** para filtrar ni deduplicar. Un host LAN HTTPS necesita un certificado confiable y el dashboard no debe exponerse públicamente sin una capa de autenticación adicional. Datos de series o rutas pueden aumentar tamaño de Room: los lotes, la red no medida, los límites y las métricas locales controlan el coste sin eliminar datos no entregados. **Rate limiting (verificado en doc oficial):** Health Connect impone un límite periódico y otro diario de llamadas por app; el límite en segundo plano es MÁS estricto que en primer plano; la doc recomienda la Changes API (changelog) para minimizar llamadas. El cliente debe detectar `RemoteException: rate limited` y **nunca reintentar en bucle** (esperar la reposición). **Manifest:** el proveedor (2025+) solo registra apps que declaran el handler `ACTION_SHOW_PERMISSIONS_RATIONALE` (ver contrato §8) — sin él la app no aparece en Health Connect ni el diálogo de permisos muestra opciones.
+
+---
+
+## Notas de ejecución (2026-08-09/10) — dispositivo real: Redmi Note 8, Android 13, MIUI 14, Health Connect v268669
+
+### 1. Crash de arranque — `network_security_config` inválido
+
+**Síntoma:** la app no abría; logcat: `XmlConfigSource$ParserException: Nested domain-config not allowed in debug-overrides`.
+
+**Causa:** `domain-config` anidado dentro de `debug-overrides` (no permitido por el parser de Android).
+
+**Fix (`cc429ae`):** split por build variant: `src/main/res/xml/network_security_config.xml` (HTTPS-only, también release) + `src/debug/res/xml/network_security_config.xml` (misma base + cleartext solo para hosts de desarrollo explícitos: `127.0.0.1`, `10.0.2.2`, `192.168.1.6`).
+
+### 2. HealthSync no aparecía en Health Connect — manifest incompleto (resuelto)
+
+**Síntomas:** botón de permisos sin efecto; HealthSync ausente de "Permisos de las apps" de Health Connect; el diálogo se abría sin opciones; "Abrir Health Connect" caía a Play Store.
+
+**Descartes con evidencia:**
+- No era la versión del SDK: el AAR **1.2.0-alpha04** (último en Maven) es idéntico al 1.1.0 en el contrato de permisos (`androidx.health.ACTION_REQUEST_PERMISSIONS` + paquete `com.google.android.apps.healthdata`), en `DEFAULT_PROVIDER_MIN_VERSION_CODE` (68623) y en las **19 clases del binder** (`androidx.health.platform.client.impl.sdkservice.*`) → migrar el SDK no cambiaría nada.
+- No era Health Connect: **Nike Run Club** (instalada como control) se registró sola y aparece en la lista de apps de HC.
+
+**Causa real:** el manifest no declaraba el handler de política de privacidad. El sample oficial de Google (`android/health-samples`, `HealthConnectSample/AndroidManifest.xml`) lo exige: intent-filter `androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE` en la Activity + `<intent>` equivalente en `<queries>` + `VIEW_PERMISSION_USAGE`/`HEALTH_PERMISSIONS` (Android 14+). El proveedor 2026 solo registra apps "completas".
+
+**Fix (`6dfac1f`):** manifest alineado con el sample oficial + pantalla de privacidad en `MainActivity` (`showPrivacyPolicy`) + guard de regresión `ManifestContractTest` (`57754b0`) + contrato §8 (`8ada026`).
+
+**Lección estructural:** el flujo de permisos de HC es por **intent** (UI del proveedor) y funciona aunque el binder falle; el registro de la app depende del manifest completo, no del SDK.
+
+### 3. Rate limiting de Health Connect — PROBLEMA ACTUAL (abierto)
+
+**Síntoma:** "Sincronizar AHORA (directo)" → `RemoteException: Request rejected. Rate limited request quota has been exceeded. Please wait until quota has replenished before making further requests.`
+
+**Verificación oficial:** la doc de Google *"Plan to avoid rate limiting"* (`developer.android.com/health-and-fitness/health-connect/rate-limiting`, actualizada 2026-01-19) confirma: **dos límites** por app (periódico + diario) sobre el número de llamadas a la API; **el rate limiting en segundo plano es más estricto que en primer plano**; recomendación explícita: usar la **Changes API (changelog handling)** en lugar de lecturas crudas para minimizar llamadas. El SDK cliente no contiene el mensaje (verificado en su bytecode) — lo emite el proveedor. La afirmación "las apps nuevas tienen cuota baja" **NO está en la doc oficial** y queda descartada como explicación.
+
+**Hechos del dispositivo:**
+- La agregación de pasos 24h **funciona** → el binder y los permisos están vivos; el fallo es exclusivo de la cuota, no del protocolo.
+- La cuota seguía agotada **tras 10 horas** → un límite periódico se repone en ~1 h; algo la consume continuamente.
+
+**Hipótesis principal (por verificar):** el worker de WorkManager reintenta en background ante rate limit (`Result.retry()` + backoff exponencial 30 min) y, como el límite de background es más estricto, **mantiene la cuota agotada de forma permanente**. En MIUI el worker aparecía ENQUEUED, pero pudo ejecutarse intermitentemente.
+
+**Mitigaciones YA implementadas** (`f7d5f1c`, `f50ff9d`, `75d9b39`):
+- Detección de rate limit → `RateLimitedException` (no reintenta en el mismo bucle).
+- Fallback estructural: Changes API como primario; ante `RemoteException` no-rate-limit → **modo rango** (backfill 30 días paginado, dedup por revisión); el fallback es red de seguridad, no el camino principal (la doc recomienda Changes).
+- Throttle: `MAX_TYPES_PER_RUN = 3` tipos por corrida.
+- `SyncExecutor` compartido (worker + botón directo) con reporte estructurado; UI con mensaje claro de cuota y cadena de causas completa del error.
+
+**Plan inmediato (pendiente de aplicar):**
+1. Cancelar los workers de WorkManager en `MainActivity.onCreate` (eliminar el consumo de cuota en background).
+2. Worker ante `rate_limited` → `Result.success()` (nunca `retry`).
+3. `MAX_TYPES_PER_RUN = 1` para el smoke (STEPS primero).
+4. Cachear `grantedPermissions` en el refresco de pantalla (hoy se llama en cada `onResume`).
+5. Esperar la reposición (~1–2 h) y verificar con **una sola** pulsación del botón directo → comprobar `data/gym.db`.
+6. Si tras 24 h sin workers la cuota sigue agotada → evaluar el límite diario (declaración de datos en Play Console / uso estabilizado) — no antes.
+
+### 4. Entorno MIUI (Redmi Note 8)
+
+- El icono de Health Connect **no aparece en el cajón de apps** (MIUI lo oculta; el launcher existe); se accede a HC desde Samsung Health.
+- WorkManager: el trabajo periódico y el one-time quedan **ENQUEUED** (MIUI restringe la ejecución de fondo de apps de origen desconocido) → **el botón directo en primer plano es la vía primaria de sincronización**; el worker queda como best-effort documentado.
+
+### 5. Hallazgos técnicos del SDK 1.1.0 (verificados contra el AAR real)
+
+- `IntervalRecord`/`InstantaneousRecord`/`SeriesRecord` son **internal** en 1.1.0 → los mapeos extraen start/end/zone por `when` explícito por tipo.
+- Las unidades son **value classes** con properties `inXxx` (`inKilograms`, `inKilocalories`, `inCelsius`…), no `.xxx`.
+- El constructor de `Metadata` es **internal** → los fixtures de test usan reflexión (solo tests; documentado en `Fixtures.kt`).
+- `DEFAULT_PROVIDER_PACKAGE_NAME`/`DEFAULT_PROVIDER_MIN_VERSION_CODE` son internal → constantes propias (`HealthConnectProvider`) con valores verificados del bytecode (68623).
+- `ReadRecordsResponse` no tiene `hasMore()` → paginación por `pageToken != null`.
+- En 1.1.0 NO existen `BodyMassIndexRecord`, `SleepStageRecord` ni `ExerciseLap` como `Record`; `ExerciseRoute` no extiende `Record` (API aparte) → excluidos del catálogo con evidencia.
+
+### 6. Backend — verificado
+
+- Smoke local completo: 401 sin token / 200 con acuse individual / replay idempotente / export CSV correcto (datos de prueba limpiados de `data/gym.db`).
+- Gates: 379 tests pytest + ruff format/check + mypy, verdes.
+
+### 7. Pendientes
+
+- Smoke end-to-end real (Watch → Samsung Health → HC → Room → HTTP → SQLite del Mac) — **bloqueado por la cuota** (sección 3).
+- Verificación de `data_origin_package` real con pasos on-device.
+- Integración a `main` (Task 5.3) — solo con aprobación explícita del usuario.
