@@ -328,13 +328,15 @@ Solo con aprobación explícita del usuario: actualizar desde `main` si es neces
 - Throttle: `MAX_TYPES_PER_RUN = 3` tipos por corrida.
 - `SyncExecutor` compartido (worker + botón directo) con reporte estructurado; UI con mensaje claro de cuota y cadena de causas completa del error.
 
-**Plan inmediato (pendiente de aplicar):**
-1. Cancelar los workers de WorkManager en `MainActivity.onCreate` (eliminar el consumo de cuota en background).
-2. Worker ante `rate_limited` → `Result.success()` (nunca `retry`).
-3. `MAX_TYPES_PER_RUN = 1` para el smoke (STEPS primero).
-4. Cachear `grantedPermissions` en el refresco de pantalla (hoy se llama en cada `onResume`).
-5. Esperar la reposición (~1–2 h) y verificar con **una sola** pulsación del botón directo → comprobar `data/gym.db`.
-6. Si tras 24 h sin workers la cuota sigue agotada → evaluar el límite diario (declaración de datos en Play Console / uso estabilizado) — no antes.
+**Plan inmediato (aplicado en `580941f`, 2026-08-10; pendiente solo la verificación en dispositivo):**
+1. ✅ Cancelar los workers de WorkManager en `MainActivity.onCreate` — `SyncScheduler.cancelAll()` (ambos: `health_connect_sync` periódico y `health_connect_sync_now`) → la sync queda 100% manual (botón directo) mientras dure la investigación.
+2. ✅ Worker ante `rate_limited` → `Result.success()` (nunca `retry`; datos de diagnóstico `reason=rate_limited`), + catch defensivo de `RateLimitedException` que escape del executor (también → success).
+3. ✅ `MAX_TYPES_PER_RUN = 1` (HealthRepository.kt) — STEPS es el primero del catálogo → la primera corrida sincroniza solo pasos.
+4. ✅ Cache de `grantedPermissions` en `RealHealthConnectGateway` (TTL 15 s) + `invalidatePermissionCache()` llamado tras el flujo de permisos en MainActivity (se acabó la llamada al binder en cada `onResume`).
+5. ⏳ Esperar la reposición (~1–2 h) y verificar con **una sola** pulsación del botón directo → comprobar `data/gym.db`.
+6. ⏳ Si tras 24 h sin workers la cuota sigue agotada → evaluar el límite diario (declaración de datos en Play Console / uso estabilizado) — no antes.
+
+**Verificación pendiente en el teléfono (Redmi Note 8):** instalar el nuevo APK, abrir la app una vez (cancela workers al arrancar), esperar 1–2 h a que la cuota se reponga y pulsar **una sola vez** "Sincronizar AHORA (directo)". Compilado y 43 tests unitarios Android en verde (`580941f`).
 
 ### 4. Entorno MIUI (Redmi Note 8)
 
