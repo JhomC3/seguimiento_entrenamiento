@@ -25,7 +25,7 @@ class FakeHealthConnectGateway : HealthConnectGateway {
     val readLog = mutableListOf<Pair<String, String?>>()          // (typeName, pageToken) por readRecords
     val changesLog = mutableListOf<String>()                      // token por getChanges
     var failNextTokenWithRateLimit = false                       // getChangesToken → RemoteException rate-limited
-    var failReadsWithRateLimit = false                           // readRecords → RemoteException rate-limited
+    var failReadsWithRateLimit = false                           // readRecords → RemoteException rate-limited (falla la 1ª página NO inicial, para confirmar el checkpoint)
     val pageStore = mutableMapOf<String?, List<Record>>()         // paginación determinista para bootstrap (null = primera página)
 
     /** When true, getChanges throws AFTER returning a page (crash before commit). */
@@ -79,7 +79,7 @@ class FakeHealthConnectGateway : HealthConnectGateway {
         pageToken: String?,
     ): ReadRecordsResponse<Record> {
         readLog += (RecordTypes.byClass(recordType)?.typeName ?: "?") to pageToken
-        if (failReadsWithRateLimit) {
+        if (failReadsWithRateLimit && pageToken != null) {
             failReadsWithRateLimit = false
             throw RemoteException("Rate limited request quota has been exceeded")
         }

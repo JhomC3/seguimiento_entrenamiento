@@ -91,4 +91,33 @@ class HealthRepositorySchedulingTest {
         assertEquals(0, gateway.tokenLog.size) // criterio 5: una ventana de enfriamiento → cero llamadas fallidas
         assertEquals(0, gateway.readLog.size)
     }
+
+    @Test
+    fun `interrupted bootstrap resumes from the last confirmed page`() = runBlocking {
+        // SLEEP_SESSION: permiso único (READ_STEPS es compartido, ver Task 3).
+        gateway.granted = setOf(RecordTypes.byTypeName("SLEEP_SESSION")!!.permission)
+        gateway.pageStore[null] = listOf(Fixtures.sleepSession("hc-1", t, t.plusSeconds(3600)))
+        gateway.pageStore["pt-1"] = listOf(Fixtures.sleepSession("hc-2", t, t.plusSeconds(3600)))
+        gateway.pageStore["pt-2"] = listOf(Fixtures.sleepSession("hc-3", t, t.plusSeconds(3600)))
+
+        // Primera ejecución: se corta (rate limit) tras confirmar la página 1.
+        gateway.failReadsWithRateLimit = true
+        runCatching { repo.syncAuthorizedTypes() }
+        assertTrue(gateway.readLog.map { it.second }.contains("pt-1"))
+
+        // Segunda ejecución: el cooldown (1 h) expira justo en t+1h → reanuda.
+        val repoAfterHour = HealthRepository(
+            db = db,
+            gateway = gateway,
+            tokenStore = ChangesTokenStore(db.healthDao()),
+            now = { t.plusSeconds(3600) },
+            pacer = {},
+        )
+        repoAfterHour.syncAuthorizedTypes()
+
+        // criterio 3: continúa en la página pendiente (pt-1), no relee desde null.
+        val pageTokensSeen = gateway.readLog.map { it.second }
+        assertTrue("debe reanudar con el checkpoint guardado", "pt-1" in pageTokensSeen)
+        assertTrue("no vuelve a empezar desde null sin necesidad", pageTokensSeen.count { it == null } == 1)
+    }
 }

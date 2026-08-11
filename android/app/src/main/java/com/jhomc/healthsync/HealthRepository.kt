@@ -34,6 +34,9 @@ const val MAX_TYPES_PER_RUN = 1
 /** sync_meta key holding the persisted round-robin cursor. */
 private const val ROTATION_META_KEY = "round_robin_index"
 
+/** Bootstrap window: 30 days of history fetched on first sync. */
+private const val BACKFILL_WINDOW_MS = 30L * 24 * 3_600_000
+
 data class UploadResult(
     val targetId: Long,
     val delivered: Int,
@@ -82,11 +85,13 @@ class HealthRepository(
 
     /** Backfill window used for first sync and token-expiry recovery. */
     suspend fun syncType(entry: RecordTypeEntry): TypeSyncResult {
-        val existing = tokenStore.get(entry.typeName)
-        return if (existing == null) {
+        val state = dao.getState(entry.typeName)
+        val token = state?.changesToken
+        val bootstrapInProgress = state?.bootstrapStartEpochMs != null
+        return if (token == null || bootstrapInProgress) {
             firstSync(entry)
         } else {
-            drainChanges(entry, existing)
+            drainChanges(entry, token)
         }
     }
 
@@ -213,22 +218,50 @@ class HealthRepository(
     }
 
     private suspend fun firstSync(entry: RecordTypeEntry): TypeSyncResult {
-        // 1) Reserve the changes token BEFORE the backfill, so changes that
-        //    arrive while backfilling are drained afterwards (no gap window).
-        val reserved = try {
-            gateway.getChangesToken(setOf(entry.recordClass))
-        } catch (e: RemoteException) {
-            if (e.isRateLimited()) throw e.asRateLimitedOrSelf()
-            return TypeSyncResult(entry.typeName, backfilled = backfill(entry))
-        } catch (e: IOException) {
-            return TypeSyncResult(entry.typeName, backfilled = backfill(entry))
-        } catch (e: SecurityException) {
-            return TypeSyncResult(entry.typeName, backfilled = backfill(entry))
+        // 1) Reserve the changes token BEFORE the backfill and persist it with
+        //    the 30-day anchor in the SAME transaction, so a crash mid-backfill
+        //    resumes from the reserved token (no gap window) instead of
+        //    restarting the token reservation from scratch.
+        val nowMs = now().toEpochMilli()
+        val state = dao.getState(entry.typeName)
+        if (state?.bootstrapStartEpochMs == null && state?.changesToken == null) {
+            val reserved = try {
+                gateway.getChangesToken(setOf(entry.recordClass))
+            } catch (e: RemoteException) {
+                if (e.isRateLimited()) throw e.asRateLimitedOrSelf()
+                return TypeSyncResult(entry.typeName, backfilled = backfill(entry))
+            } catch (e: IOException) {
+                return TypeSyncResult(entry.typeName, backfilled = backfill(entry))
+            } catch (e: SecurityException) {
+                return TypeSyncResult(entry.typeName, backfilled = backfill(entry))
+            }
+            db.withTransaction {
+                dao.upsertState(
+                    state?.copy(
+                        changesToken = reserved,
+                        permissionGranted = true,
+                        lastSuccessfulReadAtEpochMs = nowMs,
+                        bootstrapStartEpochMs = nowMs - BACKFILL_WINDOW_MS,
+                    )
+                        ?: HealthSyncStateEntity(
+                            recordType = entry.typeName,
+                            changesToken = reserved,
+                            permissionGranted = true,
+                            lastSuccessfulReadAtEpochMs = nowMs,
+                            priority = HealthSyncPlanner.initialPriority(entry),
+                            bootstrapStartEpochMs = nowMs - BACKFILL_WINDOW_MS,
+                        ),
+                )
+            }
         }
-        // 2) Backfill last 30 days, paginated, persisted per page.
-        val backfilled = backfill(entry)
+        // 2) Backfill the window resuming from the last confirmed page, with
+        //    the page token checkpointed in the same transaction as each page.
+        val anchorMs = dao.getState(entry.typeName)?.bootstrapStartEpochMs ?: (nowMs - BACKFILL_WINDOW_MS)
+        val backfilled = resumeBackfill(entry, anchorMs)
         // 3) Drain everything that happened since the reserved token.
-        val drained = drainChanges(entry, reserved, tokenReserved = true)
+        val reservedToken = dao.getState(entry.typeName)?.changesToken
+            ?: throw IllegalStateException("bootstrap sin token reservado: ${entry.typeName}")
+        val drained = drainChanges(entry, reservedToken, tokenReserved = true)
         return TypeSyncResult(
             recordType = entry.typeName,
             backfilled = backfilled,
@@ -236,6 +269,40 @@ class HealthRepository(
             deletes = drained.deletes,
             tokenAdvanced = drained.tokenAdvanced,
         )
+    }
+
+    /**
+     * Paginated 30-day backfill that resumes from the persisted page token:
+     * each page and its checkpoint (bootstrap_page_token) commit in ONE
+     * transaction, so an interruption (rate limit, crash) continues from the
+     * last confirmed page instead of re-reading from the start.
+     */
+    private suspend fun resumeBackfill(entry: RecordTypeEntry, anchorMs: Long): Int {
+        val end = now()
+        val start = Instant.ofEpochMilli(anchorMs)
+        var pageToken = dao.getState(entry.typeName)?.bootstrapPageToken
+        var total = 0
+        do {
+            val page: ReadRecordsResponse<Record> = try {
+                gateway.readRecords(entry.recordClass, start, end, pageToken)
+            } catch (e: RemoteException) {
+                throw e.asRateLimitedOrSelf()
+            }
+            val entities = page.records.map { toEntity(it) }
+            db.withTransaction {
+                dao.applyBackfillPage(entities, now().toEpochMilli())
+                dao.upsertState(
+                    dao.getState(entry.typeName)!!.copy(
+                        bootstrapPageToken = page.pageToken,
+                        lastSuccessfulReadAtEpochMs = now().toEpochMilli(),
+                    ),
+                )
+            }
+            total += entities.size
+            pageToken = page.pageToken
+            if (pageToken != null) pace()
+        } while (pageToken != null)
+        return total
     }
 
     private suspend fun backfill(entry: RecordTypeEntry): Int {
