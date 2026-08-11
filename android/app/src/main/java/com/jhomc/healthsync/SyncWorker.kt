@@ -56,6 +56,10 @@ class SyncWorker(
             // Defensive: the executor normally converts this to a notice;
             // if it ever escapes, do NOT retry (see above).
             Result.success(Data.Builder().putString("reason", "rate_limited").build())
+        } catch (e: ForegroundRequiredException) {
+            // Not retryable: only the user can change it (foreground or
+            // background read access). Retrying would burn quota for nothing.
+            Result.success(Data.Builder().putString("reason", "foreground_requerido").build())
         } catch (e: SecurityException) {
             Result.failure(Data.Builder().putString("reason", "permisos_revocados").build())
         } catch (e: IOException) {

@@ -45,6 +45,20 @@ class HealthRepositorySchedulingTest {
     fun tearDown() = db.close()
 
     @Test
+    fun `foreground-required rejection maps to a non-retryable exception`() = runBlocking {
+        gateway.granted = setOf(RecordTypes.byTypeName("SLEEP_SESSION")!!.permission)
+        gateway.failReadsWithForegroundRequired = true
+        val thrown = runCatching { repo.syncAuthorizedTypes() }.exceptionOrNull()
+        assertTrue(
+            "debe convertirse en ForegroundRequiredException, fue: ${thrown?.javaClass?.simpleName}",
+            thrown is ForegroundRequiredException,
+        )
+        // No entra en cooldown: el tipo sigue vencido para el próximo run en primer plano.
+        val state = db.healthDao().getState("SLEEP_SESSION")
+        assertTrue(state?.cooldownUntilEpochMs == null)
+    }
+
+    @Test
     fun `a run with 38 authorized types calls only the budgeted ones`() = runBlocking {
         repo.syncAuthorizedTypes()
         assertTrue("criterio 1: 1 tipo por ejecución", gateway.tokenLog.size == 1)

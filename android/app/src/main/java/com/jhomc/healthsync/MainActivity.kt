@@ -442,6 +442,14 @@ class MainActivity : ComponentActivity() {
                         "Espera unos minutos y vuelve a pulsar el botón."
                     return@launch
                 }
+                if (report.notice == "foreground_requerido") {
+                    statusView.text = "Health Connect requiere que la app esté en primer plano\n" +
+                        "para leer Steps/StepsCadence.\n" +
+                        "Mantén la app abierta con la pantalla encendida al sincronizar,\n" +
+                        "o activa 'Acceso en segundo plano' en Health Connect →\n" +
+                        "Permisos de las apps → HealthSync."
+                    return@launch
+                }
                 val msg = buildString {
                     append("Tipos leídos: ${report.typesSynced} | Entregados: ${report.delivered}")
                     if (report.failed > 0) append(" | Fallos: ${report.failed}")

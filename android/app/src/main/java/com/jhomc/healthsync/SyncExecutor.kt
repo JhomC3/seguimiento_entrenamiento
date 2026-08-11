@@ -41,6 +41,8 @@ object SyncExecutor {
             repo.syncAuthorizedTypes()
         } catch (e: RateLimitedException) {
             return SyncReport(0, 0, 0, notice = "rate_limited")
+        } catch (e: ForegroundRequiredException) {
+            return SyncReport(0, 0, 0, notice = "foreground_requerido")
         }
 
         val target = store.target()

@@ -26,6 +26,7 @@ class FakeHealthConnectGateway : HealthConnectGateway {
     val changesLog = mutableListOf<String>()                      // token por getChanges
     var failNextTokenWithRateLimit = false                       // getChangesToken → RemoteException rate-limited
     var failReadsWithRateLimit = false                           // readRecords → RemoteException rate-limited (falla la 1ª página NO inicial, para confirmar el checkpoint)
+    var failReadsWithForegroundRequired = false                  // readRecords → RemoteException "must be in foreground" (one-shot)
     val pageStore = mutableMapOf<String?, List<Record>>()         // paginación determinista para bootstrap (null = primera página)
 
     /** When true, getChanges throws AFTER returning a page (crash before commit). */
@@ -82,6 +83,13 @@ class FakeHealthConnectGateway : HealthConnectGateway {
         if (failReadsWithRateLimit && pageToken != null) {
             failReadsWithRateLimit = false
             throw RemoteException("Rate limited request quota has been exceeded")
+        }
+        if (failReadsWithForegroundRequired) {
+            failReadsWithForegroundRequired = false
+            throw RemoteException(
+                "com.jhomc.healthsync must be in foreground to read the following data types " +
+                    "[Steps, StepsCadenceSeries]",
+            )
         }
         if (backfillQueue.isNotEmpty()) {
             val page = backfillQueue.removeAt(0)
