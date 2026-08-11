@@ -22,14 +22,14 @@ data class SyncReport(
  */
 object SyncExecutor {
 
-    suspend fun run(context: Context): SyncReport {
+    suspend fun run(context: Context, onProgress: (String) -> Unit = {}): SyncReport {
         val appContext = context.applicationContext
         val gateway = RealHealthConnectGateway(appContext)
         if (HealthConnectClient.getSdkStatus(appContext) != HealthConnectClient.SDK_AVAILABLE) {
             return SyncReport(0, 0, 0, notice = "health_connect_no_disponible")
         }
         val db = HealthDatabaseBuilder.get(appContext)
-        val repo = HealthRepository(db, gateway, ChangesTokenStore(db.healthDao()), Instant::now)
+        val repo = HealthRepository(db, gateway, ChangesTokenStore(db.healthDao()), Instant::now, onProgress = onProgress)
         val store = SecureTargetStore(appContext)
         val client = HealthSyncClient()
 

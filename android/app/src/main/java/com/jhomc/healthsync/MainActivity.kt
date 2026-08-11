@@ -435,7 +435,12 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             showMessage("Sincronizando…")
             try {
-                val report = withContext(Dispatchers.IO) { SyncExecutor.run(this@MainActivity) }
+                val report = withContext(Dispatchers.IO) {
+                    SyncExecutor.run(this@MainActivity) { stage ->
+                        // El callback corre en el hilo IO: sube al main el progreso.
+                        runOnUiThread { statusView.text = "Sincronizando… $stage" }
+                    }
+                }
                 if (report.notice == "rate_limited") {
                     statusView.text = "Cuota de Health Connect agotada (rate limit).\n" +
                         "Health Connect limita las llamadas por hora de las apps nuevas.\n" +

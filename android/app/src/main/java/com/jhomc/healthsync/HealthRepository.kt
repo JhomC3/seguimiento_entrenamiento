@@ -88,9 +88,10 @@ class HealthRepository(
     private val tokenStore: ChangesTokenStore,
     private val now: () -> Instant = Instant::now,
     private val pacer: suspend () -> Unit = { delay(PACING_DEFAULT_MS) },
+    private val onProgress: (String) -> Unit = {},
 ) {
     companion object {
-        const val PACING_DEFAULT_MS = 2_000L
+        const val PACING_DEFAULT_MS = 500L
     }
 
     /** Slows the page loop so bursts never blow the provider's per-window quota. */
@@ -122,13 +123,18 @@ class HealthRepository(
 
     /**
      * Source phase: sync ONLY the authorized types whose next_due_at has passed
-     * and that are not cooling down, budgeted to MAX_TYPES_PER_RUN. Candidates are
-     * ordered by due time and the selection rotates from the persisted cursor so
-     * no type starves. If nothing is due, no Health Connect call happens at all.
+     * and that are not cooling down, budgeted to MAX_TYPES_PER_RUN. Candidates
+     * are ordered by priority (HIGH first, in catalog order so the first runs
+     * hit the types with guaranteed data: STEPS, HEART_RATE, SLEEP...), then by
+     * due time, and the selection rotates from the persisted cursor so no type
+     * starves. If nothing is due, no Health Connect call happens at all.
      */
     suspend fun syncAuthorizedTypes(): List<TypeSyncResult> {
         val granted = gateway.grantedPermissions()
         val nowMs = now().toEpochMilli()
+        val catalogIndex = HashMap<String, Int>().also { map ->
+            RecordTypes.all.forEachIndexed { i, e -> map[e.typeName] = i }
+        }
         val candidates = RecordTypes.all
             .filter { it.permission in granted }
             .map { entry -> entry to dao.getState(entry.typeName) }
@@ -141,7 +147,11 @@ class HealthRepository(
                 due == null || due <= nowMs
             }
             .sortedWith(
-                compareBy<Pair<RecordTypeEntry, HealthSyncStateEntity?>> { it.second?.nextDueAtEpochMs ?: 0L }
+                compareByDescending<Pair<RecordTypeEntry, HealthSyncStateEntity?>> {
+                    it.second?.priority ?: HealthSyncPlanner.initialPriority(it.first)
+                }
+                    .thenBy { catalogIndex[it.first.typeName] ?: Int.MAX_VALUE }
+                    .thenBy { it.second?.nextDueAtEpochMs ?: 0L }
                     .thenBy { it.first.typeName },
             )
         if (candidates.isEmpty()) return emptyList()
@@ -155,6 +165,7 @@ class HealthRepository(
         val results = mutableListOf<TypeSyncResult>()
         for ((entry, _) in selected) {
             try {
+                onProgress("Sincronizando ${entry.typeName}…")
                 val result = syncType(entry)
                 tokenStore.markSynced(entry.typeName, result.hadChanges(), now().toEpochMilli())
                 results += result
@@ -209,6 +220,7 @@ class HealthRepository(
                 }
             }
             delivered += batch.size
+            onProgress("Entregados $delivered ops al servidor")
         }
         return UploadResult(target.targetId, delivered, failed)
     }
@@ -297,7 +309,9 @@ class HealthRepository(
         val start = Instant.ofEpochMilli(anchorMs)
         var pageToken = dao.getState(entry.typeName)?.bootstrapPageToken
         var total = 0
+        var pageNo = 0
         do {
+            pageNo++
             val page: ReadRecordsResponse<Record> = try {
                 gateway.readRecords(entry.recordClass, start, end, pageToken)
             } catch (e: RemoteException) {
@@ -314,6 +328,7 @@ class HealthRepository(
                 )
             }
             total += entities.size
+            onProgress("${entry.typeName}: página $pageNo (${total} registros)")
             pageToken = page.pageToken
             if (pageToken != null) pace()
         } while (pageToken != null)

@@ -59,6 +59,33 @@ class HealthRepositorySchedulingTest {
     }
 
     @Test
+    fun `first run picks the highest priority catalog-first type not alphabetical`() = runBlocking {
+        gateway.granted = setOf(
+            RecordTypes.byTypeName("STEPS")!!.permission,               // HIGH, primero en catálogo
+            RecordTypes.byTypeName("OXYGEN_SATURATION")!!.permission,  // MEDIUM, alfabético antes
+        )
+        repo.syncAuthorizedTypes()
+        assertEquals(listOf("STEPS"), gateway.tokenLog)
+    }
+
+    @Test
+    fun `progress callback reports the syncing type`() = runBlocking {
+        gateway.granted = setOf(RecordTypes.byTypeName("STEPS")!!.permission)
+        gateway.pageStore[null] = listOf(Fixtures.steps("hc-1", t, t.plusSeconds(60), count = 100))
+        val messages = mutableListOf<String>()
+        val repoWithProgress = HealthRepository(
+            db = db,
+            gateway = gateway,
+            tokenStore = ChangesTokenStore(db.healthDao()),
+            now = { t },
+            pacer = {},
+            onProgress = { messages += it },
+        )
+        repoWithProgress.syncAuthorizedTypes()
+        assertTrue("debe reportar el tipo: $messages", messages.any { it.contains("STEPS") })
+    }
+
+    @Test
     fun `a run with 38 authorized types calls only the budgeted ones`() = runBlocking {
         repo.syncAuthorizedTypes()
         assertTrue("criterio 1: 1 tipo por ejecución", gateway.tokenLog.size == 1)

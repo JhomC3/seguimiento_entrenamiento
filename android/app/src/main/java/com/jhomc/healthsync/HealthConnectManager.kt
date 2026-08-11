@@ -22,8 +22,15 @@ class HealthConnectManager(private val gateway: HealthConnectGateway) {
 
     suspend fun backgroundReadAvailable(): Boolean = gateway.backgroundReadAvailable()
 
-    /** Permission set for the core batch (types Samsung Health writes). */
-    fun corePermissions(): Set<String> = RecordTypes.core.map { it.permission }.toSet()
+    /**
+     * Permission set for the core batch (types Samsung Health writes) plus the
+     * background-read permission: Health Connect only offers background access
+     * in its permission UI when the app requests READ_HEALTH_DATA_IN_BACKGROUND
+     * explicitly (declared in the manifest + requested here).
+     */
+    fun corePermissions(): Set<String> =
+        RecordTypes.core.map { it.permission }.toSet() +
+            HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND
 
     /** One optional family at a time (buttons per family + explanation). */
     fun familyPermissions(family: MappingFamily): Set<String> =
