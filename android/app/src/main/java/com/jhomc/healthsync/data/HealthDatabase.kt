@@ -215,12 +215,34 @@ interface HealthDao {
         HealthOutboxEntity::class,
         SyncMetaEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class HealthDatabase : RoomDatabase() {
     abstract fun healthDao(): HealthDao
 }
+
+/** Tipos esenciales del catálogo (RecordTypes.kt) + el agregado interno de HR. */
+internal val ESSENTIAL_RECORD_TYPES = listOf(
+    "STEPS",
+    "HEART_RATE",
+    "HEART_RATE_5MIN",  // agregado por tramos de 5 min (fuera del catálogo HC)
+    "SLEEP_SESSION",
+    "EXERCISE_SESSION",
+    "ACTIVE_CALORIES_BURNED",
+    "TOTAL_CALORIES_BURNED",
+    "RESTING_HEART_RATE",
+    "WEIGHT",
+    "HEIGHT",
+    "BODY_FAT",
+    "BONE_MASS",
+    "BODY_WATER_MASS",
+    "LEAN_BODY_MASS",
+    "DISTANCE",
+    "VO2_MAX",
+    "OXYGEN_SATURATION",
+    "BASAL_METABOLIC_RATE",
+)
 
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -233,6 +255,31 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         db.execSQL(
             "CREATE TABLE IF NOT EXISTS sync_meta (" +
                 "meta_key TEXT NOT NULL PRIMARY KEY, meta_value TEXT NOT NULL)"
+        )
+    }
+}
+
+/**
+ * v3: purga los tipos recortados del catálogo (22 tipos no esenciales) de las
+ * tablas locales: estado de sync, registros espejo y operaciones pendientes del
+ * outbox. Los datos ya entregados al servidor no se tocan.
+ */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        val placeholders = ESSENTIAL_RECORD_TYPES.joinToString(",") { "?" }
+        // Fuera del outbox primero: el hc_id es la única clave de unión.
+        db.execSQL(
+            "DELETE FROM health_outbox WHERE hc_id IN (" +
+                "SELECT hc_id FROM health_records WHERE record_type NOT IN ($placeholders))",
+            ESSENTIAL_RECORD_TYPES.toTypedArray(),
+        )
+        db.execSQL(
+            "DELETE FROM health_records WHERE record_type NOT IN ($placeholders)",
+            ESSENTIAL_RECORD_TYPES.toTypedArray(),
+        )
+        db.execSQL(
+            "DELETE FROM health_sync_state WHERE record_type NOT IN ($placeholders)",
+            ESSENTIAL_RECORD_TYPES.toTypedArray(),
         )
     }
 }

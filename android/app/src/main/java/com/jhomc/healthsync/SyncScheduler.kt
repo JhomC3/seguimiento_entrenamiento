@@ -13,6 +13,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.jhomc.healthsync.data.HealthDatabase
 import com.jhomc.healthsync.data.MIGRATION_1_2
+import com.jhomc.healthsync.data.MIGRATION_2_3
 import java.util.concurrent.TimeUnit
 
 /** WorkManager scheduling only; no business logic lives here. */
@@ -72,6 +73,6 @@ object HealthDatabaseBuilder {
                 context.applicationContext,
                 HealthDatabase::class.java,
                 "health_sync.db",
-            ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
         }
 }
