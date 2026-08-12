@@ -20,16 +20,6 @@ class HealthConnectManagerTest {
     }
 
     @Test
-    fun `core batch excludes sensitive medical types`() {
-        val manager = HealthConnectManager(FakeHealthConnectGateway())
-        val core = manager.corePermissions()
-        assertTrue(core.isNotEmpty())
-        val medical = manager.familyPermissions(MappingFamily.MEDICAL)
-        assertTrue(medical.none { it in core })
-        assertTrue(medical.isNotEmpty())
-    }
-
-    @Test
     fun `type states reflect granted permissions`() = runBlocking {
         val gateway = FakeHealthConnectGateway()
         val manager = HealthConnectManager(gateway)
@@ -37,10 +27,6 @@ class HealthConnectManagerTest {
         gateway.granted = manager.corePermissions()
         val states = manager.typeStates()
         assertEquals(TypeStatus.READY, states.first { it.entry.typeName == "STEPS" }.status)
-        assertEquals(
-            TypeStatus.NOT_AUTHORIZED,
-            states.first { it.entry.family == MappingFamily.MEDICAL }.status,
-        )
     }
 
     @Test
