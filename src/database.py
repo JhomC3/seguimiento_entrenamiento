@@ -84,7 +84,7 @@ def get_sets_by_fecha(db_path: str, fecha: str) -> list[dict]:
     with read_connection(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT ejercicio, set_orden, reps, kg, rir, origen
+            SELECT ejercicio, set_orden, reps, kg, rir, descanso_seg, origen
             FROM training_sets
             WHERE fecha = ?
             ORDER BY set_orden
@@ -98,7 +98,8 @@ def get_sets_by_fecha(db_path: str, fecha: str) -> list[dict]:
             "reps": r[2],
             "kg": r[3],
             "rir": r[4],
-            "origen": r[5],
+            "descanso_seg": r[5],
+            "origen": r[6],
         }
         for r in rows
     ]
@@ -143,7 +144,7 @@ def get_session_sets(db_path: str, semana: int, dia: str, fecha: str) -> list[di
     with read_connection(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT ejercicio, set_orden, reps, kg, rir, origen
+            SELECT ejercicio, set_orden, reps, kg, rir, descanso_seg, origen
             FROM training_sets
             WHERE semana = ? AND dia = ? AND fecha = ?
             ORDER BY set_orden
@@ -157,7 +158,8 @@ def get_session_sets(db_path: str, semana: int, dia: str, fecha: str) -> list[di
             "reps": r[2],
             "kg": r[3],
             "rir": r[4],
-            "origen": r[5],
+            "descanso_seg": r[5],
+            "origen": r[6],
         }
         for r in rows
     ]
@@ -329,12 +331,19 @@ def get_last_session_sets(db_path: str, ejercicio: str) -> list[dict]:
         if latest is None:
             return []
         set_rows = conn.execute(
-            "SELECT ejercicio, set_orden, reps, kg, rir FROM training_sets "
+            "SELECT ejercicio, set_orden, reps, kg, rir, descanso_seg FROM training_sets "
             "WHERE LOWER(ejercicio) = LOWER(?) AND fecha = ? ORDER BY set_orden",
             (ejercicio, latest[0]),
         ).fetchall()
     return [
-        {"ejercicio": r[0], "set_orden": r[1], "reps": r[2], "kg": r[3], "rir": r[4]}
+        {
+            "ejercicio": r[0],
+            "set_orden": r[1],
+            "reps": r[2],
+            "kg": r[3],
+            "rir": r[4],
+            "descanso_seg": r[5],
+        }
         for r in set_rows
     ]
 

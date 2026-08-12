@@ -210,6 +210,41 @@ def test_sets_from_form_parses_negative_rir():
     assert sets[0].rir == "-1"
 
 
+def test_sets_from_form_parses_descanso():
+    sets = sets_from_form(["Press"], ["80"], ["5"], ["0"], descansos=["90"])
+    assert sets[0].descanso_seg == "90"
+
+
+def test_save_session_persists_descanso(db):
+    save_session(
+        db,
+        "2026-02-10",
+        [
+            TrainingSetInput(ejercicio="Press", kg=80, reps=5, rir=0, descanso_seg=90),
+            TrainingSetInput(ejercicio="Press", kg=80, reps=5, rir=2),
+        ],
+    )
+    rows = get_sets_by_fecha(db, "2026-02-10")
+    assert rows[0]["descanso_seg"] == 90.0
+    assert rows[1]["descanso_seg"] is None
+
+
+def test_validate_sets_cleans_descanso(db):
+    sets = validate_sets(
+        db,
+        [TrainingSetInput(ejercicio="Press", kg=80, reps=5, rir=0, descanso_seg="75")],
+    )
+    assert sets[0].descanso_seg == 75.0
+
+
+def test_validate_sets_accepts_empty_descanso(db):
+    sets = validate_sets(
+        db,
+        [TrainingSetInput(ejercicio="Press", kg=80, reps=5, rir=0, descanso_seg="")],
+    )
+    assert sets[0].descanso_seg is None
+
+
 def test_get_sessions_page(db):
     save_session(
         db,

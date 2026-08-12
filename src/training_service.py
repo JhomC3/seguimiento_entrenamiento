@@ -79,7 +79,11 @@ def _validate_number(
 
 
 def sets_from_form(
-    ejercicios: list[str], kgs: list[str], reps: list[str], rirs: list[str]
+    ejercicios: list[str],
+    kgs: list[str],
+    reps: list[str],
+    rirs: list[str],
+    descansos: list[str] | None = None,
 ) -> list[TrainingSetInput]:
     """Adapter: parallel form arrays -> typed set inputs."""
     sets = []
@@ -90,6 +94,7 @@ def sets_from_form(
                 kg=kgs[i] if i < len(kgs) else "",
                 reps=reps[i] if i < len(reps) else "",
                 rir=rirs[i] if i < len(rirs) else "",
+                descanso_seg=descansos[i] if descansos and i < len(descansos) else "",
             )
         )
     return sets
@@ -105,6 +110,7 @@ def _coerce_set(raw) -> TrainingSetInput:
             kg=raw.get("kg", ""),
             reps=raw.get("reps", ""),
             rir=raw.get("rir", ""),
+            descanso_seg=raw.get("descanso_seg", ""),
         )
     raise ValidationError("Serie inválida.")
 
@@ -124,7 +130,21 @@ def validate_sets(db_path: str, sets: list[TrainingSetInput]) -> list[TrainingSe
         kg = _validate_number(raw.kg, "peso (kg)")
         reps = _validate_number(raw.reps, "repeticiones")
         rir = _validate_number(raw.rir, "RIR", allow_zero=True, min_value=RIR_MIN)
-        cleaned.append(TrainingSetInput(ejercicio=ejercicio, kg=kg, reps=reps, rir=rir))
+        descanso_raw = str(raw.descanso_seg or "").strip()
+        descanso = (
+            _validate_number(descanso_raw, "descanso (s)", allow_zero=True)
+            if descanso_raw
+            else None
+        )
+        cleaned.append(
+            TrainingSetInput(
+                ejercicio=ejercicio,
+                kg=kg,
+                reps=reps,
+                rir=rir,
+                descanso_seg=descanso,
+            )
+        )
     return cleaned
 
 
@@ -144,9 +164,9 @@ def save_session(db_path: str, fecha_iso: str, sets: list[TrainingSetInput]) -> 
         conn.execute("DELETE FROM training_sets WHERE fecha = ?", (fecha_db,))
         for idx, s in enumerate(cleaned, start=1):
             conn.execute(
-                "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual')",
-                (semana, dia, fecha_db, idx, s.ejercicio, s.reps, s.kg, s.rir),
+                "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, descanso_seg, origen) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual')",
+                (semana, dia, fecha_db, idx, s.ejercicio, s.reps, s.kg, s.rir, s.descanso_seg),
             )
     return Session(semana=semana, dia=dia, fecha=fecha_db)
 
@@ -169,9 +189,9 @@ def restore_session_rows(db_path: str, fecha_iso: str, rows: list) -> None:
         conn.execute("DELETE FROM training_sets WHERE fecha = ?", (fecha_db,))
         for idx, (s, origen) in enumerate(zip(cleaned, [o for _, o in kept]), start=1):
             conn.execute(
-                "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (semana, dia, fecha_db, idx, s.ejercicio, s.reps, s.kg, s.rir, origen),
+                "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, descanso_seg, origen) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (semana, dia, fecha_db, idx, s.ejercicio, s.reps, s.kg, s.rir, s.descanso_seg, origen),
             )
 
 

@@ -23,6 +23,7 @@ class TrainingSetInput:
     kg: float | str
     reps: float | str
     rir: float | str
+    descanso_seg: float | str | None = None
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ class TrainingSet:
     reps: float | None = None
     kg: float | None = None
     rir: float | None = None
+    descanso_seg: float | None = None
     origen: str = "google"
 
 

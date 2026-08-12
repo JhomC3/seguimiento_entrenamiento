@@ -147,6 +147,7 @@ def apply_template_rows(db_path: str, plantilla_id: int) -> list[TrainingSetInpu
                         kg=s["kg"],
                         reps=s["reps"],
                         rir=s["rir"],
+                        descanso_seg=s.get("descanso_seg", ""),
                     )
                 )
         else:
