@@ -18,7 +18,9 @@ import com.jhomc.healthsync.data.SyncTargetEntity
 import java.io.IOException
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 
 data class TypeSyncResult(
     val recordType: String,
@@ -106,9 +108,18 @@ class HealthRepository(
     private val now: () -> Instant = Instant::now,
     private val pacer: suspend () -> Unit = { delay(PACING_DEFAULT_MS) },
     private val onProgress: (String) -> Unit = {},
+    private val changesTimeoutMs: Long = CHANGES_TIMEOUT_MS,
 ) {
     companion object {
         const val PACING_DEFAULT_MS = 500L
+
+        /**
+         * Tope por llamada a getChanges: algunos proveedores cuelgan el binder
+         * en la Changes API (verificado en dispositivo); el timeout convierte
+         * el cuelgue en modo rango (backfill idempotente) en vez de un sync
+         * infinito que el sistema acaba matando a mitad.
+         */
+        const val CHANGES_TIMEOUT_MS = 30_000L
     }
 
     /** Slows the page loop so bursts never blow the provider's per-window quota. */
@@ -322,7 +333,22 @@ class HealthRepository(
         //    the page token checkpointed in the same transaction as each page.
         val anchorMs = dao.getState(entry.typeName)?.bootstrapStartEpochMs ?: (nowMs - BACKFILL_WINDOW_MS)
         val outcome = resumeBackfill(entry, anchorMs)
-        // 3) Drain everything that happened since the reserved token.
+        // 3) El bootstrap queda COMPLETO en cuanto el backfill termina (antes
+        //    del drenaje): si getChanges se cuelga o el sistema mata el
+        //    servicio, la próxima ejecución NO rehace el historial desde cero
+        //    — solo drena lo nuevo desde el token reservado.
+        if (!outcome.budgetHit) {
+            db.withTransaction {
+                dao.upsertState(
+                    dao.getState(entry.typeName)!!.copy(
+                        bootstrapPageToken = null,
+                        bootstrapStartEpochMs = null,
+                        lastSuccessfulReadAtEpochMs = now().toEpochMilli(),
+                    ),
+                )
+            }
+        }
+        // 4) Drain everything that happened since the reserved token.
         val reservedToken = dao.getState(entry.typeName)?.changesToken
             ?: throw IllegalStateException("bootstrap sin token reservado: ${entry.typeName}")
         val drained = drainChanges(entry, reservedToken, tokenReserved = true)
@@ -447,10 +473,15 @@ class HealthRepository(
         while (true) {
             if (++pages > MAX_DRAIN_PAGES_PER_RUN) break
             val response: ChangesResponse = try {
-                gateway.getChanges(current)
+                withTimeout(changesTimeoutMs) { gateway.getChanges(current) }
             } catch (e: ChangesTokenExpiredException) {
                 recoverFromExpiry(entry)
                 return TypeSyncResult(entry.typeName, tokenAdvanced = true)
+            } catch (e: TimeoutCancellationException) {
+                // El proveedor cuelga la Changes API (binder): modo rango
+                // (backfill idempotente) en vez de un sync infinito.
+                val backfilled = backfill(entry)
+                return TypeSyncResult(entry.typeName, backfilled = backfilled)
             } catch (e: RemoteException) {
                 if (e.isRateLimited() || e.isForegroundRequired()) throw e.asSyncExceptionOrSelf()
                 // Changes API no disponible con este proveedor: modo rango.

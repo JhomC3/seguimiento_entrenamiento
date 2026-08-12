@@ -44,6 +44,9 @@ class FakeHealthConnectGateway : HealthConnectGateway {
     /** When true, getChanges throws AFTER returning a page (crash before commit). */
     var crashAfterGetChanges = false
 
+    /** When true, getChanges nunca responde (binder colgado del proveedor). */
+    var getChangesHangs = false
+
     // Health Connect is idempotent per token: the same token always yields the
     // same page until the client advances it. Simulate that with a cache.
     private val pageCache = mutableMapOf<String, ChangesResponse>()
@@ -77,6 +80,10 @@ class FakeHealthConnectGateway : HealthConnectGateway {
 
     override suspend fun getChanges(token: String): ChangesResponse {
         changesLog += token
+        if (getChangesHangs) {
+            kotlinx.coroutines.delay(60_000)
+            throw AssertionError("unreachable")
+        }
         val cached = pageCache[token]
         if (cached != null) {
             if (crashAfterGetChanges) {

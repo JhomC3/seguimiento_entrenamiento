@@ -130,6 +130,32 @@ class HealthRepositorySchedulingTest {
     }
 
     @Test
+    fun `bootstrap completes even when getChanges hangs on the provider`() = runBlocking {
+        gateway.granted = setOf(RecordTypes.byTypeName("SLEEP_SESSION")!!.permission)
+        gateway.pageStore[null] = listOf(Fixtures.sleepSession("hc-1", t, t.plusSeconds(3600)))
+        gateway.pageStore["pt-1"] = listOf(Fixtures.sleepSession("hc-2", t, t.plusSeconds(3600)))
+        gateway.getChangesHangs = true // el proveedor nunca responde getChanges
+        val repoFast = HealthRepository(
+            db = db,
+            gateway = gateway,
+            tokenStore = ChangesTokenStore(db.healthDao()),
+            now = { t },
+            pacer = {},
+            changesTimeoutMs = 100,
+        )
+        repoFast.syncAuthorizedTypes() // no debe colgarse: timeout → modo rango
+
+        val state = db.healthDao().getState("SLEEP_SESSION")!!
+        assertNull("bootstrap completo pese al cuelgue (antes del drenaje)", state.bootstrapStartEpochMs)
+        assertNotNull("token reservado conservado", state.changesToken)
+        assertNotNull("tipo marcado sincronizado", state.nextDueAtEpochMs)
+
+        // Segunda ejecución: NO rehace el historial (estado completo) y termina.
+        repoFast.syncAuthorizedTypes()
+        assertNotNull(db.healthDao().getState("SLEEP_SESSION")!!.nextDueAtEpochMs)
+    }
+
+    @Test
     fun `a run with 38 authorized types calls only the budgeted ones`() = runBlocking {
         repo.syncAuthorizedTypes()
         assertTrue("criterio 1: 1 tipo por ejecución", gateway.tokenLog.size == 1)

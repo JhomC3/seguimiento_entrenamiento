@@ -76,4 +76,31 @@ class SyncServiceTest {
         assertTrue("debe terminar en Failed, fue: $stage", stage is SyncStage.Failed)
         assertTrue((stage as SyncStage.Failed).error.contains("explosión"))
     }
+
+    @Test
+    fun `destroyed service reports interruption instead of cryptic job error`() {
+        SyncService.runner = { _, _ ->
+            kotlinx.coroutines.delay(Long.MAX_VALUE)
+            SyncReport(0, 0, 0)
+        }
+        val controller = Robolectric.buildService(SyncService::class.java).create()
+        controller.startCommand(0, 0)
+
+        val started = System.currentTimeMillis() + 5_000
+        while (SyncService.progress.value !is SyncStage.Running && System.currentTimeMillis() < started) {
+            Thread.sleep(10)
+        }
+        controller.destroy() // simula el sistema matando el servicio a mitad
+
+        val deadline = System.currentTimeMillis() + 8_000
+        while (SyncService.progress.value !is SyncStage.Failed && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10)
+        }
+        val stage = SyncService.progress.value
+        assertTrue("debe terminar en Failed, fue: $stage", stage is SyncStage.Failed)
+        assertTrue(
+            "mensaje claro de interrupción: ${(stage as SyncStage.Failed).error}",
+            stage.error.contains("interrumpida"),
+        )
+    }
 }

@@ -67,6 +67,13 @@ class SyncService : Service() {
                 }
                 progress.value = SyncStage.Done(report)
                 notify(summaryOf(report))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // El sistema detuvo el servicio (MIUI es agresivo con el fondo):
+                // el checkpoint en Room conserva el progreso; se reanuda solo.
+                val text = "Sincronización interrumpida por el sistema; " +
+                    "se reanudará donde quedó (los datos ya leídos están a salvo)."
+                progress.value = SyncStage.Failed(text)
+                notify(text)
             } catch (e: Exception) {
                 progress.value = SyncStage.Failed(e.message ?: e.javaClass.simpleName)
                 notify("Error: ${e.message ?: e.javaClass.simpleName}")
@@ -75,7 +82,7 @@ class SyncService : Service() {
                 stopSelf()
             }
         }
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     override fun onDestroy() {
