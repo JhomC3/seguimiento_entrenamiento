@@ -2,6 +2,14 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
+> **Estado (2026-08-12):** 8/8 tasks **implementadas** (commits `e4f4733`…`d0e12b7`; suite Android 84 tests en verde).
+> Posteriormente el diseño fue **superado y simplificado**:
+> - La agenda adaptativa (prioridades 6h/24h/7d) se reemplazó por **ventanas diarias fijas** (9:00/13:00/19:00) — `4a2cba4`.
+> - HEART_RATE pasó a **tramos de 5 min** (lectura por día acotada + bucketizado local; el SDK 1.1.0 no expone agregación de HR) — `6740eb6`.
+> - Se añadió el **modo fuerza** (una pulsación sincroniza todos los tipos) — `969d60a`.
+> - Verificado end-to-end en dispositivo (2 152 registros en `gym.db`).
+> El rediseño de UI a 17 tipos esenciales está en `docs/plans/2026-08-12-healthsync-simplified-ui.md`.
+
 **Goal:** Implementar §3.1 del plan `docs/plans/2026-08-09-health-connect-sync.md`: que la app Android sincronice **todos** los tipos autorizados sin quemar la cuota de Health Connect — selección previa por vencimiento, rotación round-robin persistida, bootstrap reanudable con checkpoint, enfriamiento ante rate limit, ritmo entre llamadas y prioridades adaptativas.
 
 **Architecture:** El planificador vive en `HealthRepository` + un objeto puro `HealthSyncPlanner` (sin I/O, testeable). El estado por tipo se persiste en Room (`health_sync_state` ampliada + tabla `sync_meta` para el cursor global). La sincronización deja de ser "todos los tipos en cada ejecución": una ejecución selecciona solo los tipos vencidos (no en enfriamiento), con presupuesto `MAX_TYPES_PER_RUN = 1`, rotando el cursor. El bootstrap de 30 días persiste el token reservado, el ancla de ventana y el `pageToken` de cada página en la misma transacción que la página, de modo que un corte (rate limit, crash) se reanuda donde se quedó. Toda llamada a Health Connect pasa por el gateway (falso en tests), y entre páginas hay un ritmo configurable.

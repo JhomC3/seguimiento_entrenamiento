@@ -2,11 +2,13 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-> **Estado (2026-08-10):** Phases 0–5 **implementadas** (35 commits en `feature/health-sync`).
-> Backend verificado end-to-end (tests, gates y smoke local). App Android funcional en
-> dispositivo (permisos concedidos, agregación de pasos OK). **Pendiente:** smoke real
-> completo (datos del teléfono → Mac), bloqueado por el **rate limiting de Health Connect**
-> (ver Notas de ejecución §3), e integración a `main` (Task 5.3, con aprobación explícita).
+> **Estado (2026-08-12):** Implementación **completa y verificada end-to-end en dispositivo real**:
+> **2 152 registros** entregados a `data/gym.db` (STEPS, EXERCISE, SLEEP, WEIGHT, HEIGHT, BODY_FAT,
+> TOTAL_CALORIES, HEART_RATE crudo + **HEART_RATE_5MIN**: 907 tramos de 5 min con datos reales,
+> 26 POSTs 200 OK). El pipeline Health Connect → Room → outbox → HTTPS → SQLite funciona; el token
+> del servidor es persistente (`scripts/start_server.sh`). **Pendiente:** integración a `main`
+> (Task 5.3, con aprobación explícita) y la ejecución del rediseño de UI simplificada
+> (plan `docs/plans/2026-08-12-healthsync-simplified-ui.md`).
 
 | Fase | Estado | Evidencia |
 |---|---|---|
@@ -16,8 +18,12 @@
 | 3 — Backend v010 + ingesta + endpoint | ✅ Completa | `494d370`, `872aedc`, `d61bd5b`; 379 tests; smoke curl OK |
 | 4 — Entrega HTTP, destinos, worker | ✅ Completa | `6cac5f7`; outbox por destino + seed; `HealthSyncClient` testado |
 | 5 — Resiliencia, export, docs | ✅ Completa | `bb713a9`, `0e76ce2`; fixtures cruzados; CSV; docs operativas |
-| Optimización de cuota y scheduling incremental | ✅ Completa | `b12ad70`, `6d04d5d`, `478ba07`, `cf5fc2c`; cursor round-robin persistido, bootstrap reanudable, cooldown, pacing y prioridades adaptativas; 6 criterios verificados |
-| Smoke real en dispositivo | 🔄 En curso | Permisos OK, agregación OK; **bloqueado por rate limit** (notas §3) |
+| Optimización de cuota y scheduling incremental | ✅ Completa | `b12ad70`, `6d04d5d`, `478ba07`, `cf5fc2c`; cursor round-robin, bootstrap reanudable, cooldown, pacing; 6 criterios verificados (la agenda adaptativa fue reemplazada por ventanas fijas el 12/08) |
+| Smoke real en dispositivo | ✅ Completa | 12/08: 2 152 registros en `gym.db`; 26 POSTs 200 OK; HR por tramos de 5 min (907) |
+| HR por tramos de 5 min | ✅ Completa | `6740eb6`; SDK 1.1.0 sin agregación de HR (AAR verificado) → lectura por día acotada + bucketizado local |
+| Sync a demanda (fuerza) y agenda por ventanas | ✅ Completa | `969d60a`, `4a2cba4`; una pulsación sincroniza todo (tope 15 min); ventanas 9:00/13:00/19:00 |
+| Operación: token persistente, notificaciones, worker | ✅ Completa | `8091995`; `scripts/start_server.sh` (token en `data/hc_sync_token`); notificación con clic a la app y sin zombis |
+| UI simplificada (17 tipos esenciales) | 📋 Plan | `docs/plans/2026-08-12-healthsync-simplified-ui.md` (pendiente de ejecución) |
 | Integración a `main` (Task 5.3) | ⏳ Pendiente | Requiere aprobación explícita del usuario |
 
 **Goal:** Construir una app Android Kotlin dentro de `android/` que extrae y conserva **todos los tipos de `Record` disponibles para el dispositivo en la versión fijada de Health Connect**, procedentes de Samsung Health/Galaxy Watch y otras fuentes autorizadas; los replica de forma fiable al dashboard mediante FastAPI + SQLite, primero en el Mac y posteriormente en cualquier host HTTPS persistente sin reescribir la app Android.
@@ -396,6 +402,9 @@ Estos intervalos son objetivos, no garantías de WorkManager. Un tipo inicialmen
 
 ### 7. Pendientes
 
-- Smoke end-to-end real (Watch → Samsung Health → HC → Room → HTTP → SQLite del Mac) — **pendiente**: con el nuevo APK (Tasks 1–8), "Sincronizar AHORA (directo)" avanza por tipos sin ráfagas y sin quemar la cuota; verificar en dispositivo.
+- ✅ **Smoke end-to-end real** (Watch → Samsung Health → HC → Room → HTTP → SQLite del Mac) — **completado el 12/08**: 2 152 registros, 26 POSTs 200 OK, HR por tramos de 5 min con datos reales.
+- Verificación de `data_origin_package` real con pasos on-device (metadato conservado; sin asumir valor fijo — ver Riesgos).
+- **Integración a `main` (Task 5.3)** — solo con aprobación explícita del usuario.
+- **UI simplificada a 17 tipos esenciales** — plan `docs/plans/2026-08-12-healthsync-simplified-ui.md` (pendiente de ejecución); incluye la verificación de los 4 tipos nuevos (DISTANCE, VO2_MAX, OXYGEN_SATURATION, BASAL_METABOLIC_RATE).
 - Verificación de `data_origin_package` real con pasos on-device.
 - Integración a `main` (Task 5.3) — solo con aprobación explícita del usuario.
