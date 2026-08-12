@@ -490,6 +490,12 @@ class MainActivity : ComponentActivity() {
                 "Permisos de las apps → HealthSync."
             return
         }
+        if (report.notice == "timeout_lectura") {
+            statusView.text = "Health Connect no respondió (timeout de lectura).\n" +
+                "El progreso ya guardado no se pierde: vuelve a pulsar el botón\n" +
+                "y continúa donde quedó."
+            return
+        }
         statusView.text = SyncService.summaryOf(report)
     }
 

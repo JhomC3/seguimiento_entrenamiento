@@ -74,13 +74,18 @@ class ChangesTokenExpiredException(message: String) : RuntimeException(message)
 class RateLimitedException(message: String) : RuntimeException(message)
 
 /**
- * Health Connect only allows reading Steps/StepsCadence (and other sensitive
- * series) while the app is in the foreground, unless the user granted
- * background read access. Raised when the provider replies "must be in
- * foreground"; NOT retryable from the worker — the condition only changes by
- * user action (bring the app to the foreground or enable background access).
+ * Health Connect solo permite leer Steps/StepsCadence (y otras series
+ * sensibles) mientras la app está en primer plano, salvo acceso en segundo
+ * plano concedido. No reintentable desde el worker.
  */
 class ForegroundRequiredException(message: String) : RuntimeException(message)
+
+/**
+ * El proveedor no respondió a una llamada de lectura (binder colgado, ver
+ * dispositivo): la ejecución termina con aviso claro y el checkpoint permite
+ * continuar donde quedó en la siguiente pulsación.
+ */
+class HcReadTimeoutException(message: String) : RuntimeException(message)
 
 private fun Throwable.isRateLimited(): Boolean =
     this is RemoteException &&
@@ -109,6 +114,7 @@ class HealthRepository(
     private val pacer: suspend () -> Unit = { delay(PACING_DEFAULT_MS) },
     private val onProgress: (String) -> Unit = {},
     private val changesTimeoutMs: Long = CHANGES_TIMEOUT_MS,
+    private val readTimeoutMs: Long = READ_TIMEOUT_MS,
 ) {
     companion object {
         const val PACING_DEFAULT_MS = 500L
@@ -120,6 +126,9 @@ class HealthRepository(
          * infinito que el sistema acaba matando a mitad.
          */
         const val CHANGES_TIMEOUT_MS = 30_000L
+
+        /** Tope por llamada de lectura (readRecords/getChangesToken). */
+        const val READ_TIMEOUT_MS = 30_000L
     }
 
     /** Slows the page loop so bursts never blow the provider's per-window quota. */
@@ -301,7 +310,9 @@ class HealthRepository(
         val state = dao.getState(entry.typeName)
         if (state?.bootstrapStartEpochMs == null && state?.changesToken == null) {
             val reserved = try {
-                gateway.getChangesToken(setOf(entry.recordClass))
+                withTimeout(readTimeoutMs) { gateway.getChangesToken(setOf(entry.recordClass)) }
+            } catch (e: TimeoutCancellationException) {
+                throw HcReadTimeoutException("getChangesToken(${entry.typeName}) sin respuesta")
             } catch (e: RemoteException) {
                 if (e.isRateLimited() || e.isForegroundRequired()) throw e.asSyncExceptionOrSelf()
                 return TypeSyncResult(entry.typeName, backfilled = backfill(entry))
@@ -390,7 +401,9 @@ class HealthRepository(
                 return BackfillOutcome(total, budgetHit = true)
             }
             val page: ReadRecordsResponse<Record> = try {
-                gateway.readRecords(entry.recordClass, start, end, pageToken)
+                withTimeout(readTimeoutMs) { gateway.readRecords(entry.recordClass, start, end, pageToken) }
+            } catch (e: TimeoutCancellationException) {
+                throw HcReadTimeoutException("readRecords(${entry.typeName}) sin respuesta")
             } catch (e: RemoteException) {
                 throw e.asSyncExceptionOrSelf()
             }
@@ -438,7 +451,9 @@ class HealthRepository(
         var lastToken: String? = null
         do {
             val page: ReadRecordsResponse<Record> = try {
-                gateway.readRecords(entry.recordClass, start, end, pageToken)
+                withTimeout(readTimeoutMs) { gateway.readRecords(entry.recordClass, start, end, pageToken) }
+            } catch (e: TimeoutCancellationException) {
+                throw HcReadTimeoutException("readRecords(${entry.typeName}) sin respuesta")
             } catch (e: RemoteException) {
                 throw e.asSyncExceptionOrSelf()
             }

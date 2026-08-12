@@ -43,6 +43,8 @@ object SyncExecutor {
             return SyncReport(0, 0, 0, notice = "rate_limited")
         } catch (e: ForegroundRequiredException) {
             return SyncReport(0, 0, 0, notice = "foreground_requerido")
+        } catch (e: HcReadTimeoutException) {
+            return SyncReport(0, 0, 0, notice = "timeout_lectura")
         }
 
         val target = store.target()

@@ -47,6 +47,9 @@ class FakeHealthConnectGateway : HealthConnectGateway {
     /** When true, getChanges nunca responde (binder colgado del proveedor). */
     var getChangesHangs = false
 
+    /** When true, readRecords nunca responde (binder colgado del proveedor). */
+    var readRecordsHangs = false
+
     // Health Connect is idempotent per token: the same token always yields the
     // same page until the client advances it. Simulate that with a cache.
     private val pageCache = mutableMapOf<String, ChangesResponse>()
@@ -109,6 +112,10 @@ class FakeHealthConnectGateway : HealthConnectGateway {
         pageToken: String?,
     ): ReadRecordsResponse<Record> {
         readLog += (RecordTypes.byClass(recordType)?.typeName ?: "?") to pageToken
+        if (readRecordsHangs) {
+            kotlinx.coroutines.delay(60_000)
+            throw AssertionError("unreachable")
+        }
         if (failReadsWithRateLimit && pageToken != null) {
             failReadsWithRateLimit = false
             throw RemoteException("Rate limited request quota has been exceeded")

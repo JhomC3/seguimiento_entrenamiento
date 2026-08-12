@@ -156,6 +156,26 @@ class HealthRepositorySchedulingTest {
     }
 
     @Test
+    fun `a hanging readRecords aborts the run with a clear exception`() = runBlocking {
+        gateway.granted = setOf(RecordTypes.byTypeName("SLEEP_SESSION")!!.permission)
+        gateway.pageStore[null] = listOf(Fixtures.sleepSession("hc-1", t, t.plusSeconds(3600)))
+        gateway.readRecordsHangs = true
+        val repoFast = HealthRepository(
+            db = db,
+            gateway = gateway,
+            tokenStore = ChangesTokenStore(db.healthDao()),
+            now = { t },
+            pacer = {},
+            readTimeoutMs = 100,
+        )
+        val thrown = runCatching { repoFast.syncAuthorizedTypes() }.exceptionOrNull()
+        assertTrue(
+            "debe abortar con HcReadTimeoutException, fue: ${thrown?.javaClass?.simpleName}",
+            thrown is HcReadTimeoutException,
+        )
+    }
+
+    @Test
     fun `a run with 38 authorized types calls only the budgeted ones`() = runBlocking {
         repo.syncAuthorizedTypes()
         assertTrue("criterio 1: 1 tipo por ejecución", gateway.tokenLog.size == 1)
