@@ -6,6 +6,9 @@ from src.database import get_exercises_catalog, get_training_sessions
 from src.db_connection import transaction
 from src.models import Session, TrainingSetInput, ValidationError
 
+# RIR mínimo aceptado: negativo = repeticiones forzadas (más allá del fallo).
+RIR_MIN = -5.0
+
 # Índice = fecha.weekday() (0=lunes..6=domingo): independiente del locale del host.
 DIA_MAP = [
     "LUNES",
@@ -56,7 +59,9 @@ def parse_form_date(fecha_iso: str) -> date:
         raise ValidationError(f"Fecha inválida: '{fecha_iso}'.")
 
 
-def _validate_number(value, field: str, *, allow_zero: bool = False) -> float:
+def _validate_number(
+    value, field: str, *, allow_zero: bool = False, min_value: float = 0.0
+) -> float:
     if value is None or str(value).strip() == "":
         raise ValidationError(f"El campo {field} es obligatorio.")
     try:
@@ -66,10 +71,10 @@ def _validate_number(value, field: str, *, allow_zero: bool = False) -> float:
     if (
         math.isnan(num)
         or num in (float("inf"), float("-inf"))
-        or num < 0
+        or num < min_value
         or (num == 0 and not allow_zero)
     ):
-        raise ValidationError(f"El campo {field} debe ser un número positivo.")
+        raise ValidationError(f"El campo {field} debe ser ≥ {min_value}.")
     return num
 
 
@@ -118,7 +123,7 @@ def validate_sets(db_path: str, sets: list[TrainingSetInput]) -> list[TrainingSe
             raise ValidationError(f"El ejercicio '{ejercicio}' no existe en el catálogo.")
         kg = _validate_number(raw.kg, "peso (kg)")
         reps = _validate_number(raw.reps, "repeticiones")
-        rir = _validate_number(raw.rir, "RIR", allow_zero=True)
+        rir = _validate_number(raw.rir, "RIR", allow_zero=True, min_value=RIR_MIN)
         cleaned.append(TrainingSetInput(ejercicio=ejercicio, kg=kg, reps=reps, rir=rir))
     return cleaned
 

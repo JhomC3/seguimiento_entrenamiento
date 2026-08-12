@@ -13,6 +13,7 @@ from src.training_service import (
     get_sessions_page,
     parse_cycle_start,
     save_session,
+    sets_from_form,
     validate_sets,
 )
 
@@ -117,9 +118,10 @@ def test_insert_unknown_exercise_rejected(db):
         )
 
 
-def test_insert_negative_rir_rejected(db):
-    with pytest.raises(ValueError):
-        save_session(db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=-1)])
+def test_insert_negative_rir_accepted_hasta_minimo(db):
+    save_session(db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=-1)])
+    rows = get_sets_by_fecha(db, "2026-02-10")
+    assert rows[0]["rir"] == -1.0
 
 
 def test_save_zero_rir_accepted(db):
@@ -177,6 +179,35 @@ def test_transaction_rolls_back_on_failure(db):
 def test_validate_sets_empty(db):
     with pytest.raises(ValueError):
         validate_sets(db, [])
+
+
+def test_validate_sets_accepts_negative_rir_hasta_minimo(db):
+    sets = validate_sets(
+        db,
+        [TrainingSetInput(ejercicio="Press", kg=80, reps=5, rir=-2)],
+    )
+    assert sets[0].rir == -2.0
+
+
+def test_validate_sets_accepts_decimal_reps(db):
+    sets = validate_sets(
+        db,
+        [TrainingSetInput(ejercicio="Press", kg=80, reps=4.5, rir=0)],
+    )
+    assert sets[0].reps == 4.5
+
+
+def test_validate_sets_rejects_rir_below_minimo(db):
+    with pytest.raises(ValueError):
+        validate_sets(
+            db,
+            [TrainingSetInput(ejercicio="Press", kg=80, reps=5, rir=-6)],
+        )
+
+
+def test_sets_from_form_parses_negative_rir():
+    sets = sets_from_form(["Press"], ["80"], ["5"], ["-1"])
+    assert sets[0].rir == "-1"
 
 
 def test_get_sessions_page(db):
