@@ -14,6 +14,8 @@ from src.migrations import (
     v008_nutrition_daily_params,
     v009_nutrition_meal_templates,
     v010_health_connect,
+    v011_descanso_seg,
+    v012_cardio_annotations,
 )
 
 MIGRATIONS = [
@@ -26,6 +28,8 @@ MIGRATIONS = [
     v008_nutrition_daily_params,
     v009_nutrition_meal_templates,
     v010_health_connect,
+    v011_descanso_seg,
+    v012_cardio_annotations,
 ]
 
 _CURRENT_VERSION = max(m.VERSION for m in MIGRATIONS)
@@ -42,6 +46,7 @@ _DOMAIN_TABLES = {
     "plantillas_alimentacion",
     "plantilla_alimentos",
     "health_records",
+    "cardio_annotations",
 }
 
 

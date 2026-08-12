@@ -103,7 +103,7 @@ def test_migrations_recorded_in_schema_migrations(tmp_path):
         r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()
     )
     conn.close()
-    assert versions == [1, 2, 3, 5, 6, 7, 8, 9, 10]
+    assert versions == [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12]
 
 
 def test_migrates_intermediate_state_without_orden(tmp_path):
@@ -384,7 +384,7 @@ def test_v009_creates_meal_templates(tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM plantilla_alimentos").fetchone()[0] == 0
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 10
+    assert max_version == 12
 
 
 def test_v009_is_latest_schema_version(tmp_path):
@@ -393,7 +393,7 @@ def test_v009_is_latest_schema_version(tmp_path):
     conn = sqlite3.connect(db_path)
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 10
+    assert max_version == 12
 
 
 def test_v007_migration_idempotent(tmp_path):
@@ -670,7 +670,7 @@ def test_v008_creates_parametros_diarios_and_nullable_qty(tmp_path):
         assert col in params
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 10
+    assert max_version == 12
 
 
 def test_v008_preserves_diario_rows(tmp_path):
@@ -862,7 +862,7 @@ def test_v010_health_records_schema(tmp_path):
         "deleted_at",
     } <= cols
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
-    assert max_version == 10
+    assert max_version == 12
     pk_cols = {
         r[1] for r in conn.execute("PRAGMA table_info(health_records)").fetchall() if r[5] == 1
     }
@@ -873,4 +873,36 @@ def test_v010_health_records_schema(tmp_path):
     }
     assert ("record_type", 1) in index_cols
     assert ("start_epoch_ms", 2) in index_cols
+    conn.close()
+
+
+def test_v011_descanso_seg_column(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(training_sets)").fetchall()]
+    assert "descanso_seg" in cols
+    conn.close()
+
+
+def test_v012_cardio_annotations_schema(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    tables = {
+        t[0] for t in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    }
+    assert "cardio_annotations" in tables
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(cardio_annotations)").fetchall()}
+    assert {
+        "id",
+        "hc_id",
+        "velocidad_kmh",
+        "inclinacion_pct",
+        "notas",
+        "created_at",
+        "updated_at",
+    } <= cols
+    fk = conn.execute("PRAGMA foreign_key_list(cardio_annotations)").fetchall()
+    assert any(f[2] == "health_records" and f[3] == "hc_id" for f in fk)
     conn.close()
