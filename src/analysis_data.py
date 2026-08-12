@@ -41,7 +41,7 @@ def daily_resting_hr(db_path: str) -> pd.DataFrame:
         db_path,
         f"""
         SELECT {_local_date("start_epoch_ms")},
-               AVG(json_extract(value_json, '$.bpm')) AS valor
+               AVG(json_extract(value_json, '$.value.bpm')) AS valor
         FROM health_records
         WHERE record_type = 'RESTING_HEART_RATE' AND deleted_at IS NULL
         GROUP BY fecha
@@ -56,7 +56,7 @@ def daily_avg_hr(db_path: str) -> pd.DataFrame:
         f"""
         SELECT {_local_date("h.start_epoch_ms")},
                AVG(json_extract(s.value, '$.bpm')) AS valor
-        FROM health_records h, json_each(h.value_json, '$.samples') s
+        FROM health_records h, json_each(h.value_json, '$.value.samples') s
         WHERE h.record_type = 'HEART_RATE_5MIN' AND h.deleted_at IS NULL
         GROUP BY fecha
         """,
@@ -69,7 +69,7 @@ def daily_hrv(db_path: str) -> pd.DataFrame:
         db_path,
         f"""
         SELECT {_local_date("start_epoch_ms")},
-               AVG(json_extract(value_json, '$.rmssd_ms')) AS valor
+               AVG(json_extract(value_json, '$.value.rmssd_ms')) AS valor
         FROM health_records
         WHERE record_type = 'HEART_RATE_VARIABILITY_RMSSD' AND deleted_at IS NULL
         GROUP BY fecha
@@ -83,7 +83,7 @@ def daily_steps(db_path: str) -> pd.DataFrame:
         db_path,
         f"""
         SELECT {_local_date("start_epoch_ms")},
-               SUM(json_extract(value_json, '$.count')) AS valor
+               SUM(json_extract(value_json, '$.value.count')) AS valor
         FROM health_records
         WHERE record_type = 'STEPS' AND deleted_at IS NULL
         GROUP BY fecha
@@ -111,7 +111,7 @@ def daily_weight(db_path: str) -> pd.DataFrame:
         db_path,
         f"""
         SELECT {_local_date("start_epoch_ms")},
-               AVG(json_extract(value_json, '$.kg')) AS valor
+               AVG(json_extract(value_json, '$.value.kg')) AS valor
         FROM health_records
         WHERE record_type = 'WEIGHT' AND deleted_at IS NULL
         GROUP BY fecha

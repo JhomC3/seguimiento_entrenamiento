@@ -417,6 +417,17 @@ def _filter_type(nivel: str) -> str:
     return NIVEL_FILTER_TYPE.get(nivel, "systemic")
 
 
+def _kpi_last_value(df) -> float | None:
+    """Último valor no nulo de una serie diaria (los registros de salud pueden
+    llegar con json_extract NULL: nunca romper el dashboard por eso)."""
+    if df.empty:
+        return None
+    valid = df["valor"].dropna()
+    if valid.empty:
+        return None
+    return round(float(valid.iloc[-1]), 1)
+
+
 def _kpi_volumen_semana(db_path: str) -> float | None:
     df = daily_volume(db_path)
     if df.empty:
@@ -427,17 +438,11 @@ def _kpi_volumen_semana(db_path: str) -> float | None:
 
 
 def _kpi_peso_actual(db_path: str) -> float | None:
-    df = daily_weight(db_path)
-    if df.empty:
-        return None
-    return round(float(df["valor"].iloc[-1]), 1)
+    return _kpi_last_value(daily_weight(db_path))
 
 
 def _kpi_sueno_anoche(db_path: str) -> float | None:
-    df = daily_sleep_hours(db_path)
-    if df.empty:
-        return None
-    return round(float(df["valor"].iloc[-1]), 1)
+    return _kpi_last_value(daily_sleep_hours(db_path))
 
 
 def _kpi_fallos_semana(db_path: str, nivel: str, focus: str | None) -> int:
@@ -543,7 +548,7 @@ def _day_fc_media(db_path: str, fecha_iso: str) -> float | None:
         row = conn.execute(
             """
             SELECT AVG(json_extract(s.value, '$.bpm'))
-            FROM health_records h, json_each(h.value_json, '$.samples') s
+            FROM health_records h, json_each(h.value_json, '$.value.samples') s
             WHERE h.record_type = 'HEART_RATE_5MIN'
               AND date(h.start_epoch_ms / 1000, 'unixepoch', 'localtime') = ?
               AND h.deleted_at IS NULL
@@ -558,7 +563,7 @@ def _day_cardio(db_path: str, fecha_iso: str) -> list[DayDetailCardio]:
         rows = conn.execute(
             """
             SELECT h.hc_id,
-                   json_extract(h.value_json, '$.title') AS titulo,
+                   json_extract(h.value_json, '$.value.title') AS titulo,
                    (h.end_epoch_ms - h.start_epoch_ms) / 60000.0 AS duracion_min,
                    a.velocidad_kmh,
                    a.inclinacion_pct,
@@ -576,7 +581,7 @@ def _day_cardio(db_path: str, fecha_iso: str) -> list[DayDetailCardio]:
         DayDetailCardio(
             hc_id=r[0],
             titulo=r[1] or "Sesión de ejercicio",
-            duracion_min=round(float(r[2]), 1),
+            duracion_min=round(float(r[2]), 1) if r[2] is not None else 0.0,
             velocidad_kmh=float(r[3]) if r[3] is not None else None,
             inclinacion_pct=float(r[4]) if r[4] is not None else None,
             notas=str(r[5] or ""),
@@ -700,7 +705,7 @@ def build_day_detail(
             db_path,
             fecha_iso,
             "HEART_RATE_VARIABILITY_RMSSD",
-            "AVG(json_extract(value_json, '$.rmssd_ms'))",
+            "AVG(json_extract(value_json, '$.value.rmssd_ms'))",
         ),
         cardio=_day_cardio(db_path, fecha_iso),
     )

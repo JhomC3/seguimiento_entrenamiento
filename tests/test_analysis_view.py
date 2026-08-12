@@ -79,13 +79,13 @@ def test_build_analysis_kpis_peso_y_sueno_desde_health(db):
     conn.execute(
         "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
         "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at) "
-        "VALUES ('w1', 'WEIGHT', ?, ?, ?, 1, '{\"kg\": 82.4}', 'x', 'x')",
+        "VALUES ('w1', 'WEIGHT', ?, ?, ?, 1, '{\"value\": {\"kg\": 82.4}}', 'x', 'x')",
         (ts("2026-08-10 07:00"), ts("2026-08-10 07:00"), ts("2026-08-10 07:00")),
     )
     conn.execute(
         "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
         "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at) "
-        "VALUES ('s1', 'SLEEP_SESSION', ?, ?, ?, 1, '{}', 'x', 'x')",
+        "VALUES ('s1', 'SLEEP_SESSION', ?, ?, ?, 1, '{\"value\": {}}', 'x', 'x')",
         (ts("2026-08-09 23:00"), ts("2026-08-10 07:30"), ts("2026-08-10 07:30")),
     )
     conn.commit()
@@ -137,7 +137,7 @@ def test_build_day_detail_entreno_nutricion_recuperacion(db):
     conn.execute(
         "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
         "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at) "
-        "VALUES ('s1', 'SLEEP_SESSION', ?, ?, ?, 1, '{}', 'x', 'x')",
+        "VALUES ('s1', 'SLEEP_SESSION', ?, ?, ?, 1, '{\"value\": {}}', 'x', 'x')",
         (ts("2026-08-09 23:00"), ts("2026-08-10 07:30"), ts("2026-08-10 07:30")),
     )
     conn.execute(
@@ -195,3 +195,28 @@ def test_build_day_detail_filtra_por_nivel(db):
     assert {s.ejercicio for s in vm.sets} == {"Press"}
     vm2 = build_day_detail(db, "2026-08-10", "musculo", "Espalda")
     assert {s.ejercicio for s in vm2.sets} == {"Remo"}
+
+
+def test_kpis_no_rompen_con_health_records_nulos(db):
+    """Regresión real (2026-08-12): los WEIGHT de Samsung llegaban sin `$.kg`
+    válido (json_extract NULL) y la home reventaba con TypeError."""
+    conn = sqlite3.connect(db)
+    ts = lambda iso: int(__import__("datetime").datetime.fromisoformat(iso).timestamp() * 1000)
+    conn.execute(
+        "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
+        "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at) "
+        "VALUES ('w-bad', 'WEIGHT', ?, ?, ?, 1, '{\"value\": {\"kg\": null}}', 'x', 'x')",
+        (ts("2026-08-10 07:00"), ts("2026-08-10 07:00"), ts("2026-08-10 07:00")),
+    )
+    conn.execute(
+        "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
+        "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at) "
+        "VALUES ('w-ok', 'WEIGHT', ?, ?, ?, 1, '{\"value\": {\"kg\": 82.4}}', 'x', 'x')",
+        (ts("2026-08-09 07:00"), ts("2026-08-09 07:00"), ts("2026-08-09 07:00")),
+    )
+    conn.commit()
+    conn.close()
+    kpis = build_analysis_kpis(db, "global", None)
+    assert kpis.peso_actual == 82.4  # toma el último valor no nulo
+    vm = build_analysis_viewmodel(db, "global", None, ["pfr", "peso"])
+    assert vm is not None

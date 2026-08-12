@@ -1,5 +1,6 @@
 """Daily analysis layers: aggregation over health_records and domain tables."""
 
+import json
 import sqlite3
 from datetime import datetime
 
@@ -60,6 +61,7 @@ def db(tmp_path):
 
 
 def _insert_hr(conn, record_type, value_json, start, end=None, deleted=None):
+    value_json = json.dumps({"value": json.loads(value_json)})
     conn.execute(
         "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
         "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at, deleted_at) "
