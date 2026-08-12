@@ -191,7 +191,18 @@ def restore_session_rows(db_path: str, fecha_iso: str, rows: list) -> None:
             conn.execute(
                 "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, descanso_seg, origen) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (semana, dia, fecha_db, idx, s.ejercicio, s.reps, s.kg, s.rir, s.descanso_seg, origen),
+                (
+                    semana,
+                    dia,
+                    fecha_db,
+                    idx,
+                    s.ejercicio,
+                    s.reps,
+                    s.kg,
+                    s.rir,
+                    s.descanso_seg,
+                    origen,
+                ),
             )
 
 

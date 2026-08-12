@@ -39,6 +39,18 @@ def db(tmp_path):
             calcio REAL NOT NULL, vitamina_c REAL NOT NULL, vitamina_a REAL NOT NULL,
             origen TEXT NOT NULL DEFAULT 'google'
         );
+        CREATE TABLE cardio_annotations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hc_id TEXT NOT NULL UNIQUE REFERENCES health_records(hc_id) ON DELETE CASCADE,
+            velocidad_kmh REAL, inclinacion_pct REAL, notas TEXT,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE TABLE parametros_diarios (
+            fecha TEXT PRIMARY KEY, peso_kg REAL, factor_proteina REAL,
+            factor_grasa REAL, kcal_objetivo REAL, fibra_objetivo REAL,
+            hierro_objetivo REAL, calcio_objetivo REAL, vitamina_c_objetivo REAL,
+            vitamina_a_objetivo REAL
+        );
         INSERT INTO ejercicios (grupo_muscular, ejercicio, categoria)
         VALUES ('Pectoral', 'Press', 'Empuje');
         INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir)
@@ -117,3 +129,69 @@ def test_analysis_chart_html_con_datos_incluye_script_inerte(db):
     html = analysis_chart_html(vm)
     assert 'id="analysis-chart-data" type="application/json"' in html
     assert 'id="analysis-chart-plot"' in html
+
+
+def test_build_day_detail_entreno_nutricion_recuperacion(db):
+    conn = sqlite3.connect(db)
+    ts = lambda iso: int(__import__("datetime").datetime.fromisoformat(iso).timestamp() * 1000)
+    conn.execute(
+        "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
+        "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at) "
+        "VALUES ('s1', 'SLEEP_SESSION', ?, ?, ?, 1, '{}', 'x', 'x')",
+        (ts("2026-08-09 23:00"), ts("2026-08-10 07:30"), ts("2026-08-10 07:30")),
+    )
+    conn.execute(
+        "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
+        "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at) "
+        "VALUES ('c1', 'EXERCISE_SESSION', ?, ?, ?, 1, '{\"title\": \"Cinta\"}', 'x', 'x')",
+        (ts("2026-08-10 08:00"), ts("2026-08-10 08:30"), ts("2026-08-10 08:30")),
+    )
+    conn.execute(
+        "INSERT INTO cardio_annotations (hc_id, velocidad_kmh, inclinacion_pct, notas, created_at, updated_at) "
+        "VALUES ('c1', 5.5, 2.0, 'caminata', 'x', 'x')"
+    )
+    conn.execute(
+        "INSERT INTO diario_alimentacion (fecha, orden, alimento, kcal, carbohidratos, fibra, "
+        "proteina, grasa, hierro, calcio, vitamina_c, vitamina_a) "
+        "VALUES ('2026-08-10', 1, 'Avena', 350, 60, 10, 12, 6, 1, 1, 1, 1)"
+    )
+    conn.commit()
+    conn.close()
+
+    from src.dashboard_service import build_day_detail
+
+    vm = build_day_detail(db, "2026-08-10", "global", None)
+    assert vm.has_entreno
+    assert len(vm.sets) == 3
+    assert [s.fallo for s in vm.sets] == [False, True, True]
+    assert [s.forzada for s in vm.sets] == [False, False, True]
+    assert vm.sets[0].descanso_seg is None
+    assert vm.sets_fallo == 2
+    assert vm.sueno == 8.5
+    assert vm.nutrientes["kcal_consumido"] == 350.0
+    assert vm.nutrientes["kcal_objetivo"] == 2300.0
+    assert len(vm.cardio) == 1
+    assert vm.cardio[0].hc_id == "c1"
+    assert vm.cardio[0].velocidad_kmh == 5.5
+    assert vm.cardio[0].inclinacion_pct == 2.0
+
+
+def test_build_day_detail_filtra_por_nivel(db):
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO ejercicios (grupo_muscular, ejercicio, categoria) VALUES ('Espalda', 'Remo', 'Tiron')"
+    )
+    conn.execute(
+        "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) "
+        "VALUES (14, 'LUNES', '2026-08-10', 1, 'Remo', 8, 70, 2)"
+    )
+    conn.commit()
+    conn.close()
+
+    from src.dashboard_service import build_day_detail
+
+    vm = build_day_detail(db, "2026-08-10", "grupo", "Empuje")
+    assert vm.has_entreno
+    assert {s.ejercicio for s in vm.sets} == {"Press"}
+    vm2 = build_day_detail(db, "2026-08-10", "musculo", "Espalda")
+    assert {s.ejercicio for s in vm2.sets} == {"Remo"}

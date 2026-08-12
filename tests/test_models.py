@@ -84,4 +84,6 @@ def test_apply_missing_template_raises_not_found(db):
 
 def test_sets_from_form_adapter(db):
     sets = sets_from_form(["Press"], ["80"], ["8"], ["1"])
-    assert sets == [TrainingSetInput(ejercicio="Press", kg="80", reps="8", rir="1", descanso_seg="")]
+    assert sets == [
+        TrainingSetInput(ejercicio="Press", kg="80", reps="8", rir="1", descanso_seg="")
+    ]

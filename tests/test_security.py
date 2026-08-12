@@ -133,8 +133,8 @@ def test_chart_fragment_has_no_executable_script(authed_client):
     )
     r = authed_client.get("/")
     body = r.text
-    assert 'id="unified-chart-data" type="application/json"' in body
-    assert '<div id="unified-chart-plot"' in body
+    assert 'id="analysis-chart-data" type="application/json"' in body
+    assert '<div id="analysis-chart-plot"' in body
     # Ningún script de la página es inline ejecutable: o es externo (src=) o es de datos.
     for m in re.finditer(r"<script[^>]*>", body):
         tag = m.group(0)
@@ -438,7 +438,10 @@ class _InertChecker(HTMLParser):
 def _assert_inert_fragment(text: str):
     """Hostile names must be inert text: no handlers, no raw payload markup."""
     assert "<img" not in text, "payload <img> must not be raw HTML"
-    assert "&lt;img" in text, "payload must be present in escaped text form"
+    # El payload aparece escapado: como HTML (&lt;img) o como JSON (\u003cimg).
+    assert ("&lt;img" in text) or ("\\u003cimg" in text), (
+        "payload must be present in escaped text form"
+    )
     assert "alert(1)//" in text, "payload must be visible as escaped text"
     parser = _InertChecker()
     parser.feed(text)
@@ -451,7 +454,14 @@ def _assert_inert_fragment(text: str):
             continue  # data block, never executed
         assert "alert(" not in m.group(2), "payload must not live inside a script element"
     joined = "".join(parser.text_nodes)
-    assert PAYLOAD in joined, "payload must be recoverable from the escaped text"
+    # El payload es recuperable escapado: como nodo de texto contiguo, como
+    # valor de atributo (datalist) o dentro del JSON inerte (#app-config);
+    # nunca como HTML crudo.
+    escaped_attr = PAYLOAD.replace("<", "&lt;").replace(">", "&gt;").replace("'", "&#39;")
+    escaped_json = PAYLOAD.replace("<", "\\u003c").replace(">", "\\u003e").replace("'", "\\u0027")
+    assert (PAYLOAD in joined) or (escaped_attr in text) or (escaped_json in text), (
+        "payload must be recoverable in escaped form"
+    )
 
 
 def test_hostile_exercise_notice_is_escaped(authed_client):
@@ -488,9 +498,11 @@ def test_hostile_exercise_in_lists_renders_inert(authed_client):
         },
     )
     assert r.status_code == 200
-    r = authed_client.get("/select")
+    r = authed_client.get("/analisis/chart?nivel=ejercicio&rango=8")
     assert r.status_code == 200
     _assert_inert_fragment(r.text)
+    # En el datalist el payload viaja escapado como valor de atributo.
+    assert 'value="x&#39;);alert(1)//&lt;img src=x onerror=alert(2)&gt;"' in r.text
     r = authed_client.get("/")
     assert r.status_code == 200
     _assert_inert_fragment(r.text)

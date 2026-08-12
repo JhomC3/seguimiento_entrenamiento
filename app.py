@@ -12,9 +12,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from config import CICLO_START, DB_PATH, HC_SYNC_TOKEN, MUSCLE_CATEGORIES
-from src.charts import get_exercise_raw_data, get_exercise_session_summary
+from src.charts import LAYER_TITLES, get_exercise_raw_data, get_exercise_session_summary
 from src.dashboard_service import (
+    DEFAULT_LAYERS,
+    analysis_chart_html,
+    build_analysis_viewmodel,
     build_date_navigator,
+    build_day_detail,
     build_nutrition_editor,
     build_session_editor,
     chart_html,
@@ -347,36 +351,14 @@ def _domain_error_response(
 
 @app.get("/", response_class=HTMLResponse)
 def read_index(request: Request):
-    from datetime import date as _date
-
-    ejercicios_list, grupos_list = get_filters(DB_PATH)
-    categories = get_categories(DB_PATH) or MUSCLE_CATEGORIES
-    fecha = _today_iso()
-    _fecha_date = _date.fromisoformat(fecha)
+    vm = build_analysis_viewmodel(DB_PATH, "global", None, list(DEFAULT_LAYERS), 8)
     return templates.TemplateResponse(
         request=request,
         name="index.html",
         context={
-            "grupos_list": grupos_list,
-            "ejercicios_list": ejercicios_list,
-            "ejercicios_grupo": ejercicios_list,
-            "muscle_categories": categories,
-            "systemic_chart_html": chart_html(
-                DB_PATH,
-                "systemic",
-                title=_chart_title(),
-            ),
-            "navigator_html": _navigator_html(request, fecha),
-            "editor_html": _editor_html(request, fecha),
-            "dia": day_from_date(_fecha_date),
-            "fecha_display": fecha_display(fecha),
-            "semana": calculate_cycle_week(_fecha_date, CICLO_START_DATE),
-            "exercise_form_html": _exercise_form_html(request),
-            "plantillas_html": _plantillas_list_html(request),
-            "session_history_html": _sesiones_list_html(request),
-            "nutrition_editor_html": _nutrition_editor_html(request, fecha),
-            "nutrition_templates_html": _plantillas_alimentacion_list_html(request, fecha),
-            "alimento_form_html": _alimento_form_html(request),
+            "kpi_html": _kpi_row_html(request, vm.kpis),
+            "chart_html": analysis_chart_html(vm),
+            "layers_config": [(layer_id, LAYER_TITLES[layer_id]) for layer_id in DEFAULT_LAYERS],
             "app_config_json": {
                 "categoria_map": get_ejercicio_categoria(DB_PATH),
                 "alimento_map": _alimento_preview_map(),
@@ -384,6 +366,117 @@ def read_index(request: Request):
                 "csrf_token": make_csrf_token(get_csrf_secret()),
             },
         },
+    )
+
+
+def _kpi_row_html(request: Request, kpis) -> str:
+    return _render_body(
+        templates.TemplateResponse(request=request, name="kpi_row.html", context={"kpis": kpis})
+    )
+
+
+def _analysis_filters_html(request: Request, nivel: str, focus: str) -> str:
+    """Chips de foco por nivel: grupo → categorías, músculo → grupos reales,
+    ejercicio → buscador con datalist."""
+    items: list[str] = []
+    if nivel == "grupo":
+        items = [str(c["name"]) for c in get_categories(DB_PATH) or MUSCLE_CATEGORIES]
+    elif nivel == "musculo":
+        _, grupos_list = get_filters(DB_PATH)
+        items = grupos_list
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="analysis_filters.html",
+            context={
+                "nivel": nivel,
+                "items": items,
+                "focus": focus,
+                "ejercicios": get_exercises_catalog(DB_PATH) if nivel == "ejercicio" else [],
+            },
+        )
+    )
+
+
+@app.get("/analisis/chart", response_class=HTMLResponse)
+def analisis_chart(
+    request: Request,
+    nivel: str = Query(default="global"),
+    focus: str = Query(default=""),
+    rango: int = Query(default=8),
+    layers: list[str] = Query(default=[]),
+):
+    """Actualiza gráfica + KPIs + filtros según nivel/foco/capas (OOB)."""
+    active = layers or list(DEFAULT_LAYERS)
+    vm = build_analysis_viewmodel(DB_PATH, nivel, focus or None, active, rango)
+    return HTMLResponse(
+        content=chart_oob_wrapper(analysis_chart_html(vm), target="analysis-chart-wrap")
+        + fragment_oob(
+            templates, request, "kpi-row", _kpi_row_html(request, vm.kpis), swap="innerHTML"
+        )
+        + fragment_oob(
+            templates,
+            request,
+            "analysis-filters",
+            _analysis_filters_html(request, nivel, focus),
+            swap="outerHTML",
+        )
+    )
+
+
+@app.get("/analisis/dia", response_class=HTMLResponse)
+def analisis_dia(
+    request: Request,
+    fecha: str = Query(...),
+    nivel: str = Query(default="global"),
+    focus: str = Query(default=""),
+):
+    """Panel '¿Qué pasó el [fecha]' al hacer clic en un día de la gráfica."""
+    try:
+        vm = build_day_detail(DB_PATH, fecha, nivel, focus or None)
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    return templates.TemplateResponse(
+        request=request,
+        name="day_detail.html",
+        context={
+            "fecha_iso": vm.fecha_iso,
+            "nivel": vm.nivel,
+            "focus": vm.focus,
+            "has_entreno": vm.has_entreno,
+            "sets": vm.sets,
+            "pfr": vm.pfr,
+            "volumen": vm.volumen,
+            "sets_fallo": vm.sets_fallo,
+            "nutrientes": vm.nutrientes,
+            "peso": vm.peso,
+            "sueno": vm.sueno,
+            "fc_media": vm.fc_media,
+            "hrv": vm.hrv,
+            "cardio": vm.cardio,
+        },
+    )
+
+
+@app.get("/registrar/editor", response_class=HTMLResponse)
+def registrar_editor(request: Request, fecha: str = Query(...)):
+    """Cuerpo del modal de registro: navegador de fecha + ambos editores."""
+    from datetime import date as _date
+
+    fecha_date = _date.fromisoformat(fecha)
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="register_editor.html",
+            context={
+                "navigator_html": _navigator_html(request, fecha),
+                "nutrition_editor_html": _nutrition_editor_html(request, fecha),
+                "editor_html": _editor_html(request, fecha),
+                "dia": day_from_date(fecha_date),
+                "fecha_display": fecha_display(fecha),
+                "semana": calculate_cycle_week(fecha_date, CICLO_START_DATE),
+            },
+        )
     )
 
 

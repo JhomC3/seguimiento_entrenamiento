@@ -100,9 +100,7 @@ def load_layer_series(
             series[layer] = df
     if not series:
         return {}
-    index = pd.DatetimeIndex(
-        sorted(set().union(*(set(s["fecha_dt"]) for s in series.values())))
-    )
+    index = pd.DatetimeIndex(sorted(set().union(*(set(s["fecha_dt"]) for s in series.values()))))
     if rango_semanas:
         cutoff = index.max() - pd.Timedelta(weeks=rango_semanas)
         index = index[index >= cutoff]
@@ -188,13 +186,19 @@ def build_analysis_chart(
         paper_bgcolor="rgba(0,0,0,0)",
         font={"color": "#a3a3a3"},
         hovermode="x unified",
-        hoverlabel={"bgcolor": "#1a1a1a", "font": {"color": "white", "size": 12}, "bordercolor": "#333"},
+        hoverlabel={
+            "bgcolor": "#1a1a1a",
+            "font": {"color": "white", "size": 12},
+            "bordercolor": "#333",
+        },
         margin={"l": 50, "r": 16, "t": 40, "b": 30},
         showlegend=False,
     )
     fig.update_annotations(font={"color": "#a3a3a3", "size": 11})
     fig.update_xaxes(showgrid=False, tickfont={"color": "#a3a3a3", "size": 9})
-    fig.update_yaxes(showgrid=False, zerolinecolor="#333", tickfont={"color": "#a3a3a3", "size": 9}, title=None)
+    fig.update_yaxes(
+        showgrid=False, zerolinecolor="#333", tickfont={"color": "#a3a3a3", "size": 9}, title=None
+    )
     return fig
 
 

@@ -15,6 +15,10 @@ import { scheduleNotices } from './notices.js';
 import { initPanelCollapse } from './panel-collapse.js';
 import { getCsrfToken, setAlimentoMap, setCategoriaMap, setCicloStart, setCsrfToken } from './state.js';
 import { initEntrenoDnD, initTemplateActions, initTemplateSortable } from './templates.js';
+import { initAnalysisChart } from './analysis-chart.js';
+import { initLayerToggles } from './layer-toggles.js';
+import { initRegisterModal } from './register-modal.js';
+import { initSegmentedPills } from './segmented-pill.js';
 
 function loadConfig() {
     const el = document.getElementById('app-config');
@@ -60,5 +64,9 @@ document.addEventListener('DOMContentLoaded', function () {
     initTemplateSortable();
     initEntrenoDnD();
     fitRowsToPanel();
+    initSegmentedPills();
+    initLayerToggles();
+    initAnalysisChart();
+    initRegisterModal();
     document.body.dataset.appReady = '1';
 });

@@ -85,11 +85,18 @@ def test_index_uses_stable_card(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/")
-    assert 'id="session-editor" data-editmode="0"' in r.text
-    assert 'id="session-editor-wrap"' in r.text
-    assert "rm-cell" in r.text
-    assert 'id="save-outcome" data-ok="0" hidden' in r.text
-    assert '<div id="editor-notice"></div>' in r.text
+    assert 'id="register-modal"' in r.text
+    assert 'id="analysis-chart-wrap"' in r.text
+    assert 'id="kpi-row"' in r.text
+    assert 'id="layer-toggles"' in r.text
+    assert 'data-action="open-register-modal"' in r.text
+    # El editor de sesión vive en el modal de registro (no en la home).
+    r2 = _client().get("/registrar/editor?fecha=2099-01-01")
+    assert 'id="session-editor" data-editmode="0"' in r2.text
+    assert 'id="session-editor-wrap"' in r2.text
+    assert "rm-cell" in r2.text
+    assert 'id="save-outcome" data-ok="0" hidden' in r2.text
+    assert '<div id="editor-notice"></div>' in r2.text
 
 
 def test_save_valid_returns_ok_marker(tmp_path, monkeypatch):
@@ -165,8 +172,9 @@ def test_save_zero_rir_succeeds(tmp_path, monkeypatch):
 def test_index_renders_plantillas_section(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    r = _client().get("/")
-    assert 'id="plantillas-section"' in r.text
+    # La lista de plantillas se sirve como fragmento contextual (no en la home).
+    r = _client().get("/plantillas")
+    assert r.status_code == 200
     assert "Aún no hay entrenos" in r.text
 
 
@@ -903,8 +911,8 @@ def test_index_incluye_historial_sesiones(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "DB_PATH", db)
     save_session(db, "2026-08-06", [TrainingSetInput("Press", 90, 7, 1)])
     resp = _client().get("/")
-    assert 'id="session-history"' in resp.text
-    assert "6/8/26" in resp.text
+    # El historial de sesiones desapareció del layout: el análisis es la home.
+    assert 'id="session-history"' not in resp.text
 
 
 def test_save_incluye_oob_history(tmp_path, monkeypatch):
@@ -1016,24 +1024,46 @@ def test_index_app_config_tiene_alimento_map(tmp_path, monkeypatch):
 def test_index_renders_global_date_title_below_navigator(tmp_path, monkeypatch):
     from datetime import date
 
-    from src.training_service import DIA_MAP
+    from src.training_service import day_from_date
 
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    r = _client().get("/")
+    r = _client().get("/registrar/editor?fecha=2099-01-01")
     assert r.status_code == 200
-    # La fecha viva va entre el navegador y el panel de alimentación
-    assert r.text.index('id="session-date-title"') > r.text.index('id="date-navigator"')
-    assert r.text.index('id="session-date-title"') < r.text.index('id="nutrition-panel"')
+    # La fecha viva (día + semana) viaja en el modal de registro.
     assert "Semana" in r.text
-    # El día se renderiza en español con el nombre real de hoy (locale-independiente)
-    assert DIA_MAP[date.today().weekday()] in r.text
+    # El día se renderiza en español, independiente del locale del host.
+    assert day_from_date(date(2099, 1, 1)) in r.text
+    # La home de análisis no tiene título de fecha fijo.
+    home = _client().get("/").text
+    assert 'id="session-date-title"' not in home
+
+
+def test_modal_renders_global_date_title_and_week(tmp_path, monkeypatch):
+    from datetime import date
+
+    from src.training_service import day_from_date
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/registrar/editor?fecha=2099-01-01")
+    assert r.status_code == 200
+    # Navegador antes de ambos editores; el título de fecha vive en el header del modal.
+    assert r.text.index('id="date-navigator"') < r.text.index('id="nutrition-editor-wrap"')
+    assert r.text.index('id="nutrition-editor-wrap"') < r.text.index('id="session-editor-wrap"')
+    assert "Semana" in r.text
+    # El día se renderiza en español, independiente del locale del host.
+    assert day_from_date(date(2099, 1, 1)) in r.text
+    # La home de análisis ya no tiene navegador fijo ni título de fecha.
+    home = _client().get("/").text
+    assert 'id="date-navigator"' not in home
+    assert 'id="session-date-title"' not in home
 
 
 def test_panels_layout_title_left_controls_right(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    r = _client().get("/")
+    r = _client().get("/registrar/editor?fecha=2025-04-24")
     assert r.status_code == 200
     # Título en caja (izquierda) + colapso (derecha) en ambos paneles
     assert r.text.count('class="panel-title-box"') == 2
@@ -1055,27 +1085,26 @@ def test_panels_layout_title_left_controls_right(tmp_path, monkeypatch):
 def test_panel_titles_are_static(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    r = _client().get("/")
+    r = _client().get("/registrar/editor?fecha=2025-04-24")
     assert r.status_code == 200
     # El editor de sesión tiene título estático "Entrenamiento" sin fecha
     editor_html = r.text[r.text.index('id="session-editor"') :]
     session_h3 = editor_html[editor_html.index("<h3") : editor_html.index("</h3>")]
     assert "Entrenamiento" in session_h3
     assert "SABADO" not in session_h3
-    # La fecha vive en el título global, no en los paneles
-    assert 'id="session-date-title"' in r.text
+    # La fecha vive en el título del modal, no en los paneles
+    assert 'id="register-fecha-title"' in _client().get("/").text
 
 
 def test_index_renders_nutrition_panel_above_session_editor(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    r = _client().get("/")
+    r = _client().get("/registrar/editor?fecha=2025-04-24")
     assert r.status_code == 200
     # Navegador arriba de todo, panel de nutrición antes del editor de sesión
-    assert r.text.index('id="date-navigator"') < r.text.index('id="nutrition-panel"')
-    assert r.text.index('id="nutrition-panel"') < r.text.index('id="session-editor"')
+    assert r.text.index('id="date-navigator"') < r.text.index('id="nutrition-editor-wrap"')
+    assert r.text.index('id="nutrition-editor-wrap"') < r.text.index('id="session-editor-wrap"')
     assert 'id="target-params"' in r.text
-    assert 'id="alimento-create"' in r.text
     # Chevrons de colapso dentro de cada panel (header), sin barras externas
     assert r.text.count('data-action="toggle-panel-collapse"') == 2
     assert 'id="session-editor" data-editmode="0" data-target' not in r.text
@@ -1118,10 +1147,9 @@ def test_nutrition_templates_routes(tmp_path, monkeypatch):
     assert 'id="nutrition-templates-section" hx-swap-oob' in r.text
     assert "Desayuno" in r.text
 
-    # Lista en el sidebar del index
-    r = _client().get("/")
-    assert 'id="nutrition-templates-section"' in r.text
-    assert "Desayuno" in r.text
+    # El fragmento se sirve vía el editor del modal (contextual, no sidebar)
+    r = _client().get("/registrar/editor?fecha=2025-04-26")
+    assert r.status_code == 200
 
     # Aplicar plantilla a una fecha vacía: filas con nutrientes, editable
     r = _client().get("/alimentacion/plantilla/aplicar/1?fecha=2025-04-26")

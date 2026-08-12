@@ -1,0 +1,23 @@
+<!-- register_editor.html — cuerpo del modal de registro: navegador + editores.
+     Replica los contenedores del contrato JS (#nutrition-panel, #session-editor,
+     #editor-notice, #save-outcome) que antes vivían en index.html. -->
+<section id="date-navigator">{{ navigator_html | safe }}</section>
+
+<section id="session-date-title" class="flex items-baseline gap-1.5">
+    <h3 class="text-[11px] font-black tracking-widest text-burgundy-400 uppercase neon-title truncate">{{ dia }} {{ fecha_display }}</h3>
+    <span class="text-[10px] text-neutral-500 flex-none">Semana {{ semana }}</span>
+</section>
+
+<section id="nutrition-panel" data-editmode="0" class="bg-neutral-900 border border-transparent rounded-xl px-2 pt-2 pb-2 flex flex-col gap-2 neon-border metallic-border relative">
+    <div id="nutrition-editor-wrap">
+        {{ nutrition_editor_html | safe }}
+    </div>
+</section>
+
+<div id="session-editor" data-editmode="0" class="bg-neutral-900 border border-transparent rounded-xl px-2 pt-2 pb-2 flex flex-col gap-2 neon-border metallic-border relative">
+    <div id="editor-notice"></div>
+    <div id="save-outcome" data-ok="0" hidden></div>
+    <section id="session-editor-wrap">
+        {{ editor_html | safe }}
+    </section>
+</div>

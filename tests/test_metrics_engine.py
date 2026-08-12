@@ -88,4 +88,3 @@ def test_pfr_timeline_filtra_por_categoria(tmp_path):
     day = tl[tl["fecha_dt"] == "2026-05-04"]
     assert int(day.iloc[0]["sets_totales"]) == 1  # solo Press
     assert tl["sets_totales"].sum() == 1
-

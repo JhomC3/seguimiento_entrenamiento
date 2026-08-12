@@ -1,0 +1,26 @@
+<div id="kpi-row" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+    <div class="bg-neutral-900 border border-neutral-800 rounded-xl p-3 flex flex-col gap-1">
+        <span class="text-[10px] font-bold tracking-widest text-neutral-500 uppercase">PFR actual</span>
+        <span class="text-lg font-black text-white">{{ "%.1f"|format(kpis.pfr_actual) if kpis.pfr_actual is not none else "—" }}%</span>
+    </div>
+    <div class="bg-neutral-900 border border-neutral-800 rounded-xl p-3 flex flex-col gap-1">
+        <span class="text-[10px] font-bold tracking-widest text-neutral-500 uppercase">vs baseline</span>
+        <span class="text-lg font-black {{ 'text-emerald-400' if (kpis.pfr_variacion or 0) >= 0 else 'text-burgundy-400' }}">{{ "%+.1f"|format(kpis.pfr_variacion) if kpis.pfr_variacion is not none else "—" }}%</span>
+    </div>
+    <div class="bg-neutral-900 border border-neutral-800 rounded-xl p-3 flex flex-col gap-1">
+        <span class="text-[10px] font-bold tracking-widest text-neutral-500 uppercase">Volumen semana</span>
+        <span class="text-lg font-black text-white">{{ "%.0f"|format(kpis.volumen_semana) if kpis.volumen_semana is not none else "—" }} kg</span>
+    </div>
+    <div class="bg-neutral-900 border border-neutral-800 rounded-xl p-3 flex flex-col gap-1">
+        <span class="text-[10px] font-bold tracking-widest text-neutral-500 uppercase">Sets al fallo</span>
+        <span class="text-lg font-black {{ 'text-burgundy-400' if kpis.sets_fallo_semana > 0 else 'text-white' }}">{{ kpis.sets_fallo_semana }}</span>
+    </div>
+    <div class="bg-neutral-900 border border-neutral-800 rounded-xl p-3 flex flex-col gap-1">
+        <span class="text-[10px] font-bold tracking-widest text-neutral-500 uppercase">Peso</span>
+        <span class="text-lg font-black text-white">{{ "%.1f"|format(kpis.peso_actual) if kpis.peso_actual is not none else "—" }} kg</span>
+    </div>
+    <div class="bg-neutral-900 border border-neutral-800 rounded-xl p-3 flex flex-col gap-1">
+        <span class="text-[10px] font-bold tracking-widest text-neutral-500 uppercase">Sueño anoche</span>
+        <span class="text-lg font-black text-white">{{ "%.1f"|format(kpis.sueno_anoche) if kpis.sueno_anoche is not none else "—" }} h</span>
+    </div>
+</div>

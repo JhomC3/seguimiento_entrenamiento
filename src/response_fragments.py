@@ -26,6 +26,12 @@ OOB_FRAGMENT_TARGETS = (
     "nutrition-editor-wrap",
     "alimento-create",
     "nutrition-templates-section",
+    "analysis-chart-wrap",
+    "analysis-filters",
+    "kpi-row",
+    "day-detail-wrap",
+    "register-modal-body",
+    "register-modal-wrap",
 )
 
 STATIC_MARKERS = {
@@ -148,14 +154,16 @@ def fragment_oob(
     return f'<div id="{target}" hx-swap-oob="{swap}">{inner_html}</div>'
 
 
-def chart_oob_wrapper(chart_html: str) -> str:
-    """Trusted wrapper for the Plotly fragment.
+def chart_oob_wrapper(chart_html: str, target: str = "unified-chart") -> str:
+    """Trusted wrapper for a Plotly fragment.
 
-    chart_html comes from `src/dashboard_service.chart_html()`: a server-owned
-    block with the figure JSON inside an inert <script type="application/json">
-    plus the #unified-chart-plot render div (client renders with Plotly). It
-    must never be built from request-derived strings; this wrapper exists so
-    the trust boundary is a named, documented function rather than a scattered
-    f-string.
+    chart_html comes from a server-owned builder (e.g. `chart_html()` or
+    `analysis_chart_html()`): a block with the figure JSON inside an inert
+    <script type="application/json"> plus the render div (client renders with
+    Plotly). It must never be built from request-derived strings; this wrapper
+    exists so the trust boundary is a named, documented function rather than a
+    scattered f-string.
     """
-    return f'<div id="unified-chart" hx-swap-oob="innerHTML">{chart_html}</div>'
+    if target not in OOB_FRAGMENT_TARGETS:
+        raise ValueError(f"target OOB no permitido: {target!r}")
+    return f'<div id="{target}" hx-swap-oob="innerHTML">{chart_html}</div>'
