@@ -5,8 +5,10 @@ import androidx.activity.result.contract.ActivityResultContract
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ChangesTokenRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
@@ -36,6 +38,13 @@ interface HealthConnectGateway {
         end: Instant,
         pageToken: String?,
     ): ReadRecordsResponse<Record>
+
+    // Phase 8: inventory — aggregate total for cumulative types (steps, calories)
+    suspend fun aggregateTotal(
+        recordClass: KClass<out Record>,
+        start: Instant,
+        end: Instant,
+    ): Long?
 
     // Phase 5: provider diagnostics
     suspend fun providerDetail(): ProviderDetail
@@ -118,6 +127,26 @@ class RealHealthConnectGateway(context: Context) : HealthConnectGateway {
         )
         @Suppress("UNCHECKED_CAST")
         return response as ReadRecordsResponse<Record>
+    }
+
+    override suspend fun aggregateTotal(
+        recordClass: KClass<out Record>,
+        start: Instant,
+        end: Instant,
+    ): Long? {
+        val range = TimeRangeFilter.between(start, end)
+        return when (recordClass) {
+            StepsRecord::class -> client.aggregate(
+                AggregateRequest(metrics = setOf(StepsRecord.COUNT_TOTAL), timeRangeFilter = range),
+            )[StepsRecord.COUNT_TOTAL]
+            ActiveCaloriesBurnedRecord::class -> client.aggregate(
+                AggregateRequest(metrics = setOf(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL), timeRangeFilter = range),
+            )[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories?.toLong()
+            TotalCaloriesBurnedRecord::class -> client.aggregate(
+                AggregateRequest(metrics = setOf(TotalCaloriesBurnedRecord.ENERGY_TOTAL), timeRangeFilter = range),
+            )[TotalCaloriesBurnedRecord.ENERGY_TOTAL]?.inKilocalories?.toLong()
+            else -> null
+        }
     }
 
     override fun permissionContract(): ActivityResultContract<Set<String>, Set<String>> =

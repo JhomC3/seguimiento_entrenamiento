@@ -27,6 +27,11 @@ class FakeHealthConnectGateway : HealthConnectGateway {
     var failNextTokenWithRateLimit = false                       // getChangesToken → RemoteException rate-limited
     var failReadsWithRateLimit = false                           // readRecords → RemoteException rate-limited (falla la 1ª página NO inicial, para confirmar el checkpoint)
     var failReadsWithForegroundRequired = false                  // readRecords → RemoteException "must be in foreground" (one-shot)
+
+    /** Resultados de aggregateTotal por typeName (p. ej. "STEPS" → 9018). */
+    val aggregateTotals = mutableMapOf<String, Long?>()
+    /** Tipos para los que se llamó a aggregateTotal. */
+    val aggregateTotalLog = mutableListOf<String>()
     val pageStore = mutableMapOf<String?, List<Record>>()         // paginación determinista para bootstrap (null = primera página)
 
     /** When true, getChanges throws AFTER returning a page (crash before commit). */
@@ -51,6 +56,16 @@ class FakeHealthConnectGateway : HealthConnectGateway {
             throw RemoteException("Rate limited request quota has been exceeded")
         }
         return "token-$tokenCounter"
+    }
+
+    override suspend fun aggregateTotal(
+        recordClass: KClass<out Record>,
+        start: Instant,
+        end: Instant,
+    ): Long? {
+        val typeName = RecordTypes.byClass(recordClass)?.typeName ?: return null
+        aggregateTotalLog += typeName
+        return aggregateTotals[typeName]
     }
 
     override suspend fun getChanges(token: String): ChangesResponse {
