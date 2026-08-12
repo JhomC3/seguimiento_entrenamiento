@@ -343,6 +343,8 @@ def read_index(request: Request):
             "layers_config": [(layer_id, LAYER_TITLES[layer_id]) for layer_id in DEFAULT_LAYERS],
             "exercise_form_html": _exercise_form_html(request),
             "alimento_form_html": _alimento_form_html(request),
+            "plantillas_html": _plantillas_list_html(request),
+            "nutrition_templates_html": _plantillas_alimentacion_list_html(request, _today_iso()),
             "app_config_json": {
                 "categoria_map": get_ejercicio_categoria(DB_PATH),
                 "alimento_map": _alimento_preview_map(),

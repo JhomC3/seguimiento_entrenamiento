@@ -60,20 +60,26 @@
         <div class="sticky top-0 z-20 bg-neutral-950 border-b border-neutral-800 px-5 py-3 flex items-center gap-4">
             <div class="pills-track" id="register-tabs">
                 <span class="pills-slider" aria-hidden="true"></span>
-                <button class="pill" data-action="set-register-tab" data-tab="nutrition" aria-pressed="true">Alimentación</button>
-                <button class="pill" data-action="set-register-tab" data-tab="session" aria-pressed="false">Entrenamiento</button>
+                <button class="pill" data-action="set-register-tab" data-tab="nutrition" data-value="nutrition" aria-pressed="true">Alimentación</button>
+                <button class="pill" data-action="set-register-tab" data-tab="session" data-value="session" aria-pressed="false">Entrenamiento</button>
             </div>
             <h2 class="text-sm font-black tracking-widest text-burgundy-400 uppercase neon-title" id="register-fecha-title"></h2>
             <div class="ml-auto flex items-center gap-2">
                 <button data-action="toggle-create-form" data-kind="ejercicio" class="text-[10px] font-bold text-neutral-400 hover:text-white border border-neutral-800 hover:border-burgundy-700 rounded-full px-3 py-1 transition-colors uppercase tracking-widest">+ Ejercicio</button>
                 <button data-action="toggle-create-form" data-kind="alimento" class="text-[10px] font-bold text-neutral-400 hover:text-white border border-neutral-800 hover:border-burgundy-700 rounded-full px-3 py-1 transition-colors uppercase tracking-widest">+ Alimento</button>
+                <button data-action="toggle-plantillas" class="text-[10px] font-bold text-neutral-400 hover:text-white border border-neutral-800 hover:border-burgundy-700 rounded-full px-3 py-1 transition-colors uppercase tracking-widest">Plantillas</button>
                 <button data-action="close-register-modal" class="text-neutral-500 hover:text-white text-xl leading-none px-2" aria-label="Cerrar">×</button>
             </div>
         </div>
-        <div id="register-modal-body" class="flex flex-col gap-4 p-5">
+        <div id="register-modal-body" class="flex flex-col gap-4 p-5"></div>
+        <div id="register-side-sections" class="px-5 pb-5 flex flex-col gap-3">
             <div id="register-create-forms" class="flex flex-col gap-3">
                 {{ exercise_form_html | safe }}
                 {{ alimento_form_html | safe }}
+            </div>
+            <div id="register-plantillas" class="hidden flex flex-col gap-3">
+                <div id="nutrition-templates-section">{{ nutrition_templates_html | safe }}</div>
+                <div id="plantillas-section">{{ plantillas_html | safe }}</div>
             </div>
         </div>
     </div>

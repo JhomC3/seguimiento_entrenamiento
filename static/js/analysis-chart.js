@@ -50,8 +50,9 @@ function isoFromClickX(x) {
     if (x == null) return null;
     const d = new Date(x);
     if (Number.isNaN(d.getTime())) return null;
-    const pad = (n) => String(n).padStart(2, '0');
-    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    // Plotly devuelve el eje como ms UTC (medianoche UTC): reconstruir la fecha
+    // en UTC evita el desplazamiento por zona horaria del host.
+    return d.toISOString().slice(0, 10);
 }
 
 function clearNextDayHighlights() {
@@ -121,6 +122,9 @@ export function initAnalysisChart() {
         }
     });
 
+    // Render inicial (la home no llega por swap htmx).
+    renderAnalysisChart();
+
     // Al cargar el panel del día: resalta el día siguiente si hubo fallo/cardio.
     document.body.addEventListener('htmx:afterSwap', function (e) {
         if (!e.target || e.target.id !== 'day-detail-section') return;
@@ -128,6 +132,15 @@ export function initAnalysisChart() {
         if (!wrap || !wrap.dataset.fecha) return;
         clearNextDayHighlights();
         highlightNextDay(wrap.dataset.fecha);
+    });
+
+    // Tras guardar entreno o alimentación, la gráfica refleja el día nuevo.
+    document.body.addEventListener('htmx:afterRequest', function (e) {
+        if (!e.detail || !e.detail.successful) return;
+        const path = e.detail.pathInfo && e.detail.pathInfo.requestPath;
+        if (path === '/entrenamiento/session/save' || path === '/alimentacion/save') {
+            refreshChart();
+        }
     });
 
     const wrap = document.getElementById('analysis-chart-wrap');

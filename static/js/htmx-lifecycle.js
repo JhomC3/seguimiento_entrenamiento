@@ -71,6 +71,11 @@ export function initLifecycle() {
                 }
                 initEditorRowSortable();
                 fitRowsToPanel();
+            } else if (e.detail.target.id === 'register-modal-body') {
+                // Apertura del modal: el editor llega por swap al cuerpo del modal.
+                syncEditorFromContent();
+                initEditorRowSortable();
+                fitRowsToPanel();
             } else if (e.detail.target === document.body && document.getElementById('plantilla-applied')) {
                 syncEditorFromContent();
                 document.getElementById('plantilla-applied').remove();

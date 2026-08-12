@@ -66,6 +66,9 @@ export function initRegisterModal() {
         } else if (el.dataset.action === 'set-register-tab') {
             setActivePill(el.closest('.pills-track'), el.dataset.tab);
             applyTab();
+        } else if (el.dataset.action === 'toggle-plantillas') {
+            const section = document.getElementById('register-plantillas');
+            if (section) section.classList.toggle('hidden');
         }
     });
 

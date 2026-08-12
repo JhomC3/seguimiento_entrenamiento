@@ -248,3 +248,66 @@ in `htmx-lifecycle.js`.
 - OOB responses: notices and editor markers/wrappers render via
   `templates/partials/oob_*.html`; no request-derived value is concatenated
   into HTML.
+
+---
+
+# v2 — Análisis (2026-08-12): contrato vigente tras el rediseño
+
+> **Migración v1 → v2 (commit `feat: analysis shell...` y siguientes):** la home
+> dejó de ser un editor de día + sidebar y pasó a ser una vista de análisis.
+> El editor (alimentación + sesión) vive en el modal de registro. Las rutas
+> `/select`, `/grupo/reset`, `/ejercicio`, `/sesiones` y `/semana/primer-entreno`
+> fueron retiradas (404). Se eliminaron `session_history.html`, `exercise_list.html`
+> y los módulos `dashboard-filters.js` / `chart-interaction.js`.
+
+## 1. Rutas nuevas y su contrato
+
+### `GET /` (análisis, HTML completo)
+
+- Píldoras de nivel: `.pills-track` (#level-pills) con `.pill[data-action="set-level"][data-nivel="global|grupo|musculo|ejercicio"]` + `.pills-slider` (posición vía transform, módulo `segmented-pill.js`).
+- Filtros contextuales: `#analysis-filters` (chips `.filter-chip[data-action="set-focus"][data-focus]` o `.exercise-search` con `datalist#analysis-exercises`), reemplazado por OOB en cada refresh.
+- KPIs: `#kpi-row` (el id vive SOLO en el wrapper de la sección; el fragmento `kpi_row.html` no lo repite — el OOB con `swap="innerHTML"` anidaría ids duplicados).
+- Capas de gráfica: `#layer-toggles .layer-chip[data-action="toggle-layer"][data-layer]`, estado persistido en `localStorage gym.layers.v1` (nunca vacío; mínimo 1 capa).
+- Gráfica: `#analysis-chart-wrap` > `script#analysis-chart-data[type="application/json"]` (figura Plotly inerte) + `#analysis-chart-plot` (render `Plotly.newPlot` en `analysis-chart.js`). Clic en un marcador → `GET /analisis/dia`.
+- Botón `[data-action="open-register-modal"]` (+ Registrar hoy) → modal.
+- Formularios compactos de alta: `#exercise-create` / `#alimento-create` (ocultos por defecto; `[data-action="toggle-create-form"][data-kind="ejercicio|alimento"]`), contenedores en `#register-side-sections` (FUERA de `#register-modal-body`, que htmx reemplaza en cada apertura).
+- Plantillas: `#register-plantillas` (oculto; `[data-action="toggle-plantillas"]`) con `#plantillas-section` y `#nutrition-templates-section`.
+
+### `GET /registrar/editor?fecha=<YYYY-MM-DD>` — cuerpo del modal
+
+- Render `register_editor.html`: `#date-navigator` + `#session-date-title` (día/semana en vivo) + `#register-nutrition` (con `#nutrition-panel[data-editmode]` y `#nutrition-editor-wrap`) + `#register-session[hidden]` (con `#session-editor[data-editmode]`, `#editor-notice`, `#save-outcome`, `#session-editor-wrap`).
+- Pestañas: `#register-tabs .pill[data-action="set-register-tab"][data-tab][data-value]` (AMBOS atributos: `data-value` para `setActivePill`, `data-tab` para `applyTab`).
+- El swap al cuerpo del modal re-sincroniza el editor (`htmx:afterSwap` → `syncEditorFromContent` en `htmx-lifecycle.js`): el editmode NO viene del fragmento, se deriva de `#editor-state[data-readonly]`.
+- `#session-editor` arranca con `data-editmode="0"` en el HTML del modal; el baseline/dirty-check se activa al sincronizar.
+
+### `GET /analisis/chart?nivel=&focus=&rango=&layers=`
+
+- OOBs: `#analysis-chart-wrap` (innerHTML, fragmento de gráfica), `#kpi-row` (innerHTML), `#analysis-filters` (outerHTML).
+- Niveles: `global` (systemic), `grupo` (category), `musculo` (muscle_group), `ejercicio` (exercise).
+
+### `GET /analisis/dia?fecha=&nivel=&focus=` — panel "¿Qué pasó"
+
+- `#day-detail-wrap` con `data-fecha`, `data-has-fallo` (1/0), `data-has-cardio` (1/0).
+- Bloques: Entrenamiento (tabla con badge `FALLO`/`FORZADA`, descanso), Nutrición (consumido/objetivo con barras), Recuperación (sueño, FC media, HRV) + cardio con formularios `[data-action="cardio-annotation-save"]`.
+- El clic en un día con fallo/cardio pinta una banda vertical en el día siguiente (`Plotly.relayout` shapes).
+
+### `POST /cardio/annotation`
+
+- Campos: `hc_id`, `velocidad_kmh`, `inclinacion_pct`, `notas`, `fecha`, `nivel`, `focus`.
+- OOB: `#notice-container` + `#day-detail-wrap` (outerHTML) cuando `fecha` viene.
+- Vacío = elimina la anotación; solo válido para `EXERCISE_SESSION`.
+
+## 2. Cambios de contrato dentro de fragmentos conservados
+
+- `POST /entrenamiento/session/save`: nuevo campo paralelo `descanso[]` (opcional, retrocompatible). Ya NO emite OOB `#session-history`.
+- `session_editor.html`: RIR `min="-5" step="0.5"` (negativo = forzadas), columna `Desc` (`input[name="descanso"]`), badge `.rir-badge` (FALLO/FORZADA por JS).
+- `POST /ejercicio/nuevo` y `/alimento/nuevo`: los OOB `#exercise-create`/`#alimento-create` (outerHTML) ahora apuntan a los forms compactos dentro del modal.
+- `alimento_create_form.html`: 4 macros visibles + 5 secundarias en `<details>`; la ruta acepta los 9 campos con `Form(0)` (retrocompatible).
+- Formulario de sesión: tras un guardado exitoso (`/entrenamiento/session/save`, `/alimentacion/save`) la gráfica de análisis se refresca automáticamente (`htmx:afterRequest` en `analysis-chart.js`).
+
+## 3. Tests de browser (e2e)
+
+- `tests/e2e/test_dashboard_flow.py` — 20 casos: modal, edición, plantillas, badges, XSS, análisis.
+- `tests/e2e/test_nutrition_flow.py` — 3 casos: crear/editar/guardar/eliminar, plantillas (drag sintético vía `_simulate_drag`), prefill.
+- `tests/e2e/test_analysis_flow.py` — 4 casos: KPIs, clic a día, highlight día siguiente, buscador, pestañas.
+- Drag HTML5 nativo: en el modal (scroll interno) Chromium headless aborta el drag si el destino queda fuera del viewport; los e2e usan `_simulate_drag` (DragEvent sintético con DataTransfer) que ejercita el mismo pipeline de eventos.

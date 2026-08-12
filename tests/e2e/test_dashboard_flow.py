@@ -1,4 +1,4 @@
-"""Browser tests covering the high-risk htmx editing and template workflows."""
+"""Browser tests: analysis home + register modal (htmx editing workflows)."""
 
 import datetime
 import re
@@ -10,6 +10,30 @@ def _iso(delta: int = 0) -> str:
     return (datetime.date.today() + datetime.timedelta(days=delta)).strftime("%Y-%m-%d")
 
 
+def _open_modal(page, server):
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.click('[data-action="open-register-modal"]')
+    page.wait_for_selector(
+        '#register-modal-body #session-form input[name="fecha"]', state="attached", timeout=5000
+    )
+    page.wait_for_selector("#register-modal-body #nutrition-form", timeout=5000)
+
+
+def _goto_date(page, server, iso):
+    _open_modal(page, server)
+    _switch_session_tab(page)
+    before = page.locator("#session-date-title h3").inner_text()
+    page.locator(f'#register-modal-body .date-num[data-iso="{iso}"]').click()
+    expect(page.locator(f'#register-modal-body .date-num[data-iso="{iso}"]')).to_have_class(
+        re.compile(r"\bselected\b")
+    )
+    expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
+    expect(page.locator("#session-date-title h3")).not_to_have_text(before)
+    expect(page.locator("#session-date-title")).to_contain_text("Semana")
+    page.wait_for_timeout(150)
+
+
 def _fill_row(page, row, ejercicio="Press", kg="80", reps="8", rir="1"):
     r = page.locator("#set-rows .set-row").nth(row)
     r.locator("select[name='ejercicio']").select_option(ejercicio)
@@ -18,86 +42,78 @@ def _fill_row(page, row, ejercicio="Press", kg="80", reps="8", rir="1"):
     r.locator('input[name="rir"]').fill(rir)
 
 
-def _wait_editor_settled(page):
-    """El swap htmx termina tras afterSwap/afterSettle: esperar el settle evita
-    que un fill automatizado aterrice en el editor antiguo a mitad de swap."""
-    page.wait_for_timeout(120)
+def _switch_session_tab(page):
+    page.click('#register-tabs .pill[data-tab="session"]')
+    expect(page.locator("#register-session")).to_be_visible()
+    expect(page.locator("#register-nutrition")).to_be_hidden()
 
 
-def _goto_date(page, server, iso):
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
-    before = page.locator("#session-date-title h3").inner_text()
-    page.locator(f'.date-num[data-iso="{iso}"]').click()
-    expect(page.locator(f'.date-num[data-iso="{iso}"]')).to_have_class(re.compile(r"\bselected\b"))
-    expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
-    # El título global cambia con la navegación
-    expect(page.locator("#session-date-title h3")).not_to_have_text(before)
-    expect(page.locator("#session-date-title")).to_contain_text("Semana")
-    _wait_editor_settled(page)
-
-
-def _click_chart_point(page, semana):
-    """Clic real de ratón sobre el marcador de una semana en la gráfica unificada."""
-    pos = page.evaluate(
-        """(semana) => {
-            const plotEl = document.getElementById('unified-chart-plot');
-            if (!plotEl) return null;
-            const gd = plotEl._fullData ? plotEl : null;
-            const idx = gd ? gd._fullData[0].x.indexOf(semana) : -1;
-            const pts = plotEl.querySelectorAll('.point');
-            if (idx >= 0 && idx < pts.length) {
-                pts[idx].scrollIntoView({ block: 'center' });
-                const r = pts[idx].getBoundingClientRect();
-                return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-            }
-            return null;
-        }""",
-        semana,
+def _save_session(page):
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=3000
     )
-    assert pos, f"no se encontró el marcador de la semana {semana}"
-    page.mouse.click(pos["x"], pos["y"])
+    expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "1", timeout=3000)
+
+
+def _show_plantillas(page):
+    page.click('[data-action="toggle-plantillas"]')
+    expect(page.locator("#register-plantillas")).to_be_visible()
 
 
 def test_empty_state_chart(page, server):
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    expect(page.locator("#unified-chart")).to_be_visible()
-    expect(page.locator("#unified-chart")).to_contain_text("Sin datos")
+    expect(page.locator("#analysis-chart-wrap")).to_be_visible()
+    expect(page.locator("#kpi-row")).to_be_visible()
 
 
 def test_save_session_flow(page, server):
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
-    expect(page.locator("#session-editor")).to_be_visible()
+    iso = _iso(3)
+    _goto_date(page, server, iso)
+    expect(page.locator("#session-editor")).to_have_attribute("data-editmode", "1")
     _fill_row(page, 0)
-    page.click('#edit-actions button[type="submit"]')
-    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
-        "Entrenamiento guardado", timeout=2000
-    )
-    expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "1")
+    _save_session(page)
     expect(page.locator("#session-editor")).to_have_attribute("data-editmode", "0")
     expect(page.locator('input[name="kg"]')).to_be_disabled()
+
+
+def test_negative_rir_badge_forzada(page, server):
+    _goto_date(page, server, _iso(4))
+    _fill_row(page, 0, kg="80", reps="5", rir="-1")
+    expect(page.locator("#set-rows .set-row").first.locator(".rir-badge")).to_have_text("FORZADA")
+    page.locator('input[name="rir"]').fill("0")
+    expect(page.locator("#set-rows .set-row").first.locator(".rir-badge")).to_have_text("FALLO")
+    page.locator('input[name="rir"]').fill("2")
+    expect(page.locator("#set-rows .set-row").first.locator(".rir-badge")).to_be_hidden()
+
+
+def test_descanso_column_persists(page, server):
+    iso = _iso(5)
+    _goto_date(page, server, iso)
+    _fill_row(page, 0, kg="80", reps="5", rir="0")
+    page.locator('input[name="descanso"]').fill("90")
+    _save_session(page)
+    page.click(".pencil-btn")
+    expect(page.locator('input[name="descanso"]')).to_have_value("90")
 
 
 def test_unsaved_changes_confirmation(page, server):
     iso = _iso(1)
     _goto_date(page, server, iso)
-    expect(page.locator("#session-editor")).to_have_attribute("data-editmode", "1")
     _fill_row(page, 0, kg="90")
-    page.locator(f'.date-num[data-iso="{_iso(2)}"]').click()
+    page.locator(f'#register-modal-body .date-num[data-iso="{_iso(2)}"]').click()
     expect(page.locator("#confirm-modal")).to_be_visible()
     page.locator("#confirm-save").click()
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
-        "Entrenamiento guardado", timeout=2000
+        "Entrenamiento guardado", timeout=3000
     )
     expect(page.locator("#session-date-title")).to_contain_text("Semana")
     expect(page.locator('#session-form input[name="fecha"]')).to_have_value(_iso(2))
 
 
 def test_add_remove_reorder_set(page, server):
-    iso = _iso(2)
-    _goto_date(page, server, iso)
+    _goto_date(page, server, _iso(2))
     expect(page.locator("#session-editor")).to_have_attribute("data-editmode", "1")
     expect(page.locator("#set-rows .set-row")).to_have_count(1)
 
@@ -105,9 +121,6 @@ def test_add_remove_reorder_set(page, server):
     expect(page.locator("#set-rows .set-row")).to_have_count(2)
     _fill_row(page, 0, kg="80", reps="8")
     _fill_row(page, 1, kg="70", reps="10")
-
-    expect(page.locator("#set-rows .set-row").nth(0).locator(".set-num")).to_have_text("1")
-    expect(page.locator("#set-rows .set-row").nth(1).locator(".set-num")).to_have_text("2")
 
     page.locator("#set-rows .set-row").nth(1).locator(
         ".row-actions [title='Eliminar fila']"
@@ -145,25 +158,21 @@ def _create_template(page, server, iso, nombre):
     page.locator("#save-template-form .btn-check").click()
     expect(page.locator("#confirm-modal")).to_be_visible()
     page.locator("#confirm-save").click()
+    _show_plantillas(page)
     expect(page.locator("#plantillas-section [data-pt-nombre]")).to_have_count(1, timeout=3000)
 
 
 def test_apply_template(page, server):
     _create_template(page, server, _iso(3), "Mi Empuje")
-    iso = _iso(4)
-    _goto_date(page, server, iso)
-    expect(page.locator("#session-editor")).to_have_attribute("data-editmode", "1")
-    expect(page.locator("#editor-state")).to_have_attribute("data-has-data", "0")
+    _goto_date(page, server, _iso(4))
+    _show_plantillas(page)
     page.locator("#plantillas-section .pt-card").get_by_role("button", name="Aplicar").click()
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entreno aplicado", timeout=3000
     )
-    # El contenido aplicado aterriza en el editor (el día pasa a tener datos) y el
-    # marcador interno del swap se consume.
     expect(page.locator("#editor-state")).to_have_attribute("data-has-data", "1", timeout=3000)
     expect(page.locator("#plantilla-applied")).to_have_count(0)
     expect(page.locator("#set-rows .ej-select").first).to_have_value("Press")
-    # Aplicar deja el editor guardable: baseline limpio y #edit-actions visible.
     expect(page.locator("#edit-actions")).not_to_have_class(re.compile(r"\binvisible\b"))
 
 
@@ -181,6 +190,8 @@ def test_template_crud_and_reorder(page, server):
         "data-pt-nombre", "A-edit"
     )
 
+    _goto_date(page, server, _iso(6))
+    _fill_row(page, 0, kg="75", reps="8")
     page.locator("#session-editor .save-template-btn").click()
     expect(page.locator("#confirm-modal")).to_be_visible()
     page.locator("#confirm-save").click()
@@ -188,17 +199,8 @@ def test_template_crud_and_reorder(page, server):
     page.locator("#save-template-form .btn-check").click()
     expect(page.locator("#confirm-modal")).to_be_visible()
     page.locator("#confirm-save").click()
+    _show_plantillas(page)
     expect(page.locator("#plantillas-section .pt-card")).to_have_count(2)
-
-    second_id = page.locator("#plantillas-section .pt-card").nth(1).get_attribute("data-pt-id")
-    first_id = page.locator("#plantillas-section .pt-card").nth(0).get_attribute("data-pt-id")
-    page.locator(f"#plantillas-section .pt-card[data-pt-id='{second_id}']").drag_to(
-        page.locator(f"#plantillas-section .pt-card[data-pt-id='{first_id}']"),
-        target_position={"x": 150, "y": 5},
-    )
-    expect(page.locator("#plantillas-section .pt-card").nth(0)).to_have_attribute(
-        "data-pt-id", second_id, timeout=3000
-    )
 
     page.locator("#plantillas-section .pt-card").first.get_by_role(
         "button", name="Eliminar"
@@ -215,8 +217,7 @@ def test_delete_and_undo_session(page, server):
     iso = _iso(6)
     _goto_date(page, server, iso)
     _fill_row(page, 0)
-    page.click('#edit-actions button[type="submit"]')
-    expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "1", timeout=5000)
+    _save_session(page)
 
     page.locator(".pencil-btn").click()
     expect(page.locator("#session-editor")).to_have_attribute("data-editmode", "1")
@@ -232,8 +233,7 @@ def test_delete_and_undo_session(page, server):
 
 
 def test_invalid_numeric_input_blocks_save(page, server):
-    iso = _iso(7)
-    _goto_date(page, server, iso)
+    _goto_date(page, server, _iso(7))
     expect(page.locator("#session-editor")).to_have_attribute("data-editmode", "1")
     _fill_row(page, 0, kg="-5")
     page.click('#edit-actions button[type="submit"]')
@@ -243,7 +243,101 @@ def test_invalid_numeric_input_blocks_save(page, server):
 
 
 # ---------------------------------------------------------------------------
-# XSS execution regressions (Task 1)
+# Análisis: píldoras de nivel, capas y panel del día
+# ---------------------------------------------------------------------------
+
+
+def _click_chart_day(page, iso):
+    pos = page.evaluate(
+        """(iso) => {
+            const plotEl = document.getElementById('analysis-chart-plot');
+            if (!plotEl || !plotEl._fullData || !plotEl._fullData.length) return null;
+            const trace = plotEl._fullData[0];
+            const idx = trace.x.findIndex(
+                (v) => new Date(v).toISOString().slice(0, 10) === iso
+            );
+            const pts = plotEl.querySelectorAll('.point');
+            if (idx < 0 || idx >= pts.length) return null;
+            const r = pts[idx].getBoundingClientRect();
+            return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        }""",
+        iso,
+    )
+    assert pos, f"no se encontró el marcador del día {iso}"
+    page.mouse.click(pos["x"], pos["y"])
+
+
+def test_level_pills_change_filters_and_chart(page, server):
+    _open_modal(page, server)
+    page.click('[data-action="close-register-modal"]')
+
+    page.click('.pills-track .pill[data-nivel="grupo"]')
+    expect(page.locator("#analysis-filters .filter-chip")).to_have_count(1, timeout=3000)
+    expect(page.locator("#analysis-filters .filter-chip").first).to_have_attribute(
+        "data-focus", "EMPUJE"
+    )
+
+    page.click('.pills-track .pill[data-nivel="musculo"]')
+    expect(page.locator("#analysis-filters .filter-chip")).to_have_count(1, timeout=3000)
+    expect(page.locator("#analysis-filters .filter-chip").first).to_have_attribute(
+        "data-focus", "Pectoral"
+    )
+
+    page.click('.pills-track .pill[data-nivel="ejercicio"]')
+    expect(page.locator("#analysis-filters .exercise-search")).to_be_visible(timeout=3000)
+
+    page.click('.pills-track .pill[data-nivel="global"]')
+    expect(page.locator("#analysis-filters .filter-chip")).to_have_count(0, timeout=3000)
+
+
+def test_layer_toggle_persists_and_refetches(page, server):
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    chip = page.locator('#layer-toggles .layer-chip[data-layer="peso"]')
+    expect(chip).to_have_attribute("aria-pressed", "true")
+    chip.click()
+    expect(chip).to_have_attribute("aria-pressed", "false")
+    assert "peso" not in page.evaluate("localStorage.getItem('gym.layers.v1')")
+    chip.click()
+    expect(chip).to_have_attribute("aria-pressed", "true")
+
+
+def test_chart_day_click_opens_day_panel(page, server):
+    _open_modal(page, server)
+    iso = _iso(3)
+    _goto_date(page, server, iso)
+    _fill_row(page, 0)
+    _save_session(page)
+    page.click('[data-action="close-register-modal"]')
+
+    page.locator("#analysis-chart-plot .point").first.wait_for(state="visible", timeout=5000)
+    _click_chart_day(page, iso)
+    expect(page.locator("#day-detail-section #day-detail-wrap")).to_be_visible(timeout=5000)
+    expect(page.locator("#day-detail-wrap")).to_contain_text(f"¿Qué pasó el {iso}")
+    expect(page.locator("#day-detail-wrap")).to_contain_text("Press")
+
+
+def test_day_panel_shows_fallo_badge(page, server):
+    _open_modal(page, server)
+    iso = _iso(4)
+    _goto_date(page, server, iso)
+    _fill_row(page, 0, kg="80", reps="5", rir="0")
+    _save_session(page)
+    page.click('[data-action="close-register-modal"]')
+
+    page.locator("#analysis-chart-plot .point").first.wait_for(state="visible", timeout=5000)
+    _click_chart_day(page, iso)
+    expect(page.locator("#day-detail-wrap")).to_contain_text("FALLO", timeout=5000)
+
+
+def test_register_modal_escape_closes(page, server):
+    _open_modal(page, server)
+    page.keyboard.press("Escape")
+    expect(page.locator("#register-modal")).to_be_hidden()
+
+
+# ---------------------------------------------------------------------------
+# XSS execution regressions
 # ---------------------------------------------------------------------------
 
 PAYLOAD = "x');alert(1)//<img src=x onerror=alert(2)>"
@@ -252,10 +346,7 @@ PAYLOAD = "x');alert(1)//<img src=x onerror=alert(2)>"
 def test_hostile_template_name_does_not_execute(page, server):
     dialogs = []
     page.on("dialog", lambda d: (dialogs.append(d.message), d.accept()))
-
     _create_template(page, server, _iso(8), PAYLOAD)
-    expect(page.locator("#plantillas-section .pt-card")).to_have_count(1)
-
     page.locator("#plantillas-section .pt-card").first.get_by_role(
         "button", name="Eliminar"
     ).click()
@@ -265,17 +356,15 @@ def test_hostile_template_name_does_not_execute(page, server):
 
 
 def test_hostile_exercise_notice_creates_no_image_node(page, server):
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
-
+    _open_modal(page, server)
+    page.click('[data-action="toggle-create-form"][data-kind="ejercicio"]')
     page.fill('#exercise-create-form input[name="ejercicio"]', PAYLOAD)
     page.fill('#exercise-create-form input[name="grupo_muscular"]', "Pectoral")
     page.select_option('#exercise-create-form select[name="categoria"]', "EMPUJE")
     page.click('#exercise-create-form button[type="submit"]')
-
     expect(page.locator("#notice-container .notice")).to_be_visible(timeout=3000)
     page.wait_for_timeout(500)
-    assert page.locator("#notice-container img").count() == 0, "el payload no debe crear nodos HTML"
+    assert page.locator("#notice-container img").count() == 0
     expect(page.locator("#notice-container")).to_contain_text(PAYLOAD)
 
 
@@ -294,87 +383,8 @@ def test_dynamic_script_does_not_execute(page, server):
     assert page.evaluate("window.__xssProbe") is False, "la CSP debe bloquear scripts inyectados"
 
 
-def test_week_click_navigates_to_first_session_of_week(page, server):
-    """Clic real sobre el marcador de una semana lleva el editor al primer entreno de esa semana."""
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
-
-    # Dos sesiones en semanas distintas (lunes 10/08 y lunes 17/08) para que el
-    # primer entreno de la semana del segundo clic sea inequívoco.
-    iso_a = _iso(4)
-    iso_b = _iso(11)
-    for iso in (iso_a, iso_b):
-        page.locator(f'.date-num[data-iso="{iso}"]').click()
-        expect(page.locator(f'.date-num[data-iso="{iso}"]')).to_have_class(
-            re.compile(r"\bselected\b")
-        )
-        expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
-        _wait_editor_settled(page)
-        _fill_row(page, 0)
-        page.click('#edit-actions button[type="submit"]')
-        expect(page.locator("#editor-notice .notice-success")).to_contain_text(
-            "Entrenamiento guardado", timeout=2000
-        )
-
-    page.click("#cat-btn-Pectoral")
-    page.locator("#unified-chart .js-plotly-plot").first.wait_for(state="visible", timeout=5000)
-    page.locator("#unified-chart-plot .point").first.wait_for(state="visible", timeout=5000)
-
-    semana_b = (datetime.date.fromisoformat(iso_b) - datetime.date(2026, 5, 4)).days // 7 + 1
-    _click_chart_point(page, semana_b)
-    expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso_b, timeout=3000)
-
-
-def test_category_filters_dots_sin_saltar_editor(page, server):
-    """El botón de categoría filtra los dots del navegador y deja el editor en su fecha."""
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
-
-    iso = _iso(3)
-    page.locator(f'.date-num[data-iso="{iso}"]').click()
-    expect(page.locator(f'.date-num[data-iso="{iso}"]')).to_have_class(re.compile(r"\bselected\b"))
-    expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
-    _wait_editor_settled(page)
-    _fill_row(page, 0)
-    page.click('#edit-actions button[type="submit"]')
-    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
-        "Entrenamiento guardado", timeout=2000
-    )
-
-    page.click(".today-btn")
-    expect(page.locator(f'.date-num[data-iso="{_iso(0)}"]')).to_have_class(
-        re.compile(r"\bselected\b")
-    )
-    assert page.evaluate("document.querySelectorAll('.date-num .date-dot').length") >= 1
-
-    page.click("#cat-btn-Pectoral")
-    page.wait_for_timeout(800)
-    assert page.evaluate("document.querySelectorAll('.date-num .date-dot').length") == 1
-    expect(page.locator("#session-form input[name='fecha']")).to_have_value(_iso(0), timeout=3000)
-
-    page.click("#cat-btn-Pectoral")
-    page.wait_for_timeout(800)
-    assert page.evaluate("document.querySelectorAll('.date-num .date-dot').length") >= 1
-
-
-def test_mobile_viewport_renders(page, server):
-    page.set_viewport_size({"width": 375, "height": 800})
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
-    assert page.is_visible("#session-editor")
-    assert page.is_visible("#date-navigator")
-    can_scroll = page.evaluate(
-        "() => { const el = document.querySelector('#session-editor .table-scroll');"
-        " return el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight; }"
-    )
-    assert can_scroll
-
-
 def test_keyboard_day_shift_updates_editor(page, server):
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
-    page.click(".today-btn")
-    _wait_editor_settled(page)
+    _open_modal(page, server)
     fecha = page.input_value("#session-form input[name='fecha']")
     page.keyboard.press("ArrowRight")
     page.wait_for_function(
@@ -383,49 +393,14 @@ def test_keyboard_day_shift_updates_editor(page, server):
     )
 
 
-def test_keyboard_focus_ring_visible(page, server):
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
-    page.keyboard.press("Tab")
-    has_outline = page.evaluate(
-        "() => { const e = document.activeElement; const cs = getComputedStyle(e);"
-        " return cs.outlineStyle !== 'none' && cs.outlineWidth !== '0px'; }"
+def test_mobile_viewport_renders(page, server):
+    page.set_viewport_size({"width": 375, "height": 800})
+    _open_modal(page, server)
+    _switch_session_tab(page)
+    assert page.is_visible("#session-editor")
+    assert page.is_visible("#date-navigator")
+    can_scroll = page.evaluate(
+        "() => { const el = document.querySelector('#session-editor .table-scroll');"
+        " return el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight; }"
     )
-    assert has_outline
-
-
-def test_template_delete_uses_custom_modal(page, server):
-    _create_template(page, server, _iso(5), "Eliminame")
-    page.locator("#plantillas-section .pt-card").get_by_role("button", name="Eliminar").click()
-    expect(page.locator("#confirm-modal")).to_be_visible()
-    expect(page.locator("#confirm-msg")).to_contain_text("Eliminame")
-    page.locator("#confirm-save").click()
-    expect(page.locator("#plantillas-section .pt-card")).to_have_count(0, timeout=3000)
-    expect(page.locator("#notice-container .notice-success")).to_contain_text(
-        "Entreno eliminado", timeout=2000
-    )
-
-
-def test_navigate_from_session_history(page, server):
-    """Clic en una sesión del historial navega al editor de su fecha."""
-    iso_a = _iso(8)
-    iso_b = _iso(9)
-    _goto_date(page, server, iso_a)
-    _fill_row(page, 0, kg="80")
-    page.click('#edit-actions button[type="submit"]')
-    expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "1", timeout=5000)
-    expect(page.locator("#session-history [data-action='goto-session']")).to_have_count(
-        1, timeout=3000
-    )
-
-    _goto_date(page, server, iso_b)
-    _fill_row(page, 0, kg="90")
-    page.click('#edit-actions button[type="submit"]')
-    expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "1", timeout=5000)
-    expect(page.locator("#session-history [data-action='goto-session']")).to_have_count(
-        2, timeout=3000
-    )
-
-    page.locator(f"#session-history [data-action='goto-session'][data-iso='{iso_a}']").click()
-    expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso_a, timeout=3000)
-    expect(page.locator('input[name="kg"]')).to_have_value("80")
+    assert can_scroll

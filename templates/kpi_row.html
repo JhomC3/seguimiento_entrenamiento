@@ -1,4 +1,4 @@
-<div id="kpi-row" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
     <div class="bg-neutral-900 border border-neutral-800 rounded-xl p-3 flex flex-col gap-1">
         <span class="text-[10px] font-bold tracking-widest text-neutral-500 uppercase">PFR actual</span>
         <span class="text-lg font-black text-white">{{ "%.1f"|format(kpis.pfr_actual) if kpis.pfr_actual is not none else "—" }}%</span>
