@@ -35,12 +35,17 @@ class SyncServiceTest {
         SyncService.progress.value = SyncStage.Idle
     }
 
-    private fun waitUntilDone(deadlineMs: Long = 8_000) {
+    private fun waitFor(deadlineMs: Long = 8_000, predicate: () -> Boolean) {
         val deadline = System.currentTimeMillis() + deadlineMs
-        while (SyncService.progress.value !is SyncStage.Done && System.currentTimeMillis() < deadline) {
+        while (!predicate() && System.currentTimeMillis() < deadline) {
             Thread.sleep(20)
         }
     }
+
+    private fun notificationShadow() = org.robolectric.Shadows.shadowOf(
+        ApplicationProvider.getApplicationContext<Context>()
+            .getSystemService(NotificationManager::class.java),
+    )
 
     @Test
     fun `service runs the sync publishes progress and completes`() {
@@ -51,16 +56,41 @@ class SyncServiceTest {
         val controller = Robolectric.buildService(SyncService::class.java).create()
         controller.startCommand(0, 0)
 
-        waitUntilDone()
+        // La notificación se publica DURANTE el sync (el finally la cancela al terminar).
+        waitFor { notificationShadow().getNotification(SyncService.NOTIFICATION_ID) != null }
+        assertTrue("debe publicar la notificación de progreso", notificationShadow().getNotification(SyncService.NOTIFICATION_ID) != null)
+
+        waitFor { SyncService.progress.value is SyncStage.Done }
         val stage = SyncService.progress.value
         assertTrue("debe terminar en Done, fue: $stage", stage is SyncStage.Done)
         assertEquals(10, (stage as SyncStage.Done).report.delivered)
         assertEquals(1, stage.report.typesSynced)
+    }
 
-        val nm = ApplicationProvider.getApplicationContext<Context>()
-            .getSystemService(NotificationManager::class.java)
-        val shadow = org.robolectric.Shadows.shadowOf(nm)
-        assertTrue("debe publicar notificaciones de progreso", shadow.size() > 0)
+    @Test
+    fun `notification opens the app on click and is removed when the service stops`() {
+        SyncService.runner = { _, onProgress ->
+            onProgress("STEPS: página 1")
+            SyncReport(typesSynced = 1, delivered = 1, failed = 0)
+        }
+        val controller = Robolectric.buildService(SyncService::class.java).create()
+        controller.startCommand(0, 0)
+
+        waitFor { notificationShadow().getNotification(SyncService.NOTIFICATION_ID) != null }
+        val notification = notificationShadow().getNotification(SyncService.NOTIFICATION_ID)
+        assertTrue("debe publicar la notificación de progreso", notification != null)
+        val pendingIntent = notification?.contentIntent
+        assertTrue("el clic debe abrir la app", pendingIntent != null)
+        val resolved = org.robolectric.Shadows.shadowOf(pendingIntent)?.savedIntent?.component?.className
+        assertTrue("debe apuntar a MainActivity, fue: $resolved", resolved?.endsWith("MainActivity") == true)
+
+        // El servicio se detiene solo → la notificación se elimina explícitamente.
+        waitFor { SyncService.progress.value is SyncStage.Done }
+        waitFor { notificationShadow().getNotification(SyncService.NOTIFICATION_ID) == null }
+        assertTrue(
+            "la notificación debe eliminarse al terminar el servicio",
+            notificationShadow().getNotification(SyncService.NOTIFICATION_ID) == null,
+        )
     }
 
     @Test

@@ -1,10 +1,23 @@
 import os
+from pathlib import Path
 
 DB_PATH: str = os.environ.get("GYM_DB_PATH", "data/gym.db")
 
 # Shared secret for POST /sync/health-connect (X-Sync-Token). If empty, the
 # endpoint answers 503 "not configured". See docs/architecture/health-sync-contract.md.
-HC_SYNC_TOKEN: str = os.environ.get("HC_SYNC_TOKEN", "")
+# El env gana; si no está, se lee del archivo persistente (data/hc_sync_token,
+# gitignored) para que un reinicio del servidor no pierda el token.
+SYNC_TOKEN_FILE: Path = Path("data/hc_sync_token")
+
+
+def _token_from_file() -> str:
+    try:
+        return SYNC_TOKEN_FILE.read_text(encoding="utf-8").strip()
+    except (OSError, ValueError):
+        return ""
+
+
+HC_SYNC_TOKEN: str = os.environ.get("HC_SYNC_TOKEN", "") or _token_from_file()
 
 CICLO_START: str = "04/05/2026"
 

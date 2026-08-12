@@ -1408,6 +1408,22 @@ def test_sync_endpoint_503_when_not_configured(tmp_path, monkeypatch):
     assert r.status_code == 503
 
 
+def test_sync_token_reads_from_persistent_file(tmp_path, monkeypatch):
+    import config as configmod
+
+    token_file = tmp_path / "hc_sync_token"
+    token_file.write_text("clave-persistente-123\n", encoding="utf-8")
+    monkeypatch.setattr(configmod, "SYNC_TOKEN_FILE", token_file)
+    assert configmod._token_from_file() == "clave-persistente-123"
+
+
+def test_sync_token_missing_file_returns_empty(tmp_path, monkeypatch):
+    import config as configmod
+
+    monkeypatch.setattr(configmod, "SYNC_TOKEN_FILE", tmp_path / "no-existe")
+    assert configmod._token_from_file() == ""
+
+
 def test_sync_endpoint_401_with_wrong_token(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)

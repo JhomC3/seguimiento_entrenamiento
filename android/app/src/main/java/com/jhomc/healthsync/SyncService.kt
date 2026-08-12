@@ -79,10 +79,15 @@ class SyncService : Service() {
                 notify("Error: ${e.message ?: e.javaClass.simpleName}")
             } finally {
                 watchdog?.cancel()
+                getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
                 stopSelf()
             }
         }
-        return START_STICKY
+        // START_NOT_STICKY: si el sistema mata el servicio, NO se relanza solo
+        // (un relanzamiento automático volvía a mostrar la notificación zombi).
+        // La reanudación la hace el usuario con el botón; el checkpoint en
+        // Room conserva el progreso.
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
@@ -139,14 +144,23 @@ class SyncService : Service() {
             )
         }
 
-        fun buildNotification(context: Context, text: String): Notification =
-            NotificationCompat.Builder(context, CHANNEL_ID)
+        fun buildNotification(context: Context, text: String): Notification {
+            val intent = Intent(context, MainActivity::class.java)
+            val pending = android.app.PendingIntent.getActivity(
+                context,
+                0,
+                intent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+            )
+            return NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_notify_sync)
                 .setContentTitle("HealthSync")
                 .setContentText(text)
+                .setContentIntent(pending)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .build()
+        }
 
         fun summaryOf(report: SyncReport): String = buildString {
             append("Tipos leídos: ${report.typesSynced} | Entregados: ${report.delivered}")

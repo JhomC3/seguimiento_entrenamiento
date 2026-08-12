@@ -23,6 +23,9 @@ data/*.db
 # Backups locales de la DB
 data/backups/
 
+# Token secreto de HealthSync (generado por scripts/start_server.sh)
+data/hc_sync_token
+
 # Proyecto Android (HealthSync)
 android/.gradle/
 android/app/build/

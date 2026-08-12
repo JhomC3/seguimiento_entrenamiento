@@ -39,9 +39,10 @@ class MainActivity : ComponentActivity() {
             showPrivacyPolicy()
             return
         }
-        // Mientras dure la investigación de la cuota: los workers cancelados
-        // al arrancar evitan reintentos de fondo que mantienen el rate limit.
-        SyncScheduler.cancelAll(this)
+        // Worker periódico: 1 h, sincroniza solo tipos vencidos (la agenda por
+        // ventanas hace que la mayoría de horas no haya llamadas). El botón
+        // directo sigue siendo el camino garantizado en MIUI.
+        SyncScheduler.schedulePeriodic(this)
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             setContentView(
                 TextView(this).apply {
