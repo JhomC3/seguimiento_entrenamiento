@@ -268,6 +268,12 @@ class MainActivity : ComponentActivity() {
                 client.validateTargetUrl(url, allowHttp = BuildConfig.DEBUG).isFailure ->
                     showMessage("URL inválida: usa https:// (HTTP solo en versiones de prueba).")
                 token.isEmpty() -> showMessage("Token requerido.")
+                !com.jhomc.healthsync.data.SecureTargetStore.isValidSyncToken(token) ->
+                    showMessage(
+                        "Token inválido: se detectaron caracteres no ASCII " +
+                            "(suele ser un guion largo — colado al copiar/pegar). " +
+                            "Vuelve a pegar el token sin modificarlo.",
+                    )
                 else -> {
                     withContext(Dispatchers.IO) {
                         targetStore.saveTarget(url, "default")

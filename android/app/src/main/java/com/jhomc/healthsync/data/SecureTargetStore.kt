@@ -45,6 +45,10 @@ class SecureTargetStore(private val context: Context) {
     }
 
     suspend fun saveToken(token: String) {
+        require(isValidSyncToken(token)) {
+            "Token inválido: solo ASCII imprimible (sin espacios ni caracteres raros). " +
+                "Se detectó un carácter no ASCII — suele ser un guion largo (—) colado en el copiado/pegado."
+        }
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, keystoreKey())
         val iv = cipher.iv
@@ -106,6 +110,13 @@ class SecureTargetStore(private val context: Context) {
 
     companion object {
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
+
+        /**
+         * X-Sync-Token travels in an HTTP header: only printable ASCII is
+         * allowed (no spaces, no Unicode dashes from copy/paste).
+         */
+        fun isValidSyncToken(token: String): Boolean =
+            token.isNotEmpty() && token.all { it.code in 0x21..0x7E }
     }
 }
 
