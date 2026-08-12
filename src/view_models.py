@@ -73,3 +73,28 @@ class NutritionEditorViewModel:
     parametros: dict[str, float] = field(default_factory=dict)
     prefilled: bool = False
     prefill_source: str | None = None
+
+
+@dataclass(frozen=True)
+class AnalysisKpis:
+    """KPIs compactos de la cabecera de análisis."""
+
+    pfr_actual: float | None = None
+    pfr_variacion: float | None = None  # % vs baseline (100)
+    volumen_semana: float | None = None
+    sets_fallo_semana: int = 0
+    peso_actual: float | None = None
+    sueno_anoche: float | None = None
+
+
+@dataclass(frozen=True)
+class AnalysisViewModel:
+    """Estado completo de la vista de análisis: KPIs + figura serializada."""
+
+    kpis: AnalysisKpis
+    chart_json: str
+    nivel: str
+    focus: str | None
+    active_layers: tuple[str, ...]
+    rango: int | None
+    has_data: bool

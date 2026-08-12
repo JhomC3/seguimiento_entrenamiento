@@ -9,7 +9,8 @@ import sqlite3
 from datetime import date, timedelta
 
 from config import CICLO_NUMERO
-from src.charts import chart_pfr_timeline
+from src.analysis_data import daily_sleep_hours, daily_volume, daily_weight
+from src.charts import build_analysis_chart, chart_pfr_timeline
 from src.database import (
     get_alimentos_catalog,
     get_diario_by_fecha,
@@ -19,7 +20,7 @@ from src.database import (
     get_sets_by_fecha,
 )
 from src.db_connection import read_connection
-from src.metrics_engine import rm_ajustado
+from src.metrics_engine import calculate_pfr_timeline, rm_ajustado
 from src.models import ConflictError, NotFoundError, ValidationError
 from src.nutrition_service import diary_totals, objetivos_diarios
 from src.training_service import (
@@ -30,6 +31,8 @@ from src.training_service import (
     parse_form_date,
 )
 from src.view_models import (
+    AnalysisKpis,
+    AnalysisViewModel,
     DateDay,
     DateNavigatorViewModel,
     EditorRow,
@@ -392,4 +395,111 @@ def build_nutrition_editor(
         parametros=parametros,
         prefilled=prefill_source is not None,
         prefill_source=prefill_source,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Vista de análisis: KPIs + figura de paneles apilados
+# ---------------------------------------------------------------------------
+
+DEFAULT_LAYERS = ("pfr", "volumen", "peso")
+
+
+def _kpi_pfr(db_path: str, nivel: str, focus: str | None) -> tuple[float | None, float | None]:
+    """(PFR actual, variación % vs baseline) con la última fecha del timeline."""
+    timeline = calculate_pfr_timeline(db_path, _filter_type(nivel), focus)
+    if timeline.empty:
+        return None, None
+    last = timeline["rendimiento"].dropna()
+    if last.empty:
+        return None, None
+    actual = float(last.iloc[-1])
+    return actual, round(actual - 100.0, 1)
+
+
+def _filter_type(nivel: str) -> str:
+    from src.charts import NIVEL_FILTER_TYPE
+
+    return NIVEL_FILTER_TYPE.get(nivel, "systemic")
+
+
+def _kpi_volumen_semana(db_path: str) -> float | None:
+    df = daily_volume(db_path)
+    if df.empty:
+        return None
+    cutoff = df["fecha_dt"].max() - timedelta(days=6)
+    week = df[df["fecha_dt"] >= cutoff]
+    return round(float(week["valor"].sum()), 1) if not week.empty else None
+
+
+def _kpi_peso_actual(db_path: str) -> float | None:
+    df = daily_weight(db_path)
+    if df.empty:
+        return None
+    return round(float(df["valor"].iloc[-1]), 1)
+
+
+def _kpi_sueno_anoche(db_path: str) -> float | None:
+    df = daily_sleep_hours(db_path)
+    if df.empty:
+        return None
+    return round(float(df["valor"].iloc[-1]), 1)
+
+
+def _kpi_fallos_semana(db_path: str, nivel: str, focus: str | None) -> int:
+    timeline = calculate_pfr_timeline(db_path, _filter_type(nivel), focus)
+    if timeline.empty or "sets_fallo" not in timeline.columns:
+        return 0
+    cutoff = timeline["fecha_dt"].max() - timedelta(days=6)
+    week = timeline[timeline["fecha_dt"] >= cutoff]
+    return int(week["sets_fallo"].sum()) if not week.empty else 0
+
+
+def build_analysis_kpis(
+    db_path: str, nivel: str, focus: str | None
+) -> AnalysisKpis:
+    pfr_actual, pfr_variacion = _kpi_pfr(db_path, nivel, focus)
+    return AnalysisKpis(
+        pfr_actual=pfr_actual,
+        pfr_variacion=pfr_variacion,
+        volumen_semana=_kpi_volumen_semana(db_path),
+        sets_fallo_semana=_kpi_fallos_semana(db_path, nivel, focus),
+        peso_actual=_kpi_peso_actual(db_path),
+        sueno_anoche=_kpi_sueno_anoche(db_path),
+    )
+
+
+def build_analysis_viewmodel(
+    db_path: str,
+    nivel: str,
+    focus: str | None,
+    layers: list[str] | None = None,
+    rango: int | None = 8,
+) -> AnalysisViewModel:
+    """View model completo: KPIs + figura serializada para el cliente."""
+    active = tuple(layers or DEFAULT_LAYERS)
+    fig = build_analysis_chart(db_path, nivel, focus, list(active), rango)
+    has_data = bool(fig.data)
+    chart_json = _json_for_inline(fig.to_json()) if has_data else ""
+    return AnalysisViewModel(
+        kpis=build_analysis_kpis(db_path, nivel, focus),
+        chart_json=chart_json,
+        nivel=nivel,
+        focus=focus,
+        active_layers=active,
+        rango=rango,
+        has_data=has_data,
+    )
+
+
+def analysis_chart_html(vm: AnalysisViewModel) -> str:
+    """Fragmento de la gráfica de análisis: JSON inerte + div de render."""
+    if not vm.has_data:
+        return (
+            "<div class='flex items-center justify-center h-[300px] text-neutral-500 text-xs'>"
+            "Sin datos para esta selección</div>"
+        )
+    return (
+        f'<script id="analysis-chart-data" type="application/json">{vm.chart_json}</script>'
+        '<div id="analysis-chart-plot" class="plotly-graph-div"></div>'
     )
