@@ -223,18 +223,33 @@ class HealthRepository(
     ): UploadResult {
         var delivered = 0
         var failed = 0
+        var batchOps = MAX_BATCH_OPERATIONS
         while (true) {
-            val batch = dao.pendingOps(target.targetId, MAX_BATCH_OPERATIONS)
+            val batch = dao.pendingOps(target.targetId, batchOps)
             if (batch.isEmpty()) break
             val records = batch.associate { it.hcId to dao.getRecord(it.hcId) }
             val payload = client.buildBatchPayload(deviceId, batch, records)
+            if (payload.toString().length > MAX_BATCH_BYTES && batch.size > 1) {
+                // Lote sobredimensionado (tipos con series grandes, p. ej.
+                // HEART_RATE): partir a la mitad; las ops siguen en el outbox.
+                batchOps = (batch.size / 2).coerceAtLeast(1)
+                continue
+            }
             when (val outcome = client.postBatch(target.url, token, payload)) {
                 is UploadOutcome.Accepted -> db.withTransaction {
                     outcome.acked.forEach { dao.ackOp(target.targetId, it.hcId, it.revision) }
                     outcome.rejected.forEach { dao.dropOp(target.targetId, it.hcId) }
+                    batchOps = MAX_BATCH_OPERATIONS
                 }
-                is UploadOutcome.PermanentError ->
+                is UploadOutcome.PermanentError -> {
+                    if (outcome.detail == "HTTP 413" && batchOps > 1) {
+                        // El servidor rechaza por tamaño (estima más conservador):
+                        // partir a la mitad y reintentar en vez de rendirse.
+                        batchOps = (batch.size / 2).coerceAtLeast(1)
+                        continue
+                    }
                     return UploadResult(target.targetId, delivered, failed + batch.size, outcome.detail)
+                }
                 is UploadOutcome.TransientError -> {
                     db.withTransaction { batch.forEach { dao.bumpAttempt(target.targetId, it.hcId) } }
                     failed += batch.size

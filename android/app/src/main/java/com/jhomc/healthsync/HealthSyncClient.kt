@@ -14,6 +14,13 @@ import java.util.concurrent.TimeUnit
 const val SYNC_SCHEMA_VERSION = 1
 const val MAX_BATCH_OPERATIONS = 500
 
+/**
+ * Client-side payload budget: the server rejects bodies over 1 MiB with 413
+ * (health_sync_service.MAX_BODY_BYTES). 700 KiB leaves margin for JSON
+ * escaping and non-ASCII bytes. Oversized batches are split before sending.
+ */
+const val MAX_BATCH_BYTES = 700 * 1024
+
 data class ServerAck(val hcId: String, val revision: Long)
 data class ServerRejection(val hcId: String, val revision: Long, val reason: String)
 
