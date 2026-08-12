@@ -156,7 +156,7 @@ class HealthRepositorySchedulingTest {
     }
 
     @Test
-    fun `a hanging readRecords aborts the run with a clear exception`() = runBlocking {
+    fun `a hanging readRecords aborts with a clear exception and cools down the type`() = runBlocking {
         gateway.granted = setOf(RecordTypes.byTypeName("SLEEP_SESSION")!!.permission)
         gateway.pageStore[null] = listOf(Fixtures.sleepSession("hc-1", t, t.plusSeconds(3600)))
         gateway.readRecordsHangs = true
@@ -172,6 +172,12 @@ class HealthRepositorySchedulingTest {
         assertTrue(
             "debe abortar con HcReadTimeoutException, fue: ${thrown?.javaClass?.simpleName}",
             thrown is HcReadTimeoutException,
+        )
+        // Cooldown: la siguiente ejecución NO vuelve a tocar el tipo colgado.
+        val state = db.healthDao().getState("SLEEP_SESSION")
+        assertTrue(
+            "el tipo debe quedar en cooldown para romper el bucle de misma página",
+            state?.cooldownUntilEpochMs != null,
         )
     }
 

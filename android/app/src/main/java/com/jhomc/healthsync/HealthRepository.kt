@@ -134,6 +134,28 @@ class HealthRepository(
     /** Slows the page loop so bursts never blow the provider's per-window quota. */
     private suspend fun pace() = pacer()
 
+    /**
+     * Una llamada de lectura con reintento inmediato: el binder de algunos
+     * proveedores cuelga de forma intermitente; si ambos intentos fallan, se
+     * lanza [HcReadTimeoutException] y el tipo entra en cooldown (el bucle de
+     * "misma página" se rompe: la siguiente ejecución sincroniza OTROS tipos).
+     */
+    private suspend fun readPage(
+        entry: RecordTypeEntry,
+        start: Instant,
+        end: Instant,
+        pageToken: String?,
+    ): ReadRecordsResponse<Record> {
+        repeat(2) { attempt ->
+            try {
+                return withTimeout(readTimeoutMs) { gateway.readRecords(entry.recordClass, start, end, pageToken) }
+            } catch (e: TimeoutCancellationException) {
+                if (attempt == 0) pace()
+            }
+        }
+        throw HcReadTimeoutException("readRecords(${entry.typeName}) sin respuesta (2 intentos)")
+    }
+
     private val dao: HealthDao = db.healthDao()
 
     /** Backfill window used for first sync and token-expiry recovery. */
@@ -212,6 +234,12 @@ class HealthRepository(
                 }
                 results += result
             } catch (e: RateLimitedException) {
+                tokenStore.markCooldown(entry.typeName, now().toEpochMilli())
+                throw e
+            } catch (e: HcReadTimeoutException) {
+                // Página que el proveedor no responde: cooldown del tipo para
+                // que la próxima ejecución sincronice OTROS tipos (el bucle de
+                // "misma página" se rompe); dentro de 1 h se reintenta.
                 tokenStore.markCooldown(entry.typeName, now().toEpochMilli())
                 throw e
             } catch (e: SecurityException) {
@@ -401,9 +429,7 @@ class HealthRepository(
                 return BackfillOutcome(total, budgetHit = true)
             }
             val page: ReadRecordsResponse<Record> = try {
-                withTimeout(readTimeoutMs) { gateway.readRecords(entry.recordClass, start, end, pageToken) }
-            } catch (e: TimeoutCancellationException) {
-                throw HcReadTimeoutException("readRecords(${entry.typeName}) sin respuesta")
+                readPage(entry, start, end, pageToken)
             } catch (e: RemoteException) {
                 throw e.asSyncExceptionOrSelf()
             }
@@ -451,9 +477,7 @@ class HealthRepository(
         var lastToken: String? = null
         do {
             val page: ReadRecordsResponse<Record> = try {
-                withTimeout(readTimeoutMs) { gateway.readRecords(entry.recordClass, start, end, pageToken) }
-            } catch (e: TimeoutCancellationException) {
-                throw HcReadTimeoutException("readRecords(${entry.typeName}) sin respuesta")
+                readPage(entry, start, end, pageToken)
             } catch (e: RemoteException) {
                 throw e.asSyncExceptionOrSelf()
             }
