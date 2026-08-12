@@ -10,6 +10,11 @@ def rm_ajustado(kg: float, reps: float, rir: float = 0.0) -> float:
     return kg * (1 + RM_FACTOR * (reps + 1 + rir))
 
 
+def is_failure_set(reps: float, rir: float | None) -> bool:
+    """True si la serie llegó al fallo (RIR <= 0) o tuvo rep parcial (reps decimal)."""
+    return (rir is not None and rir <= 0) or (reps % 1 != 0)
+
+
 # Palabras clave para identificar ejercicios compuestos (multiarticulares)
 COMPOUND_KEYWORDS = {
     "hack",
@@ -106,6 +111,9 @@ def calculate_pfr_timeline(
         ),
         axis=1,
     )
+    df["es_fallo"] = df.apply(
+        lambda r: int(is_failure_set(float(r["reps"]), r["rir"])), axis=1
+    )
 
     # --- FILTRADO DE DATOS SEGÚN NIVEL ---
     if filter_type == "muscle_group" and filter_value:
@@ -127,6 +135,7 @@ def calculate_pfr_timeline(
             dia=("dia", "first"),
             sets_totales=("set_orden", "count"),
             avg_rir=("rir", "mean"),
+            sets_fallo=("es_fallo", "sum"),
             # Rendimiento promedio del día (fuerza relativa en %)
             rendimiento=("perf_rel", "mean"),
         )
@@ -143,6 +152,7 @@ def calculate_pfr_timeline(
 
     # Completar días de descanso (donde no se entrenó)
     timeline["sets_totales"] = timeline["sets_totales"].fillna(0)
+    timeline["sets_fallo"] = timeline["sets_fallo"].fillna(0)
     timeline["dia"] = timeline["fecha_dt"].dt.strftime("%A")
 
     # Traducir días de la semana a español
