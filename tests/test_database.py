@@ -220,9 +220,9 @@ def test_backup_prune_mantiene_ultimos_30(tmp_path):
     init_db(db)
     (tmp_path / "backups").mkdir(exist_ok=True)
     for i in range(35):
-        (tmp_path / "backups" / f"gym-20260804-{100000 + i:06d}.db").touch()
+        (tmp_path / "backups" / f"lifestyle-20260804-{100000 + i:06d}.db").touch()
     backup_db(db)
-    backups = sorted(p.name for p in (tmp_path / "backups").glob("gym-*.db"))
+    backups = sorted(p.name for p in (tmp_path / "backups").glob("lifestyle-*.db"))
     assert len(backups) == 30
 
 

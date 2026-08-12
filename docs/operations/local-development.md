@@ -33,7 +33,7 @@ uv run uvicorn app:app --host 127.0.0.1 --port 8000
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `GYM_DB_PATH` | SQLite database path | `data/gym.db` |
+| `LIFESTYLE_DB_PATH` | SQLite database path | `data/lifestyle.db` (`GYM_DB_PATH` es alias) |
 | `GYM_CSRF_SECRET` | HMAC secret for CSRF tokens. **Must be set outside localhost.** | dev-only fallback |
 | `SHEET_ID` / `GIDS` | Google Sheets source (config.py) | project defaults |
 
@@ -44,7 +44,7 @@ uv run uvicorn app:app --host 127.0.0.1 --port 8000
   migrations on an existing DB.
 - Restore:
   ```bash
-  cp data/backups/gym-YYYYMMDD-HHMMSS.db data/gym.db
+  cp data/backups/lifestyle-YYYYMMDD-HHMMSS.db data/lifestyle.db
   uv run uvicorn app:app --host 127.0.0.1 --port 8000
   ```
 - Schema is versioned in `schema_migrations`; never hand-edit tables.
@@ -84,7 +84,7 @@ sheets) with an idempotent script that backs up first and only replaces rows wit
 uv run python scripts/import_nutrition.py
 ```
 
-Both scripts honor `GYM_DB_PATH` and abort without touching the DB on fetch/parse
+Both scripts honor `LIFESTYLE_DB_PATH` (o el alias `GYM_DB_PATH`) and abort without touching the DB on fetch/parse
 errors.
 
 ## Verifying the editor UI contract

@@ -1,7 +1,11 @@
 import os
 from pathlib import Path
 
-DB_PATH: str = os.environ.get("GYM_DB_PATH", "data/gym.db")
+# LIFESTYLE_DB_PATH gana; GYM_DB_PATH se mantiene como alias de compatibilidad.
+DB_PATH: str = os.environ.get(
+    "LIFESTYLE_DB_PATH",
+    os.environ.get("GYM_DB_PATH", "data/lifestyle.db"),
+)
 
 # Shared secret for POST /sync/health-connect (X-Sync-Token). If empty, the
 # endpoint answers 503 "not configured". See docs/architecture/health-sync-contract.md.

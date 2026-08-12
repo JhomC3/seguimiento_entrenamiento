@@ -20,20 +20,20 @@
 
 1. **Backup consistente de SQLite (Mac)**
    ```bash
-   GYM_DB_PATH=data/gym.db uv run python - <<'PY'
+   LIFESTYLE_DB_PATH=data/lifestyle.db uv run python - <<'PY'
    import sqlite3
-   conn = sqlite3.connect("data/gym.db")
+   conn = sqlite3.connect("data/lifestyle.db")
    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
    conn.close()
    PY
-   cp data/gym.db data/gym.db.before-host-migration
+   cp data/lifestyle.db data/lifestyle.db.before-host-migration
    ```
 2. **Despliegue del backend en el host**: FastAPI + `uv` (mismo repo), SQLite en
    volumen persistente, `HC_SYNC_TOKEN` nuevo generado con
    `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
 3. **TLS**: certificado confiable (Let's Encrypt o CA privada instalada en el
    teléfono). La app debug acepta HTTP (solo en dev); release rechaza HTTP.
-4. **Restaurar histórico** (opcional pero recomendado): copiar la `gym.db`
+4. **Restaurar histórico** (opcional pero recomendado): copiar la `lifestyle.db`
    migrada al host **antes** de la primera conexión del teléfono.
 5. **Cambiar el destino en la app** (sin formulario, desde 2026-08-12):
    ```bash

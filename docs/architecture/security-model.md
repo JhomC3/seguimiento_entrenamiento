@@ -13,7 +13,7 @@
 | Browser clients | Same-origin htmx; CDN resources loaded with pinned versions |
 | `GET` routes | Read-only data + charts |
 | `POST` mutating routes | Session save/delete, template CRUD/reorder, undo, exercise create |
-| SQLite DB (`data/gym.db`) | Local file; backups in `data/backups/` before pending migrations and mutations |
+| SQLite DB (`data/lifestyle.db`) | Local file; backups in `data/backups/` before pending migrations and mutations |
 | Google Sheets import | `/sync`-style import path is separate (`src/fetcher.py`, `src/parser.py`); not part of the HTTP surface |
 
 All data originates from the owner's own training log; the primary threats are

@@ -60,7 +60,7 @@ def _backup_before_upgrade(db_path: str, conn) -> None:
         return
     backups_dir = os.path.join(os.path.dirname(db_path) or ".", "backups")
     os.makedirs(backups_dir, exist_ok=True)
-    dest = os.path.join(backups_dir, f"gym-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db")
+    dest = os.path.join(backups_dir, f"lifestyle-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db")
     shutil.copy2(db_path, dest)
     prune_backups(backups_dir, 30)
 

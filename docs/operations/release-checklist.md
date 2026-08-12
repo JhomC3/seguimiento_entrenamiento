@@ -52,7 +52,7 @@ export GRADLE_USER_HOME=$PWD/.gradle ANDROID_HOME=$PWD/android/sdk
 - [ ] El APK debug embebe URL/token actuales de `data/hc_sync_token` (recompilar
       si el token del servidor cambió; el release NO lleva secreto).
 - [ ] Smoke en dispositivo: "Permisos esenciales" → "Sincronizar AHORA" →
-      `sqlite3 data/gym.db "SELECT record_type, COUNT(*) FROM health_records WHERE deleted_at IS NULL GROUP BY record_type;"`.
+      `sqlite3 data/lifestyle.db "SELECT record_type, COUNT(*) FROM health_records WHERE deleted_at IS NULL GROUP BY record_type;"`.
 
 ## 5. Manual smoke test
 

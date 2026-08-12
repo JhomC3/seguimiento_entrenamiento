@@ -33,8 +33,8 @@ def main() -> None:
     from playwright.sync_api import sync_playwright
 
     tmpdir = tempfile.mkdtemp()
-    db = os.path.join(tmpdir, "gym.db")
-    shutil.copy(os.path.join(ROOT, "data", "gym.db"), db)
+    db = os.path.join(tmpdir, "lifestyle.db")
+    shutil.copy(os.path.join(ROOT, "data", "lifestyle.db"), db)
 
     today = datetime.date.today()
     iso_today = today.strftime("%Y-%m-%d")

@@ -4,7 +4,12 @@ from pathlib import Path
 
 
 def prune_backups(backups_dir: str, keep: int) -> None:
-    files = sorted(Path(backups_dir).glob("gym-*.db"))
+    # lifestyle-*.db (nuevos) + gym-*.db (legado pre-renombrado, se limpia solo).
+    files = sorted(
+        p
+        for p in Path(backups_dir).iterdir()
+        if p.name.startswith(("lifestyle-", "gym-")) and p.name.endswith(".db")
+    )
     if len(files) <= keep:
         return
     for stale in files[:-keep]:

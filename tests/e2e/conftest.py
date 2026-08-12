@@ -38,13 +38,13 @@ def _wait_for_server(url: str, timeout: float = 15.0) -> None:
 
 @pytest.fixture()
 def server(tmp_path):
-    db_path = tmp_path / "gym.db"
+    db_path = tmp_path / "lifestyle.db"
     init_db(str(db_path))
     insert_exercise(str(db_path), "Press", "Pectoral", "EMPUJE")
 
     port = _free_port()
     env = dict(os.environ)
-    env["GYM_DB_PATH"] = str(db_path)
+    env["LIFESTYLE_DB_PATH"] = str(db_path)
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", APP_MODULE, "--host", "127.0.0.1", "--port", str(port)],
         cwd=str(REPO_ROOT),

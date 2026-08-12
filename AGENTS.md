@@ -32,7 +32,7 @@ Eres un ingeniero de software senior experto en Python, especializado en anális
 ## 3. Estructura de Directorios Clave
 
 - `app.py`: Entrada de la aplicación FastAPI — handlers delgados (parseo de request, servicios, selección de respuesta). Sin SQL ni lógica de dominio multi-paso.
-- `config.py`: Constantes globales, URLs de descarga y `DB_PATH` (configurable vía `GYM_DB_PATH`).
+- `config.py`: Constantes globales, URLs de descarga y `DB_PATH` (configurable vía `LIFESTYLE_DB_PATH`; `GYM_DB_PATH` queda como alias de compatibilidad).
 - `src/`: Lógica central del sistema.
   - `db_connection.py`: Fábrica `connect_db` (foreign_keys ON, row_factory, busy_timeout) + context managers `read_connection` / `transaction`.
   - `migrations/`: Migraciones versionadas (`v001`..`v003`) y `runner.py` (transaccionales, con backup automático antes de aplicar migraciones pendientes).
@@ -56,7 +56,7 @@ Eres un ingeniero de software senior experto en Python, especializado en anális
   - `partials/`: `notices.html`, `confirm_modal.html`, `app_config.html`.
   - `index.html`: Pantalla principal con categorías musculares y gráfica unificada.
   - Fragmentos por feature: `session_editor.html`, `date_navigator.html`, `plantillas_list.html`, `exercise_list.html`, `exercise_detail.html`, `exercise_create_form.html`.
-- `data/`: Contiene la base de datos local SQLite `gym.db` (regenerable) y `backups/`.
+- `data/`: Contiene la base de datos local SQLite `lifestyle.db` (regenerable) y `backups/`.
 - `tests/`: Pruebas unitarias, integración y `e2e/` (Playwright, servidor aislado + DB temporal).
 - `docs/`: Arquitectura (`current-ui-contract.md`, `security-model.md`, `health-sync-contract.md`), operaciones (`local-development.md`, `release-checklist.md`, `health-sync-migration.md`), planes.
 - `scripts/`: `import_google_sheets.py` (carga del CSV), `verify_editor.py` (chequeo del editor).
@@ -65,7 +65,7 @@ Eres un ingeniero de software senior experto en Python, especializado en anális
 
 ## 4. Modelo de Datos (SQLite)
 
-La base `data/gym.db` tiene las tablas `ejercicios`, `training_sets`, `plantillas`,
+La base `data/lifestyle.db` tiene las tablas `ejercicios`, `training_sets`, `plantillas`,
 `plantilla_sets` y `schema_migrations` (versiones aplicadas). El esquema se gestiona
 exclusivamente con las migraciones versionadas en `src/migrations/`; no se hacen
 `ALTER TABLE` a mano.
