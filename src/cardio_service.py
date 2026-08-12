@@ -34,11 +34,7 @@ def upsert_cardio_annotation(db_path: str, data: CardioAnnotationInput) -> None:
             raise ValidationError("Sesión de cardio no encontrada.")
         if row[0] != "EXERCISE_SESSION":
             raise ValidationError("La anotación solo aplica a sesiones de ejercicio.")
-        if (
-            data.velocidad_kmh is None
-            and data.inclinacion_pct is None
-            and not data.notas.strip()
-        ):
+        if data.velocidad_kmh is None and data.inclinacion_pct is None and not data.notas.strip():
             conn.execute("DELETE FROM cardio_annotations WHERE hc_id = ?", (data.hc_id,))
             return
         now = _now()

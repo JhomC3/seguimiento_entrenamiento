@@ -73,14 +73,17 @@ def test_vacio_elimina_anotacion(db):
     upsert_cardio_annotation(
         db, CardioAnnotationInput(hc_id="c1", velocidad_kmh=5.5, inclinacion_pct=2.0, notas="x")
     )
-    upsert_cardio_annotation(db, CardioAnnotationInput(hc_id="c1", velocidad_kmh=None, inclinacion_pct=None, notas=""))
+    upsert_cardio_annotation(
+        db, CardioAnnotationInput(hc_id="c1", velocidad_kmh=None, inclinacion_pct=None, notas="")
+    )
     assert _fetch(db, "c1") is None
 
 
 def test_rechaza_hc_inexistente(db):
     with pytest.raises(ValidationError):
         upsert_cardio_annotation(
-            db, CardioAnnotationInput(hc_id="nope", velocidad_kmh=5.0, inclinacion_pct=None, notas="")
+            db,
+            CardioAnnotationInput(hc_id="nope", velocidad_kmh=5.0, inclinacion_pct=None, notas=""),
         )
 
 

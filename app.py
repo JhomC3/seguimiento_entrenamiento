@@ -13,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 
 from config import CICLO_START, DB_PATH, HC_SYNC_TOKEN, MUSCLE_CATEGORIES
 from src.cardio_service import CardioAnnotationInput, upsert_cardio_annotation
-from src.charts import LAYER_TITLES, get_exercise_raw_data, get_exercise_session_summary
+from src.charts import LAYER_TITLES
 from src.dashboard_service import (
     DEFAULT_LAYERS,
     analysis_chart_html,
@@ -22,11 +22,7 @@ from src.dashboard_service import (
     build_day_detail,
     build_nutrition_editor,
     build_session_editor,
-    chart_html,
-    get_ejercicios_por_grupo,
     get_filters,
-    get_first_session_date,
-    get_recent_sessions,
     translate_error,
 )
 from src.database import (
@@ -127,11 +123,6 @@ def _muscle_names() -> list[str]:
     return sorted({m for c in MUSCLE_CATEGORIES for m in c["muscles"]})
 
 
-def _chart_title(filtro: str | None = None) -> str:
-    base = "Rendimiento"
-    return f"{base} – {filtro}" if filtro else base
-
-
 def _render_body(response) -> str:
     return bytes(response.body).decode()
 
@@ -228,16 +219,6 @@ def _plantillas_list_html(
                 "editing_id": editing_id,
                 "error": error,
             },
-        )
-    )
-
-
-def _sesiones_list_html(request: Request) -> str:
-    return _render_body(
-        templates.TemplateResponse(
-            request=request,
-            name="session_history.html",
-            context={"sessions": get_recent_sessions(DB_PATH)},
         )
     )
 
@@ -580,17 +561,11 @@ def entrenamiento_session_save(
         saved_rows = get_sets_by_fecha(DB_PATH, fecha_to_db(parse_form_date(fecha)))
         if saved_rows:
             return HTMLResponse(
-                content=notice_success
-                + outcome_ok
-                + editor_state_oob(templates, request)
-                + fragment_oob(templates, request, "session-history", _sesiones_list_html(request))
+                content=notice_success + outcome_ok + editor_state_oob(templates, request)
             )
         editor = _editor_html(request, fecha)
         return HTMLResponse(
-            content=notice_success
-            + outcome_ok
-            + editor_wrap_oob(templates, request, editor)
-            + fragment_oob(templates, request, "session-history", _sesiones_list_html(request))
+            content=notice_success + outcome_ok + editor_wrap_oob(templates, request, editor)
         )
     except Exception as e:
         return _domain_error_response(request, e, "editor-notice", extra=outcome_fail)
@@ -606,12 +581,7 @@ def entrenamiento_session_eliminar(request: Request, fecha: str = Form(...)):
     except Exception as e:
         return _domain_error_response(request, e, "editor-notice", extra=outcome_fail)
     editor = _editor_html(request, fecha)
-    return HTMLResponse(
-        content=notice
-        + outcome_ok
-        + editor_wrap_oob(templates, request, editor)
-        + fragment_oob(templates, request, "session-history", _sesiones_list_html(request))
-    )
+    return HTMLResponse(content=notice + outcome_ok + editor_wrap_oob(templates, request, editor))
 
 
 @app.post("/ejercicio/nuevo", response_class=HTMLResponse)
@@ -636,11 +606,6 @@ def ejercicio_nuevo(
         content=notice_success
         + fragment_oob(templates, request, "exercise-create", form_html, swap="outerHTML")
     )
-
-
-@app.get("/sesiones", response_class=HTMLResponse)
-def sesiones_view(request: Request):
-    return HTMLResponse(content=_sesiones_list_html(request))
 
 
 @app.get("/alimentacion/editor", response_class=HTMLResponse)
@@ -963,9 +928,6 @@ def undo(request: Request, fecha: str = Form("")):
     if result["kind"] == "sesion":
         fecha_iso = result["fecha_iso"]
         marker = undo_result_oob(templates, request, fecha_iso, result["has_data"])
-        history_oob = fragment_oob(
-            templates, request, "session-history", _sesiones_list_html(request)
-        )
         if fecha == fecha_iso:
             outcome_ok = STATIC_MARKERS["outcome_ok"]
             editor = _editor_html(request, fecha_iso)
@@ -974,9 +936,8 @@ def undo(request: Request, fecha: str = Form("")):
                 + outcome_ok
                 + marker
                 + editor_wrap_oob(templates, request, editor)
-                + history_oob
             )
-        return HTMLResponse(content=notice_ok + marker + history_oob)
+        return HTMLResponse(content=notice_ok + marker)
     if result["kind"] == "alimentacion":
         fecha_iso = result["fecha_iso"]
         marker = undo_result_oob(templates, request, fecha_iso, result["has_data"])
@@ -1002,16 +963,6 @@ def undo(request: Request, fecha: str = Form("")):
     )
 
 
-@app.get("/semana/primer-entreno", response_class=JSONResponse)
-def semana_primer_entreno(
-    semana: int = Query(...),
-    grupo: str | None = Query(None),
-    ejercicio: str | None = Query(None),
-):
-    fecha = get_first_session_date(DB_PATH, semana, grupo, ejercicio)
-    return JSONResponse({"fecha": fecha})
-
-
 @app.get("/exportar/csv", response_class=Response)
 def export_csv():
     with read_connection(DB_PATH) as conn:
@@ -1022,122 +973,6 @@ def export_csv():
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="entrenamientos.csv"'},
     )
-
-
-@app.get("/select", response_class=HTMLResponse)
-def select_view(request: Request, grupo: str = Query(None), fecha: str = Query(None)):
-    if not grupo:
-        ejercicios_list, _ = get_filters(DB_PATH)
-        chart_html_frag = chart_html(
-            DB_PATH,
-            "systemic",
-            title=_chart_title(),
-        )
-        exercise_list_html = _render_body(
-            templates.TemplateResponse(
-                request=request,
-                name="exercise_list.html",
-                context={
-                    "ejercicios_grupo": ejercicios_list,
-                    "grupo": "",
-                },
-            )
-        )
-        oob_chart = chart_oob_wrapper(chart_html_frag)
-        selected = fecha or _today_iso()
-        navigator_oob = fragment_oob(
-            templates,
-            request,
-            "date-navigator",
-            _navigator_html(request, selected),
-            swap="outerHTML",
-        )
-        return HTMLResponse(content=exercise_list_html + oob_chart + navigator_oob)
-
-    ejercicios_grupo = get_ejercicios_por_grupo(DB_PATH, grupo)
-    chart_html_frag = chart_html(
-        DB_PATH,
-        "muscle_group",
-        grupo,
-        _chart_title(grupo),
-    )
-    exercise_list_html = _render_body(
-        templates.TemplateResponse(
-            request=request,
-            name="exercise_list.html",
-            context={
-                "ejercicios_grupo": ejercicios_grupo,
-                "grupo": grupo,
-            },
-        )
-    )
-    oob_chart = chart_oob_wrapper(chart_html_frag)
-    selected = fecha or _today_iso()
-    navigator_oob = fragment_oob(
-        templates,
-        request,
-        "date-navigator",
-        _navigator_html(request, selected, grupo=grupo),
-        swap="outerHTML",
-    )
-    return HTMLResponse(content=exercise_list_html + oob_chart + navigator_oob)
-
-
-@app.get("/grupo/reset", response_class=HTMLResponse)
-def reset_grupo(request: Request, grupo: str = Query(...), fecha: str = Query(None)):
-    chart_html_frag = chart_html(
-        DB_PATH,
-        "muscle_group",
-        grupo,
-        _chart_title(grupo),
-    )
-    oob_chart = chart_oob_wrapper(chart_html_frag)
-    selected = fecha or _today_iso()
-    navigator_oob = fragment_oob(
-        templates,
-        request,
-        "date-navigator",
-        _navigator_html(request, selected, grupo=grupo),
-        swap="outerHTML",
-    )
-    return HTMLResponse(content="<div></div>" + oob_chart + navigator_oob)
-
-
-@app.get("/ejercicio", response_class=HTMLResponse)
-def get_exercise_history(request: Request, ejercicio: str = Query(...), fecha: str = Query(None)):
-    raw_df = get_exercise_raw_data(DB_PATH, ejercicio)
-    raw_data = raw_df.to_dict(orient="records") if not raw_df.empty else []
-
-    session_df = get_exercise_session_summary(DB_PATH, ejercicio)
-    session_summary = session_df.to_dict(orient="records") if not session_df.empty else []
-
-    chart_html_frag = chart_html(
-        DB_PATH,
-        "exercise",
-        ejercicio,
-        _chart_title(ejercicio),
-    )
-    tables_html = _render_body(
-        templates.TemplateResponse(
-            request=request,
-            name="exercise_detail.html",
-            context={
-                "raw_data": raw_data,
-                "session_summary": session_summary,
-                "ejercicio": ejercicio,
-            },
-        )
-    )
-    oob_chart = chart_oob_wrapper(chart_html_frag)
-    selected = fecha or _today_iso()
-    navigator_oob = fragment_oob(
-        templates,
-        request,
-        "date-navigator",
-        _navigator_html(request, selected, ejercicio=ejercicio),
-        swap="outerHTML",
-    )
-    return HTMLResponse(content=tables_html + oob_chart + navigator_oob)
 
 
 @app.post("/sync/health-connect")
