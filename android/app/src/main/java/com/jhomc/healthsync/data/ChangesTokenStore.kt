@@ -29,28 +29,20 @@ class ChangesTokenStore(private val dao: HealthDao) {
         )
     }
 
-    suspend fun markSynced(recordType: String, hadChanges: Boolean, nowMs: Long) {
+    suspend fun markSynced(recordType: String, hadChanges: Boolean, nowMs: Long, zoneId: java.time.ZoneId) {
         val current = dao.getState(recordType)
-        val basePriority = current?.priority ?: HealthSyncPlanner.PRIORITY_MEDIUM
-        val (newPriority, newEmptyRuns) = HealthSyncPlanner.adjustAfterRun(basePriority, current?.emptyRuns ?: 0, hadChanges)
         dao.upsertState(
             current?.copy(
                 permissionGranted = true,
                 lastSuccessfulReadAtEpochMs = nowMs,
-                nextDueAtEpochMs = HealthSyncPlanner.nextDueMs(newPriority, nowMs),
+                nextDueAtEpochMs = HealthSyncPlanner.nextDueMs(recordType, nowMs, zoneId),
                 cooldownUntilEpochMs = null,
-                priority = newPriority,
-                bootstrapPageToken = null,
-                bootstrapStartEpochMs = null,
-                emptyRuns = newEmptyRuns,
             )
                 ?: HealthSyncStateEntity(
                     recordType = recordType,
-                    changesToken = null,
                     permissionGranted = true,
                     lastSuccessfulReadAtEpochMs = nowMs,
-                    nextDueAtEpochMs = HealthSyncPlanner.nextDueMs(newPriority, nowMs),
-                    priority = newPriority,
+                    nextDueAtEpochMs = HealthSyncPlanner.nextDueMs(recordType, nowMs, zoneId),
                 ),
         )
     }
@@ -58,13 +50,18 @@ class ChangesTokenStore(private val dao: HealthDao) {
     suspend fun markCooldown(recordType: String, nowMs: Long) {
         val current = dao.getState(recordType)
         dao.upsertState(
-            current?.copy(cooldownUntilEpochMs = nowMs + HealthSyncPlanner.COOLDOWN_AFTER_RATE_LIMIT_MS)
-                ?: HealthSyncStateEntity(recordType, cooldownUntilEpochMs = nowMs + HealthSyncPlanner.COOLDOWN_AFTER_RATE_LIMIT_MS),
+            current?.copy(cooldownUntilEpochMs = nowMs + COOLDOWN_AFTER_RATE_LIMIT_MS)
+                ?: HealthSyncStateEntity(recordType, cooldownUntilEpochMs = nowMs + COOLDOWN_AFTER_RATE_LIMIT_MS),
         )
     }
 
     suspend fun markPermissionLost(recordType: String) {
         val current = dao.getState(recordType)
         dao.upsertState(current?.copy(permissionGranted = false) ?: HealthSyncStateEntity(recordType))
+    }
+
+    companion object {
+        /** Enfriamiento tras rate limit / lectura colgada; el tipo se salta hasta entonces. */
+        const val COOLDOWN_AFTER_RATE_LIMIT_MS = 3_600_000L
     }
 }

@@ -1,7 +1,9 @@
 package com.jhomc.healthsync
 
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -11,52 +13,55 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 class HealthSyncPlannerTest {
 
+    private val utc: ZoneId = ZoneOffset.UTC
+    private fun at(iso: String): Long = Instant.parse(iso).toEpochMilli()
+
     @Test
-    fun `high frequency types start at high priority`() {
-        for (name in listOf("STEPS", "HEART_RATE", "SLEEP_SESSION", "EXERCISE_SESSION", "TOTAL_CALORIES_BURNED")) {
-            assertEquals(HealthSyncPlanner.PRIORITY_HIGH, HealthSyncPlanner.initialPriority(RecordTypes.byTypeName(name)!!))
+    fun `morning window covers sleep resting hr and body composition`() {
+        for (name in listOf("SLEEP_SESSION", "RESTING_HEART_RATE", "WEIGHT", "HEIGHT", "BODY_FAT", "BONE_MASS", "BODY_WATER_MASS", "LEAN_BODY_MASS")) {
+            assertEquals(setOf(9), HealthSyncPlanner.windowHours(name))
         }
     }
 
     @Test
-    fun `composition and medical families start cold`() {
-        for (name in listOf("WEIGHT", "BODY_FAT", "HEIGHT", "BLOOD_GLUCOSE", "BLOOD_PRESSURE")) {
-            assertEquals(HealthSyncPlanner.PRIORITY_LOW, HealthSyncPlanner.initialPriority(RecordTypes.byTypeName(name)!!))
+    fun `exercise and calories sync at noon and evening`() {
+        for (name in listOf("EXERCISE_SESSION", "ACTIVE_CALORIES_BURNED", "TOTAL_CALORIES_BURNED")) {
+            assertEquals(setOf(13, 19), HealthSyncPlanner.windowHours(name))
         }
     }
 
     @Test
-    fun `remaining types start medium`() {
-        assertEquals(HealthSyncPlanner.PRIORITY_MEDIUM, HealthSyncPlanner.initialPriority(RecordTypes.byTypeName("DISTANCE")!!))
-        assertEquals(HealthSyncPlanner.PRIORITY_MEDIUM, HealthSyncPlanner.initialPriority(RecordTypes.byTypeName("HYDRATION")!!))
-        assertEquals(HealthSyncPlanner.PRIORITY_MEDIUM, HealthSyncPlanner.initialPriority(RecordTypes.byTypeName("NUTRITION")!!))
+    fun `steps and heart rate sync in the evening window`() {
+        assertEquals(setOf(19), HealthSyncPlanner.windowHours("STEPS"))
+        assertEquals(setOf(19), HealthSyncPlanner.windowHours("HEART_RATE"))
     }
 
     @Test
-    fun `due intervals respect priority and stay below token expiry`() {
-        for (p in listOf(0, 1, 2)) {
-            val ms = HealthSyncPlanner.dueIntervalMs(p)
-            assertTrue(ms in 1..(30L * 24 * 3_600_000))
-        }
-        assertEquals(6L * 3_600_000, HealthSyncPlanner.dueIntervalMs(HealthSyncPlanner.PRIORITY_HIGH))
-        assertEquals(24L * 3_600_000, HealthSyncPlanner.dueIntervalMs(HealthSyncPlanner.PRIORITY_MEDIUM))
-        assertEquals(7L * 24 * 3_600_000, HealthSyncPlanner.dueIntervalMs(HealthSyncPlanner.PRIORITY_LOW))
-    }
-
-    @Test
-    fun `activity promotes one level and resets empty runs`() {
-        val (p, e) = HealthSyncPlanner.adjustAfterRun(1, 2, hadChanges = true)
-        assertEquals(2, p)
-        assertEquals(0, e)
-        val (p2, _) = HealthSyncPlanner.adjustAfterRun(2, 0, hadChanges = true)
-        assertEquals(2, p2) // nunca pasa de HIGH
-    }
-
-    @Test
-    fun `three empty runs demote one level`() {
-        assertEquals(1 to 0, HealthSyncPlanner.adjustAfterRun(2, 2, hadChanges = false))
-        assertEquals(0 to 0, HealthSyncPlanner.adjustAfterRun(1, 2, hadChanges = false))
-        assertEquals(1 to 1, HealthSyncPlanner.adjustAfterRun(1, 0, hadChanges = false))
-        assertEquals(0 to 0, HealthSyncPlanner.adjustAfterRun(0, 2, hadChanges = false)) // nunca baja de LOW
+    fun `next due is the next window occurrence`() {
+        // 10:00 → la ventana de las 13:00 (entrenos).
+        assertEquals(
+            at("2026-08-08T13:00:00Z"),
+            HealthSyncPlanner.nextDueMs("EXERCISE_SESSION", at("2026-08-08T10:00:00Z"), utc),
+        )
+        // 14:00 → la de las 19:00.
+        assertEquals(
+            at("2026-08-08T19:00:00Z"),
+            HealthSyncPlanner.nextDueMs("EXERCISE_SESSION", at("2026-08-08T14:00:00Z"), utc),
+        )
+        // 20:00 → mañana a las 9:00 (sueño).
+        assertEquals(
+            at("2026-08-09T09:00:00Z"),
+            HealthSyncPlanner.nextDueMs("SLEEP_SESSION", at("2026-08-08T20:00:00Z"), utc),
+        )
+        // 8:00 → hoy a las 9:00.
+        assertEquals(
+            at("2026-08-08T09:00:00Z"),
+            HealthSyncPlanner.nextDueMs("SLEEP_SESSION", at("2026-08-08T08:00:00Z"), utc),
+        )
+        // 19:00 en punto → no cuenta la hora actual: mañana a las 19:00.
+        assertEquals(
+            at("2026-08-09T19:00:00Z"),
+            HealthSyncPlanner.nextDueMs("STEPS", at("2026-08-08T19:00:00Z"), utc),
+        )
     }
 }

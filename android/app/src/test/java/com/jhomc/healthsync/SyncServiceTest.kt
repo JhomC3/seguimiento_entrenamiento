@@ -79,17 +79,26 @@ class SyncServiceTest {
 
     @Test
     fun `destroyed service reports interruption instead of cryptic job error`() {
-        SyncService.runner = { _, _ ->
+        SyncService.runner = { _, onProgress ->
+            onProgress("STEPS: página 1") // prueba que el cuerpo de la corrutina arrancó
             kotlinx.coroutines.delay(Long.MAX_VALUE)
             SyncReport(0, 0, 0)
         }
         val controller = Robolectric.buildService(SyncService::class.java).create()
         controller.startCommand(0, 0)
 
+        // Espera a que la corrutina esté DENTRO del runner (no solo "Iniciando…").
         val started = System.currentTimeMillis() + 5_000
-        while (SyncService.progress.value !is SyncStage.Running && System.currentTimeMillis() < started) {
+        while (System.currentTimeMillis() < started) {
+            val stage = SyncService.progress.value
+            if (stage is SyncStage.Running && stage.stage.contains("STEPS")) break
             Thread.sleep(10)
         }
+        assertTrue(
+            "el runner debe haber arrancado, fue: ${SyncService.progress.value}",
+            SyncService.progress.value is SyncStage.Running &&
+                (SyncService.progress.value as SyncStage.Running).stage.contains("STEPS"),
+        )
         controller.destroy() // simula el sistema matando el servicio a mitad
 
         val deadline = System.currentTimeMillis() + 8_000

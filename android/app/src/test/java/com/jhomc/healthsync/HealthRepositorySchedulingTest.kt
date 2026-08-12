@@ -388,32 +388,30 @@ class HealthRepositorySchedulingTest {
     }
 
     @Test
-    fun `type with recent changes is promoted and overdue again sooner`() = runBlocking {
-        // SLEEP_SESSION: permiso único (READ_STEPS es compartido, ver Task 3) y
-        // prioridad HIGH inicial (está en HIGH_FREQUENCY_TYPES).
+    fun `after syncing a type its next due lands on the next window`() = runBlocking {
+        // SLEEP_SESSION: ventana de las 9:00. Sincronizado a las 12:00Z →
+        // next_due = mañana 9:00Z.
         gateway.granted = setOf(RecordTypes.byTypeName("SLEEP_SESSION")!!.permission)
         gateway.pageStore[null] = listOf(Fixtures.sleepSession("hc-1", t, t.plusSeconds(3600)))
-        repo.syncAuthorizedTypes()
-        val state = db.healthDao().getState("SLEEP_SESSION")!!
-        assertEquals(HealthSyncPlanner.PRIORITY_HIGH, state.priority)
-        assertEquals(t.toEpochMilli() + 6L * 3_600_000, state.nextDueAtEpochMs!!)
-        assertEquals(0, state.emptyRuns)
-    }
-
-    @Test
-    fun `six empty rounds demote a type from high to cold and stretch its interval`() = runBlocking {
-        gateway.granted = setOf(RecordTypes.byTypeName("SLEEP_SESSION")!!.permission) // único tipo → determinista
-        // SLEEP_SESSION parte de HIGH (2): 3 rondas vacías → MEDIUM, otras 3 → LOW (7 días).
-        gateway.pageStore.clear() // sin datos
-        repeat(6) {
-            repo = HealthRepository(db, gateway, ChangesTokenStore(db.healthDao()), now = { t.plusSeconds(it * 86_400L) }, pacer = {})
-            repo.syncAuthorizedTypes()
-        }
-        val state = db.healthDao().getState("SLEEP_SESSION")!!
-        assertEquals(HealthSyncPlanner.PRIORITY_LOW, state.priority)
-        assertEquals(
-            7L * 24 * 3_600_000,
-            state.nextDueAtEpochMs!! - t.plusSeconds(5 * 86_400L).toEpochMilli(),
+        val utcRepo = HealthRepository(
+            db = db,
+            gateway = gateway,
+            tokenStore = ChangesTokenStore(db.healthDao()),
+            now = { t },
+            pacer = {},
+            zoneId = ZoneOffset.UTC,
         )
+        utcRepo.syncAuthorizedTypes()
+        val state = db.healthDao().getState("SLEEP_SESSION")!!
+        assertEquals(
+            t.atZone(ZoneOffset.UTC).toLocalDate().plusDays(1).atStartOfDay(ZoneOffset.UTC)
+                .plusHours(9).toInstant().toEpochMilli(),
+            state.nextDueAtEpochMs!!,
+        )
+        // Inmediatamente después NO vuelve a tocar el tipo (cero llamadas).
+        gateway.tokenLog.clear(); gateway.readLog.clear(); gateway.changesLog.clear()
+        utcRepo.syncAuthorizedTypes()
+        assertEquals(0, gateway.tokenLog.size)
+        assertEquals(0, gateway.readLog.size)
     }
 }

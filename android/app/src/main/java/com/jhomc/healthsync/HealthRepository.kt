@@ -251,11 +251,10 @@ class HealthRepository(
                 force || st?.nextDueAtEpochMs == null || st.nextDueAtEpochMs <= nowMs
             }
             .sortedWith(
-                compareByDescending<Pair<RecordTypeEntry, HealthSyncStateEntity?>> {
-                    it.second?.priority ?: HealthSyncPlanner.initialPriority(it.first)
+                compareBy<Pair<RecordTypeEntry, HealthSyncStateEntity?>> {
+                    HealthSyncPlanner.nextWindowHour(it.first.typeName)
                 }
                     .thenBy { catalogIndex[it.first.typeName] ?: Int.MAX_VALUE }
-                    .thenBy { it.second?.nextDueAtEpochMs ?: 0L }
                     .thenBy { it.first.typeName },
             )
         if (candidates.isEmpty()) return emptyList()
@@ -275,7 +274,7 @@ class HealthRepository(
                 // cortó por presupuesto, el checkpoint permite reanudar y el
                 // tipo sigue vencido para la próxima ejecución.
                 if (!result.budgetHit) {
-                    tokenStore.markSynced(entry.typeName, result.hadChanges(), now().toEpochMilli())
+                    tokenStore.markSynced(entry.typeName, result.hadChanges(), now().toEpochMilli(), zoneId)
                 }
                 results += result
             } catch (e: RateLimitedException) {
@@ -406,7 +405,6 @@ class HealthRepository(
                             changesToken = reserved,
                             permissionGranted = true,
                             lastSuccessfulReadAtEpochMs = nowMs,
-                            priority = HealthSyncPlanner.initialPriority(entry),
                             bootstrapStartEpochMs = nowMs - BACKFILL_WINDOW_MS,
                         ),
                 )
