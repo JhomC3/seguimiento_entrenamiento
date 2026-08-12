@@ -24,7 +24,8 @@ class EditorRow:
     kg: float | None
     reps: float | None
     rir: float | None
-    rm: float | None
+    descanso_seg: float | None = None
+    rm: float | None = None
 
 
 @dataclass(frozen=True)

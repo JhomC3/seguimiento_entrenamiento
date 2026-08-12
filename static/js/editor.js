@@ -121,6 +121,8 @@ export function addRowAfter(btn) {
     const clone = row.cloneNode(true);
     clone.querySelector('.ej-select').value = '';
     clone.querySelectorAll('input').forEach(input => { input.value = ''; });
+    const badge = clone.querySelector('.rir-badge');
+    if (badge) badge.classList.add('hidden');
     row.after(clone);
     renumberRows();
     updateEditActions();
@@ -177,6 +179,20 @@ export function initEditorRowSortable() {
     });
 }
 
+function updateRirBadge(row) {
+    const input = row.querySelector('input[name="rir"]');
+    const badge = row.querySelector('.rir-badge');
+    if (!input || !badge) return;
+    const raw = input.value.trim();
+    const num = raw !== '' ? parseFloat(raw) : NaN;
+    if (!isNaN(num) && num <= 0) {
+        badge.textContent = num < 0 ? 'FORZADA' : 'FALLO';
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
+}
+
 export function recalcRM() {
     document.querySelectorAll('#set-rows .set-row').forEach(function (row) {
         const kgEl = row.querySelector('input[name="kg"]');
@@ -193,6 +209,7 @@ export function recalcRM() {
         } else {
             cell.textContent = '—';
         }
+        updateRirBadge(row);
     });
 }
 

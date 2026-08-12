@@ -69,7 +69,7 @@
         <div class="table-scroll overflow-x-auto overflow-y-auto">
             <table class="w-full text-left border-collapse text-xs">
                 <colgroup>
-                    <col span="6">
+                    <col span="7">
                     <col class="set-actions-column">
                 </colgroup>
                 <thead>
@@ -79,6 +79,7 @@
                         <th class="w-20 py-0.5 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Peso</th>
                         <th class="w-20 py-0.5 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Reps</th>
                         <th class="w-20 py-0.5 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">RIR</th>
+                        <th class="w-16 py-0.5 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Desc</th>
                         <th class="w-20 py-0.5 px-1.5 font-bold text-burgundy-400 uppercase tracking-wider text-center">RMₐ</th>
                     </tr>
                 </thead>
@@ -114,10 +115,23 @@
                             >
                         </td>
                         <td class="py-0.5 px-1.5">
+                            <div class="relative">
+                                <input
+                                    name="rir" type="number" step="0.5" min="-5" placeholder="RIR"
+                                    value="{{ "%g"|format(r.rir) if r.rir is not none and r.rir != "" else "" }}"
+                                    class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
+                                    title="0 = fallo · negativo = forzadas"
+                                    {% if readonly %}disabled{% endif %}
+                                >
+                                <span class="rir-badge hidden absolute -top-1 -right-1 text-[8px] font-black px-1 rounded bg-burgundy-700 text-white"></span>
+                            </div>
+                        </td>
+                        <td class="py-0.5 px-1.5">
                             <input
-                                name="rir" type="number" step="0.1" min="0" placeholder="RIR"
-                                value="{{ "%g"|format(r.rir) if r.rir is not none and r.rir != "" else "" }}"
+                                name="descanso" type="number" step="5" min="0" placeholder="s"
+                                value="{{ "%g"|format(r.descanso_seg) if r.descanso_seg is not none and r.descanso_seg != "" else "" }}"
                                 class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
+                                title="Descanso entre series (segundos, opcional)"
                                 {% if readonly %}disabled{% endif %}
                             >
                         </td>

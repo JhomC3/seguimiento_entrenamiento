@@ -493,8 +493,9 @@ def entrenamiento_session_save(
     kg: list[str] = Form(default=[]),
     reps: list[str] = Form(default=[]),
     rir: list[str] = Form(default=[]),
+    descanso: list[str] = Form(default=[]),
 ):
-    sets = sets_from_form(ejercicio, kg, reps, rir)
+    sets = sets_from_form(ejercicio, kg, reps, rir, descansos=descanso)
     notice_success = notice_oob(
         templates, request, target="editor-notice", message="Entrenamiento guardado."
     )

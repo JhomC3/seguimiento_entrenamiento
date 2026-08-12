@@ -165,12 +165,14 @@ export function initLifecycle() {
         if (e.target.closest('#session-form')) {
             updateEditActions();
             syncTemplateEjercicios();
+            recalcRM();
         }
     });
     document.addEventListener('change', function (e) {
         if (e.target.closest('#session-form')) {
             updateEditActions();
             syncTemplateEjercicios();
+            recalcRM();
         }
     });
 

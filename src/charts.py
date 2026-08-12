@@ -207,7 +207,7 @@ def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
     with read_connection(db_path) as conn:
         df = pd.read_sql_query(
             """
-            SELECT semana, dia, fecha, set_orden, kg, reps, rir
+            SELECT semana, dia, fecha, set_orden, kg, reps, rir, descanso_seg
             FROM training_sets
             WHERE ejercicio = ? AND kg IS NOT NULL AND reps IS NOT NULL
             ORDER BY semana, fecha, set_orden
@@ -242,6 +242,7 @@ def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
             "kg",
             "reps",
             "rir",
+            "descanso_seg",
             "rm",
             "rm_ajustado",
         ]
@@ -325,7 +326,7 @@ def get_exercise_session_summary(db_path: str, ejercicio: str) -> pd.DataFrame:
     with read_connection(db_path) as conn:
         df = pd.read_sql_query(
             """
-            SELECT semana, dia, fecha, set_orden, kg, reps, rir
+            SELECT semana, dia, fecha, set_orden, kg, reps, rir, descanso_seg
             FROM training_sets
             WHERE ejercicio = ? AND kg IS NOT NULL AND reps IS NOT NULL
             ORDER BY semana, fecha, set_orden
