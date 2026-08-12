@@ -78,7 +78,7 @@ def calculate_pfr_timeline(
     with read_connection(db_path) as conn:
         # 1. Obtener todos los sets de entrenamiento con el grupo muscular correspondiente
         query = """
-            SELECT t.semana, t.dia, t.fecha, t.set_orden, t.ejercicio, t.kg, t.reps, t.rir, e.grupo_muscular
+            SELECT t.semana, t.dia, t.fecha, t.set_orden, t.ejercicio, t.kg, t.reps, t.rir, e.grupo_muscular, e.categoria
             FROM training_sets t
             JOIN ejercicios e ON LOWER(t.ejercicio) = LOWER(e.ejercicio)
             WHERE t.kg IS NOT NULL AND t.reps IS NOT NULL
@@ -111,13 +111,13 @@ def calculate_pfr_timeline(
         ),
         axis=1,
     )
-    df["es_fallo"] = df.apply(
-        lambda r: int(is_failure_set(float(r["reps"]), r["rir"])), axis=1
-    )
+    df["es_fallo"] = df.apply(lambda r: int(is_failure_set(float(r["reps"]), r["rir"])), axis=1)
 
     # --- FILTRADO DE DATOS SEGÚN NIVEL ---
     if filter_type == "muscle_group" and filter_value:
         df_filtered = df[df["grupo_muscular"].str.lower() == filter_value.lower()].copy()
+    elif filter_type == "category" and filter_value:
+        df_filtered = df[df["categoria"].str.lower() == filter_value.lower()].copy()
     elif filter_type == "exercise" and filter_value:
         df_filtered = df[df["ejercicio"].str.lower() == filter_value.lower()].copy()
     else:
