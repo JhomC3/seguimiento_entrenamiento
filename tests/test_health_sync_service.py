@@ -64,6 +64,32 @@ def test_valid_batch_is_applied_and_acked(tmp_path):
     assert _row(db, "b")["revision"] == 200
 
 
+def test_heart_rate_5min_buckets_are_accepted_and_idempotent(tmp_path):
+    db = str(tmp_path / "gym.db")
+    init_db(db)
+    bucket = {
+        "op": "UPSERT",
+        "hc_id": "HR5M:1786452000000",
+        "record_type": "HEART_RATE_5MIN",
+        "revision": 1786452000000,
+        "start_epoch_ms": 1786452000000,
+        "end_epoch_ms": 1786452300000,
+        "payload_schema_version": 1,
+        "value": {"avg": 72, "min": 60, "max": 95},
+    }
+    first = ingest_health_records(db, _payload([bucket]))
+    assert first.accepted_count == 1
+    row = _row(db, "HR5M:1786452000000")
+    assert row["record_type"] == "HEART_RATE_5MIN"
+    assert '"avg":72' in row["value_json"]
+
+    # Replay del mismo tramo (re-agregación): idempotente, mismo hc_id.
+    replay = ingest_health_records(db, _payload([bucket]))
+    assert replay.accepted_count == 1
+    assert replay.rejected == []
+    assert _row(db, "HR5M:1786452000000")["revision"] == 1786452000000
+
+
 def test_replay_identical_is_acked_without_rewrite(tmp_path):
     db = str(tmp_path / "gym.db")
     init_db(db)

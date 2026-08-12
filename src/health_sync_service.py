@@ -27,6 +27,7 @@ ALLOWED_RECORD_TYPES = frozenset(
     {
         "STEPS",
         "HEART_RATE",
+        "HEART_RATE_5MIN",  # agregado por tramos de 5 min (fuera del catálogo HC)
         "SLEEP_SESSION",
         "EXERCISE_SESSION",
         "ACTIVE_CALORIES_BURNED",
