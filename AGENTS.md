@@ -162,10 +162,16 @@ Antes de dar por completada una tarea, debes:
    uv run ruff check .
    uv run mypy app.py src tests
    ```
-3. Ejecutar la app localmente para verificar la interfaz en caso de cambios visuales:
-   ```bash
-   uv run uvicorn app:app --host 127.0.0.1 --reload
-   ```
+ 3. Ejecutar la app localmente para verificar la interfaz en caso de cambios visuales.
+    Arranque recomendado (genera/persiste el token de HealthSync en `data/hc_sync_token`
+    y expone `0.0.0.0:8000` para la app Android):
+    ```bash
+    ./scripts/start_server.sh
+    ```
+    Alternativa solo-dashboard (localhost con auto-reload, sin token → `/sync/health-connect` responde 503):
+    ```bash
+    uv run uvicorn app:app --host 127.0.0.1 --reload
+    ```
 4. Si agregas dependencias, actualiza `pyproject.toml` y regenera el lock:
    ```bash
    uv lock && uv sync --locked
