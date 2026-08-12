@@ -146,6 +146,12 @@ class MainActivity : ComponentActivity() {
         }
         root.addView(binderDiagButton)
 
+        val inventoryButton = Button(this).apply {
+            text = "Inventario HOY (Health Connect)"
+            setOnClickListener { runTodayInventory() }
+        }
+        root.addView(inventoryButton)
+
         val diagnosticsButton = Button(this).apply {
             text = "Diagnóstico (ver qué ve el sistema)"
             setOnClickListener { runDiagnostics() }
@@ -528,6 +534,25 @@ class MainActivity : ComponentActivity() {
                 sb.append("4. readRecords(STEPS 24h): OK (${page.records.size} registros)\n")
             } catch (e: Exception) {
                 sb.append("4. readRecords: FALLO\n${fullErrorChain(e)}\n")
+            }
+            statusView.text = sb.toString()
+        }
+    }
+
+    /** Qué datos hay HOY en Health Connect, por tipo (una página por tipo). */
+    private fun runTodayInventory() {
+        lifecycleScope.launch {
+            statusView.text = "Inventario…"
+            val inventory = HealthInventory(RealHealthConnectGateway(this@MainActivity))
+            val rows = withContext(Dispatchers.IO) { inventory.todayInventory() }
+            val sb = StringBuilder("Inventario de hoy (${rows.size} tipos con permiso):\n\n")
+            for (r in rows) {
+                sb.append(r.typeName)
+                sb.append(": ${r.recordsToday} reg")
+                sb.append(if (r.hasMore) " +más (denso)" else "")
+                r.aggregateTotal?.let { sb.append(" | total hoy: $it") }
+                r.error?.let { sb.append(" | ERROR: $it") }
+                sb.append("\n")
             }
             statusView.text = sb.toString()
         }
