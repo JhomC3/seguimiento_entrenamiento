@@ -34,3 +34,6 @@ android/sdk/
 
 # Cache Gradle del directorio raíz (residuo de arranque; el real vive en android/.gradle)
 .gradle/
+
+# Logs de arranque local
+.tmp/*.log
