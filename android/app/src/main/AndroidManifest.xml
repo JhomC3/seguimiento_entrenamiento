@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Health Connect: permisos de lectura declarados (catálogo core + background) -->
     <uses-permission android:name="android.permission.health.READ_STEPS" />
@@ -55,6 +58,14 @@
                 <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
         </activity>
+
+        <!-- Sincronización en primer plano: mantiene la app activa aunque la
+             pantalla se apague, de modo que Health Connect siga aceptando
+             lecturas (recomendación oficial para lecturas largas). -->
+        <service
+            android:name=".SyncService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 
 </manifest>

@@ -12,6 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.jhomc.healthsync.data.SecureTargetStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -27,6 +28,7 @@ class MainActivity : ComponentActivity() {
     private val targetStore: SecureTargetStore by lazy { SecureTargetStore(this) }
 
     private lateinit var permissionLauncher: ActivityResultLauncher<Set<String>>
+    private lateinit var notificationPermissionLauncher: ActivityResultLauncher<String>
     private lateinit var statusView: TextView
     private lateinit var urlInput: EditText
     private lateinit var tokenInput: EditText
@@ -174,6 +176,10 @@ class MainActivity : ComponentActivity() {
                 refreshStates()
             },
         )
+        notificationPermissionLauncher = registerForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+        ) { /* sin notificación visible el servicio sigue funcionando */ }
+        observeSyncProgress()
         refreshStates()
         loadTarget()
     }
@@ -442,42 +448,58 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Ejecuta el pipeline completo en primer plano; resultado visible al instante. */
+    /**
+     * Ejecuta el pipeline en un servicio en primer plano: sigue trabajando
+     * aunque se apague la pantalla (Health Connect acepta las lecturas porque
+     * el servicio mantiene la app activa). El panel se actualiza vía
+     * [SyncService.progress].
+     */
     private fun runDirectSync() {
+        requestNotificationPermissionIfNeeded()
+        SyncService.start(this)
+        showMessage("Sincronizando… (sigue aunque se apague la pantalla)")
+    }
+
+    /** Observa el progreso del servicio para pintarlo en el panel. */
+    private fun observeSyncProgress() {
         lifecycleScope.launch {
-            showMessage("Sincronizando…")
-            try {
-                val report = withContext(Dispatchers.IO) {
-                    SyncExecutor.run(this@MainActivity) { stage ->
-                        // El callback corre en el hilo IO: sube al main el progreso.
-                        runOnUiThread { statusView.text = "Sincronizando… $stage" }
+            repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                SyncService.progress.collect { stage ->
+                    when (stage) {
+                        is SyncStage.Idle -> {}
+                        is SyncStage.Running -> statusView.text = "Sincronizando… ${stage.stage}"
+                        is SyncStage.Done -> showSyncResult(stage.report)
+                        is SyncStage.Failed -> statusView.text = "Error de sync:\n${stage.error}"
                     }
                 }
-                if (report.notice == "rate_limited") {
-                    statusView.text = "Cuota de Health Connect agotada (rate limit).\n" +
-                        "Health Connect limita las llamadas por hora de las apps nuevas.\n" +
-                        "Espera unos minutos y vuelve a pulsar el botón."
-                    return@launch
-                }
-                if (report.notice == "foreground_requerido") {
-                    statusView.text = "Health Connect requiere que la app esté en primer plano\n" +
-                        "para leer Steps/StepsCadence.\n" +
-                        "Mantén la app abierta con la pantalla encendida al sincronizar,\n" +
-                        "o activa 'Acceso en segundo plano' en Health Connect →\n" +
-                        "Permisos de las apps → HealthSync."
-                    return@launch
-                }
-                val msg = buildString {
-                    append("Tipos leídos: ${report.typesSynced} | Entregados: ${report.delivered}")
-                    if (report.failed > 0) append(" | Fallos: ${report.failed}")
-                    report.notice?.let { append(" | Aviso: $it") }
-                    report.permanentError?.let { append(" | Error: $it") }
-                }
-                showMessage(msg)
-            } catch (e: Exception) {
-                // Error completo con cadena de causas en el panel (sin cortes).
-                statusView.text = "Error de sync:\n" + fullErrorChain(e)
             }
+        }
+    }
+
+    private fun showSyncResult(report: SyncReport) {
+        if (report.notice == "rate_limited") {
+            statusView.text = "Cuota de Health Connect agotada (rate limit).\n" +
+                "Health Connect limita las llamadas por hora de las apps nuevas.\n" +
+                "Espera unos minutos y vuelve a pulsar el botón."
+            return
+        }
+        if (report.notice == "foreground_requerido") {
+            statusView.text = "Health Connect requiere que la app esté en primer plano\n" +
+                "para leer Steps/StepsCadence.\n" +
+                "Si aparece, activa 'Acceso en segundo plano' en Health Connect →\n" +
+                "Permisos de las apps → HealthSync."
+            return
+        }
+        statusView.text = SyncService.summaryOf(report)
+    }
+
+    /** Android 13+: pide el permiso de notificaciones la primera vez. */
+    private fun requestNotificationPermissionIfNeeded() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
