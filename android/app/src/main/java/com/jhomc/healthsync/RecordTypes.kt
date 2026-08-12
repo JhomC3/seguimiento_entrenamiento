@@ -61,6 +61,12 @@ data class RecordTypeEntry(
     val sensitivity: Sensitivity = Sensitivity.NORMAL,
     /** Core batch: types Samsung Health actually writes; requested first. */
     val core: Boolean = false,
+    /**
+     * El sync NO lee el crudo de este tipo: se lee por días acotados y se
+     * sube agregado (p. ej. HEART_RATE → tramos de 5 min) porque su serie
+     * cruda es densa y la paginación del proveedor es poco fiable.
+     */
+    val aggregated: Boolean = false,
 )
 
 object RecordTypes {
@@ -68,7 +74,7 @@ object RecordTypes {
     val all: List<RecordTypeEntry> = listOf(
         // --- Núcleo (lote inicial de permisos; Samsung Health los escribe) ---
         entry("STEPS", StepsRecord::class, MappingFamily.INTERVAL, core = true),
-        entry("HEART_RATE", HeartRateRecord::class, MappingFamily.SERIES, core = true),
+        entry("HEART_RATE", HeartRateRecord::class, MappingFamily.SERIES, core = true, aggregated = true),
         entry("SLEEP_SESSION", SleepSessionRecord::class, MappingFamily.SESSION, core = true),
         entry("EXERCISE_SESSION", ExerciseSessionRecord::class, MappingFamily.SESSION, core = true),
         entry("ACTIVE_CALORIES_BURNED", ActiveCaloriesBurnedRecord::class, MappingFamily.INTERVAL, core = true),
@@ -143,6 +149,7 @@ private fun entry(
     family: MappingFamily,
     core: Boolean = false,
     sensitivity: Sensitivity = Sensitivity.NORMAL,
+    aggregated: Boolean = false,
 ) = RecordTypeEntry(
     typeName = typeName,
     recordClass = recordClass,
@@ -150,4 +157,5 @@ private fun entry(
     family = family,
     sensitivity = sensitivity,
     core = core,
+    aggregated = aggregated,
 )

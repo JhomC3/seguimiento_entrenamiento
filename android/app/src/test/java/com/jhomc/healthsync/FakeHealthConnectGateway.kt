@@ -50,6 +50,17 @@ class FakeHealthConnectGateway : HealthConnectGateway {
     /** When true, readRecords nunca responde (binder colgado del proveedor). */
     var readRecordsHangs = false
 
+    /**
+     * Hook opcional: si está definido, readRecords delega en él (permite
+     * respuestas por ventana de tiempo, p. ej. un día distinto por llamada).
+     */
+    var readRecordsHandler: ((
+        recordType: KClass<out Record>,
+        start: Instant,
+        end: Instant,
+        pageToken: String?,
+    ) -> ReadRecordsResponse<Record>?)? = null
+
     // Health Connect is idempotent per token: the same token always yields the
     // same page until the client advances it. Simulate that with a cache.
     private val pageCache = mutableMapOf<String, ChangesResponse>()
@@ -112,6 +123,10 @@ class FakeHealthConnectGateway : HealthConnectGateway {
         pageToken: String?,
     ): ReadRecordsResponse<Record> {
         readLog += (RecordTypes.byClass(recordType)?.typeName ?: "?") to pageToken
+        readRecordsHandler?.let { handler ->
+            val handled = handler(recordType, start, end, pageToken)
+            if (handled != null) return handled
+        }
         if (readRecordsHangs) {
             kotlinx.coroutines.delay(60_000)
             throw AssertionError("unreachable")

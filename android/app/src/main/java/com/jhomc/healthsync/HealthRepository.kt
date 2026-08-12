@@ -17,6 +17,7 @@ import com.jhomc.healthsync.data.SyncMetaEntity
 import com.jhomc.healthsync.data.SyncTargetEntity
 import java.io.IOException
 import java.time.Instant
+import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
@@ -115,6 +116,7 @@ class HealthRepository(
     private val onProgress: (String) -> Unit = {},
     private val changesTimeoutMs: Long = CHANGES_TIMEOUT_MS,
     private val readTimeoutMs: Long = READ_TIMEOUT_MS,
+    private val zoneId: ZoneId = ZoneId.systemDefault(),
 ) {
     companion object {
         const val PACING_DEFAULT_MS = 500L
@@ -129,6 +131,13 @@ class HealthRepository(
 
         /** Tope por llamada de lectura (readRecords/getChangesToken). */
         const val READ_TIMEOUT_MS = 30_000L
+
+        /**
+         * Ventana de solape de la re-agregación: se re-leen los últimos 3 días
+         * porque Samsung Health publica datos con retraso; captura lo tardío
+         * y lo corregido sin mecanismos de detección de cambios.
+         */
+        const val AGGREGATE_OVERLAP_MS = 3L * 24 * 3_600_000
     }
 
     /** Slows the page loop so bursts never blow the provider's per-window quota. */
@@ -160,6 +169,7 @@ class HealthRepository(
 
     /** Backfill window used for first sync and token-expiry recovery. */
     suspend fun syncType(entry: RecordTypeEntry): TypeSyncResult {
+        if (entry.aggregated) return syncAggregatedType(entry)
         val state = dao.getState(entry.typeName)
         val token = state?.changesToken
         val bootstrapInProgress = state?.bootstrapStartEpochMs != null
@@ -168,6 +178,41 @@ class HealthRepository(
         } else {
             drainChanges(entry, token)
         }
+    }
+
+    /**
+     * Tipos agregados (HEART_RATE): se leen POR DÍA — una llamada acotada por
+     * día, sin paginación (la paginación del proveedor es poco fiable) — y las
+     * muestras se agrupan en tramos de 5 min ANTES de subir (el SDK fijado no
+     * expone agregación de HR). Bootstrap = 30 días; normal = últimos 3 días
+     * (solape que captura publicaciones tardías). Idempotente por hc_id.
+     */
+    private suspend fun syncAggregatedType(entry: RecordTypeEntry): TypeSyncResult {
+        val end = now()
+        val lastSync = dao.getState(entry.typeName)?.lastSuccessfulReadAtEpochMs
+        val startMs = lastSync?.let { it - AGGREGATE_OVERLAP_MS }
+            ?: (end.toEpochMilli() - BACKFILL_WINDOW_MS)
+        var day = Instant.ofEpochMilli(startMs).atZone(zoneId).toLocalDate()
+        val lastDay = end.atZone(zoneId).toLocalDate()
+        var total = 0
+        while (!day.isAfter(lastDay)) {
+            val dayStart = day.atStartOfDay(zoneId).toInstant()
+            val dayEnd = dayStart.plus(1, ChronoUnit.DAYS).let { if (it.isAfter(end)) end else it }
+            val page = readPage(entry, dayStart, dayEnd, null)
+            val samples = page.records.flatMap { record ->
+                (record as? androidx.health.connect.client.records.HeartRateRecord)?.samples.orEmpty()
+            }
+            val entities = HrBucketizer.bucketize(samples)
+                .map { HrBucketizer.toEntity(it, now().toEpochMilli()) }
+            if (entities.isNotEmpty()) {
+                db.withTransaction { dao.applyBackfillPage(entities, now().toEpochMilli()) }
+                total += entities.size
+            }
+            onProgress("${entry.typeName}: día $day ($total tramos)")
+            day = day.plusDays(1)
+            if (!day.isAfter(lastDay)) pace()
+        }
+        return TypeSyncResult(recordType = entry.typeName, backfilled = total)
     }
 
     /**

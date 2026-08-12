@@ -1,10 +1,12 @@
 package com.jhomc.healthsync
 
+import androidx.health.connect.client.response.ReadRecordsResponse
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.jhomc.healthsync.data.ChangesTokenStore
 import com.jhomc.healthsync.data.HealthDatabase
 import java.time.Instant
+import java.time.ZoneOffset
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -179,6 +181,83 @@ class HealthRepositorySchedulingTest {
             "el tipo debe quedar en cooldown para romper el bucle de misma página",
             state?.cooldownUntilEpochMs != null,
         )
+    }
+
+    @Test
+    fun `heart rate syncs as 5-minute buckets per day without raw pagination`() = runBlocking {
+        gateway.granted = setOf(RecordTypes.byTypeName("HEART_RATE")!!.permission)
+        val utc = ZoneOffset.UTC
+        gateway.readRecordsHandler = { recordType, start, end, _ ->
+            if (recordType != androidx.health.connect.client.records.HeartRateRecord::class) {
+                null
+            } else {
+                val dayStart = start.atZone(utc).toLocalDate().atStartOfDay(utc).toInstant()
+                ReadRecordsResponse(
+                    listOf(Fixtures.heartRate("hr-$dayStart", dayStart, dayStart.plusSeconds(120))),
+                    null,
+                )
+            }
+        }
+        val utcRepo = HealthRepository(
+            db = db,
+            gateway = gateway,
+            tokenStore = ChangesTokenStore(db.healthDao()),
+            now = { t },
+            pacer = {},
+            zoneId = utc,
+        )
+        val result = utcRepo.syncAuthorizedTypes().single()
+
+        // Bootstrap: 31 días (30 + hoy) → 31 tramos (una muestra por día).
+        assertEquals(31, result.backfilled)
+        assertTrue("el path agregado no usa tokens ni paginación cruda", gateway.tokenLog.isEmpty())
+        val rows = db.healthDao().allActiveRecords()
+        assertEquals(31, rows.size)
+        assertTrue(rows.all { it.recordType == "HEART_RATE_5MIN" })
+        assertTrue(rows.all { it.hcId.startsWith("HR5M:") })
+        assertTrue(rows.all { it.valueJson.contains("\"avg\"") })
+
+        // Sin raw de HEART_RATE almacenado.
+        assertEquals(0, rows.count { it.recordType == "HEART_RATE" })
+    }
+
+    @Test
+    fun `heart rate re-aggregation covers only the last three days`() = runBlocking {
+        gateway.granted = setOf(RecordTypes.byTypeName("HEART_RATE")!!.permission)
+        val utc = ZoneOffset.UTC
+        gateway.readRecordsHandler = { recordType, start, end, _ ->
+            if (recordType != androidx.health.connect.client.records.HeartRateRecord::class) {
+                null
+            } else {
+                val dayStart = start.atZone(utc).toLocalDate().atStartOfDay(utc).toInstant()
+                ReadRecordsResponse(
+                    listOf(Fixtures.heartRate("hr-$dayStart", dayStart, dayStart.plusSeconds(120))),
+                    null,
+                )
+            }
+        }
+        val utcRepo = HealthRepository(
+            db = db,
+            gateway = gateway,
+            tokenStore = ChangesTokenStore(db.healthDao()),
+            now = { t },
+            pacer = {},
+            zoneId = utc,
+        )
+        utcRepo.syncAuthorizedTypes()
+        val readsAfterBootstrap = gateway.readLog.size
+
+        // 4 días después: solape de 3 días atrás + 4 hacia delante = 8 días.
+        val later = HealthRepository(
+            db = db,
+            gateway = gateway,
+            tokenStore = ChangesTokenStore(db.healthDao()),
+            now = { t.plusSeconds(4 * 86_400) },
+            pacer = {},
+            zoneId = utc,
+        )
+        later.syncAuthorizedTypes()
+        assertEquals(readsAfterBootstrap + 8, gateway.readLog.size)
     }
 
     @Test
