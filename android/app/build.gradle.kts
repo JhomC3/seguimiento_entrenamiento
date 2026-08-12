@@ -28,7 +28,32 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    buildTypes {
+        debug {
+            // Destino preconfigurado (solo debug): la app funciona sin tocar
+            // nada. El token se lee del archivo gitignored del repo (fuente
+            // única con el servidor); si falta, queda vacío y la app lo avisa.
+            val token = syncDefaultToken()
+            buildConfigField("String", "DEFAULT_SYNC_URL", "\"http://192.168.1.6:8000/sync/health-connect\"")
+            buildConfigField("String", "DEFAULT_SYNC_TOKEN", "\"${token.escapeForKotlin()}\"")
+        }
+        release {
+            // Nunca embebir el secreto en un APK distribuible: release exige
+            // configuración manual (o pairing QR futuro) para sincronizar.
+            buildConfigField("String", "DEFAULT_SYNC_URL", "\"\"")
+            buildConfigField("String", "DEFAULT_SYNC_TOKEN", "\"\"")
+        }
+    }
 }
+
+fun syncDefaultToken(): String {
+    val file = project.file("../data/hc_sync_token")
+    return if (file.exists()) file.readText().trim() else ""
+}
+
+fun String.escapeForKotlin(): String =
+    replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "\\$")
 
 dependencies {
     implementation("androidx.health.connect:connect-client:1.1.0")

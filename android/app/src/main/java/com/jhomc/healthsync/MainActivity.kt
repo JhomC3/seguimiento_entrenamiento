@@ -2,9 +2,7 @@ package com.jhomc.healthsync
 
 import android.os.Build
 import android.os.Bundle
-import android.text.InputType
 import android.widget.Button
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -14,7 +12,6 @@ import androidx.activity.result.contract.ActivityResultContract
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.jhomc.healthsync.data.SecureTargetStore
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -29,8 +26,6 @@ class MainActivity : ComponentActivity() {
     private lateinit var permissionLauncher: ActivityResultLauncher<Set<String>>
     private lateinit var notificationPermissionLauncher: ActivityResultLauncher<String>
     private lateinit var statusView: TextView
-    private lateinit var urlInput: EditText
-    private lateinit var tokenInput: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,24 +54,6 @@ class MainActivity : ComponentActivity() {
             setPadding(24, 24, 24, 24)
             addView(statusView)
         }
-
-        // --- Destino (URL + token cifrado en Keystore) ---
-        root.addView(TextView(this).apply { text = "Destino (URL del servidor)" })
-        urlInput = EditText(this).apply {
-            hint = "https://mac.local:8443/sync/health-connect"
-            inputType = InputType.TYPE_TEXT_VARIATION_URI
-        }
-        root.addView(urlInput)
-        tokenInput = EditText(this).apply {
-            hint = "Token de sincronización (X-Sync-Token)"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
-        root.addView(tokenInput)
-
-        root.addView(Button(this).apply {
-            text = "Guardar"
-            setOnClickListener { saveTarget() }
-        })
 
         // --- Permisos esenciales (un solo diálogo con los 17) ---
         root.addView(Button(this).apply {
@@ -155,30 +132,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun saveTarget() {
-        val url = urlInput.text.toString().trim()
-        val token = tokenInput.text.toString().trim()
+    /**
+     * Siembra el destino preconfigurado (build debug) o avisa de que falta.
+     * El worker de sync lee URL/token directamente del store, no de la UI.
+     */
+    private fun loadTarget() {
         lifecycleScope.launch {
-            val client = HealthSyncClient()
-            when {
-                url.isEmpty() -> showMessage("URL requerida.")
-                client.validateTargetUrl(url, allowHttp = BuildConfig.DEBUG).isFailure ->
-                    showMessage("URL inválida: usa https:// (HTTP solo en versiones de prueba).")
-                token.isEmpty() -> showMessage("Token requerido.")
-                !com.jhomc.healthsync.data.SecureTargetStore.isValidSyncToken(token) ->
-                    showMessage(
-                        "Token inválido: se detectaron caracteres no ASCII " +
-                            "(suele ser un guion largo — colado al copiar/pegar). " +
-                            "Vuelve a pegar el token sin modificarlo.",
-                    )
-                else -> {
-                    withContext(Dispatchers.IO) {
-                        targetStore.saveTarget(url, "default")
-                        targetStore.saveToken(token)
-                    }
-                    SyncScheduler.schedulePeriodic(this@MainActivity)
-                    showMessage("Destino guardado y sync periódica programada (1h).")
+            try {
+                val existing = withContext(kotlinx.coroutines.Dispatchers.IO) { targetStore.target() }
+                if (existing != null) {
+                    statusView.text = "Destino: preconfigurado (${existing.url})"
+                    return@launch
                 }
+                val url = BuildConfig.DEFAULT_SYNC_URL
+                val token = BuildConfig.DEFAULT_SYNC_TOKEN
+                if (url.isEmpty() || token.isEmpty()) {
+                    statusView.text = "Sin destino configurado (build release sin pairing).\n" +
+                        "Instala el APK debug para sincronizar."
+                    return@launch
+                }
+                withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    targetStore.saveTarget(url, "default")
+                    targetStore.saveToken(token)
+                }
+                statusView.text = "Destino: preconfigurado (${url})"
+            } catch (e: Exception) {
+                statusView.text = "No se pudo leer la configuración: $e"
             }
         }
     }
@@ -187,22 +166,6 @@ class MainActivity : ComponentActivity() {
     private fun showMessage(message: String) {
         statusView.text = message
         android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show()
-    }
-
-    private fun loadTarget() {
-        lifecycleScope.launch {
-            try {
-                val target = withContext(Dispatchers.IO) { targetStore.target() }
-                val tokenSet = withContext(Dispatchers.IO) { targetStore.token() != null }
-                urlInput.setText(target?.url ?: "")
-                // El token guardado nunca se vuelca al campo (seguridad);
-                // se muestra un marcador para que no parezca vacío.
-                tokenInput.setText(if (tokenSet) "(guardado — no se muestra)" else "")
-                if (tokenSet) statusView.text = "Destino configurado. Token: guardado (cifrado)."
-            } catch (e: Exception) {
-                statusView.text = "No se pudo leer la configuración: $e"
-            }
-        }
     }
 
     /**
