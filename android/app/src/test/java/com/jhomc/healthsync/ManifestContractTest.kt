@@ -33,4 +33,17 @@ class ManifestContractTest {
             ),
         )
     }
+
+    @Test
+    fun manifest_declares_the_four_new_essential_permissions() {
+        val content = manifest.readText()
+        for (permission in listOf(
+            "android.permission.health.READ_DISTANCE",
+            "android.permission.health.READ_VO2_MAX",
+            "android.permission.health.READ_OXYGEN_SATURATION",
+            "android.permission.health.READ_BASAL_METABOLIC_RATE",
+        )) {
+            assertTrue("falta $permission en el manifest", content.contains(permission))
+        }
+    }
 }
