@@ -1,5 +1,14 @@
 # HealthSync Simplified UI Implementation Plan
 
+> **Estado (2026-08-12):** 5/5 tasks **implementadas** y **verificadas en dispositivo**
+> (commits `88adf19`…`51dce6b`; suite Android en verde, `assembleDebug` OK).
+> - Catálogo recortado a los 17 tipos esenciales; los 4 nuevos llegaron a `gym.db`
+>   con datos reales: `DISTANCE` 108, `BASAL_METABOLIC_RATE` 36, `OXYGEN_SATURATION` 46, `VO2_MAX` 3.
+> - Ampliación posterior al plan: el formulario URL/token/Guardar se **eliminó por completo**
+>   y el destino se embebe en los builds debug vía `BuildConfig.DEFAULT_SYNC_URL` /
+>   `DEFAULT_SYNC_TOKEN` (token leído de `data/hc_sync_token` en build-time; release sin secreto) — `51dce6b`.
+> - El protocolo en el teléfono quedó reducido a: abrir la app → "Permisos esenciales" → "Sincronizar AHORA".
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Reducir HealthSync a una app minimalista con exactamente los 17 tipos esenciales (los 13 actuales + DISTANCE, VO2_MAX, OXYGEN_SATURATION, BASAL_METABOLIC_RATE), sin botones de diagnóstico, sin desgloses de texto y sin la prueba de pasos 24h.

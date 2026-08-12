@@ -38,6 +38,22 @@ uv run pytest tests/e2e -q --no-cov         # browser tests (coverage gate lives
 - [ ] Deployment stays loopback-only (`--host 127.0.0.1`) unless the auth design in
       `docs/architecture/security-model.md` is implemented.
 
+## 4b. Android app (HealthSync) — si el release toca `android/`
+
+```bash
+cd android
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21
+export GRADLE_USER_HOME=$PWD/.gradle ANDROID_HOME=$PWD/android/sdk
+./gradlew test assembleDebug
+```
+
+- [ ] Suite Android en verde (debug + release).
+- [ ] `assembleDebug` genera `app/build/outputs/apk/debug/app-debug.apk`.
+- [ ] El APK debug embebe URL/token actuales de `data/hc_sync_token` (recompilar
+      si el token del servidor cambió; el release NO lleva secreto).
+- [ ] Smoke en dispositivo: "Permisos esenciales" → "Sincronizar AHORA" →
+      `sqlite3 data/gym.db "SELECT record_type, COUNT(*) FROM health_records WHERE deleted_at IS NULL GROUP BY record_type;"`.
+
 ## 5. Manual smoke test
 
 With a copied development DB and `uv run uvicorn app:app --host 127.0.0.1 --port 8000`:

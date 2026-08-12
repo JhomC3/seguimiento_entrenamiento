@@ -100,17 +100,27 @@ uv run python scripts/verify_editor.py
   `ANDROID_HOME=$PWD/android/sdk` (SDK instalado dentro del proyecto, no se
   commitea). Build + tests:
   ```bash
-  export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+  export JAVA_HOME=/opt/homebrew/opt/openjdk@21
   export GRADLE_USER_HOME=$PWD/.gradle ANDROID_HOME=$PWD/android/sdk
   cd android && ./gradlew assembleDebug test
   ```
-- **Backend endpoint**: `POST /sync/health-connect` (JSON, autenticado con
-  `X-Sync-Token` = `HC_SYNC_TOKEN`). Sin el env configurado responde 503.
-  Ejemplo local:
+- **Servidor**: el arranque recomendado es `scripts/start_server.sh` (genera el
+  token persistente en `data/hc_sync_token` — gitignored — y arranca uvicorn en
+  `0.0.0.0:8000`). Alternativa manual:
   ```bash
-  HC_SYNC_TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))") \
-  GYM_DB_PATH=data/gym.db uv run uvicorn app:app --host 127.0.0.1 --port 8000
+  HC_SYNC_TOKEN=$(cat data/hc_sync_token) uv run uvicorn app:app --host 0.0.0.0 --port 8000
   ```
+  Sin token configurado, `POST /sync/health-connect` responde 503.
+- **App sin configuración (desde 2026-08-12)**: la app NO tiene formulario de
+  URL/token. El build **debug** embebe el destino en build-time
+  (`BuildConfig.DEFAULT_SYNC_URL` / `DEFAULT_SYNC_TOKEN` en
+  `android/app/build.gradle.kts`; el token se lee de `data/hc_sync_token`, la
+  URL apunta por defecto a la IP LAN del Mac). El build **release** no lleva
+  secreto (vacío). Para cambiar el destino: editar `build.gradle.kts` +
+  `data/hc_sync_token`, recompilar e instalar (ver
+  `docs/operations/health-sync-migration.md` §5).
+- **Backend endpoint**: `POST /sync/health-connect` (JSON, autenticado con
+  `X-Sync-Token` = `HC_SYNC_TOKEN`).
 - **Export**: `GET /exportar/health-connect.csv` (activos; `?incluir_borrados=1`
   para auditoría de bajas).
 - **Forzar el worker desde ADB** (sin esperar la hora):

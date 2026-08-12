@@ -1,8 +1,11 @@
 # Migración del destino de sync: Mac → host persistente
 
-> La app Android es agnóstica al destino: solo conoce una URL HTTPS + token.
-> Este documento describe el procedimiento para mover el backend del Mac a un
-> host persistente (VPS/Raspberry Pi/nube) sin reescribir la app.
+> La app Android es agnóstica al destino: solo conoce una URL + token.
+> **Desde 2026-08-12** la app **no tiene formulario de configuración**: el destino
+> se embebe en el build debug (`BuildConfig.DEFAULT_SYNC_URL` /
+> `DEFAULT_SYNC_TOKEN`, token leído de `data/hc_sync_token` en build-time; release
+> sin secreto). Migrar el destino = **recompilar e instalar un APK debug** con los
+> nuevos valores (ver §5). Este documento describe el procedimiento.
 
 ## Por qué funciona sin cambios en la app
 
@@ -29,26 +32,37 @@
    volumen persistente, `HC_SYNC_TOKEN` nuevo generado con
    `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
 3. **TLS**: certificado confiable (Let's Encrypt o CA privada instalada en el
-   teléfono). La app rechaza HTTP y certificados no confiables.
+   teléfono). La app debug acepta HTTP (solo en dev); release rechaza HTTP.
 4. **Restaurar histórico** (opcional pero recomendado): copiar la `gym.db`
    migrada al host **antes** de la primera conexión del teléfono.
-5. **Cambiar el destino en la app**: pantalla principal → nueva URL HTTPS +
-   nuevo token → Guardar. La app crea el `target_id` nuevo, siembra el buffer y
-   entrega por lotes.
+5. **Cambiar el destino en la app** (sin formulario, desde 2026-08-12):
+   ```bash
+   # 1) Generar token nuevo en el host y volcarlo al archivo del repo
+   openssl rand -hex 32 > data/hc_sync_token   # el build lo lee en build-time
+   # 2) Editar android/app/build.gradle.kts → debug.DEFAULT_SYNC_URL (URL del host)
+   # 3) Recompilar e instalar (reemplaza destino y siembra el buffer nuevo)
+   export JAVA_HOME=/opt/homebrew/opt/openjdk@21
+   export GRADLE_USER_HOME=$PWD/.gradle ANDROID_HOME=$PWD/android/sdk
+   cd android && ./gradlew assembleDebug
+   adb install -r app/build/outputs/apk/debug/app-debug.apk
+   ```
+   El `target_id` nuevo se crea al arrancar; el outbox siembra y entrega por lotes.
 6. **Validación**:
    ```sql
    -- en el host, conteo de activos por tipo
    SELECT record_type, COUNT(*) FROM health_records WHERE deleted_at IS NULL GROUP BY record_type;
    ```
    Comparar con el mismo conteo del Mac pre-migración + los registros nuevos.
-7. **Rollback**: volver a la URL del Mac (target antiguo intacto en la tabla
-   `sync_targets`); el Mac sigue siendo destino válido.
+7. **Rollback**: volver a la URL del Mac (recompilar con los valores antiguos;
+   el target antiguo sigue intacto en la tabla `sync_targets`).
 
 ## Notas
 
 - Migrar el dashboard entero a PostgreSQL es un **proyecto separado**; el
   endpoint `/sync/health-connect` solo necesita una SQLite.
-- El Mac puede dejar de ser destino (borrar la URL de la app) o convivir
+- El Mac puede dejar de ser destino (recompilar con la URL nueva) o convivir
   (dos destinos activos: el outbox entrega a ambos).
 - `HC_SYNC_TOKEN` sin configurar en el host → el endpoint responde 503
   (fallo visible, nunca silencioso).
+- Para builds release (sin secreto embebido) el destino se configuraría por
+  pairing QR/LAN — no implementado; hoy el canal soportado es el APK debug.
