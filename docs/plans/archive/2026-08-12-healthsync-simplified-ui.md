@@ -1,12 +1,15 @@
 # HealthSync Simplified UI Implementation Plan
 
-> **Estado (2026-08-12):** 5/5 tasks **implementadas** y **verificadas en dispositivo**
+> **Estado (2026-08-12, cierre):** 5/5 tasks **implementadas** y **verificadas en dispositivo**
 > (commits `88adf19`…`51dce6b`; suite Android en verde, `assembleDebug` OK).
-> - Catálogo recortado a los 17 tipos esenciales; los 4 nuevos llegaron a `gym.db`
+> - Catálogo recortado a los 17 tipos esenciales; los 4 nuevos llegaron a `data/lifestyle.db`
 >   con datos reales: `DISTANCE` 108, `BASAL_METABOLIC_RATE` 36, `OXYGEN_SATURATION` 46, `VO2_MAX` 3.
 > - Ampliación posterior al plan: el formulario URL/token/Guardar se **eliminó por completo**
 >   y el destino se embebe en los builds debug vía `BuildConfig.DEFAULT_SYNC_URL` /
 >   `DEFAULT_SYNC_TOKEN` (token leído de `data/hc_sync_token` en build-time; release sin secreto) — `51dce6b`.
+> - Limpieza posterior: migración Room v2→v3 purga los 22 tipos recortados — `0162a8e`.
+> - La base de datos se renombró de `gym.db` a `lifestyle.db` (`LIFESTYLE_DB_PATH`) — `98baa61`.
+> - Integrado a `main` (merge fast-forward, 75 commits) el 12/08.
 > - El protocolo en el teléfono quedó reducido a: abrir la app → "Permisos esenciales" → "Sincronizar AHORA".
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
@@ -17,7 +20,7 @@
 
 **Tech Stack:** Kotlin, Robolectric, Room, WorkManager, Gradle desde `android/` con `GRADLE_USER_HOME=$PWD/.gradle` y `JAVA_HOME=/opt/homebrew/opt/openjdk@21`. Sin cambios en Python.
 
-**Referencias:** este plan se apoya en `docs/plans/2026-08-09-health-connect-sync.md` (arquitectura del pipeline, fases 0–5 completas y verificadas) y en `docs/plans/2026-08-11-health-sync-quota-scheduling.md` (scheduling, 8/8 tasks implementadas; la agenda adaptativa se reemplazó por ventanas fijas).
+**Referencias:** este plan se apoya en `docs/plans/archive/2026-08-09-health-connect-sync.md` (arquitectura del pipeline, fases 0–5 completas y verificadas) y en `docs/plans/archive/2026-08-11-health-sync-quota-scheduling.md` (scheduling, 8/8 tasks implementadas; la agenda adaptativa se reemplazó por ventanas fijas).
 
 ---
 

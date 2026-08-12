@@ -33,8 +33,12 @@ Estos límites solo se ajustan con evidencia de consumo (Phase 5.1).
 
 `record_type` es el `simpleName` de la clase Kotlin del SDK en `UPPER_SNAKE_CASE`
 (por ejemplo `STEPS`, `HEART_RATE`, `SLEEP_SESSION`, `EXERCISE_SESSION`, `WEIGHT`).
-El catálogo completo vive en `android/.../RecordTypes.kt` y se replica en el
-servidor como allow-list en `src/health_sync_service.py`.
+El catálogo **esencial** (17 tipos desde 2026-08-12) vive en
+`android/.../RecordTypes.kt` y se replica en el servidor como allow-list
+amplia en `src/health_sync_service.py` (incluye además el agregado interno
+`HEART_RATE_5MIN`). Los 22 tipos no esenciales ya no se sincronizan; sus datos
+históricos se conservan pero el dispositivo los purga localmente (migración
+Room v2→v3).
 
 ## 4. Cuerpo de la petición
 

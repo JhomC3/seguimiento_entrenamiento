@@ -2,13 +2,13 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-> **Estado (2026-08-12):** Implementación **completa y verificada end-to-end en dispositivo real**:
-> **2 152 registros** entregados a `data/gym.db` (STEPS, EXERCISE, SLEEP, WEIGHT, HEIGHT, BODY_FAT,
-> TOTAL_CALORIES, HEART_RATE crudo + **HEART_RATE_5MIN**: 907 tramos de 5 min con datos reales,
-> 26 POSTs 200 OK). El pipeline Health Connect → Room → outbox → HTTPS → SQLite funciona; el token
-> del servidor es persistente (`scripts/start_server.sh`). **Pendiente:** integración a `main`
-> (Task 5.3, con aprobación explícita) y la ejecución del rediseño de UI simplificada
-> (plan `docs/plans/2026-08-12-healthsync-simplified-ui.md`).
+> **Estado (2026-08-12, cierre):** Implementación **completa y verificada end-to-end en dispositivo real**.
+> La base se renombró a `data/lifestyle.db` (ya no es solo gym: entrenamiento + alimentación + salud).
+> **Pendientes previos resueltos:** integración a `main` (merge fast-forward, 75 commits) ✅ y
+> rediseño de UI simplificada ejecutado ✅ (ver `2026-08-12-healthsync-simplified-ui.md`, archivado).
+> Datos entregados: 2 391 registros de los 17 tipos esenciales (incl. DISTANCE 108, VO2_MAX 3,
+> OXYGEN_SATURATION 46, BASAL_METABOLIC_RATE 36). El pipeline Health Connect → Room → outbox →
+> HTTPS → SQLite funciona; el token del servidor es persistente (`scripts/start_server.sh`).
 
 | Fase | Estado | Evidencia |
 |---|---|---|
@@ -23,8 +23,9 @@
 | HR por tramos de 5 min | ✅ Completa | `6740eb6`; SDK 1.1.0 sin agregación de HR (AAR verificado) → lectura por día acotada + bucketizado local |
 | Sync a demanda (fuerza) y agenda por ventanas | ✅ Completa | `969d60a`, `4a2cba4`; una pulsación sincroniza todo (tope 15 min); ventanas 9:00/13:00/19:00 |
 | Operación: token persistente, notificaciones, worker | ✅ Completa | `8091995`; `scripts/start_server.sh` (token en `data/hc_sync_token`); notificación con clic a la app y sin zombis |
-| UI simplificada (17 tipos esenciales) | 📋 Plan | `docs/plans/2026-08-12-healthsync-simplified-ui.md` (pendiente de ejecución) |
-| Integración a `main` (Task 5.3) | ⏳ Pendiente | Requiere aprobación explícita del usuario |
+| UI simplificada (17 tipos esenciales) | ✅ Completa | `2026-08-12-healthsync-simplified-ui.md` (archivado); catálogo 17 tipos + destino embebido en debug |
+| Limpieza Room de tipos recortados | ✅ Completa | `0162a8e`; migración Room v2→v3 purga 22 tipos no esenciales |
+| Integración a `main` (Task 5.3) | ✅ Completa | Merge fast-forward (75 commits) el 12/08 |
 
 **Goal:** Construir una app Android Kotlin dentro de `android/` que extrae y conserva **todos los tipos de `Record` disponibles para el dispositivo en la versión fijada de Health Connect**, procedentes de Samsung Health/Galaxy Watch y otras fuentes autorizadas; los replica de forma fiable al dashboard mediante FastAPI + SQLite, primero en el Mac y posteriormente en cualquier host HTTPS persistente sin reescribir la app Android.
 
@@ -379,7 +380,7 @@ Estos intervalos son objetivos, no garantías de WorkManager. Un tipo inicialmen
 5. Un rate limit no provoca más de una llamada fallida por ventana de enfriamiento.
 6. El conjunto completo de tipos autorizados termina siendo revisado dentro de sus intervalos, sin exigir que todos se consulten en la misma ejecución.
 
-**Estado (2026-08-11):** implementado en `feature/health-sync` (Tasks 1–8 de `docs/plans/2026-08-11-health-sync-quota-scheduling.md`); los 6 criterios tienen tests dedicados (58 unit tests en verde).
+**Estado (2026-08-11):** implementado en `feature/health-sync` (Tasks 1–8 de `docs/plans/archive/2026-08-11-health-sync-quota-scheduling.md`); los 6 criterios tienen tests dedicados (58 unit tests en verde).
 
 ### 4. Entorno MIUI (Redmi Note 8)
 
@@ -405,6 +406,6 @@ Estos intervalos son objetivos, no garantías de WorkManager. Un tipo inicialmen
 - ✅ **Smoke end-to-end real** (Watch → Samsung Health → HC → Room → HTTP → SQLite del Mac) — **completado el 12/08**: 2 152 registros, 26 POSTs 200 OK, HR por tramos de 5 min con datos reales.
 - Verificación de `data_origin_package` real con pasos on-device (metadato conservado; sin asumir valor fijo — ver Riesgos).
 - **Integración a `main` (Task 5.3)** — solo con aprobación explícita del usuario.
-- **UI simplificada a 17 tipos esenciales** — plan `docs/plans/2026-08-12-healthsync-simplified-ui.md` (pendiente de ejecución); incluye la verificación de los 4 tipos nuevos (DISTANCE, VO2_MAX, OXYGEN_SATURATION, BASAL_METABOLIC_RATE).
+- **UI simplificada a 17 tipos esenciales** — plan `docs/plans/archive/2026-08-12-healthsync-simplified-ui.md` (pendiente de ejecución); incluye la verificación de los 4 tipos nuevos (DISTANCE, VO2_MAX, OXYGEN_SATURATION, BASAL_METABOLIC_RATE).
 - Verificación de `data_origin_package` real con pasos on-device.
 - Integración a `main` (Task 5.3) — solo con aprobación explícita del usuario.
