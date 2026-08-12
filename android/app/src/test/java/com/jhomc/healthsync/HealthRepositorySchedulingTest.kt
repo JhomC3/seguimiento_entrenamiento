@@ -8,6 +8,9 @@ import java.time.Instant
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -83,6 +86,47 @@ class HealthRepositorySchedulingTest {
         )
         repoWithProgress.syncAuthorizedTypes()
         assertTrue("debe reportar el tipo: $messages", messages.any { it.contains("STEPS") })
+    }
+
+    @Test
+    fun `phantom empty pages terminate the backfill instead of looping forever`() = runBlocking {
+        gateway.granted = setOf(RecordTypes.byTypeName("SLEEP_SESSION")!!.permission)
+        gateway.phantomEmptyPages = true // token nuevo + página vacía, para siempre
+        val result = repo.syncType(RecordTypes.byTypeName("SLEEP_SESSION")!!)
+        assertEquals(0, result.backfilled)
+        assertEquals("3 páginas vacías cortan el backfill", 3, gateway.readLog.size)
+        assertFalse(result.budgetHit) // no es presupuesto: el historial está agotado
+    }
+
+    @Test
+    fun `non-advancing page token terminates the backfill`() = runBlocking {
+        gateway.granted = setOf(RecordTypes.byTypeName("SLEEP_SESSION")!!.permission)
+        gateway.phantomEmptyPages = true
+        gateway.phantomSameToken = true
+        repo.syncType(RecordTypes.byTypeName("SLEEP_SESSION")!!)
+        assertEquals("el token repetido corta en la 2ª llamada", 2, gateway.readLog.size)
+    }
+
+    @Test
+    fun `page budget stops the run and the next run resumes from the checkpoint`() = runBlocking {
+        gateway.granted = setOf(RecordTypes.byTypeName("SLEEP_SESSION")!!.permission)
+        gateway.phantomRecords.addAll(
+            (1..60).map { Fixtures.sleepSession("hc-$it", t, t.plusSeconds(3600)) },
+        )
+
+        // Run 1: el presupuesto (50 páginas) corta el bootstrap.
+        val r1 = repo.syncAuthorizedTypes().single()
+        assertEquals(50, gateway.readLog.size)
+        assertTrue("debe marcar budgetHit", r1.budgetHit)
+        val mid = db.healthDao().getState("SLEEP_SESSION")!!
+        assertTrue("checkpoint persistido para reanudar", mid.bootstrapPageToken != null)
+        assertNull("sin markSynced: sigue vencido", mid.nextDueAtEpochMs)
+
+        // Run 2: reanuda desde el checkpoint y completa.
+        repo.syncAuthorizedTypes()
+        val done = db.healthDao().getState("SLEEP_SESSION")!!
+        assertNotNull("bootstrap completado", done.nextDueAtEpochMs)
+        assertEquals(60, db.healthDao().allActiveRecords().size)
     }
 
     @Test

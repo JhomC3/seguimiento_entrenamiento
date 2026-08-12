@@ -28,6 +28,13 @@ class FakeHealthConnectGateway : HealthConnectGateway {
     var failReadsWithRateLimit = false                           // readRecords → RemoteException rate-limited (falla la 1ª página NO inicial, para confirmar el checkpoint)
     var failReadsWithForegroundRequired = false                  // readRecords → RemoteException "must be in foreground" (one-shot)
 
+    /** Modo proveedor fantasma: páginas VACÍAS con token nuevo (nunca termina por sí solo). */
+    var phantomEmptyPages = false
+    /** Modo proveedor fantasma: token idéntico repetido (no avanza). */
+    var phantomSameToken = false
+    /** Proveedor con registros paginados de 1 en 1 (sirve para probar el presupuesto por ejecución). */
+    val phantomRecords = mutableListOf<Record>()
+
     /** Resultados de aggregateTotal por typeName (p. ej. "STEPS" → 9018). */
     val aggregateTotals = mutableMapOf<String, Long?>()
     /** Tipos para los que se llamó a aggregateTotal. */
@@ -105,6 +112,15 @@ class FakeHealthConnectGateway : HealthConnectGateway {
                 "com.jhomc.healthsync must be in foreground to read the following data types " +
                     "[Steps, StepsCadenceSeries]",
             )
+        }
+        if (phantomEmptyPages) {
+            val next = if (phantomSameToken) (pageToken ?: "pt-loop") else "pt-${tokenCounter++}"
+            return ReadRecordsResponse(emptyList(), next)
+        }
+        if (phantomRecords.isNotEmpty()) {
+            val record = phantomRecords.removeAt(0)
+            val next = if (phantomRecords.isNotEmpty()) "pt-${tokenCounter++}" else null
+            return ReadRecordsResponse(listOf(record), next)
         }
         if (backfillQueue.isNotEmpty()) {
             val page = backfillQueue.removeAt(0)

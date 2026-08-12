@@ -26,10 +26,27 @@ data class TypeSyncResult(
     val deletes: Int = 0,
     val backfilled: Int = 0,
     val tokenAdvanced: Boolean = false,
+    /** True when the run stopped at the per-run page budget: bootstrap is NOT
+     *  complete and the next run must resume from the persisted checkpoint. */
+    val budgetHit: Boolean = false,
 )
 
 /** Types synced per run to stay inside the provider's per-hour quota. */
 const val MAX_TYPES_PER_RUN = 1
+
+/**
+ * Max pages read per run. Some providers return a non-null pageToken even for
+ * EMPTY pages (verified on device: every type shows "more" with 0 records), so
+ * an unbounded loop never terminates. The budget bounds the run; the
+ * checkpoint persists so the next run resumes.
+ */
+const val MAX_PAGES_PER_RUN = 50
+
+/** Consecutive EMPTY pages that end the backfill (provider phantom tokens). */
+const val MAX_EMPTY_PAGES = 3
+
+/** Max changes pages per drain run (defensive; progress persists per page). */
+const val MAX_DRAIN_PAGES_PER_RUN = 50
 
 /** sync_meta key holding the persisted round-robin cursor. */
 private const val ROTATION_META_KEY = "round_robin_index"
@@ -167,7 +184,12 @@ class HealthRepository(
             try {
                 onProgress("Sincronizando ${entry.typeName}…")
                 val result = syncType(entry)
-                tokenStore.markSynced(entry.typeName, result.hadChanges(), now().toEpochMilli())
+                // Solo se marca sincronizado si el bootstrap terminó; si se
+                // cortó por presupuesto, el checkpoint permite reanudar y el
+                // tipo sigue vencido para la próxima ejecución.
+                if (!result.budgetHit) {
+                    tokenStore.markSynced(entry.typeName, result.hadChanges(), now().toEpochMilli())
+                }
                 results += result
             } catch (e: RateLimitedException) {
                 tokenStore.markCooldown(entry.typeName, now().toEpochMilli())
@@ -284,17 +306,18 @@ class HealthRepository(
         // 2) Backfill the window resuming from the last confirmed page, with
         //    the page token checkpointed in the same transaction as each page.
         val anchorMs = dao.getState(entry.typeName)?.bootstrapStartEpochMs ?: (nowMs - BACKFILL_WINDOW_MS)
-        val backfilled = resumeBackfill(entry, anchorMs)
+        val outcome = resumeBackfill(entry, anchorMs)
         // 3) Drain everything that happened since the reserved token.
         val reservedToken = dao.getState(entry.typeName)?.changesToken
             ?: throw IllegalStateException("bootstrap sin token reservado: ${entry.typeName}")
         val drained = drainChanges(entry, reservedToken, tokenReserved = true)
         return TypeSyncResult(
             recordType = entry.typeName,
-            backfilled = backfilled,
+            backfilled = outcome.records,
             upserts = drained.upserts,
             deletes = drained.deletes,
             tokenAdvanced = drained.tokenAdvanced,
+            budgetHit = outcome.budgetHit,
         )
     }
 
@@ -303,21 +326,48 @@ class HealthRepository(
      * each page and its checkpoint (bootstrap_page_token) commit in ONE
      * transaction, so an interruption (rate limit, crash) continues from the
      * last confirmed page instead of re-reading from the start.
+     *
+     * Termination guards (verified on device: some providers return a non-null
+     * pageToken even for EMPTY pages, which would loop forever):
+     *  - MAX_EMPTY_PAGES consecutive empty pages end the backfill (data done).
+     *  - A pageToken that does not advance ends the backfill (data done).
+     *  - MAX_PAGES_PER_RUN bounds the run; budgetHit=true → next run resumes
+     *    from the persisted checkpoint.
      */
-    private suspend fun resumeBackfill(entry: RecordTypeEntry, anchorMs: Long): Int {
+    private suspend fun resumeBackfill(entry: RecordTypeEntry, anchorMs: Long): BackfillOutcome {
         val end = now()
         val start = Instant.ofEpochMilli(anchorMs)
         var pageToken = dao.getState(entry.typeName)?.bootstrapPageToken
         var total = 0
         var pageNo = 0
+        var emptyPages = 0
+        var lastToken: String? = null
         do {
             pageNo++
+            if (pageNo > MAX_PAGES_PER_RUN) {
+                // Presupuesto agotado: el checkpoint ya persistido permite reanudar.
+                return BackfillOutcome(total, budgetHit = true)
+            }
             val page: ReadRecordsResponse<Record> = try {
                 gateway.readRecords(entry.recordClass, start, end, pageToken)
             } catch (e: RemoteException) {
                 throw e.asSyncExceptionOrSelf()
             }
+            if (page.pageToken != null && page.pageToken == lastToken) {
+                // El token no avanza: el proveedor no tiene más datos.
+                return BackfillOutcome(total, budgetHit = false)
+            }
+            lastToken = page.pageToken
             val entities = page.records.map { toEntity(it) }
+            if (entities.isEmpty()) {
+                emptyPages++
+                if (emptyPages >= MAX_EMPTY_PAGES) {
+                    // Páginas fantasma vacías: el historial está agotado.
+                    return BackfillOutcome(total, budgetHit = false)
+                }
+            } else {
+                emptyPages = 0
+            }
             db.withTransaction {
                 dao.applyBackfillPage(entities, now().toEpochMilli())
                 dao.upsertState(
@@ -332,21 +382,34 @@ class HealthRepository(
             pageToken = page.pageToken
             if (pageToken != null) pace()
         } while (pageToken != null)
-        return total
+        return BackfillOutcome(total, budgetHit = false)
     }
+
+    /** Result of one resumeBackfill run. */
+    private data class BackfillOutcome(val records: Int, val budgetHit: Boolean)
 
     private suspend fun backfill(entry: RecordTypeEntry): Int {
         val end = now()
         val start = end.minus(30, ChronoUnit.DAYS)
         var pageToken: String? = null
         var total = 0
+        var emptyPages = 0
+        var lastToken: String? = null
         do {
             val page: ReadRecordsResponse<Record> = try {
                 gateway.readRecords(entry.recordClass, start, end, pageToken)
             } catch (e: RemoteException) {
                 throw e.asSyncExceptionOrSelf()
             }
+            if (page.pageToken != null && page.pageToken == lastToken) break
+            lastToken = page.pageToken
             val entities = page.records.map { toEntity(it) }
+            if (entities.isEmpty()) {
+                emptyPages++
+                if (emptyPages >= MAX_EMPTY_PAGES) break
+            } else {
+                emptyPages = 0
+            }
             db.withTransaction { dao.applyBackfillPage(entities, now().toEpochMilli()) }
             total += entities.size
             pageToken = page.pageToken
@@ -363,7 +426,11 @@ class HealthRepository(
         var upserts = 0
         var deletes = 0
         var advanced = false
+        var pages = 0
+        var emptyPages = 0
+        var lastToken: String? = null
         while (true) {
+            if (++pages > MAX_DRAIN_PAGES_PER_RUN) break
             val response: ChangesResponse = try {
                 gateway.getChanges(current)
             } catch (e: ChangesTokenExpiredException) {
@@ -385,6 +452,16 @@ class HealthRepository(
                 recoverFromExpiry(entry)
                 return TypeSyncResult(entry.typeName, tokenAdvanced = true)
             }
+            // Defensivo: un token que no avanza o páginas vacías repetidas
+            // significan que no hay más cambios (proveedores con tokens fantasma).
+            if (response.nextChangesToken == lastToken) break
+            if (response.changes.isEmpty()) {
+                emptyPages++
+                if (emptyPages >= MAX_EMPTY_PAGES) break
+            } else {
+                emptyPages = 0
+            }
+            lastToken = response.nextChangesToken
             db.withTransaction {
                 for (change in response.changes) {
                     when (change) {
