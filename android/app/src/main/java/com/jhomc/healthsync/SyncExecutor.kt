@@ -22,7 +22,7 @@ data class SyncReport(
  */
 object SyncExecutor {
 
-    suspend fun run(context: Context, onProgress: (String) -> Unit = {}): SyncReport {
+    suspend fun run(context: Context, onProgress: (String) -> Unit = {}, force: Boolean = false): SyncReport {
         val appContext = context.applicationContext
         val gateway = RealHealthConnectGateway(appContext)
         if (HealthConnectClient.getSdkStatus(appContext) != HealthConnectClient.SDK_AVAILABLE) {
@@ -38,7 +38,7 @@ object SyncExecutor {
             return SyncReport(0, 0, 0, notice = "sin_permisos")
         }
         val sourceResults = try {
-            repo.syncAuthorizedTypes()
+            repo.syncAuthorizedTypes(force = force)
         } catch (e: RateLimitedException) {
             return SyncReport(0, 0, 0, notice = "rate_limited")
         } catch (e: ForegroundRequiredException) {

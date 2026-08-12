@@ -109,12 +109,18 @@ class SyncService : Service() {
     companion object {
         const val CHANNEL_ID = "health_sync_progress"
         const val NOTIFICATION_ID = 1
-        const val WATCHDOG_MS = 5 * 60 * 1000L
+
+        /**
+         * Tope de seguridad por pulsación: si el sync se alarga (proveedor
+         * lento, datos enormes), el servicio se detiene solo y el checkpoint
+         * permite continuar en la siguiente pulsación.
+         */
+        const val WATCHDOG_MS = 15 * 60 * 1000L
 
         /** runner inyectable en tests; firma idéntica a SyncExecutor.run. */
         @Volatile
         var runner: suspend (Context, (String) -> Unit) -> SyncReport = { ctx, onProgress ->
-            SyncExecutor.run(ctx, onProgress)
+            SyncExecutor.run(ctx, onProgress, force = true)
         }
 
         /** Progreso observable: la UI lo colecta para el panel. */

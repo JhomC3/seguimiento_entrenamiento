@@ -261,6 +261,56 @@ class HealthRepositorySchedulingTest {
     }
 
     @Test
+    fun `force syncs all eligible types in one run ignoring due dates`() = runBlocking {
+        gateway.granted = setOf(
+            RecordTypes.byTypeName("SLEEP_SESSION")!!.permission,
+            RecordTypes.byTypeName("OXYGEN_SATURATION")!!.permission, // permiso único
+        )
+        // Run normal: 1 tipo (SLEEP, prioridad alta). Después, forzado: ambos.
+        repo.syncAuthorizedTypes()
+        assertEquals(1, gateway.tokenLog.size)
+
+        gateway.tokenLog.clear()
+        val forced = repo.syncAuthorizedTypes(force = true)
+        assertEquals("force ignora vencimiento y presupuesto", 2, forced.size)
+        assertEquals(
+            "ambos tipos sincronizados en el run forzado",
+            setOf("SLEEP_SESSION", "OXYGEN_SATURATION"),
+            forced.map { it.recordType }.toSet(),
+        )
+    }
+
+    @Test
+    fun `force respects cooldowns and continues past a hung type`() = runBlocking {
+        gateway.granted = setOf(
+            RecordTypes.byTypeName("STEPS")!!.permission,
+            RecordTypes.byTypeName("SLEEP_SESSION")!!.permission,
+        )
+        // El handler cuelga SOLO las lecturas de SLEEP_SESSION; STEPS va bien.
+        gateway.readRecordsHandler = { recordType, start, end, pageToken ->
+            if (recordType == androidx.health.connect.client.records.SleepSessionRecord::class) {
+                kotlinx.coroutines.delay(60_000)
+                throw AssertionError("unreachable")
+            }
+            null
+        }
+        val repoFast = HealthRepository(
+            db = db,
+            gateway = gateway,
+            tokenStore = ChangesTokenStore(db.healthDao()),
+            now = { t },
+            pacer = {},
+            readTimeoutMs = 100,
+        )
+        val results = repoFast.syncAuthorizedTypes(force = true)
+        // SLEEP_SESSION entra en cooldown y STEPS sigue sincronizándose.
+        assertTrue(results.isNotEmpty())
+        val sleep = db.healthDao().getState("SLEEP_SESSION")
+        assertTrue("SLEEP_SESSION en cooldown", sleep?.cooldownUntilEpochMs != null)
+        assertTrue("STEPS sincronizado", db.healthDao().getState("STEPS")?.nextDueAtEpochMs != null)
+    }
+
+    @Test
     fun `a run with 38 authorized types calls only the budgeted ones`() = runBlocking {
         repo.syncAuthorizedTypes()
         assertTrue("criterio 1: 1 tipo por ejecución", gateway.tokenLog.size == 1)

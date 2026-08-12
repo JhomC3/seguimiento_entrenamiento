@@ -226,14 +226,15 @@ class HealthRepository(
         e is RemoteException || e is IOException || e is SecurityException
 
     /**
-     * Source phase: sync ONLY the authorized types whose next_due_at has passed
-     * and that are not cooling down, budgeted to MAX_TYPES_PER_RUN. Candidates
-     * are ordered by priority (HIGH first, in catalog order so the first runs
-     * hit the types with guaranteed data: STEPS, HEART_RATE, SLEEP...), then by
-     * due time, and the selection rotates from the persisted cursor so no type
-     * starves. If nothing is due, no Health Connect call happens at all.
+     * Source phase: sync the authorized types (not cooling down) ordered by
+     * priority then catalog order, rotating from the persisted cursor. With
+     * force=false (worker) solo los tipos cuyo next_due_at ha pasado, con
+     * presupuesto MAX_TYPES_PER_RUN; con force=true (botón directo) TODOS los
+     * tipos elegibles, ignorando vencimiento y presupuesto: una pulsación
+     * refresca todo. Un tipo colgado (timeout) entra en cooldown y el resto
+     * continúa; el rate limit corta la ejecución con aviso.
      */
-    suspend fun syncAuthorizedTypes(): List<TypeSyncResult> {
+    suspend fun syncAuthorizedTypes(force: Boolean = false): List<TypeSyncResult> {
         val granted = gateway.grantedPermissions()
         val nowMs = now().toEpochMilli()
         val catalogIndex = HashMap<String, Int>().also { map ->
@@ -247,8 +248,7 @@ class HealthRepository(
                 cooldown == null || cooldown <= nowMs
             }
             .filter { (_, st) ->
-                val due = st?.nextDueAtEpochMs
-                due == null || due <= nowMs
+                force || st?.nextDueAtEpochMs == null || st.nextDueAtEpochMs <= nowMs
             }
             .sortedWith(
                 compareByDescending<Pair<RecordTypeEntry, HealthSyncStateEntity?>> {
@@ -263,7 +263,7 @@ class HealthRepository(
         val cursor = rotationCursor()
         val start = cursor % candidates.size
         val rotated = candidates.drop(start) + candidates.take(start)
-        val selected = rotated.take(MAX_TYPES_PER_RUN)
+        val selected = if (force) rotated else rotated.take(MAX_TYPES_PER_RUN)
         saveRotationCursor((cursor + selected.size) % candidates.size)
 
         val results = mutableListOf<TypeSyncResult>()
@@ -282,11 +282,10 @@ class HealthRepository(
                 tokenStore.markCooldown(entry.typeName, now().toEpochMilli())
                 throw e
             } catch (e: HcReadTimeoutException) {
-                // Página que el proveedor no responde: cooldown del tipo para
-                // que la próxima ejecución sincronice OTROS tipos (el bucle de
-                // "misma página" se rompe); dentro de 1 h se reintenta.
+                // Tipo cuyo proveedor no responde: cooldown y SE SIGUE con el
+                // siguiente (el colgado no bloquea el resto del run).
                 tokenStore.markCooldown(entry.typeName, now().toEpochMilli())
-                throw e
+                if (force) continue else throw e
             } catch (e: SecurityException) {
                 tokenStore.markPermissionLost(entry.typeName)
             }

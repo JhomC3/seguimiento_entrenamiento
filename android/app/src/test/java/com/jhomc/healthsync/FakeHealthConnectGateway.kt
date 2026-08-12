@@ -52,9 +52,10 @@ class FakeHealthConnectGateway : HealthConnectGateway {
 
     /**
      * Hook opcional: si está definido, readRecords delega en él (permite
-     * respuestas por ventana de tiempo, p. ej. un día distinto por llamada).
+     * respuestas por ventana de tiempo, p. ej. un día distinto por llamada,
+     * o simular colgues por tipo).
      */
-    var readRecordsHandler: ((
+    var readRecordsHandler: (suspend (
         recordType: KClass<out Record>,
         start: Instant,
         end: Instant,
