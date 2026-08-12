@@ -16,6 +16,7 @@ import { initPanelCollapse } from './panel-collapse.js';
 import { getCsrfToken, setAlimentoMap, setCategoriaMap, setCicloStart, setCsrfToken } from './state.js';
 import { initEntrenoDnD, initTemplateActions, initTemplateSortable } from './templates.js';
 import { initAnalysisChart } from './analysis-chart.js';
+import { initContextualCreate } from './contextual-create.js';
 import { initLayerToggles } from './layer-toggles.js';
 import { initRegisterModal } from './register-modal.js';
 import { initSegmentedPills } from './segmented-pill.js';
@@ -68,5 +69,6 @@ document.addEventListener('DOMContentLoaded', function () {
     initLayerToggles();
     initAnalysisChart();
     initRegisterModal();
+    initContextualCreate();
     document.body.dataset.appReady = '1';
 });

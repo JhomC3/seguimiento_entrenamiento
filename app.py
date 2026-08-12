@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from config import CICLO_START, DB_PATH, HC_SYNC_TOKEN, MUSCLE_CATEGORIES
+from src.cardio_service import CardioAnnotationInput, upsert_cardio_annotation
 from src.charts import LAYER_TITLES, get_exercise_raw_data, get_exercise_session_summary
 from src.dashboard_service import (
     DEFAULT_LAYERS,
@@ -359,6 +360,8 @@ def read_index(request: Request):
             "kpi_html": _kpi_row_html(request, vm.kpis),
             "chart_html": analysis_chart_html(vm),
             "layers_config": [(layer_id, LAYER_TITLES[layer_id]) for layer_id in DEFAULT_LAYERS],
+            "exercise_form_html": _exercise_form_html(request),
+            "alimento_form_html": _alimento_form_html(request),
             "app_config_json": {
                 "categoria_map": get_ejercicio_categoria(DB_PATH),
                 "alimento_map": _alimento_preview_map(),
@@ -420,6 +423,77 @@ def analisis_chart(
             "analysis-filters",
             _analysis_filters_html(request, nivel, focus),
             swap="outerHTML",
+        )
+    )
+
+
+@app.post("/cardio/annotation", response_class=HTMLResponse)
+def cardio_annotation_save(
+    request: Request,
+    hc_id: str = Form(...),
+    velocidad_kmh: float | None = Form(None),
+    inclinacion_pct: float | None = Form(None),
+    notas: str = Form(""),
+    fecha: str = Form(""),
+    nivel: str = Form("global"),
+    focus: str = Form(""),
+):
+    """Upsert de velocidad/inclinación sobre una sesión EXERCISE_SESSION."""
+    try:
+        upsert_cardio_annotation(
+            DB_PATH,
+            CardioAnnotationInput(
+                hc_id=hc_id,
+                velocidad_kmh=velocidad_kmh,
+                inclinacion_pct=inclinacion_pct,
+                notas=notas,
+            ),
+        )
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    notice = notice_oob(
+        templates,
+        request,
+        target="notice-container",
+        message="Anotación de cardio guardada.",
+        dismiss=2500,
+    )
+    if fecha:
+        return HTMLResponse(
+            content=notice
+            + fragment_oob(
+                templates,
+                request,
+                "day-detail-wrap",
+                _day_detail_html(request, fecha, nivel, focus),
+                swap="outerHTML",
+            )
+        )
+    return HTMLResponse(content=notice)
+
+
+def _day_detail_html(request: Request, fecha: str, nivel: str, focus: str) -> str:
+    vm = build_day_detail(DB_PATH, fecha, nivel, focus or None)
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="day_detail.html",
+            context={
+                "fecha_iso": vm.fecha_iso,
+                "nivel": vm.nivel,
+                "focus": vm.focus,
+                "has_entreno": vm.has_entreno,
+                "sets": vm.sets,
+                "pfr": vm.pfr,
+                "volumen": vm.volumen,
+                "sets_fallo": vm.sets_fallo,
+                "nutrientes": vm.nutrientes,
+                "peso": vm.peso,
+                "sueno": vm.sueno,
+                "fc_media": vm.fc_media,
+                "hrv": vm.hrv,
+                "cardio": vm.cardio,
+            },
         )
     )
 

@@ -54,6 +54,41 @@ function isoFromClickX(x) {
     return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
 }
 
+function clearNextDayHighlights() {
+    const plotEl = document.getElementById('analysis-chart-plot');
+    if (!plotEl || !plotEl.layout) return;
+    if (plotEl.layout.shapes) Plotly.relayout(plotEl, { shapes: [] });
+}
+
+function highlightNextDay(iso) {
+    const wrap = document.getElementById('day-detail-wrap');
+    if (!wrap) return;
+    const hasFallo = wrap.dataset.hasFallo === '1';
+    const hasCardio = wrap.dataset.hasCardio === '1';
+    if (!hasFallo && !hasCardio) return;
+    const plotEl = document.getElementById('analysis-chart-plot');
+    if (!plotEl || !plotEl.layout) return;
+    const start = new Date(iso + 'T00:00:00');
+    start.setDate(start.getDate() + 1);
+    const x0 = start.getTime();
+    const x1 = x0 + 86400000;
+    const color = hasFallo ? 'rgba(155, 27, 48, 0.25)' : 'rgba(59, 130, 246, 0.2)';
+    const axes = Object.keys(plotEl.layout).filter((k) => /^xaxis\d*$/.test(k));
+    const shapes = axes.map((axis) => ({
+        type: 'rect',
+        xref: axis,
+        yref: 'paper',
+        x0: x0,
+        x1: x1,
+        y0: 0,
+        y1: 1,
+        fillcolor: color,
+        line: { width: 0 },
+        layer: 'below',
+    }));
+    Plotly.relayout(plotEl, { shapes: shapes });
+}
+
 export function renderAnalysisChart() {
     const dataEl = document.getElementById('analysis-chart-data');
     const plotEl = document.getElementById('analysis-chart-plot');
@@ -86,6 +121,15 @@ export function initAnalysisChart() {
         }
     });
 
+    // Al cargar el panel del día: resalta el día siguiente si hubo fallo/cardio.
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+        if (!e.target || e.target.id !== 'day-detail-section') return;
+        const wrap = document.getElementById('day-detail-wrap');
+        if (!wrap || !wrap.dataset.fecha) return;
+        clearNextDayHighlights();
+        highlightNextDay(wrap.dataset.fecha);
+    });
+
     const wrap = document.getElementById('analysis-chart-wrap');
     if (wrap) {
         wrap.addEventListener('analysis:level-changed', function () {
@@ -112,5 +156,17 @@ export function initAnalysisChart() {
         if (e.key !== 'Enter') return;
         e.preventDefault();
         refreshChart();
+    });
+
+    // Anotación de cardio: submit del form del panel del día.
+    document.addEventListener('submit', function (e) {
+        const form = e.target.closest && e.target.closest('[data-action="cardio-annotation-save"]');
+        if (!form) return;
+        e.preventDefault();
+        htmx.ajax('POST', '/cardio/annotation', {
+            values: new FormData(form),
+            target: document.body,
+            swap: 'none',
+        });
     });
 }
