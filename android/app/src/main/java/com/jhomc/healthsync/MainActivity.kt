@@ -15,7 +15,6 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.jhomc.healthsync.data.SecureTargetStore
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -39,9 +38,8 @@ class MainActivity : ComponentActivity() {
             showPrivacyPolicy()
             return
         }
-        // Worker periódico: 1 h, sincroniza solo tipos vencidos (la agenda por
-        // ventanas hace que la mayoría de horas no haya llamadas). El botón
-        // directo sigue siendo el camino garantizado en MIUI.
+        // Worker periódico: 1 h, sincroniza solo tipos vencidos (agenda por
+        // ventanas). El botón "Sincronizar AHORA" fuerza todo al instante.
         SyncScheduler.schedulePeriodic(this)
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             setContentView(
@@ -56,61 +54,14 @@ class MainActivity : ComponentActivity() {
 
         statusView = TextView(this).apply { textSize = 14f; setPadding(8, 8, 8, 8) }
 
-        val coreButton = Button(this).apply {
-            text = "Permisos: núcleo (Samsung Health)"
-            setOnClickListener { requestPermissions(manager.corePermissions()) }
-        }
-
-        val openHcButton = Button(this).apply {
-            text = "Abrir Health Connect (permisos manuales)"
-            setOnClickListener { openHealthConnect() }
-        }
-
-        val singlePermissionButton = Button(this).apply {
-            text = "Probar: pedir SOLO pasos (1 permiso)"
-            setOnClickListener {
-                val stepsPermission = RecordTypes.byTypeName("STEPS")?.permission ?: return@setOnClickListener
-                requestPermissions(setOf(stepsPermission))
-            }
-        }
-
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 24, 24, 24)
             addView(statusView)
-            addView(coreButton)
-            addView(openHcButton)
-            addView(singlePermissionButton)
         }
 
-        // Botones opcionales por familia (nunca en el lote inicial).
-        RecordTypes.optionalByFamily.forEach { (family, entries) ->
-            val label = family.name.lowercase().replaceFirstChar { it.uppercase() } +
-                " (${entries.size})"
-            val familyButton = Button(this).apply {
-                text = if (entries.any { it.sensitivity == Sensitivity.SENSITIVE }) {
-                    "$label — sensibles, con explicación"
-                } else {
-                    label
-                }
-                setOnClickListener {
-                    if (entries.any { it.sensitivity == Sensitivity.SENSITIVE }) {
-                        statusView.text = "Los tipos sensibles se explican antes de pedirlos."
-                    }
-                    requestPermissions(manager.familyPermissions(family))
-                }
-            }
-            root.addView(familyButton)
-        }
-
-        val stepsButton = Button(this).apply {
-            text = "Pasos últimas 24h (agregado)"
-            setOnClickListener { readStepsSmoke() }
-        }
-        root.addView(stepsButton)
-
-        // --- Destino HTTPS (config local; el token va cifrado al Keystore) ---
-        root.addView(TextView(this).apply { text = "\nDestino HTTPS (URL del servidor)" })
+        // --- Destino (URL + token cifrado en Keystore) ---
+        root.addView(TextView(this).apply { text = "Destino (URL del servidor)" })
         urlInput = EditText(this).apply {
             hint = "https://mac.local:8443/sync/health-connect"
             inputType = InputType.TYPE_TEXT_VARIATION_URI
@@ -122,50 +73,22 @@ class MainActivity : ComponentActivity() {
         }
         root.addView(tokenInput)
 
-        val saveTargetButton = Button(this).apply {
-            text = "Guardar destino y programar sync"
+        root.addView(Button(this).apply {
+            text = "Guardar"
             setOnClickListener { saveTarget() }
-        }
-        root.addView(saveTargetButton)
+        })
 
-        val syncNowButton = Button(this).apply {
-            text = "Sincronizar ahora"
-            setOnClickListener {
-                SyncScheduler.syncNow(this@MainActivity)
-                showMessage("Sync programada. Los datos llegarán en segundos.")
-            }
-        }
-        root.addView(syncNowButton)
+        // --- Permisos esenciales (un solo diálogo con los 17) ---
+        root.addView(Button(this).apply {
+            text = "Permisos esenciales"
+            setOnClickListener { requestPermissions(manager.corePermissions()) }
+        })
 
-        val directSyncButton = Button(this).apply {
-            text = "Sincronizar AHORA (directo, sin WorkManager)"
+        // --- Sincronizar todo ahora (fuerza, pantalla apagada OK) ---
+        root.addView(Button(this).apply {
+            text = "Sincronizar AHORA"
             setOnClickListener { runDirectSync() }
-        }
-        root.addView(directSyncButton)
-
-        val binderDiagButton = Button(this).apply {
-            text = "Diagnóstico del binder (paso a paso)"
-            setOnClickListener { runBinderDiagnostics() }
-        }
-        root.addView(binderDiagButton)
-
-        val inventoryButton = Button(this).apply {
-            text = "Inventario HOY (Health Connect)"
-            setOnClickListener { runTodayInventory() }
-        }
-        root.addView(inventoryButton)
-
-        val diagnosticsButton = Button(this).apply {
-            text = "Diagnóstico (ver qué ve el sistema)"
-            setOnClickListener { runDiagnostics() }
-        }
-        root.addView(diagnosticsButton)
-
-        val syncStateButton = Button(this).apply {
-            text = "Estado de la sync (WorkManager)"
-            setOnClickListener { showSyncState() }
-        }
-        root.addView(syncStateButton)
+        })
 
         setContentView(ScrollView(this).apply { addView(root) })
 
@@ -173,21 +96,14 @@ class MainActivity : ComponentActivity() {
             permissionContract(),
             ActivityResultCallbackAdapter { granted ->
                 (manager.gateway() as? RealHealthConnectGateway)?.invalidatePermissionCache()
-                statusView.text = "Permisos concedidos: ${granted.size} tipos."
-                refreshStates()
+                statusView.text = "Permisos concedidos: ${granted.size}."
             },
         )
         notificationPermissionLauncher = registerForActivityResult(
             androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
         ) { /* sin notificación visible el servicio sigue funcionando */ }
         observeSyncProgress()
-        refreshStates()
         loadTarget()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        refreshStates()
     }
 
     /**
@@ -234,34 +150,8 @@ class MainActivity : ComponentActivity() {
             // MIUI bloquea a veces el lanzamiento de la pantalla de Health
             // Connect; nunca dejar el fallo en silencio.
             statusView.text = "No se pudo abrir Health Connect ($e).\n" +
-                "Usa el botón 'Abrir Health Connect' y concede los permisos desde allí, " +
+                "Usa 'Permisos esenciales' y concede los permisos desde allí, " +
                 "o activa 'Abrir ventanas en segundo plano' para HealthSync en Ajustes de MIUI."
-        }
-    }
-
-    private fun openHealthConnect() {
-        val packageName = "com.google.android.apps.healthdata"
-        val enabled = runCatching {
-            packageManager.getApplicationEnabledSetting(packageName)
-        }.getOrDefault(android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DEFAULT)
-        if (enabled == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
-            statusView.text = "Health Connect está DESHABILITADA.\n" +
-                "Vé a Ajustes > Apps > Health Connect > Habilitar, y reintenta."
-            return
-        }
-        val playStore = android.content.Intent(
-            android.content.Intent.ACTION_VIEW,
-            android.net.Uri.parse("market://details?id=$packageName"),
-        )
-        val launcher = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
-            addCategory(android.content.Intent.CATEGORY_LAUNCHER)
-            `package` = packageName
-        }
-        runCatching {
-            startActivity(launcher)
-        }.onFailure {
-            runCatching { startActivity(playStore) }
-                .onFailure { statusView.text = "No se pudo abrir Health Connect: $it" }
         }
     }
 
@@ -312,140 +202,6 @@ class MainActivity : ComponentActivity() {
             } catch (e: Exception) {
                 statusView.text = "No se pudo leer la configuración: $e"
             }
-        }
-    }
-
-    private fun refreshStates() {
-        lifecycleScope.launch {
-            try {
-                val compatible = withContext(Dispatchers.IO) { manager.isCompatible() }
-                if (!compatible) {
-                    val detail = withContext(Dispatchers.IO) { manager.providerDetail() }
-                    val installed = detail.installedVersionCode?.toString() ?: "no instalada"
-                    statusView.text = "Health Connect: NO disponible (SDK status ${manager.sdkStatus()}).\n" +
-                        "Proveedor ${detail.packageName}: v$installed " +
-                        "(mínimo requerido v${detail.minRequiredVersionCode}).\n" +
-                        "Pulsa 'Abrir Health Connect' para instalarla/actualizarla."
-                    return@launch
-                }
-                val background = withContext(Dispatchers.IO) { manager.backgroundReadAvailable() }
-                val detail = withContext(Dispatchers.IO) { manager.providerDetail() }
-                val states = withContext(Dispatchers.IO) { manager.typeStates() }
-                val granted = states.count { it.status == TypeStatus.READY || it.status == TypeStatus.SYNCED }
-                val sb = StringBuilder()
-                sb.append("Health Connect: disponible")
-                detail.installedVersionCode?.let { sb.append(" (v$it)") }
-                sb.append("\n")
-                sb.append("Lectura en segundo plano: ${if (background) "disponible" else "NO disponible"}\n")
-                sb.append("Permisos: $granted/${states.size}\n\n")
-                states.forEach { state ->
-                    sb.append(
-                        "${statusText(state.status)} ${state.entry.typeName} " +
-                            "(${state.entry.family.name.lowercase()})" +
-                            if (state.entry.sensitivity == Sensitivity.SENSITIVE) " [sensible]" else "",
-                    )
-                    sb.append("\n")
-                }
-                statusView.text = sb.toString()
-            } catch (e: Exception) {
-                // El servicio de Health Connect puede no responder durante el
-                // arranque; la app nunca debe morir por ello.
-                statusView.text = "Health Connect: pendiente de conectar… ($e)"
-            }
-        }
-    }
-
-    private fun readStepsSmoke() {
-        lifecycleScope.launch {
-            try {
-                val count = withContext(Dispatchers.IO) { manager.stepsLast24h() }
-                statusView.text = if (count != null) {
-                    "Pasos últimas 24h (agregado): $count"
-                } else {
-                    "Sin datos de pasos en las últimas 24h (o permiso no concedido)."
-                }
-            } catch (e: Exception) {
-                statusView.text = "Fallo al leer pasos: $e"
-            }
-        }
-    }
-
-    private fun runDiagnostics() {
-        lifecycleScope.launch {
-            val sb = StringBuilder()
-            // 1) Qué permisos ve el SISTEMA en el APK instalado de HealthSync.
-            val requested = runCatching {
-                packageManager.getPackageInfo(
-                    packageName,
-                    android.content.pm.PackageManager.GET_PERMISSIONS,
-                ).requestedPermissions?.toList() ?: emptyList()
-            }.getOrDefault(emptyList())
-            val healthPerms = requested.filter { it.startsWith("android.permission.health.") }
-            sb.append("Permisos health que el sistema ve en HealthSync:\n")
-            sb.append(if (healthPerms.isEmpty()) "  NINGUNO\n" else "  ${healthPerms.size}: ${healthPerms.joinToString(", ")}\n")
-            sb.append("\n")
-
-            // 2) El intent de permisos: ¿lo resuelve el sistema a alguna activity?
-            try {
-                val contract = androidx.health.connect.client.PermissionController
-                    .createRequestPermissionResultContract()
-                val intent = contract.createIntent(this@MainActivity, manager.corePermissions())
-                val resolved = intent.resolveActivity(packageManager)
-                sb.append("Intent de permisos: ${intent.action}\n")
-                sb.append("  paquete: ${intent.`package`}\n")
-                sb.append(
-                    if (resolved != null) {
-                        "  RESUELTO a: ${resolved.flattenToString()}\n"
-                    } else {
-                        "  NO RESUELTO (el sistema no encuentra la pantalla de permisos)\n"
-                    },
-                )
-            } catch (e: Exception) {
-                sb.append("Error al construir el intent de permisos: $e\n")
-            }
-
-            // 3) Estado del proveedor.
-            val detail = withContext(Dispatchers.IO) { manager.providerDetail() }
-            sb.append("\nProveedor: ${detail.packageName}\n")
-            sb.append("  instalado v${detail.installedVersionCode ?: "NO"}\n")
-            sb.append("  mínimo requerido v${detail.minRequiredVersionCode}\n")
-            sb.append("  SDK status: ${manager.sdkStatus()}\n")
-
-            // 4) Launcher del proveedor (¿existe activity principal?)
-            val launcherIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
-                addCategory(android.content.Intent.CATEGORY_LAUNCHER)
-                `package` = detail.packageName
-            }
-            val launcher = launcherIntent.resolveActivity(packageManager)
-            sb.append("  launcher HC: ${if (launcher != null) launcher.flattenToString() else "NO existe (por eso no hay icono)"}\n")
-
-            statusView.text = sb.toString()
-        }
-    }
-
-    private fun showSyncState() {
-        lifecycleScope.launch {
-            val wm = androidx.work.WorkManager.getInstance(this@MainActivity)
-            val periodic = withContext(Dispatchers.IO) {
-                wm.getWorkInfosForUniqueWorkFlow("health_connect_sync").first()
-            }
-            val oneTime = withContext(Dispatchers.IO) {
-                wm.getWorkInfosForUniqueWorkFlow("health_connect_sync_now").first()
-            }
-            val sb = StringBuilder("Estado del worker de sync:\n")
-            sb.append("Periódico (1h): ")
-            sb.append(periodic.firstOrNull()?.state ?: "nunca programado")
-            sb.append("\n")
-            val now = oneTime.firstOrNull()
-            if (now == null) {
-                sb.append("Manual: nunca ejecutado (pulsa 'Sincronizar ahora')\n")
-            } else {
-                sb.append("Manual: ${now.state}\n")
-                sb.append("  intentos: ${now.runAttemptCount}\n")
-                now.outputData.keyValueMap.forEach { (k, v) -> sb.append("  $k: $v\n") }
-            }
-            statusView.text = sb.toString()
-            android.widget.Toast.makeText(this@MainActivity, "Estado en el panel superior", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -508,96 +264,6 @@ class MainActivity : ComponentActivity() {
         ) {
             notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
-    }
-
-    /** Cadena de causas (x: Clase: mensaje) hasta 5 niveles. */
-    private fun fullErrorChain(e: Throwable): String {
-        val sb = StringBuilder()
-        var current: Throwable? = e
-        var depth = 0
-        while (current != null && depth < 5) {
-            sb.append("$depth: ${current::class.java.simpleName}: ${current.message}\n")
-            current = current.cause
-            depth++
-        }
-        return sb.toString()
-    }
-
-    /** Ejecuta el binder de Health Connect paso a paso para localizar el fallo. */
-    private fun runBinderDiagnostics() {
-        lifecycleScope.launch {
-            val gateway = RealHealthConnectGateway(this@MainActivity)
-            val sb = StringBuilder("Diagnóstico del binder (1/2/3):\n")
-            // 1) Permisos concedidos (binder básico)
-            try {
-                val granted = withContext(Dispatchers.IO) { gateway.grantedPermissions() }
-                sb.append("1. getGrantedPermissions: OK (${granted.size})\n")
-                sb.append("   ${granted.joinToString(", ")}\n\n")
-            } catch (e: Exception) {
-                sb.append("1. getGrantedPermissions: FALLO\n${fullErrorChain(e)}\n\n")
-            }
-            // 2) Agregación de pasos 24h (binder + lectura de datos)
-            try {
-                val now = java.time.Instant.now()
-                val steps = withContext(Dispatchers.IO) {
-                    gateway.stepsCountTotal(now.minusSeconds(86400), now)
-                }
-                sb.append("2. aggregate pasos 24h: ${steps ?: "null (sin datos o sin permiso)"}\n\n")
-            } catch (e: Exception) {
-                sb.append("2. aggregate: FALLO\n${fullErrorChain(e)}\n\n")
-            }
-            // 3) Changes API (la operación más nueva del protocolo)
-            try {
-                withContext(Dispatchers.IO) {
-                    gateway.getChangesToken(setOf(androidx.health.connect.client.records.StepsRecord::class))
-                }
-                sb.append("3. getChangesToken(STEPS): OK\n\n")
-            } catch (e: Exception) {
-                sb.append("3. getChangesToken: FALLO\n${fullErrorChain(e)}\n\n")
-            }
-            // 4) Lectura por rango (el modo de respaldo estructural)
-            try {
-                val now = java.time.Instant.now()
-                val page = withContext(Dispatchers.IO) {
-                    gateway.readRecords(
-                        androidx.health.connect.client.records.StepsRecord::class,
-                        now.minusSeconds(86400),
-                        now,
-                        null,
-                    )
-                }
-                sb.append("4. readRecords(STEPS 24h): OK (${page.records.size} registros)\n")
-            } catch (e: Exception) {
-                sb.append("4. readRecords: FALLO\n${fullErrorChain(e)}\n")
-            }
-            statusView.text = sb.toString()
-        }
-    }
-
-    /** Qué datos hay HOY en Health Connect, por tipo (una página por tipo). */
-    private fun runTodayInventory() {
-        lifecycleScope.launch {
-            statusView.text = "Inventario…"
-            val inventory = HealthInventory(RealHealthConnectGateway(this@MainActivity))
-            val rows = withContext(Dispatchers.IO) { inventory.todayInventory() }
-            val sb = StringBuilder("Inventario de hoy (${rows.size} tipos con permiso):\n\n")
-            for (r in rows) {
-                sb.append(r.typeName)
-                sb.append(": ${r.recordsToday} reg")
-                sb.append(if (r.hasMore) " +más (denso)" else "")
-                r.aggregateTotal?.let { sb.append(" | total hoy: $it") }
-                r.error?.let { sb.append(" | ERROR: $it") }
-                sb.append("\n")
-            }
-            statusView.text = sb.toString()
-        }
-    }
-
-    private fun statusText(status: TypeStatus): String = when (status) {
-        TypeStatus.READY, TypeStatus.SYNCED -> "OK "
-        TypeStatus.NOT_AUTHORIZED -> "SIN"
-        TypeStatus.NOT_AVAILABLE -> "N/D"
-        TypeStatus.ERROR -> "ERR"
     }
 
     companion object {
