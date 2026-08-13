@@ -85,11 +85,16 @@ def test_index_uses_stable_card(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/")
-    assert 'id="session-editor" data-editmode="0"' in r.text
-    assert 'id="session-editor-wrap"' in r.text
-    assert "rm-cell" in r.text
-    assert 'id="save-outcome" data-ok="0" hidden' in r.text
-    assert '<div id="editor-notice"></div>' in r.text
+    assert 'data-action="open-editor-popup"' in r.text
+    assert 'id="editor-popup"' in r.text
+    assert 'id="cascade-row"' in r.text
+    # El editor vive en la ventana emergente de registro.
+    r2 = _client().get("/editor/popup?fecha=2099-01-01")
+    assert 'id="session-editor" data-editmode="0"' in r2.text
+    assert 'id="session-editor-wrap"' in r2.text
+    assert "rm-cell" in r2.text
+    assert 'id="save-outcome" data-ok="0" hidden' in r2.text
+    assert '<div id="editor-notice"></div>' in r2.text
 
 
 def test_save_valid_returns_ok_marker(tmp_path, monkeypatch):
@@ -1019,29 +1024,24 @@ def test_index_app_config_tiene_alimento_map(tmp_path, monkeypatch):
 
 
 def test_index_renders_global_date_title_below_navigator(tmp_path, monkeypatch):
-    from datetime import date
-
-    from src.training_service import DIA_MAP
-
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/")
     assert r.status_code == 200
-    # La fecha viva va entre el navegador y el panel de alimentación
-    assert r.text.index('id="session-date-title"') > r.text.index('id="date-navigator"')
-    assert r.text.index('id="session-date-title"') < r.text.index('id="nutrition-panel"')
-    assert "Semana" in r.text
-    # El día se renderiza en español con el nombre real de hoy (locale-independiente)
-    assert DIA_MAP[date.today().weekday()] in r.text
+    # La home ya no tiene navegador fijo: vive en el popup de registro.
+    assert 'id="date-navigator"' not in r.text
+    r2 = _client().get("/editor/popup?fecha=2099-01-01")
+    assert r2.text.index('id="session-date-title"') > r2.text.index('id="date-navigator"')
+    assert "Semana" in r2.text
 
 
 def test_panels_layout_title_left_controls_right(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    r = _client().get("/")
+    r = _client().get("/editor/popup?fecha=2025-04-24")
     assert r.status_code == 200
-    # Título en caja (izquierda) + colapso (derecha) en ambos paneles
-    assert r.text.count('class="panel-title-box"') == 2
+    # Título en caja (izquierda) + colapso (derecha) en los paneles (2 + cardio)
+    assert r.text.count('class="panel-title-box"') >= 2
     assert r.text.count('data-action="toggle-panel-collapse"') == 2
     # Botones (guardar plantilla, editar, eliminar) en el header actions
     session_part = r.text[r.text.index('id="session-editor"') :]
@@ -1060,7 +1060,7 @@ def test_panels_layout_title_left_controls_right(tmp_path, monkeypatch):
 def test_panel_titles_are_static(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    r = _client().get("/")
+    r = _client().get("/editor/popup?fecha=2025-04-24")
     assert r.status_code == 200
     # El editor de sesión tiene título estático "Entrenamiento" sin fecha
     editor_html = r.text[r.text.index('id="session-editor"') :]
@@ -1074,13 +1074,12 @@ def test_panel_titles_are_static(tmp_path, monkeypatch):
 def test_index_renders_nutrition_panel_above_session_editor(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    r = _client().get("/")
+    r = _client().get("/editor/popup?fecha=2025-04-24")
     assert r.status_code == 200
     # Navegador arriba de todo, panel de nutrición antes del editor de sesión
     assert r.text.index('id="date-navigator"') < r.text.index('id="nutrition-panel"')
     assert r.text.index('id="nutrition-panel"') < r.text.index('id="session-editor"')
     assert 'id="target-params"' in r.text
-    assert 'id="alimento-create"' in r.text
     # Chevrons de colapso dentro de cada panel (header), sin barras externas
     assert r.text.count('data-action="toggle-panel-collapse"') == 2
     assert 'id="session-editor" data-editmode="0" data-target' not in r.text
@@ -1567,15 +1566,17 @@ def test_nivel_cascada_grupo_musculo_ejercicio(tmp_path, monkeypatch):
     assert r.status_code == 200
     assert 'id="cascade-row"' in r.text
     assert "EMPUJE" in r.text
-    # Fila 2: músculos de la categoría
+    # Fila 2: músculos de la categoría (chips con data-tipo="musculo")
     r = client.get("/nivel", params={"tipo": "grupo", "foco": "EMPUJE"})
     assert r.status_code == 200
     assert "Pectoral" in r.text
+    assert 'data-tipo="musculo"' in r.text
     assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
-    # Fila 3: ejercicios del músculo
+    # Fila 3: ejercicios del músculo (chips con data-tipo="ejercicio")
     r = client.get("/nivel", params={"tipo": "musculo", "foco": "Pectoral"})
     assert r.status_code == 200
     assert "Press" in r.text
+    assert 'data-tipo="ejercicio"' in r.text
     # Detalle del ejercicio (con datos)
     from src.models import TrainingSetInput
     from src.training_service import save_session

@@ -16,6 +16,17 @@
         >+ Registrar</button>
     </header>
 
+    <!-- Niveles de análisis + cascada -->
+    <div class="flex flex-col gap-2 border-b border-neutral-800 pb-4">
+        <div class="flex flex-wrap items-center gap-2">
+            <button class="level-btn active" data-action="set-level" data-tipo="global">Cuerpo entero</button>
+            <button class="level-btn" data-action="set-level" data-tipo="grupo">Grupo muscular</button>
+            <button class="level-btn" data-action="set-level" data-tipo="musculo">Músculo</button>
+            <button class="level-btn" data-action="set-level" data-tipo="ejercicio">Ejercicio</button>
+        </div>
+        <div id="cascade-row"></div>
+    </div>
+
     <div class="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6 items-start">
         <!-- Panel lateral izquierdo -->
         <aside class="flex flex-col gap-4 lg:sticky lg:top-6 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:pr-1 lg:scrollbar-thin">
@@ -41,62 +52,10 @@
 
             <!-- Historial de sesiones -->
             <div id="session-history">{{ session_history_html | safe }}</div>
-
-            <!-- Categorías de Músculos: Empuje / Tirón / Pierna / Core -->
-            <div class="flex flex-col gap-4">
-                {% for cat in muscle_categories %}
-                <div class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-2.5 neon-border metallic-border">
-                    <h3 class="text-xs font-black tracking-[0.2em] text-burgundy-400 uppercase text-center pb-2 border-b border-neutral-800 neon-title">{{ cat.name }}</h3>
-                    {% for muscle in cat.muscles %}
-                        {% if muscle in grupos_list %}
-                        <button
-                            id="cat-btn-{{ muscle }}"
-                            data-action="select-category" data-category="{{ muscle }}"
-                            class="category-btn w-full bg-matte-950 border border-neutral-800 hover:border-neutral-700 text-neutral-300 text-sm font-bold py-2 px-3 rounded-lg transition-all text-left tracking-wide focus:outline-none focus-visible:outline-none focus:ring-0 active:outline-none"
-                        >
-                            {{ muscle }}
-                        </button>
-                        {% endif %}
-                    {% endfor %}
-                </div>
-                {% endfor %}
-            </div>
-
-            <!-- Ejercicios (loaded dynamically) -->
-            <section id="exercise-section" class="flex flex-col gap-4">
-                {% include "exercise_list.html" %}
-            </section>
         </aside>
 
         <!-- Contenido principal -->
         <main class="flex flex-col gap-6 min-w-0">
-            <!-- Navegador de fechas (arriba de todo; afecta a ambos paneles) -->
-            <section id="date-navigator">
-                {{ navigator_html | safe }}
-            </section>
-
-            <!-- Fecha viva (día + semana) entre el navegador y el panel de alimentación -->
-            <section id="session-date-title" class="flex items-baseline gap-1.5">
-                <h3 class="text-[11px] font-black tracking-widest text-burgundy-400 uppercase neon-title truncate">{{ dia }} {{ fecha_display }}</h3>
-                <span class="text-[10px] text-neutral-500 flex-none">Semana {{ semana }}</span>
-            </section>
-
-            <!-- Panel de alimentación (colapsable desde su header) -->
-            <section id="nutrition-panel" data-editmode="0" class="bg-neutral-900 border border-transparent rounded-xl px-2 pt-2 pb-2 flex flex-col gap-2 neon-border metallic-border relative">
-                <div id="nutrition-editor-wrap">
-                    {{ nutrition_editor_html | safe }}
-                </div>
-            </section>
-
-            <!-- Editor de sesión (tarjeta estable; colapsable desde su header) -->
-            <div id="session-editor" data-editmode="0" class="bg-neutral-900 border border-transparent rounded-xl px-2 pt-2 pb-2 flex flex-col gap-2 neon-border metallic-border relative">
-                <div id="editor-notice"></div>
-                <div id="save-outcome" data-ok="0" hidden></div>
-                <section id="session-editor-wrap">
-                    {{ editor_html | safe }}
-                </section>
-            </div>
-
             <!-- Gráfica Única -->
             <div id="unified-chart-container" class="bg-neutral-900 border border-transparent rounded-xl p-5 neon-border metallic-border">
                 <div id="unified-chart">
@@ -141,6 +100,46 @@
     @keyframes chartFadeIn {
         from { opacity: 0; }
         to { opacity: 1; }
+    }
+
+    /* Niveles de análisis y cascada (colores del tema anterior) */
+    .level-btn {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: .15em;
+        text-transform: uppercase;
+        color: #a3a3a3;
+        border: 1px solid #262626;
+        border-radius: 9999px;
+        padding: .3rem .8rem;
+        transition: all 150ms ease-out;
+        cursor: pointer;
+    }
+    .level-btn:hover {
+        color: #e5e5e5;
+        border-color: #404040;
+    }
+    .level-btn.active {
+        color: #e56d88;
+        border-color: #9b1b30;
+        background: rgba(155, 27, 48, 0.15);
+    }
+    .level-chip {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        color: #a3a3a3;
+        border: 1px solid #262626;
+        border-radius: 9999px;
+        padding: .25rem .7rem;
+        transition: all 150ms ease-out;
+        cursor: pointer;
+        background: transparent;
+    }
+    .level-chip:hover {
+        color: #e5e5e5;
+        border-color: #404040;
     }
 </style>
 {% endblock %}

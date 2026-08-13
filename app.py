@@ -1024,12 +1024,26 @@ def _cascade_items(nivel: str, foco: str) -> list[str]:
     return []
 
 
+def _cascade_chip_tipo(nivel: str, foco: str) -> str:
+    """Tipo de la siguiente fila: los chips desplegados continúan la cascada."""
+    if nivel == "grupo" and not foco:
+        return "grupo"
+    if nivel == "grupo":
+        return "musculo"
+    if nivel == "musculo":
+        return "ejercicio"
+    return ""
+
+
 def _cascade_row_html(request: Request, nivel: str, foco: str) -> str:
     return _render_body(
         templates.TemplateResponse(
             request=request,
             name="cascade_row.html",
-            context={"items": _cascade_items(nivel, foco), "tipo": nivel},
+            context={
+                "items": _cascade_items(nivel, foco),
+                "tipo": _cascade_chip_tipo(nivel, foco),
+            },
         )
     )
 
