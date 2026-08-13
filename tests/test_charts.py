@@ -143,3 +143,45 @@ def test_get_exercise_raw_data_incluye_descanso(setup_test_db):
     db = setup_test_db
     df = get_exercise_raw_data(db, "Press Convergente")
     assert "descanso_seg" in df.columns
+
+
+def test_chart_muscle_exercises_compilado_solo(setup_test_db):
+    from src.charts import chart_muscle_exercises
+
+    db = setup_test_db
+    fig = chart_muscle_exercises(db, "Pectoral", [])
+    assert len(fig.data) == 1  # solo el compilado
+    assert fig.data[0].name == "Compilado"
+
+
+def test_chart_muscle_exercises_una_traza_por_ejercicio(setup_test_db):
+    from src.charts import chart_muscle_exercises
+
+    db = setup_test_db
+    fig = chart_muscle_exercises(db, "Pectoral", ["Press Convergente"])
+    assert len(fig.data) == 2  # compilado + ejercicio
+    assert fig.data[1].name == "Press Convergente"
+    # El hover muestra el nombre del ejercicio (customdata[5]).
+    assert fig.data[1].customdata[0][5] == "Press Convergente"
+    assert "%{customdata[5]}" in fig.data[1].hovertemplate
+
+
+def test_chart_muscle_exercises_filtra_ejercicios_ajenos(setup_test_db):
+    from src.charts import chart_muscle_exercises
+
+    db = setup_test_db
+    fig = chart_muscle_exercises(db, "Pectoral", ["Press Convergente", "Curl Bayesian"])
+    # "Curl Bayesian" pertenece a Biceps: se descarta, quedan compilado + Press
+    assert len(fig.data) == 2
+    names = [t.name for t in fig.data]
+    assert "Curl Bayesian" not in names
+
+
+def test_chart_muscle_exercises_vacio_sin_datos(tmp_path):
+    from src.charts import chart_muscle_exercises
+    from src.database import init_db
+
+    db = str(tmp_path / "empty.db")
+    init_db(db)
+    fig = chart_muscle_exercises(db, "Pectoral", [])
+    assert len(fig.data) == 0

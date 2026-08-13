@@ -29,6 +29,10 @@ export function openEditorPopup(fechaIso) {
             swap: 'innerHTML',
         });
     }
+    // El registro entra en el historial: "atrás" cierra la ventana sin salir de la app.
+    if (new URLSearchParams(location.search).get('registro') !== iso) {
+        history.pushState({}, '', '?registro=' + iso);
+    }
 }
 
 export function closeEditorPopup() {
@@ -36,6 +40,11 @@ export function closeEditorPopup() {
     if (!popup) return;
     popup.classList.add('hidden');
     document.body.style.overflow = '';
+    // Deshace la entrada del popup en el historial si sigue siendo la URL actual.
+    const params = new URLSearchParams(location.search);
+    if (params.has('registro')) {
+        history.back();
+    }
 }
 
 export function initEditorPopup() {
@@ -53,6 +62,20 @@ export function initEditorPopup() {
         const popup = document.getElementById('editor-popup');
         if (!popup || popup.classList.contains('hidden')) return;
         if (e.key === 'Escape') closeEditorPopup();
+    });
+
+    // Sincroniza la ventana con el historial (atrás/adelante del navegador).
+    window.addEventListener('popstate', function () {
+        const popup = document.getElementById('editor-popup');
+        const params = new URLSearchParams(location.search);
+        if (params.has('registro')) {
+            if (popup && popup.classList.contains('hidden')) {
+                openEditorPopup(params.get('registro'));
+            }
+        } else if (popup && !popup.classList.contains('hidden')) {
+            popup.classList.add('hidden');
+            document.body.style.overflow = '';
+        }
     });
 
     // Tras cargar el popup, el título de fecha sigue la fecha seleccionada del navegador.

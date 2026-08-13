@@ -29,6 +29,7 @@ OOB_FRAGMENT_TARGETS = (
     "popup-body",
     "cardio-day",
     "cascade-row",
+    "ejercicios-row",
 )
 
 STATIC_MARKERS = {

@@ -354,8 +354,9 @@ def test_week_click_navigates_to_first_session_of_week(page, server):
     expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso_b, timeout=3000)
 
 
-def test_cascade_grupo_musculo_ejercicio(page, server):
-    """La cascada despliega: grupos → músculos del grupo → ejercicios del músculo."""
+def test_cascade_musculo_persistente_y_multi_traza(page, server):
+    """El músculo elegido permanece visible y la gráfica suma líneas por
+    ejercicio marcado (compilado + individuales)."""
     _open_popup(page, server)
     _fill_row(page, 0)
     page.click('#edit-actions button[type="submit"]')
@@ -364,17 +365,55 @@ def test_cascade_grupo_musculo_ejercicio(page, server):
     )
     page.click("#popup-close")
 
-    # La cascada arranca con los músculos del catálogo directamente.
-    expect(page.locator("#cascade-row .level-chip[data-tipo='musculo']").first).to_have_attribute(
-        "data-foco", "Pectoral", timeout=3000
+    # Fila de músculos siempre visible.
+    muscle_chip = page.locator('#cascade-row .level-chip[data-foco="Pectoral"]')
+    expect(muscle_chip).to_be_visible(timeout=3000)
+
+    # Elegir músculo: se marca (no desaparece) y aparecen sus ejercicios.
+    muscle_chip.click()
+    expect(muscle_chip).to_have_class(re.compile(r"\bselected\b"))
+    exercise_chip = page.locator('#ejercicios-row .exercise-chip[data-foco="Press"]')
+    expect(exercise_chip).to_be_visible(timeout=3000)
+    expect(page.locator("#cascade-row .level-chip")).to_have_count(1)  # sigue visible
+
+    # Marcar el ejercicio: la gráfica tiene compilado + línea del ejercicio.
+    exercise_chip.click()
+    expect(exercise_chip).to_have_attribute("aria-pressed", "true")
+    page.wait_for_function(
+        "() => { const el = document.getElementById('unified-chart-plot');"
+        " return el && el._fullData && el._fullData.length === 2; }",
+        timeout=5000,
     )
+
+    # Desmarcar: vuelve a solo el compilado.
+    exercise_chip.click()
+    expect(exercise_chip).to_have_attribute("aria-pressed", "false")
+    page.wait_for_function(
+        "() => { const el = document.getElementById('unified-chart-plot');"
+        " return el && el._fullData && el._fullData.length === 1; }",
+        timeout=5000,
+    )
+
+
+def test_grafica_atras_del_navegador_restaura(page, server):
+    """El botón atrás navega dentro de la app (músculo → estado base)."""
+    _open_popup(page, server)
+    _fill_row(page, 0)
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+    page.click("#popup-close")
+
     page.locator('#cascade-row .level-chip[data-foco="Pectoral"]').click()
-    expect(page.locator("#cascade-row .level-chip[data-tipo='ejercicio']").first).to_have_attribute(
-        "data-foco", "Press", timeout=3000
-    )
-    page.locator('#cascade-row .level-chip[data-foco="Press"]').click()
-    expect(page.locator("#history-section")).to_contain_text("Resumen por Sesión", timeout=3000)
-    expect(page.locator("#unified-chart")).to_contain_text("Rendimiento – Press", timeout=3000)
+    expect(page.locator("#ejercicios-row .exercise-chip")).to_be_visible(timeout=3000)
+    assert "musculo=Pectoral" in page.url
+
+    page.go_back()
+    page.wait_for_timeout(800)
+    # Volvió al estado base: sin ejercicios seleccionados y dentro de la app.
+    assert page.url.endswith("/") or "?" not in page.url.split("/")[-1]
+    expect(page.locator("#ejercicios-row .exercise-chip")).to_have_count(0)
 
 
 def test_mobile_viewport_renders(page, server):

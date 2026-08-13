@@ -1559,23 +1559,18 @@ def test_nivel_cascada_grupo_musculo_ejercicio(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     client = _client()
-    # Fila 1: categorías
-    r = client.get("/nivel", params={"tipo": "grupo"})
+    # Fila de músculos (persistente)
+    r = client.get("/nivel", params={"tipo": "musculo"})
     assert r.status_code == 200
     assert 'id="cascade-row"' in r.text
-    assert "EMPUJE" in r.text
-    # Fila 2: músculos de la categoría (chips con data-tipo="musculo")
-    r = client.get("/nivel", params={"tipo": "grupo", "foco": "EMPUJE"})
-    assert r.status_code == 200
     assert "Pectoral" in r.text
-    assert 'data-tipo="musculo"' in r.text
-    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
-    # Fila 3: ejercicios del músculo (chips con data-tipo="ejercicio")
+    # Fila de ejercicios del músculo + gráfica del compilado (OOB)
     r = client.get("/nivel", params={"tipo": "musculo", "foco": "Pectoral"})
     assert r.status_code == 200
+    assert 'id="ejercicios-row"' in r.text
     assert "Press" in r.text
-    assert 'data-tipo="ejercicio"' in r.text
-    # Detalle del ejercicio (con datos)
+    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
+    # Detalle del ejercicio (con datos) -> #history-section, sin tocar filas
     from src.models import TrainingSetInput
     from src.training_service import save_session
 
@@ -1583,7 +1578,29 @@ def test_nivel_cascada_grupo_musculo_ejercicio(tmp_path, monkeypatch):
     r = client.get("/nivel", params={"tipo": "ejercicio", "foco": "Press"})
     assert r.status_code == 200
     assert "Resumen por Sesión" in r.text or "Datos Crudos" in r.text
+    assert 'id="ejercicios-row"' not in r.text
+
+
+def test_grafica_multi_traza_oob(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    from src.models import TrainingSetInput
+    from src.training_service import save_session
+
+    save_session(db, _fecha(), [TrainingSetInput("Press", 80, 8, 1)])
+    # Solo compilado
+    r = _client().get("/grafica", params={"musculo": "Pectoral"})
+    assert r.status_code == 200
     assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
+    assert 'id="ejercicios-row" hx-swap-oob="outerHTML"' in r.text
+    assert "Compilado" in r.text
+    # Con un ejercicio seleccionado: su nombre en el fragmento
+    r = _client().get("/grafica", params={"musculo": "Pectoral", "ejercicios": "Press"})
+    assert r.status_code == 200
+    assert "Press" in r.text
+    # Ejercicio de otro músculo se descarta (solo compilado)
+    r = _client().get("/grafica", params={"musculo": "Pectoral", "ejercicios": "Otro"})
+    assert r.status_code == 200
 
 
 def test_nivel_foco_desconocido_no_rompe(tmp_path, monkeypatch):

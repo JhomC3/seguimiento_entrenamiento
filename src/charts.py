@@ -68,20 +68,12 @@ def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
     ]
 
 
-def chart_pfr_timeline(
-    db_path: str,
-    filter_type: str,
-    filter_value: str | None = None,
-    title: str = f"Rendimiento – Ciclo {CICLO_NUMERO}",
-) -> go.Figure:
-    """Gráfica de crecimiento semanal vs baseline (semana 1 = 0).
-
-    El hover resume la semana: series, sets al fallo, volumen, peso y sueño
-    (los tres últimos desde health_records / diario, vía src.analysis_data).
-    """
+def _weekly_pfr_df(db_path: str, filter_type: str, filter_value: str | None) -> pd.DataFrame:
+    """DataFrame semanal de rendimiento con customdata de resumen (series,
+    fallos, volumen, peso, sueño) para el hover enriquecido."""
     df = calculate_pfr_timeline(db_path, filter_type, filter_value)
     if df.empty:
-        return go.Figure()
+        return pd.DataFrame()
 
     volume_w = _week_series(db_path, daily_volume)
     peso_w = _week_series(db_path, daily_weight)
@@ -109,6 +101,136 @@ def chart_pfr_timeline(
             f"{sueno_w[sem]:.1f} h" if sueno_w.get(sem) else "—",
         ]
     )
+    return weekly
+
+
+HOVER_TEMPLATE = (
+    "%{customdata[5]}<br>Semana %{x}<br>Crecimiento: %{y:.1f}%"
+    "<br>Series: %{customdata[0]} · Fallos: %{customdata[1]}"
+    "<br>Volumen: %{customdata[2]} · Peso: %{customdata[3]} · Sueño: %{customdata[4]}"
+    "<extra></extra>"
+)
+
+# Paleta para trazas por ejercicio (sobre el tema oscuro del proyecto)
+EXERCISE_PALETTE = [
+    "#7dd3fc",
+    "#a3e635",
+    "#c084fc",
+    "#fbbf24",
+    "#34d399",
+    "#60a5fa",
+    "#f472b6",
+]
+
+
+def _pfr_trace(weekly: pd.DataFrame, name: str, color: str) -> go.Scatter:
+    return go.Scatter(
+        x=weekly["semana"],
+        y=weekly["crecimiento"],
+        mode="lines+markers",
+        name=name,
+        line={"color": color, "width": 2.5},
+        marker={"size": 7, "color": color},
+        customdata=weekly[["series", "fallos"]]
+        .assign(
+            volumen=weekly["customdata"].apply(lambda c: c[2]),
+            peso=weekly["customdata"].apply(lambda c: c[3]),
+            sueno=weekly["customdata"].apply(lambda c: c[4]),
+            nombre=name,
+        )
+        .values.tolist(),
+        hovertemplate=HOVER_TEMPLATE,
+    )
+
+
+def chart_muscle_exercises(db_path: str, musculo: str, ejercicios: list[str]) -> go.Figure:
+    """Gráfica del músculo: línea del compilado (todos sus ejercicios) siempre
+    visible + una línea por cada ejercicio seleccionado.
+
+    Los ejercicios que no pertenecen al músculo se descartan.
+    """
+    compiled = _weekly_pfr_df(db_path, "muscle_group", musculo)
+    traces: list[go.Scatter] = []
+    if not compiled.empty:
+        traces.append(_pfr_trace(compiled, "Compilado", "#e56d88"))
+
+    if musculo and ejercicios:
+        with read_connection(db_path) as conn:
+            rows = conn.execute(
+                "SELECT ejercicio FROM ejercicios WHERE LOWER(grupo_muscular) = LOWER(?)",
+                (musculo,),
+            ).fetchall()
+        valid = {str(r[0]).lower() for r in rows}
+        for idx, ejercicio in enumerate(ejercicios):
+            if ejercicio.lower() not in valid:
+                continue
+            df = _weekly_pfr_df(db_path, "exercise", ejercicio)
+            if df.empty:
+                continue
+            color = EXERCISE_PALETTE[idx % len(EXERCISE_PALETTE)]
+            traces.append(_pfr_trace(df, ejercicio, color))
+
+    if not traces:
+        return go.Figure()
+
+    fig = go.Figure()
+    for t in traces:
+        fig.add_trace(t)
+
+    all_y = [v for t in traces for v in t.y if v is not None]
+    y_min = min(all_y) if all_y else 0
+    y_max = max(all_y) if all_y else 0
+    y_padding = (y_max - y_min) * 0.15 if y_max > y_min else 5
+    y_bottom = 0 if y_min >= 0 else y_min - y_padding
+
+    fig.update_layout(
+        title={"text": f"Rendimiento – {musculo}", "font": {"color": "white", "size": 14}},
+        xaxis={
+            "title": "Semana",
+            "tickmode": "array",
+            "tickvals": sorted({int(v) for t in traces for v in t.x}),
+            "tickfont": {"size": 10, "color": "#a3a3a3"},
+            "showgrid": False,
+        },
+        yaxis={
+            "title": "Crecimiento (%)",
+            "range": [y_bottom, y_max + y_padding],
+            "showgrid": False,
+            "zerolinecolor": "#333",
+            "tickfont": {"color": "#a3a3a3"},
+        },
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#a3a3a3"},
+        margin={"l": 60, "r": 20, "t": 50, "b": 50},
+        hovermode="x unified",
+        hoverlabel={
+            "bgcolor": "#1a1a1a",
+            "font": {"color": "white", "size": 12},
+            "bordercolor": "#333",
+        },
+        legend={
+            "font": {"color": "#a3a3a3", "size": 11},
+            "bgcolor": "rgba(0,0,0,0)",
+        },
+    )
+    return fig
+
+
+def chart_pfr_timeline(
+    db_path: str,
+    filter_type: str,
+    filter_value: str | None = None,
+    title: str = f"Rendimiento – Ciclo {CICLO_NUMERO}",
+) -> go.Figure:
+    """Gráfica de crecimiento semanal vs baseline (semana 1 = 0).
+
+    El hover resume la semana: series, sets al fallo, volumen, peso y sueño
+    (los tres últimos desde health_records / diario, vía src.analysis_data).
+    """
+    weekly = _weekly_pfr_df(db_path, filter_type, filter_value)
+    if weekly.empty:
+        return go.Figure()
 
     y_min = weekly["crecimiento"].min()
     y_max = weekly["crecimiento"].max()

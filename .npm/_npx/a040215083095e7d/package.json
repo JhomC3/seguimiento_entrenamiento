@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "tailwindcss": "^3.4.17"
+  },
+  "_npx": {
+    "packages": [
+      "tailwindcss@3.4.17"
+    ]
+  }
+}

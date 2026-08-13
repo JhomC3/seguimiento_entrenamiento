@@ -1025,13 +1025,33 @@ def _cascade_row_html(request: Request, nivel: str, foco: str) -> str:
     )
 
 
+def _ejercicios_row_html(request: Request, musculo: str, seleccionados: list[str]) -> str:
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="ejercicios_row.html",
+            context={
+                "items": _cascade_items("musculo", musculo),
+                "padre": musculo,
+                "seleccionados": seleccionados,
+            },
+        )
+    )
+
+
 @app.get("/nivel", response_class=HTMLResponse)
 def nivel_view(
     request: Request,
     tipo: str = Query(...),
     foco: str = Query(default=""),
 ):
-    """Cascada grupo → músculo → ejercicio + gráfica por foco (OOB unified-chart)."""
+    """Cascada: músculos (fila persistente) → ejercicios del músculo → detalle.
+
+    - tipo=musculo sin foco: fila de músculos (no toca la gráfica).
+    - tipo=musculo con foco: fila de ejercicios del músculo + gráfica del
+      compilado (OOB unified-chart).
+    - tipo=ejercicio con foco: detalle tabular en #history-section.
+    """
     if tipo == "ejercicio" and foco:
         raw_df = get_exercise_raw_data(DB_PATH, foco)
         session_df = get_exercise_session_summary(DB_PATH, foco)
@@ -1048,25 +1068,52 @@ def nivel_view(
                 },
             )
         )
-        chart = chart_html(DB_PATH, "exercise", foco, _chart_title(foco))
+        return HTMLResponse(content=body)
+    if tipo == "musculo" and foco:
         return HTMLResponse(
-            content=body
-            + chart_oob_wrapper(chart)
-            + fragment_oob(
-                templates,
-                request,
-                "cascade-row",
-                _cascade_row_html(request, tipo, foco),
-                swap="outerHTML",
-            )
+            content=_ejercicios_row_html(request, foco, [])
+            + chart_oob_wrapper(_chart_muscle_html(foco, []))
         )
-    if tipo == "grupo" and foco:
-        chart = chart_html(DB_PATH, "category", foco, _chart_title(foco))
-    elif tipo == "musculo" and foco:
-        chart = chart_html(DB_PATH, "muscle_group", foco, _chart_title(foco))
-    else:
-        chart = chart_html(DB_PATH, "systemic", title=_chart_title())
-    return HTMLResponse(content=_cascade_row_html(request, tipo, foco) + chart_oob_wrapper(chart))
+    return HTMLResponse(content=_cascade_row_html(request, tipo, foco))
+
+
+def _chart_muscle_html(musculo: str, ejercicios: list[str]) -> str:
+    """Fragmento de la gráfica del músculo (compilado + ejercicios seleccionados)."""
+    from src.charts import chart_muscle_exercises
+
+    fig = chart_muscle_exercises(DB_PATH, musculo, ejercicios)
+    if not fig.data:
+        return (
+            "<div class='flex items-center justify-center h-[300px] text-neutral-500 text-xs'>"
+            "Sin datos para esta selección</div>"
+        )
+    from src.dashboard_service import _json_for_inline
+
+    return (
+        f'<script id="unified-chart-data" type="application/json">'
+        f"{_json_for_inline(fig.to_json())}</script>"
+        '<div id="unified-chart-plot" class="plotly-graph-div"></div>'
+    )
+
+
+@app.get("/grafica", response_class=HTMLResponse)
+def grafica_view(
+    request: Request,
+    musculo: str = Query(...),
+    ejercicios: list[str] = Query(default=[]),
+):
+    """Gráfica del músculo: compilado siempre + una línea por ejercicio marcado."""
+    chart = _chart_muscle_html(musculo, ejercicios)
+    return HTMLResponse(
+        content=chart_oob_wrapper(chart)
+        + fragment_oob(
+            templates,
+            request,
+            "ejercicios-row",
+            _ejercicios_row_html(request, musculo, ejercicios),
+            swap="outerHTML",
+        )
+    )
 
 
 @app.get("/grupo/reset", response_class=HTMLResponse)

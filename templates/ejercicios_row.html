@@ -1,0 +1,19 @@
+<div id="ejercicios-row" class="flex flex-wrap items-center gap-2">
+    <span class="text-[10px] font-black tracking-widest text-neutral-600 uppercase">Ejercicios</span>
+    {% for item in items %}
+    <button
+        class="level-chip exercise-chip"
+        data-action="toggle-exercise"
+        data-foco="{{ item }}"
+        data-padre="{{ padre }}"
+        aria-pressed="{{ 'true' if item in seleccionados else 'false' }}"
+        title="Marcar para ver su línea en la gráfica"
+    >{{ item }}</button>
+    <button
+        class="detail-link"
+        data-action="exercise-detail"
+        data-foco="{{ item }}"
+        title="Ver detalle de {{ item }}"
+    >ⓘ</button>
+    {% endfor %}
+</div>

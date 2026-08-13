@@ -38,7 +38,7 @@ input[type="number"]::-webkit-outer-spin-button {
     right: 0;
     display: flex;
     justify-content: center;
-    z-index: 50;
+    z-index: 70;
     pointer-events: none;
 }
 .notice {
@@ -95,6 +95,22 @@ input[type="number"]::-webkit-outer-spin-button {
     cursor: not-allowed;
 }
 
+/* Fondo de vidrio esmerilado para overlays (popup de registro).
+ * La página se ve a través: difuminada, ligeramente oscurecida y con los
+ * colores realzados (refuerza la estética neón del tema). Mismo lenguaje
+ * visual que #confirm-modal y los avisos. */
+.glass-backdrop {
+    background: rgba(10, 10, 10, 0.45);
+    backdrop-filter: blur(12px) saturate(1.2);
+    -webkit-backdrop-filter: blur(12px) saturate(1.2);
+}
+/* Plan B: navegadores sin backdrop-filter -> fondo oscuro casi opaco. */
+@supports not (backdrop-filter: blur(1px)) {
+    .glass-backdrop {
+        background: rgba(10, 10, 10, 0.78);
+    }
+}
+
 /* Modal de confirmación de cambios sin guardar */
 #confirm-modal {
     position: fixed;
@@ -105,7 +121,7 @@ input[type="number"]::-webkit-outer-spin-button {
     background: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
-    z-index: 60;
+    z-index: 80;
 }
 #confirm-modal .confirm-card {
     background: #121212;

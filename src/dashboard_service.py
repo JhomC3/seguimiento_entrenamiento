@@ -43,7 +43,6 @@ logger = logging.getLogger("dashboard")
 DOMAIN_ERRORS = (ValidationError, NotFoundError, ConflictError)
 
 
-
 def get_filters(db_path: str) -> tuple[list[str], list[str]]:
     """All distinct exercises and muscle groups. Safe empty result on error."""
     try:
