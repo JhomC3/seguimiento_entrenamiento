@@ -37,3 +37,4 @@ android/sdk/
 
 # Logs de arranque local
 .tmp/*.log
+.npm/
