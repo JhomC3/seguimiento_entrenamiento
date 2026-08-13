@@ -47,8 +47,23 @@ def _goto_date(page, server, iso):
     _wait_editor_settled(page)
 
 
+def _simulate_drag(page, source_sel, target_sel):
+    """Drag HTML5 sintético (dragstart → dragover → drop → dragend)."""
+    page.evaluate(
+        """([src, tgt]) => {
+            const card = document.querySelector(src);
+            const target = document.querySelector(tgt);
+            const dt = new DataTransfer();
+            card.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+            target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+            target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+            card.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
+        }""",
+        [source_sel, target_sel],
+    )
+
+
 def _click_chart_point(page, semana):
-    """Clic real de ratón sobre el marcador de una semana en la gráfica unificada."""
     pos = page.evaluate(
         """(semana) => {
             const plotEl = document.getElementById('unified-chart-plot');
@@ -154,9 +169,7 @@ def _create_template(page, server, iso, nombre):
     page.locator("#save-template-form .btn-check").click()
     expect(page.locator("#confirm-modal")).to_be_visible()
     page.locator("#confirm-save").click()
-    # Cerrar el popup: el sidebar de plantillas no debe quedar bajo el overlay.
-    page.click('[data-action="close-editor-popup"]')
-    page.wait_for_timeout(200)
+    # Las plantillas viven dentro del popup: permanece abierto.
     expect(page.locator("#plantillas-section [data-pt-nombre]")).to_have_count(1, timeout=3000)
 
 
@@ -164,7 +177,6 @@ def test_apply_template(page, server):
     _create_template(page, server, _iso(3), "Mi Empuje")
     iso = _iso(4)
     _goto_date(page, server, iso)
-    page.click('[data-action="close-editor-popup"]')
     expect(page.locator("#session-editor")).to_have_attribute("data-editmode", "1")
     expect(page.locator("#editor-state")).to_have_attribute("data-has-data", "0")
     page.locator("#plantillas-section .pt-card").get_by_role("button", name="Aplicar").click()
@@ -203,15 +215,13 @@ def test_template_crud_and_reorder(page, server):
     page.locator("#save-template-form .btn-check").click()
     expect(page.locator("#confirm-modal")).to_be_visible()
     page.locator("#confirm-save").click()
-    page.click('[data-action="close-editor-popup"]')
-    page.wait_for_timeout(300)
     expect(page.locator("#plantillas-section .pt-card")).to_have_count(2)
 
     second_id = page.locator("#plantillas-section .pt-card").nth(1).get_attribute("data-pt-id")
-    first_id = page.locator("#plantillas-section .pt-card").nth(0).get_attribute("data-pt-id")
-    page.locator(f"#plantillas-section .pt-card[data-pt-id='{second_id}']").drag_to(
-        page.locator(f"#plantillas-section .pt-card[data-pt-id='{first_id}']"),
-        target_position={"x": 150, "y": 5},
+    _simulate_drag(
+        page,
+        f"#plantillas-section .pt-card[data-pt-id='{second_id}']",
+        "#plantillas-section #plantillas-list",
     )
     expect(page.locator("#plantillas-section .pt-card").nth(0)).to_have_attribute(
         "data-pt-id", second_id, timeout=3000
@@ -282,8 +292,7 @@ def test_hostile_template_name_does_not_execute(page, server):
 
 
 def test_hostile_exercise_notice_creates_no_image_node(page, server):
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
+    _open_popup(page, server)
 
     page.fill('#exercise-create-form input[name="ejercicio"]', PAYLOAD)
     page.fill('#exercise-create-form input[name="grupo_muscular"]', "Pectoral")
@@ -334,8 +343,7 @@ def test_week_click_navigates_to_first_session_of_week(page, server):
 
     # El popup se cierra pero su DOM persiste: la navegación desde la gráfica
     # actualiza el editor oculto.
-    page.click('[data-action="close-editor-popup"]')
-    page.click('.level-btn[data-tipo="musculo"]')
+    page.click("#popup-close")
     page.locator('#cascade-row .level-chip[data-foco="Pectoral"]').click()
     page.wait_for_timeout(800)
     page.locator("#unified-chart .js-plotly-plot").first.wait_for(state="visible", timeout=5000)
@@ -354,13 +362,9 @@ def test_cascade_grupo_musculo_ejercicio(page, server):
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.click('[data-action="close-editor-popup"]')
+    page.click("#popup-close")
 
-    page.click('.level-btn[data-tipo="grupo"]')
-    expect(page.locator("#cascade-row .level-chip[data-tipo='grupo']").first).to_have_attribute(
-        "data-foco", "EMPUJE", timeout=3000
-    )
-    page.locator('#cascade-row .level-chip[data-foco="EMPUJE"]').click()
+    # La cascada arranca con los músculos del catálogo directamente.
     expect(page.locator("#cascade-row .level-chip[data-tipo='musculo']").first).to_have_attribute(
         "data-foco", "Pectoral", timeout=3000
     )
@@ -423,26 +427,20 @@ def test_template_delete_uses_custom_modal(page, server):
     )
 
 
-def test_navigate_from_session_history(page, server):
-    """Clic en una sesión del historial navega al editor de su fecha."""
+def test_navigate_por_fecha_del_navegador_del_popup(page, server):
+    """Navegar por el strip de fechas actualiza el editor del popup."""
     iso_a = _iso(8)
     iso_b = _iso(9)
     _goto_date(page, server, iso_a)
     _fill_row(page, 0, kg="80")
     page.click('#edit-actions button[type="submit"]')
     expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "1", timeout=5000)
-    expect(page.locator("#session-history [data-action='goto-session']")).to_have_count(
-        1, timeout=3000
-    )
 
     _goto_date(page, server, iso_b)
     _fill_row(page, 0, kg="90")
     page.click('#edit-actions button[type="submit"]')
     expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "1", timeout=5000)
-    expect(page.locator("#session-history [data-action='goto-session']")).to_have_count(
-        2, timeout=3000
-    )
 
-    page.locator(f"#session-history [data-action='goto-session'][data-iso='{iso_a}']").click()
+    page.locator(f'#popup-body .date-num[data-iso="{iso_a}"]').click()
     expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso_a, timeout=3000)
     expect(page.locator('input[name="kg"]')).to_have_value("80")

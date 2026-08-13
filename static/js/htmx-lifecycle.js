@@ -76,6 +76,10 @@ export function initLifecycle() {
                 syncEditorFromContent();
                 initEditorRowSortable();
                 fitRowsToPanel();
+                // Las plantillas (entrenamiento y alimentación) viven en el popup:
+                // re-vincular su DnD tras el swap.
+                initTemplateSortable();
+                refreshNutritionTemplatesDnD();
             } else if (e.detail.target === document.body && document.getElementById('plantilla-applied')) {
                 syncEditorFromContent();
                 document.getElementById('plantilla-applied').remove();

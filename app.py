@@ -21,7 +21,6 @@ from src.dashboard_service import (
     get_ejercicios_por_grupo,
     get_filters,
     get_first_session_date,
-    get_recent_sessions,
     translate_error,
 )
 from src.database import (
@@ -227,16 +226,6 @@ def _plantillas_list_html(
     )
 
 
-def _sesiones_list_html(request: Request) -> str:
-    return _render_body(
-        templates.TemplateResponse(
-            request=request,
-            name="session_history.html",
-            context={"sessions": get_recent_sessions(DB_PATH)},
-        )
-    )
-
-
 NUTRIENT_FIELD_LABELS: list[dict[str, str]] = [
     {"name": "kcal", "label": "kcal"},
     {"name": "carbohidratos", "label": "Carb (g)"},
@@ -373,7 +362,6 @@ def read_index(request: Request):
             "semana": calculate_cycle_week(_fecha_date, CICLO_START_DATE),
             "exercise_form_html": _exercise_form_html(request),
             "plantillas_html": _plantillas_list_html(request),
-            "session_history_html": _sesiones_list_html(request),
             "nutrition_editor_html": _nutrition_editor_html(request, fecha),
             "nutrition_templates_html": _plantillas_alimentacion_list_html(request, fecha),
             "alimento_form_html": _alimento_form_html(request),
@@ -420,6 +408,9 @@ def editor_popup(request: Request, fecha: str = Query(...)):
                 "nutrition_editor_html": _nutrition_editor_html(request, fecha),
                 "editor_html": _editor_html(request, fecha),
                 "cardio_html": _cardio_day_html(request, fecha),
+                "exercise_form_html": _exercise_form_html(request),
+                "alimento_form_html": _alimento_form_html(request),
+                "plantillas_html": _plantillas_list_html(request),
                 "dia": day_from_date(fecha_date),
                 "fecha_display": fecha_display(fecha),
                 "semana": calculate_cycle_week(fecha_date, CICLO_START_DATE),
@@ -494,17 +485,11 @@ def entrenamiento_session_save(
         saved_rows = get_sets_by_fecha(DB_PATH, fecha_to_db(parse_form_date(fecha)))
         if saved_rows:
             return HTMLResponse(
-                content=notice_success
-                + outcome_ok
-                + editor_state_oob(templates, request)
-                + fragment_oob(templates, request, "session-history", _sesiones_list_html(request))
+                content=notice_success + outcome_ok + editor_state_oob(templates, request)
             )
         editor = _editor_html(request, fecha)
         return HTMLResponse(
-            content=notice_success
-            + outcome_ok
-            + editor_wrap_oob(templates, request, editor)
-            + fragment_oob(templates, request, "session-history", _sesiones_list_html(request))
+            content=notice_success + outcome_ok + editor_wrap_oob(templates, request, editor)
         )
     except Exception as e:
         return _domain_error_response(request, e, "editor-notice", extra=outcome_fail)
@@ -520,12 +505,7 @@ def entrenamiento_session_eliminar(request: Request, fecha: str = Form(...)):
     except Exception as e:
         return _domain_error_response(request, e, "editor-notice", extra=outcome_fail)
     editor = _editor_html(request, fecha)
-    return HTMLResponse(
-        content=notice
-        + outcome_ok
-        + editor_wrap_oob(templates, request, editor)
-        + fragment_oob(templates, request, "session-history", _sesiones_list_html(request))
-    )
+    return HTMLResponse(content=notice + outcome_ok + editor_wrap_oob(templates, request, editor))
 
 
 @app.post("/ejercicio/nuevo", response_class=HTMLResponse)
@@ -550,11 +530,6 @@ def ejercicio_nuevo(
         content=notice_success
         + fragment_oob(templates, request, "exercise-create", form_html, swap="outerHTML")
     )
-
-
-@app.get("/sesiones", response_class=HTMLResponse)
-def sesiones_view(request: Request):
-    return HTMLResponse(content=_sesiones_list_html(request))
 
 
 @app.get("/alimentacion/editor", response_class=HTMLResponse)
@@ -877,9 +852,6 @@ def undo(request: Request, fecha: str = Form("")):
     if result["kind"] == "sesion":
         fecha_iso = result["fecha_iso"]
         marker = undo_result_oob(templates, request, fecha_iso, result["has_data"])
-        history_oob = fragment_oob(
-            templates, request, "session-history", _sesiones_list_html(request)
-        )
         if fecha == fecha_iso:
             outcome_ok = STATIC_MARKERS["outcome_ok"]
             editor = _editor_html(request, fecha_iso)
@@ -888,9 +860,8 @@ def undo(request: Request, fecha: str = Form("")):
                 + outcome_ok
                 + marker
                 + editor_wrap_oob(templates, request, editor)
-                + history_oob
             )
-        return HTMLResponse(content=notice_ok + marker + history_oob)
+        return HTMLResponse(content=notice_ok + marker)
     if result["kind"] == "alimentacion":
         fecha_iso = result["fecha_iso"]
         marker = undo_result_oob(templates, request, fecha_iso, result["has_data"])

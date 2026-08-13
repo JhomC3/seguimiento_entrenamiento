@@ -172,12 +172,14 @@ def test_save_zero_rir_succeeds(tmp_path, monkeypatch):
     assert 'data-ok="1"' in r.text
 
 
-def test_index_renders_plantillas_section(tmp_path, monkeypatch):
+def test_plantillas_section_lives_in_popup(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    r = _client().get("/")
+    r = _client().get("/editor/popup?fecha=2026-08-12")
     assert 'id="plantillas-section"' in r.text
     assert "Aún no hay entrenos" in r.text
+    home = _client().get("/").text
+    assert 'id="plantillas-section"' not in home
 
 
 def test_plantilla_guardar_crea_y_oob(tmp_path, monkeypatch):
@@ -895,26 +897,20 @@ def test_undo_restaura_origen_google(tmp_path, monkeypatch):
     assert rows[0]["kg"] == 90 and rows[0]["origen"] == "google"
 
 
-def test_sesiones_view_renders_ultimas(tmp_path, monkeypatch):
-    from src.models import TrainingSetInput
-
+def test_sesiones_view_retirada(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    save_session(db, "2026-08-06", [TrainingSetInput("Press", 90, 7, 1)])
-    resp = _client().get("/sesiones")
-    assert resp.status_code == 200
-    assert "2026-08-06" in resp.text and "series" in resp.text
+    assert _client().get("/sesiones").status_code == 404
 
 
-def test_index_incluye_historial_sesiones(tmp_path, monkeypatch):
+def test_index_sin_historial_de_sesiones(tmp_path, monkeypatch):
     from src.models import TrainingSetInput
 
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     save_session(db, "2026-08-06", [TrainingSetInput("Press", 90, 7, 1)])
     resp = _client().get("/")
-    assert 'id="session-history"' in resp.text
-    assert "6/8/26" in resp.text
+    assert 'id="session-history"' not in resp.text
 
 
 def test_save_incluye_oob_history(tmp_path, monkeypatch):
@@ -930,7 +926,8 @@ def test_save_incluye_oob_history(tmp_path, monkeypatch):
             "rir": ["1"],
         },
     )
-    assert 'id="session-history" hx-swap-oob="innerHTML"' in resp.text
+    assert 'id="editor-state" hx-swap-oob="outerHTML"' in resp.text
+    assert "Entrenamiento guardado" in resp.text
 
 
 def test_undo_incluye_oob_history(tmp_path, monkeypatch):
@@ -948,7 +945,8 @@ def test_undo_incluye_oob_history(tmp_path, monkeypatch):
         },
     )
     resp = client.post("/undo", data={"fecha": "2026-08-06"})
-    assert 'id="session-history" hx-swap-oob="innerHTML"' in resp.text
+    assert resp.status_code == 200
+    assert 'id="session-history"' not in resp.text
 
 
 def test_lifespan_warns_sin_csrf_secret(tmp_path, monkeypatch, caplog):

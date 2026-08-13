@@ -16,52 +16,23 @@
         >+ Registrar</button>
     </header>
 
-    <!-- Niveles de análisis + cascada -->
+    <!-- Músculos (cascada: músculo → ejercicios → detalle) -->
     <div class="flex flex-col gap-2 border-b border-neutral-800 pb-4">
-        <div class="flex flex-wrap items-center gap-2">
-            <button class="level-btn active" data-action="set-level" data-tipo="global">Cuerpo entero</button>
-            <button class="level-btn" data-action="set-level" data-tipo="grupo">Grupo muscular</button>
-            <button class="level-btn" data-action="set-level" data-tipo="musculo">Músculo</button>
-            <button class="level-btn" data-action="set-level" data-tipo="ejercicio">Ejercicio</button>
-        </div>
         <div id="cascade-row"></div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6 items-start">
-        <!-- Panel lateral izquierdo -->
-        <aside class="flex flex-col gap-4 lg:sticky lg:top-6 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:pr-1 lg:scrollbar-thin">
-            <!-- Nuevo ejercicio -->
-            <div id="exercise-create">
-                {{ exercise_form_html | safe }}
+    <!-- Contenido principal -->
+    <main class="flex flex-col gap-6 min-w-0">
+        <!-- Gráfica Única -->
+        <div id="unified-chart-container" class="bg-neutral-900 border border-transparent rounded-xl p-5 neon-border metallic-border">
+            <div id="unified-chart">
+                {{ systemic_chart_html | safe }}
             </div>
+        </div>
 
-            <!-- Nuevo alimento -->
-            <div id="alimento-create">
-                {{ alimento_form_html | safe }}
-            </div>
-
-            <!-- Plantillas -->
-            <div id="plantillas-section">
-                {{ plantillas_html | safe }}
-            </div>
-
-            <!-- Historial de sesiones -->
-            <div id="session-history">{{ session_history_html | safe }}</div>
-        </aside>
-
-        <!-- Contenido principal -->
-        <main class="flex flex-col gap-6 min-w-0">
-            <!-- Gráfica Única -->
-            <div id="unified-chart-container" class="bg-neutral-900 border border-transparent rounded-xl p-5 neon-border metallic-border">
-                <div id="unified-chart">
-                    {{ systemic_chart_html | safe }}
-                </div>
-            </div>
-
-            <!-- Detalle y Tabla (loaded dynamically abajo de la gráfica) -->
-            <section id="history-section" class="flex flex-col gap-4"></section>
-        </main>
-    </div>
+        <!-- Detalle y Tabla (loaded dynamically abajo de la gráfica) -->
+        <section id="history-section" class="flex flex-col gap-4"></section>
+    </main>
 </div>
 
 <!-- Ventana emergente de registro (alimentación + sesión + cardio) -->
@@ -70,7 +41,7 @@
     <div class="relative z-10 mx-auto my-6 max-w-4xl max-h-[calc(100vh-3rem)] overflow-y-auto bg-neutral-950 border border-neutral-800 rounded-2xl flex flex-col">
         <div class="sticky top-0 z-20 bg-neutral-950 border-b border-neutral-800 px-5 py-3 flex items-center gap-4">
             <h2 class="text-sm font-black tracking-widest text-burgundy-400 uppercase neon-title" id="popup-fecha-title"></h2>
-            <button data-action="close-editor-popup" class="ml-auto text-neutral-500 hover:text-white text-xl leading-none px-2" aria-label="Cerrar">×</button>
+            <button id="popup-close" data-action="close-editor-popup" class="ml-auto text-neutral-500 hover:text-white text-xl leading-none px-2" aria-label="Cerrar">×</button>
         </div>
         <div id="popup-body" class="flex flex-col gap-4 p-5"></div>
     </div>
