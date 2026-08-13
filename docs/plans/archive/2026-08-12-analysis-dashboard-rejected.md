@@ -127,9 +127,7 @@ def migrate(conn) -> None:
 
 ```python
 def test_validate_rir_accepts_negative_down_to_min():
-    sets = sets_from_form(
-        ejercicios=["Press Banca"], kgs=["80"], reps=["5.5"], rirs=["-2"]
-    )
+    sets = sets_from_form(ejercicios=["Press Banca"], kgs=["80"], reps=["5.5"], rirs=["-2"])
     assert sets[0].rir == -2.0
 
 
@@ -198,7 +196,11 @@ def test_sets_from_form_parses_descanso():
 def test_save_session_persists_descanso(tmp_path):
     db = str(tmp_path / "t.db")
     init_db(db)
-    save_session(db, "2026-08-12", [TrainingSetInput(ejercicio="Press Banca", kg="80", reps="5", rir="0", descanso_seg="90")])
+    save_session(
+        db,
+        "2026-08-12",
+        [TrainingSetInput(ejercicio="Press Banca", kg="80", reps="5", rir="0", descanso_seg="90")],
+    )
     rows = get_sets_by_fecha(db, "2026-08-12")
     assert rows[0]["descanso_seg"] == 90.0
 ```
@@ -225,11 +227,11 @@ def test_save_session_persists_descanso(tmp_path):
 
 ```python
 def test_is_failure_set():
-    assert is_failure_set(5.0, 0.0)        # fallo limpio
-    assert is_failure_set(4.5, None)       # rep parcial
-    assert is_failure_set(5.0, -1.0)       # forzada
-    assert not is_failure_set(5.0, 2.0)    # con reserva
-    assert not is_failure_set(5.0, None)   # sin datos
+    assert is_failure_set(5.0, 0.0)  # fallo limpio
+    assert is_failure_set(4.5, None)  # rep parcial
+    assert is_failure_set(5.0, -1.0)  # forzada
+    assert not is_failure_set(5.0, 2.0)  # con reserva
+    assert not is_failure_set(5.0, None)  # sin datos
 ```
 
 **Step 2:** Falla (no existe). **Step 3: Implementar**
@@ -276,6 +278,7 @@ Firma única por capa (DRY):
 
 ```python
 def _daily_agg(db_path: str, sql: str) -> pd.DataFrame: ...
+
 
 def daily_sleep_hours(db_path: str) -> pd.DataFrame: ...
 def daily_resting_hr(db_path: str) -> pd.DataFrame: ...
@@ -333,6 +336,7 @@ def test_build_analysis_chart_returns_subplots_per_layer(tmp_path):
 ```python
 LayerTrace = tuple[str, str]  # (layer, nombre visible)
 
+
 def build_analysis_chart(
     db_path: str,
     nivel: str,
@@ -341,12 +345,17 @@ def build_analysis_chart(
     rango_semanas: int | None = 8,
 ) -> go.Figure:
     """Paneles apilados con eje X de fechas compartido; un subplot por capa activa."""
-    series = load_layer_series(db_path, nivel, focus, layers)  # dict[str, DataFrame(fecha_dt, valor)]
+    series = load_layer_series(
+        db_path, nivel, focus, layers
+    )  # dict[str, DataFrame(fecha_dt, valor)]
     rows = len(layers)
     if rows == 0:
         return go.Figure()
     fig = make_subplots(
-        rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.05,
+        rows=rows,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.05,
         subplot_titles=[TITLES[l] for l in layers],
     )
     for i, layer in enumerate(layers, start=1):
@@ -355,18 +364,45 @@ def build_analysis_chart(
             continue
         color = LAYER_COLORS[layer]
         if layer == "volumen":
-            fig.add_trace(go.Bar(x=df["fecha_dt"], y=df["valor"], name=TITLES[layer],
-                                 marker_color=color, hovertemplate="%{y:.0f} kg<extra></extra>"), row=i, col=1)
+            fig.add_trace(
+                go.Bar(
+                    x=df["fecha_dt"],
+                    y=df["valor"],
+                    name=TITLES[layer],
+                    marker_color=color,
+                    hovertemplate="%{y:.0f} kg<extra></extra>",
+                ),
+                row=i,
+                col=1,
+            )
         else:
-            fig.add_trace(go.Scatter(x=df["fecha_dt"], y=df["valor"], mode="lines+markers",
-                                     name=TITLES[layer], line=dict(color=color, width=2),
-                                     marker=dict(color=color, size=5), hovertemplate="%{y:.1f}<extra></extra>"), row=i, col=1)
-    fig.update_layout(height=120 + 150 * rows, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                      font=dict(color="#a3a3a3"), hovermode="x unified",
-                      hoverlabel=dict(bgcolor="#1a1a1a", font=dict(color="white"), bordercolor="#333"),
-                      margin=dict(l=50, r=16, t=60, b=30), showlegend=False)
+            fig.add_trace(
+                go.Scatter(
+                    x=df["fecha_dt"],
+                    y=df["valor"],
+                    mode="lines+markers",
+                    name=TITLES[layer],
+                    line=dict(color=color, width=2),
+                    marker=dict(color=color, size=5),
+                    hovertemplate="%{y:.1f}<extra></extra>",
+                ),
+                row=i,
+                col=1,
+            )
+    fig.update_layout(
+        height=120 + 150 * rows,
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#a3a3a3"),
+        hovermode="x unified",
+        hoverlabel=dict(bgcolor="#1a1a1a", font=dict(color="white"), bordercolor="#333"),
+        margin=dict(l=50, r=16, t=60, b=30),
+        showlegend=False,
+    )
     fig.update_xaxes(showgrid=False, tickfont=dict(color="#a3a3a3", size=9))
-    fig.update_yaxes(showgrid=False, zerolinecolor="#333", tickfont=dict(color="#a3a3a3", size=9), title=None)
+    fig.update_yaxes(
+        showgrid=False, zerolinecolor="#333", tickfont=dict(color="#a3a3a3", size=9), title=None
+    )
     return fig
 ```
 
@@ -389,7 +425,7 @@ Constantes: `TITLES`, `LAYER_COLORS` (paleta del proyecto: `#e56d88` borgoña, `
 @dataclass
 class AnalysisKpis:
     pfr_actual: float | None = None
-    pfr_variacion: float | None = None      # % vs baseline
+    pfr_variacion: float | None = None  # % vs baseline
     volumen_semana: float | None = None
     sets_fallo_semana: int = 0
     peso_actual: float | None = None
@@ -492,7 +528,12 @@ def analisis_chart(
 
 ```python
 @app.get("/analisis/dia", response_class=HTMLResponse)
-def analisis_dia(request: Request, fecha: str = Query(...), nivel: str = Query("systemic"), focus: str = Query("")):
+def analisis_dia(
+    request: Request,
+    fecha: str = Query(...),
+    nivel: str = Query("systemic"),
+    focus: str = Query(""),
+):
     vm = build_day_detail(DB_PATH, fecha, nivel, focus or None)  # nuevo en dashboard_service
     return templates.TemplateResponse(request=request, name="day_detail.html", context=vm.context())
 ```
@@ -614,6 +655,7 @@ class CardioAnnotationInput:
     inclinacion_pct: float | None
     notas: str
 
+
 def upsert_cardio_annotation(db_path: str, data: CardioAnnotationInput) -> None:
     """Valida que hc_id exista y sea EXERCISE_SESSION; upsert; vacío = delete."""
     with transaction(db_path) as conn:
@@ -636,8 +678,14 @@ def upsert_cardio_annotation(db_path: str, data: CardioAnnotationInput) -> None:
                  inclinacion_pct = excluded.inclinacion_pct,
                  notas = excluded.notas,
                  updated_at = excluded.updated_at""",
-            (data.hc_id, data.velocidad_kmh, data.inclinacion_pct, data.notas.strip(),
-             _now(), _now()),
+            (
+                data.hc_id,
+                data.velocidad_kmh,
+                data.inclinacion_pct,
+                data.notas.strip(),
+                _now(),
+                _now(),
+            ),
         )
 ```
 

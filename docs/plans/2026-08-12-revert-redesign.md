@@ -142,7 +142,7 @@ def entrenamiento_session_save(
 - En `chart_pfr_timeline`: usar el timeline de la rama (`calculate_pfr_timeline` ya devuelve `sets_totales`, `sets_fallo`), agregar por semana; unir `volumen`/`peso`/`sueno` semanales desde `src/analysis_data.py` (promedios de la semana por fecha) y enriquecer:
 
 ```python
-hovertemplate=(
+hovertemplate = (
     "Semana %{x}<br>Crecimiento: %{y:.1f}%"
     "<br>Series: %{customdata[0]} · Fallos: %{customdata[1]}"
     "<br>Volumen: %{customdata[2]:.0f} kg"
@@ -184,6 +184,7 @@ hovertemplate=(
 @app.get("/editor/popup", response_class=HTMLResponse)
 def editor_popup(request: Request, fecha: str = Query(...)):
     from datetime import date as _date
+
     fecha_date = _date.fromisoformat(fecha)
     return _render_body(
         templates.TemplateResponse(
