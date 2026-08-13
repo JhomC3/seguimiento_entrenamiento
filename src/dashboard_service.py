@@ -246,6 +246,7 @@ def _editor_rows(rows: list[dict]) -> list[EditorRow]:
         kg = _as_float(r.get("kg"))
         reps = _as_float(r.get("reps"))
         rir = _as_float(r.get("rir"))
+        descanso = _as_float(r.get("descanso_seg"))
         rm = None
         try:
             if kg is not None and reps is not None:
@@ -258,6 +259,7 @@ def _editor_rows(rows: list[dict]) -> list[EditorRow]:
                 kg=kg,
                 reps=reps,
                 rir=rir,
+                descanso_seg=descanso,
                 rm=rm,
             )
         )

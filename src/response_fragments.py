@@ -26,6 +26,8 @@ OOB_FRAGMENT_TARGETS = (
     "nutrition-editor-wrap",
     "alimento-create",
     "nutrition-templates-section",
+    "popup-body",
+    "cardio-day",
 )
 
 STATIC_MARKERS = {

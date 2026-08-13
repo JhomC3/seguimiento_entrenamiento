@@ -392,6 +392,86 @@ def fecha_editor(request: Request, fecha: str = Query(...)):
     return HTMLResponse(content=_editor_html(request, fecha))
 
 
+def _cardio_day_html(request: Request, fecha: str) -> str:
+    from src.cardio_service import get_day_cardio
+
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="cardio_day.html",
+            context={"cardio": get_day_cardio(DB_PATH, fecha), "fecha_iso": fecha},
+        )
+    )
+
+
+@app.get("/editor/popup", response_class=HTMLResponse)
+def editor_popup(request: Request, fecha: str = Query(...)):
+    """Cuerpo de la ventana emergente de registro: navegador + editores + cardio."""
+    from datetime import date as _date
+
+    fecha_date = _date.fromisoformat(fecha)
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="editor_popup.html",
+            context={
+                "navigator_html": _navigator_html(request, fecha),
+                "nutrition_editor_html": _nutrition_editor_html(request, fecha),
+                "editor_html": _editor_html(request, fecha),
+                "cardio_html": _cardio_day_html(request, fecha),
+                "dia": day_from_date(fecha_date),
+                "fecha_display": fecha_display(fecha),
+                "semana": calculate_cycle_week(fecha_date, CICLO_START_DATE),
+            },
+        )
+    )
+
+
+@app.post("/cardio/annotation", response_class=HTMLResponse)
+def cardio_annotation_save(
+    request: Request,
+    hc_id: str = Form(...),
+    velocidad_kmh: float | None = Form(None),
+    inclinacion_pct: float | None = Form(None),
+    notas: str = Form(""),
+    fecha: str = Form(""),
+):
+    """Upsert de velocidad/inclinación sobre una sesión EXERCISE_SESSION."""
+    from src.cardio_service import CardioAnnotationInput, upsert_cardio_annotation
+
+    try:
+        upsert_cardio_annotation(
+            DB_PATH,
+            CardioAnnotationInput(
+                hc_id=hc_id,
+                velocidad_kmh=velocidad_kmh,
+                inclinacion_pct=inclinacion_pct,
+                notas=notas,
+            ),
+        )
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    notice = notice_oob(
+        templates,
+        request,
+        target="notice-container",
+        message="Anotación de cardio guardada.",
+        dismiss=2500,
+    )
+    if fecha:
+        return HTMLResponse(
+            content=notice
+            + fragment_oob(
+                templates,
+                request,
+                "cardio-day",
+                _cardio_day_html(request, fecha),
+                swap="outerHTML",
+            )
+        )
+    return HTMLResponse(content=notice)
+
+
 @app.post("/entrenamiento/session/save", response_class=HTMLResponse)
 def entrenamiento_session_save(
     request: Request,

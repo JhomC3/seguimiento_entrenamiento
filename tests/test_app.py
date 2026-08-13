@@ -1508,3 +1508,49 @@ def test_health_connect_csv_export_excludes_deleted(tmp_path, monkeypatch):
     assert "hc-1" not in r.text
     r_all = _client().get("/exportar/health-connect.csv?incluir_borrados=1")
     assert "hc-1" in r_all.text
+
+
+def test_editor_popup_renders_navegador_editores_cardio(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/editor/popup?fecha=2026-08-12")
+    assert r.status_code == 200
+    assert 'id="date-navigator"' in r.text
+    assert 'id="session-date-title"' in r.text
+    assert 'id="nutrition-editor-wrap"' in r.text
+    assert 'id="session-editor-wrap"' in r.text
+    assert 'id="cardio-day"' in r.text
+    assert "Semana" in r.text
+
+
+def test_cardio_annotation_oob_refresca_bloque(tmp_path, monkeypatch):
+    import sqlite3
+    from datetime import datetime
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    conn = sqlite3.connect(db)
+    ts = int(datetime(2026, 8, 12, 8, 0, tzinfo=__import__("datetime").timezone.utc).timestamp() * 1000)
+    conn.execute(
+        "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
+        "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at) "
+        "VALUES ('c1', 'EXERCISE_SESSION', ?, ?, ?, 1, "
+        "'{\"value\": {\"title\": \"Cinta\"}}', 'x', 'x')",
+        (ts, ts + 30 * 60000, ts),
+    )
+    conn.commit()
+    conn.close()
+    r = _client().post(
+        "/cardio/annotation",
+        data={
+            "hc_id": "c1",
+            "velocidad_kmh": "5.5",
+            "inclinacion_pct": "2",
+            "notas": "",
+            "fecha": "2026-08-12",
+        },
+    )
+    assert r.status_code == 200
+    assert 'id="cardio-day" hx-swap-oob="outerHTML"' in r.text
+    assert "5.5" in r.text
+    assert "Anotación de cardio guardada" in r.text
