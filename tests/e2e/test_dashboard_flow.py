@@ -24,12 +24,22 @@ def _wait_editor_settled(page):
     page.wait_for_timeout(120)
 
 
-def _goto_date(page, server, iso):
+def _open_popup(page, server):
+    """Los editores viven en la ventana emergente de registro (contrato v3)."""
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.click('[data-action="open-editor-popup"]')
+    page.wait_for_selector("#popup-body #session-editor-wrap", timeout=5000)
+    page.wait_for_selector("#popup-body #nutrition-form", timeout=5000)
+
+
+def _goto_date(page, server, iso):
+    _open_popup(page, server)
     before = page.locator("#session-date-title h3").inner_text()
-    page.locator(f'.date-num[data-iso="{iso}"]').click()
-    expect(page.locator(f'.date-num[data-iso="{iso}"]')).to_have_class(re.compile(r"\bselected\b"))
+    page.locator(f'#popup-body .date-num[data-iso="{iso}"]').click()
+    expect(page.locator(f'#popup-body .date-num[data-iso="{iso}"]')).to_have_class(
+        re.compile(r"\bselected\b")
+    )
     expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
     # El título global cambia con la navegación
     expect(page.locator("#session-date-title h3")).not_to_have_text(before)
@@ -67,8 +77,7 @@ def test_empty_state_chart(page, server):
 
 
 def test_save_session_flow(page, server):
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
+    _open_popup(page, server)
     expect(page.locator("#session-editor")).to_be_visible()
     _fill_row(page, 0)
     page.click('#edit-actions button[type="submit"]')
@@ -145,6 +154,9 @@ def _create_template(page, server, iso, nombre):
     page.locator("#save-template-form .btn-check").click()
     expect(page.locator("#confirm-modal")).to_be_visible()
     page.locator("#confirm-save").click()
+    # Cerrar el popup: el sidebar de plantillas no debe quedar bajo el overlay.
+    page.click('[data-action="close-editor-popup"]')
+    page.wait_for_timeout(200)
     expect(page.locator("#plantillas-section [data-pt-nombre]")).to_have_count(1, timeout=3000)
 
 
@@ -152,6 +164,7 @@ def test_apply_template(page, server):
     _create_template(page, server, _iso(3), "Mi Empuje")
     iso = _iso(4)
     _goto_date(page, server, iso)
+    page.click('[data-action="close-editor-popup"]')
     expect(page.locator("#session-editor")).to_have_attribute("data-editmode", "1")
     expect(page.locator("#editor-state")).to_have_attribute("data-has-data", "0")
     page.locator("#plantillas-section .pt-card").get_by_role("button", name="Aplicar").click()
@@ -181,6 +194,8 @@ def test_template_crud_and_reorder(page, server):
         "data-pt-nombre", "A-edit"
     )
 
+    _open_popup(page, server)
+    _fill_row(page, 0, kg="75", reps="8")
     page.locator("#session-editor .save-template-btn").click()
     expect(page.locator("#confirm-modal")).to_be_visible()
     page.locator("#confirm-save").click()
@@ -188,6 +203,8 @@ def test_template_crud_and_reorder(page, server):
     page.locator("#save-template-form .btn-check").click()
     expect(page.locator("#confirm-modal")).to_be_visible()
     page.locator("#confirm-save").click()
+    page.click('[data-action="close-editor-popup"]')
+    page.wait_for_timeout(300)
     expect(page.locator("#plantillas-section .pt-card")).to_have_count(2)
 
     second_id = page.locator("#plantillas-section .pt-card").nth(1).get_attribute("data-pt-id")
@@ -296,16 +313,15 @@ def test_dynamic_script_does_not_execute(page, server):
 
 def test_week_click_navigates_to_first_session_of_week(page, server):
     """Clic real sobre el marcador de una semana lleva el editor al primer entreno de esa semana."""
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
+    _open_popup(page, server)
 
     # Dos sesiones en semanas distintas (lunes 10/08 y lunes 17/08) para que el
     # primer entreno de la semana del segundo clic sea inequívoco.
     iso_a = _iso(4)
     iso_b = _iso(11)
     for iso in (iso_a, iso_b):
-        page.locator(f'.date-num[data-iso="{iso}"]').click()
-        expect(page.locator(f'.date-num[data-iso="{iso}"]')).to_have_class(
+        page.locator(f'#popup-body .date-num[data-iso="{iso}"]').click()
+        expect(page.locator(f'#popup-body .date-num[data-iso="{iso}"]')).to_have_class(
             re.compile(r"\bselected\b")
         )
         expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
@@ -316,7 +332,12 @@ def test_week_click_navigates_to_first_session_of_week(page, server):
             "Entrenamiento guardado", timeout=2000
         )
 
-    page.click("#cat-btn-Pectoral")
+    # El popup se cierra pero su DOM persiste: la navegación desde la gráfica
+    # actualiza el editor oculto.
+    page.click('[data-action="close-editor-popup"]')
+    page.click('.level-btn[data-tipo="musculo"]')
+    page.locator('#cascade-row .level-chip[data-foco="Pectoral"]').click()
+    page.wait_for_timeout(800)
     page.locator("#unified-chart .js-plotly-plot").first.wait_for(state="visible", timeout=5000)
     page.locator("#unified-chart-plot .point").first.wait_for(state="visible", timeout=5000)
 
@@ -325,42 +346,39 @@ def test_week_click_navigates_to_first_session_of_week(page, server):
     expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso_b, timeout=3000)
 
 
-def test_category_filters_dots_sin_saltar_editor(page, server):
-    """El botón de categoría filtra los dots del navegador y deja el editor en su fecha."""
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
-
-    iso = _iso(3)
-    page.locator(f'.date-num[data-iso="{iso}"]').click()
-    expect(page.locator(f'.date-num[data-iso="{iso}"]')).to_have_class(re.compile(r"\bselected\b"))
-    expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
-    _wait_editor_settled(page)
+def test_cascade_grupo_musculo_ejercicio(page, server):
+    """La cascada despliega: grupos → músculos del grupo → ejercicios del músculo."""
+    _open_popup(page, server)
     _fill_row(page, 0)
     page.click('#edit-actions button[type="submit"]')
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
+    page.click('[data-action="close-editor-popup"]')
 
-    page.click(".today-btn")
-    expect(page.locator(f'.date-num[data-iso="{_iso(0)}"]')).to_have_class(
-        re.compile(r"\bselected\b")
+    page.click('.level-btn[data-tipo="grupo"]')
+    expect(page.locator("#cascade-row .level-chip[data-tipo='grupo']").first).to_have_attribute(
+        "data-foco", "EMPUJE", timeout=3000
     )
-    assert page.evaluate("document.querySelectorAll('.date-num .date-dot').length") >= 1
-
-    page.click("#cat-btn-Pectoral")
-    page.wait_for_timeout(800)
-    assert page.evaluate("document.querySelectorAll('.date-num .date-dot').length") == 1
-    expect(page.locator("#session-form input[name='fecha']")).to_have_value(_iso(0), timeout=3000)
-
-    page.click("#cat-btn-Pectoral")
-    page.wait_for_timeout(800)
-    assert page.evaluate("document.querySelectorAll('.date-num .date-dot').length") >= 1
+    page.locator('#cascade-row .level-chip[data-foco="EMPUJE"]').click()
+    expect(page.locator("#cascade-row .level-chip[data-tipo='musculo']").first).to_have_attribute(
+        "data-foco", "Pectoral", timeout=3000
+    )
+    page.locator('#cascade-row .level-chip[data-foco="Pectoral"]').click()
+    expect(page.locator("#cascade-row .level-chip[data-tipo='ejercicio']").first).to_have_attribute(
+        "data-foco", "Press", timeout=3000
+    )
+    page.locator('#cascade-row .level-chip[data-foco="Press"]').click()
+    expect(page.locator("#history-section")).to_contain_text("Resumen por Sesión", timeout=3000)
+    expect(page.locator("#unified-chart")).to_contain_text("Rendimiento – Press", timeout=3000)
 
 
 def test_mobile_viewport_renders(page, server):
     page.set_viewport_size({"width": 375, "height": 800})
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.click('[data-action="open-editor-popup"]')
+    page.wait_for_selector("#popup-body #session-editor-wrap", timeout=5000)
     assert page.is_visible("#session-editor")
     assert page.is_visible("#date-navigator")
     can_scroll = page.evaluate(
@@ -371,9 +389,8 @@ def test_mobile_viewport_renders(page, server):
 
 
 def test_keyboard_day_shift_updates_editor(page, server):
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
-    page.click(".today-btn")
+    _open_popup(page, server)
+    page.locator("#popup-body .today-btn").click()
     _wait_editor_settled(page)
     fecha = page.input_value("#session-form input[name='fecha']")
     page.keyboard.press("ArrowRight")

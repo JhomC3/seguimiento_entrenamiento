@@ -416,6 +416,7 @@ def editor_popup(request: Request, fecha: str = Query(...)):
             name="editor_popup.html",
             context={
                 "navigator_html": _navigator_html(request, fecha),
+                "nutrition_templates_html": _plantillas_alimentacion_list_html(request, fecha),
                 "nutrition_editor_html": _nutrition_editor_html(request, fecha),
                 "editor_html": _editor_html(request, fecha),
                 "cardio_html": _cardio_day_html(request, fecha),
@@ -998,11 +999,11 @@ def select_view(request: Request, grupo: str = Query(None), fecha: str = Query(N
 
 def _cascade_items(nivel: str, foco: str) -> list[str]:
     """Siguiente fila de la cascada: categorías → músculos → ejercicios."""
+    from src.db_connection import read_connection
+
     if nivel == "grupo" and not foco:
         return [str(c["name"]) for c in get_categories(DB_PATH) or MUSCLE_CATEGORIES]
     if nivel == "grupo":
-        from src.db_connection import read_connection
-
         with read_connection(DB_PATH) as conn:
             rows = conn.execute(
                 "SELECT DISTINCT grupo_muscular FROM ejercicios "
@@ -1012,27 +1013,32 @@ def _cascade_items(nivel: str, foco: str) -> list[str]:
             ).fetchall()
         return [str(r[0]) for r in rows]
     if nivel == "musculo":
-        from src.db_connection import read_connection
-
         with read_connection(DB_PATH) as conn:
-            rows = conn.execute(
-                "SELECT ejercicio FROM ejercicios "
-                "WHERE LOWER(grupo_muscular) = LOWER(?) ORDER BY ejercicio",
-                (foco,),
-            ).fetchall()
+            if foco:
+                rows = conn.execute(
+                    "SELECT ejercicio FROM ejercicios "
+                    "WHERE LOWER(grupo_muscular) = LOWER(?) ORDER BY ejercicio",
+                    (foco,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT DISTINCT grupo_muscular FROM ejercicios "
+                    "WHERE grupo_muscular IS NOT NULL ORDER BY grupo_muscular"
+                ).fetchall()
+        return [str(r[0]) for r in rows]
+    if nivel == "ejercicio":
+        with read_connection(DB_PATH) as conn:
+            rows = conn.execute("SELECT ejercicio FROM ejercicios ORDER BY ejercicio").fetchall()
         return [str(r[0]) for r in rows]
     return []
 
 
 def _cascade_chip_tipo(nivel: str, foco: str) -> str:
-    """Tipo de la siguiente fila: los chips desplegados continúan la cascada."""
-    if nivel == "grupo" and not foco:
-        return "grupo"
-    if nivel == "grupo":
-        return "musculo"
-    if nivel == "musculo":
-        return "ejercicio"
-    return ""
+    """Tipo de la fila desplegada: mismo nivel si es selección directa, o el
+    siguiente nivel cuando un foco avanza la cascada (grupo→músculo→ejercicio)."""
+    if foco:
+        return {"grupo": "musculo", "musculo": "ejercicio"}.get(nivel, "")
+    return nivel
 
 
 def _cascade_row_html(request: Request, nivel: str, foco: str) -> str:

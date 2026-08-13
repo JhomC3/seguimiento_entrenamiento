@@ -130,7 +130,7 @@ def test_get_day_fc_media_y_sueno(db):
         "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
         "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at) "
         "VALUES ('h1', 'HEART_RATE_5MIN', ?, ?, ?, 1, "
-        "'{\"value\": {\"samples\": [{\"time\": 1, \"bpm\": 120}, {\"time\": 2, \"bpm\": 140}]}}', 'x', 'x')",
+        '\'{"value": {"samples": [{"time": 1, "bpm": 120}, {"time": 2, "bpm": 140}]}}\', \'x\', \'x\')',
         (ts("2026-08-10 12:00"), ts("2026-08-10 12:05"), ts("2026-08-10 12:05")),
     )
     conn.execute(

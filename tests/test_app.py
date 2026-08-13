@@ -1122,8 +1122,8 @@ def test_nutrition_templates_routes(tmp_path, monkeypatch):
     assert 'id="nutrition-templates-section" hx-swap-oob' in r.text
     assert "Desayuno" in r.text
 
-    # Lista en el sidebar del index
-    r = _client().get("/")
+    # La lista vive dentro del popup de registro (junto al editor)
+    r = _client().get("/editor/popup?fecha=2025-04-26")
     assert 'id="nutrition-templates-section"' in r.text
     assert "Desayuno" in r.text
 

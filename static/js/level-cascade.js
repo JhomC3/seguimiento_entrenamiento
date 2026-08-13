@@ -22,7 +22,13 @@ export function initLevelCascade() {
                 .forEach((b) => b.classList.toggle('active', b.dataset.tipo === el.dataset.tipo));
             refresh(el.dataset.tipo, '');
         } else if (el.dataset.action === 'set-focus') {
-            refresh(el.dataset.tipo, el.dataset.foco);
+            // El detalle de ejercicio va a #history-section; los chips, a la cascada.
+            const target = el.dataset.tipo === 'ejercicio' ? '#history-section' : '#cascade-row';
+            const foco = encodeURIComponent(el.dataset.foco);
+            htmx.ajax('GET', '/nivel?tipo=' + el.dataset.tipo + '&foco=' + foco, {
+                target: target,
+                swap: 'innerHTML',
+            });
         }
     });
 }

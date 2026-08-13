@@ -438,7 +438,10 @@ class _InertChecker(HTMLParser):
 def _assert_inert_fragment(text: str):
     """Hostile names must be inert text: no handlers, no raw payload markup."""
     assert "<img" not in text, "payload <img> must not be raw HTML"
-    assert "&lt;img" in text, "payload must be present in escaped text form"
+    # El payload aparece escapado: como HTML (&lt;img) o como JSON inerte (\u003cimg).
+    assert ("&lt;img" in text) or ("\\u003cimg" in text), (
+        "payload must be present in escaped text form"
+    )
     assert "alert(1)//" in text, "payload must be visible as escaped text"
     parser = _InertChecker()
     parser.feed(text)
@@ -451,7 +454,10 @@ def _assert_inert_fragment(text: str):
             continue  # data block, never executed
         assert "alert(" not in m.group(2), "payload must not live inside a script element"
     joined = "".join(parser.text_nodes)
-    assert PAYLOAD in joined, "payload must be recoverable from the escaped text"
+    escaped_json = PAYLOAD.replace("<", "\\u003c").replace(">", "\\u003e").replace("'", "\\u0027")
+    assert (PAYLOAD in joined) or (escaped_json in text), (
+        "payload must be recoverable in escaped form"
+    )
 
 
 def test_hostile_exercise_notice_is_escaped(authed_client):
