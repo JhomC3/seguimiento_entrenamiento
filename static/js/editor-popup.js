@@ -40,7 +40,8 @@ export function closeEditorPopup() {
     if (!popup) return;
     popup.classList.add('hidden');
     document.body.style.overflow = '';
-    // Deshace la entrada del popup en el historial si sigue siendo la URL actual.
+    // Deshace la entrada ?registro del historial: "atrás" no se queda atascado
+    // en el registro y la navegación del navegador no sale de la app.
     const params = new URLSearchParams(location.search);
     if (params.has('registro')) {
         history.back();
@@ -77,6 +78,12 @@ export function initEditorPopup() {
             document.body.style.overflow = '';
         }
     });
+
+    // Recarga o navegación directa con ?registro: abrir el popup en esa fecha.
+    const initialParams = new URLSearchParams(location.search);
+    if (initialParams.has('registro')) {
+        openEditorPopup(initialParams.get('registro'));
+    }
 
     // Tras cargar el popup, el título de fecha sigue la fecha seleccionada del navegador.
     document.body.addEventListener('htmx:afterSwap', function (e) {

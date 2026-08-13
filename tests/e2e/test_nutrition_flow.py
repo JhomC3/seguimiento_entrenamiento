@@ -64,10 +64,10 @@ def test_nutrition_create_edit_save_reload_delete(page, server):
     page.wait_for_selector("#notice-container .notice", timeout=5000)
     expect(page.locator("#nutrition-editor-state")).to_have_attribute("data-has-data", "1")
 
-    # 5) Recargar y reabrir: fila y parámetros persisten; el día queda readonly
+    # 5) Recargar: la URL trae ?registro y el popup se restaura solo (fila y
+    # parámetros persisten; el día queda readonly)
     page.reload()
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    page.click('[data-action="open-editor-popup"]')
     page.wait_for_selector("#popup-body #nutrition-rows .nutrition-row", timeout=5000)
     expect(page.locator('#nutrition-rows input[name="cantidad"]')).to_have_value("120")
     expect(page.locator("#param-peso")).to_have_value("69")
@@ -153,7 +153,6 @@ def test_nutrition_templates_save_reorder_apply(page, server):
     page.wait_for_timeout(600)
     page.reload()
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    page.click('[data-action="open-editor-popup"]')
     page.wait_for_selector("#popup-body #nutrition-form", timeout=5000)
     expect(page.locator("#nutrition-templates .pt-card").first).to_contain_text("Cena")
 

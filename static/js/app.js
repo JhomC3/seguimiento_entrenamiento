@@ -4,7 +4,6 @@
 // section multiple times: initializers are idempotent and delegated listeners
 // are bound once on stable roots.
 
-import { initDashboardFilters } from './dashboard-filters.js';
 import { initChartInteractions, renderUnifiedChart } from './chart-interaction.js';
 import { initDateNavigation } from './date-navigation.js';
 import { initEditorPopup } from './editor-popup.js';
@@ -47,7 +46,6 @@ document.body.addEventListener('htmx:afterRequest', function (e) {
 document.addEventListener('DOMContentLoaded', function () {
     loadConfig();
     initLifecycle();
-    initDashboardFilters();
     initChartInteractions();
     renderUnifiedChart();
     initDateNavigation();

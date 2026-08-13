@@ -4,7 +4,6 @@
 // Public API: initChartInteractions, renderUnifiedChart.
 
 import { requestNavigate } from './date-navigation.js';
-import { getActiveFilter } from './dashboard-filters.js';
 
 export function renderUnifiedChart() {
     const dataEl = document.getElementById('unified-chart-data');
@@ -35,10 +34,7 @@ export function renderUnifiedChart() {
 }
 
 function firstTrainingOfWeek(semana) {
-    const filter = getActiveFilter();
     const params = new URLSearchParams({ semana: String(semana) });
-    if (filter.grupo) params.set('grupo', filter.grupo);
-    if (filter.ejercicio) params.set('ejercicio', filter.ejercicio);
     fetch(`/semana/primer-entreno?${params.toString()}`)
         .then(r => r.json())
         .then(data => {

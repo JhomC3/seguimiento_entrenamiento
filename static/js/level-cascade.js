@@ -61,14 +61,13 @@ function restoreFromURL() {
     const muscle = params.get('musculo');
     const exercises = params.getAll('ejercicios').flatMap((v) => v.split(',')).filter(Boolean);
     if (!muscle) {
-        // Estado base: fila de músculos + gráfica sistémica.
+        // Estado base: fila de músculos + gráfica sistémica (una sola petición).
         selectedMuscle = null;
         selectedExercises = new Set();
         markMuscle(null);
-        refresh('#cascade-row', '/nivel?tipo=musculo');
         const row = document.getElementById('ejercicios-row');
         if (row) row.innerHTML = '';
-        htmx.ajax('GET', '/select', { target: document.body, swap: 'none' });
+        refresh('#cascade-row', '/nivel?tipo=global');
         return;
     }
     selectedMuscle = muscle;

@@ -1074,6 +1074,12 @@ def nivel_view(
             content=_ejercicios_row_html(request, foco, [])
             + chart_oob_wrapper(_chart_muscle_html(foco, []))
         )
+    if tipo == "global":
+        # Estado base: fila de músculos + gráfica sistémica.
+        return HTMLResponse(
+            content=_cascade_row_html(request, "musculo", "")
+            + chart_oob_wrapper(chart_html(DB_PATH, "systemic", title=_chart_title()))
+        )
     return HTMLResponse(content=_cascade_row_html(request, tipo, foco))
 
 
