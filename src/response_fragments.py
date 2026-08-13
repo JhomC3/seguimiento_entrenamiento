@@ -28,6 +28,7 @@ OOB_FRAGMENT_TARGETS = (
     "nutrition-templates-section",
     "popup-body",
     "cardio-day",
+    "cascade-row",
 )
 
 STATIC_MARKERS = {

@@ -1530,7 +1530,9 @@ def test_cardio_annotation_oob_refresca_bloque(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     conn = sqlite3.connect(db)
-    ts = int(datetime(2026, 8, 12, 8, 0, tzinfo=__import__("datetime").timezone.utc).timestamp() * 1000)
+    ts = int(
+        datetime(2026, 8, 12, 8, 0, tzinfo=__import__("datetime").timezone.utc).timestamp() * 1000
+    )
     conn.execute(
         "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
         "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at) "
@@ -1554,3 +1556,36 @@ def test_cardio_annotation_oob_refresca_bloque(tmp_path, monkeypatch):
     assert 'id="cardio-day" hx-swap-oob="outerHTML"' in r.text
     assert "5.5" in r.text
     assert "Anotación de cardio guardada" in r.text
+
+
+def test_nivel_cascada_grupo_musculo_ejercicio(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    # Fila 1: categorías
+    r = client.get("/nivel", params={"tipo": "grupo"})
+    assert r.status_code == 200
+    assert 'id="cascade-row"' in r.text
+    assert "EMPUJE" in r.text
+    # Fila 2: músculos de la categoría
+    r = client.get("/nivel", params={"tipo": "grupo", "foco": "EMPUJE"})
+    assert r.status_code == 200
+    assert "Pectoral" in r.text
+    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
+    # Fila 3: ejercicios del músculo
+    r = client.get("/nivel", params={"tipo": "musculo", "foco": "Pectoral"})
+    assert r.status_code == 200
+    assert "Press" in r.text
+    # Detalle del ejercicio
+    r = client.get("/nivel", params={"tipo": "ejercicio", "foco": "Press"})
+    assert r.status_code == 200
+    assert "Resumen por Sesión" in r.text or "Datos Crudos" in r.text
+    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
+
+
+def test_nivel_foco_desconocido_no_rompe(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/nivel", params={"tipo": "grupo", "foco": "NoExiste"})
+    assert r.status_code == 200
+    assert 'id="cascade-row"' in r.text

@@ -1,0 +1,10 @@
+<div id="cascade-row" class="flex flex-wrap items-center gap-2">
+    {% for item in items %}
+    <button
+        class="level-chip"
+        data-action="set-focus"
+        data-tipo="{{ tipo }}"
+        data-foco="{{ item }}"
+    >{{ item }}</button>
+    {% endfor %}
+</div>

@@ -996,6 +996,88 @@ def select_view(request: Request, grupo: str = Query(None), fecha: str = Query(N
     return HTMLResponse(content=exercise_list_html + oob_chart + navigator_oob)
 
 
+def _cascade_items(nivel: str, foco: str) -> list[str]:
+    """Siguiente fila de la cascada: categorías → músculos → ejercicios."""
+    if nivel == "grupo" and not foco:
+        return [str(c["name"]) for c in get_categories(DB_PATH) or MUSCLE_CATEGORIES]
+    if nivel == "grupo":
+        from src.db_connection import read_connection
+
+        with read_connection(DB_PATH) as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT grupo_muscular FROM ejercicios "
+                "WHERE LOWER(categoria) = LOWER(?) AND grupo_muscular IS NOT NULL "
+                "ORDER BY grupo_muscular",
+                (foco,),
+            ).fetchall()
+        return [str(r[0]) for r in rows]
+    if nivel == "musculo":
+        from src.db_connection import read_connection
+
+        with read_connection(DB_PATH) as conn:
+            rows = conn.execute(
+                "SELECT ejercicio FROM ejercicios "
+                "WHERE LOWER(grupo_muscular) = LOWER(?) ORDER BY ejercicio",
+                (foco,),
+            ).fetchall()
+        return [str(r[0]) for r in rows]
+    return []
+
+
+def _cascade_row_html(request: Request, nivel: str, foco: str) -> str:
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="cascade_row.html",
+            context={"items": _cascade_items(nivel, foco), "tipo": nivel},
+        )
+    )
+
+
+@app.get("/nivel", response_class=HTMLResponse)
+def nivel_view(
+    request: Request,
+    tipo: str = Query(...),
+    foco: str = Query(default=""),
+):
+    """Cascada grupo → músculo → ejercicio + gráfica por foco (OOB unified-chart)."""
+    if tipo == "ejercicio" and foco:
+        raw_df = get_exercise_raw_data(DB_PATH, foco)
+        session_df = get_exercise_session_summary(DB_PATH, foco)
+        body = _render_body(
+            templates.TemplateResponse(
+                request=request,
+                name="exercise_detail.html",
+                context={
+                    "raw_data": raw_df.to_dict(orient="records") if not raw_df.empty else [],
+                    "session_summary": (
+                        session_df.to_dict(orient="records") if not session_df.empty else []
+                    ),
+                    "ejercicio": foco,
+                },
+            )
+        )
+        chart = chart_html(DB_PATH, "exercise", foco, _chart_title(foco))
+        return HTMLResponse(
+            content=body
+            + chart_oob_wrapper(chart)
+            + fragment_oob(
+                templates,
+                request,
+                "cascade-row",
+                _cascade_row_html(request, tipo, foco),
+                swap="outerHTML",
+            )
+        )
+    if tipo == "grupo" and foco:
+        chart = chart_html(DB_PATH, "category", foco, _chart_title(foco))
+    elif tipo == "musculo" and foco:
+        chart = chart_html(DB_PATH, "muscle_group", foco, _chart_title(foco))
+    else:
+        chart = chart_html(DB_PATH, "systemic", title=_chart_title())
+    return HTMLResponse(content=_cascade_row_html(request, tipo, foco) + chart_oob_wrapper(chart))
+
+
 @app.get("/grupo/reset", response_class=HTMLResponse)
 def reset_grupo(request: Request, grupo: str = Query(...), fecha: str = Query(None)):
     chart_html_frag = chart_html(
