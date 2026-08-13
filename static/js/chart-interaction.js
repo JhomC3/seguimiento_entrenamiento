@@ -1,9 +1,9 @@
-// chart-interaction.js — owns: unified chart rendering and week-click filtering.
+// chart-interaction.js — owns: unified chart rendering and day-click.
 // DOM owned: #unified-chart (reads the #unified-chart-data JSON and renders it
 // into #unified-chart-plot on initial load and on every htmx swap).
 // Public API: initChartInteractions, renderUnifiedChart.
 
-import { requestNavigate } from './date-navigation.js';
+import { openEditorPopup } from './editor-popup.js';
 
 export function renderUnifiedChart() {
     const dataEl = document.getElementById('unified-chart-data');
@@ -38,7 +38,9 @@ function firstTrainingOfWeek(semana) {
     fetch(`/semana/primer-entreno?${params.toString()}`)
         .then(r => r.json())
         .then(data => {
-            if (data && data.fecha) requestNavigate(data.fecha);
+            // El clic en un punto abre la ventana de registro en el primer
+            // entreno de esa semana (alimentación + sesión + cardio del día).
+            if (data && data.fecha) openEditorPopup(data.fecha);
         })
         .catch(() => {});
 }

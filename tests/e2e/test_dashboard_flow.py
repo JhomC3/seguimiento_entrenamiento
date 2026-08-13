@@ -320,8 +320,9 @@ def test_dynamic_script_does_not_execute(page, server):
     assert page.evaluate("window.__xssProbe") is False, "la CSP debe bloquear scripts inyectados"
 
 
-def test_week_click_navigates_to_first_session_of_week(page, server):
-    """Clic real sobre el marcador de una semana lleva el editor al primer entreno de esa semana."""
+def test_week_click_opens_popup_en_primer_entreno(page, server):
+    """Clic real sobre el marcador de una semana abre la ventana de registro
+    en el primer entreno de esa semana."""
     _open_popup(page, server)
 
     # Dos sesiones en semanas distintas (lunes 10/08 y lunes 17/08) para que el
@@ -341,8 +342,6 @@ def test_week_click_navigates_to_first_session_of_week(page, server):
             "Entrenamiento guardado", timeout=2000
         )
 
-    # El popup se cierra pero su DOM persiste: la navegación desde la gráfica
-    # actualiza el editor oculto.
     page.click("#popup-close")
     page.locator('#cascade-row .level-chip[data-foco="Pectoral"]').click()
     page.wait_for_timeout(800)
@@ -351,7 +350,10 @@ def test_week_click_navigates_to_first_session_of_week(page, server):
 
     semana_b = (datetime.date.fromisoformat(iso_b) - datetime.date(2026, 5, 4)).days // 7 + 1
     _click_chart_point(page, semana_b)
+    # La ventana de registro se abre en el primer entreno de la semana.
+    expect(page.locator("#editor-popup")).to_be_visible(timeout=3000)
     expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso_b, timeout=3000)
+    assert "registro=" + iso_b in page.url
 
 
 def test_cascade_musculo_persistente_y_multi_traza(page, server):

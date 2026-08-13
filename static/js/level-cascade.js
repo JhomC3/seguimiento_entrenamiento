@@ -60,14 +60,14 @@ function restoreFromURL() {
     const params = new URLSearchParams(location.search);
     const muscle = params.get('musculo');
     const exercises = params.getAll('ejercicios').flatMap((v) => v.split(',')).filter(Boolean);
+    // La fila de músculos ya está cargada (loadMuscles se ejecuta siempre en init);
+    // aquí solo se aplica la selección recordada en la URL.
     if (!muscle) {
-        // Estado base: fila de músculos + gráfica sistémica (una sola petición).
         selectedMuscle = null;
         selectedExercises = new Set();
         markMuscle(null);
         const row = document.getElementById('ejercicios-row');
         if (row) row.innerHTML = '';
-        refresh('#cascade-row', '/nivel?tipo=global');
         return;
     }
     selectedMuscle = muscle;
@@ -75,6 +75,11 @@ function restoreFromURL() {
     markMuscle(muscle);
     refresh('#ejercicios-row', '/nivel?tipo=musculo&foco=' + encodeURIComponent(muscle));
     refreshChart(muscle, [...selectedExercises]);
+}
+
+function loadMuscles() {
+    // Estado base: fila de músculos + gráfica sistémica, siempre al iniciar.
+    refresh('#cascade-row', '/nivel?tipo=global');
 }
 
 export function initLevelCascade() {
@@ -91,8 +96,13 @@ export function initLevelCascade() {
         }
     });
 
-    window.addEventListener('popstate', restoreFromURL);
+    window.addEventListener('popstate', function () {
+        // Al volver atrás, la fila de músculos se recarga y se aplica la selección.
+        loadMuscles();
+        restoreFromURL();
+    });
 
-    // Precarga: los músculos del catálogo como fila inicial.
+    // Los músculos SIEMPRE se cargan al abrir la página.
+    loadMuscles();
     restoreFromURL();
 }
