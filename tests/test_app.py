@@ -103,11 +103,16 @@ def test_save_valid_returns_ok_marker(tmp_path, monkeypatch):
             "kg": ["80"],
             "reps": ["8"],
             "rir": ["1"],
+            "descanso": ["90"],
         },
     )
     assert 'id="save-outcome" hx-swap-oob="outerHTML" data-ok="1"' in r.text
     assert 'id="editor-notice" hx-swap-oob="innerHTML"' in r.text
     assert "Entrenamiento guardado" in r.text
+    from src.database import get_sets_by_fecha
+
+    rows = get_sets_by_fecha(db, _fecha())
+    assert rows[0]["descanso_seg"] == 90.0
 
 
 def test_save_invalid_returns_fail_marker(tmp_path, monkeypatch):
