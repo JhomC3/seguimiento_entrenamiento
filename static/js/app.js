@@ -7,6 +7,7 @@
 import { initDashboardFilters } from './dashboard-filters.js';
 import { initChartInteractions, renderUnifiedChart } from './chart-interaction.js';
 import { initDateNavigation } from './date-navigation.js';
+import { initEditorPopup } from './editor-popup.js';
 import { fitRowsToPanel, initEditorActions, initEditorRowSortable, syncEditorFromContent } from './editor.js';
 import { initLifecycle } from './htmx-lifecycle.js';
 import { initNutritionEditor } from './nutrition-editor.js';
@@ -49,6 +50,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initChartInteractions();
     renderUnifiedChart();
     initDateNavigation();
+    initEditorPopup();
     initEditorActions();
     initTemplateActions();
     initNutritionEditor();
