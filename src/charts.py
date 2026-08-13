@@ -2,8 +2,23 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from config import CICLO_NUMERO
+from src.analysis_data import daily_sleep_hours, daily_volume, daily_weight
 from src.db_connection import read_connection
 from src.metrics_engine import RM_FACTOR, calculate_pfr_timeline
+from src.training_service import calculate_cycle_week, parse_cycle_start
+
+
+def _week_series(db_path: str, daily_fn) -> dict[int, float]:
+    """Promedio por semana de ciclo de una serie diaria (analysis_data)."""
+    df = daily_fn(db_path)
+    if df.empty:
+        return {}
+    ciclo = parse_cycle_start()
+    out: dict[int, list[float]] = {}
+    for _, r in df.iterrows():
+        semana = calculate_cycle_week(r["fecha_dt"].date(), ciclo)
+        out.setdefault(semana, []).append(float(r["valor"]))
+    return {w: sum(v) / len(v) for w, v in out.items()}
 
 
 def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
@@ -11,7 +26,7 @@ def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
     with read_connection(db_path) as conn:
         df = pd.read_sql_query(
             """
-            SELECT semana, dia, fecha, set_orden, kg, reps, rir
+            SELECT semana, dia, fecha, set_orden, kg, reps, rir, descanso_seg
             FROM training_sets
             WHERE ejercicio = ? AND kg IS NOT NULL AND reps IS NOT NULL
             ORDER BY semana, fecha, set_orden
@@ -46,6 +61,7 @@ def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
             "kg",
             "reps",
             "rir",
+            "descanso_seg",
             "rm",
             "rm_ajustado",
         ]
@@ -58,20 +74,41 @@ def chart_pfr_timeline(
     filter_value: str | None = None,
     title: str = f"Rendimiento – Ciclo {CICLO_NUMERO}",
 ) -> go.Figure:
-    """Gráfica de crecimiento semanal vs baseline (semana 1 = 0)."""
+    """Gráfica de crecimiento semanal vs baseline (semana 1 = 0).
+
+    El hover resume la semana: series, sets al fallo, volumen, peso y sueño
+    (los tres últimos desde health_records / diario, vía src.analysis_data).
+    """
     df = calculate_pfr_timeline(db_path, filter_type, filter_value)
     if df.empty:
         return go.Figure()
 
+    volume_w = _week_series(db_path, daily_volume)
+    peso_w = _week_series(db_path, daily_weight)
+    sueno_w = _week_series(db_path, daily_sleep_hours)
+
     weekly = (
         df.groupby("semana")
-        .agg(rendimiento=("rendimiento", "mean"))
+        .agg(
+            rendimiento=("rendimiento", "mean"),
+            series=("sets_totales", "sum"),
+            fallos=("sets_fallo", "sum"),
+        )
         .reset_index()
         .dropna(subset=["semana"])
     )
     weekly["semana"] = weekly["semana"].astype(int)
     weekly = weekly.sort_values("semana")
     weekly["crecimiento"] = weekly["rendimiento"] - 100
+    weekly["customdata"] = weekly["semana"].apply(
+        lambda sem: [
+            int(weekly.loc[weekly["semana"] == sem, "series"].iloc[0]),
+            int(weekly.loc[weekly["semana"] == sem, "fallos"].iloc[0]),
+            f"{volume_w.get(sem, 0):.0f} kg" if volume_w.get(sem) else "—",
+            f"{peso_w[sem]:.1f} kg" if peso_w.get(sem) else "—",
+            f"{sueno_w[sem]:.1f} h" if sueno_w.get(sem) else "—",
+        ]
+    )
 
     y_min = weekly["crecimiento"].min()
     y_max = weekly["crecimiento"].max()
@@ -88,7 +125,13 @@ def chart_pfr_timeline(
             name="Crecimiento",
             line={"color": "#e56d88", "width": 2.5},
             marker={"size": 8, "color": "#e56d88"},
-            hovertemplate=("Semana %{x}<br>Crecimiento: %{y:.1f}%<extra></extra>"),
+            customdata=weekly["customdata"].tolist(),
+            hovertemplate=(
+                "Semana %{x}<br>Crecimiento: %{y:.1f}%"
+                "<br>Series: %{customdata[0]} · Fallos: %{customdata[1]}"
+                "<br>Volumen: %{customdata[2]} · Peso: %{customdata[3]} · Sueño: %{customdata[4]}"
+                "<extra></extra>"
+            ),
         )
     )
 

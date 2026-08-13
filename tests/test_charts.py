@@ -124,3 +124,22 @@ def test_get_exercise_session_summary(setup_test_db):
     assert s1["total_sets"] == 2
     assert s1["total_tonelaje"] == 1020.0  # 2 x 85kg x 6reps
     assert s1["avg_rm_ajustado"] == pytest.approx(106.2, abs=0.1)
+
+
+def test_chart_pfr_timeline_hover_incluye_resumen(setup_test_db):
+    db = setup_test_db
+    fig = chart_pfr_timeline(db, "systemic", None, "")
+    assert fig.data, "la figura debe tener datos"
+    trace = fig.data[0]
+    assert trace.customdata is not None
+    # customdata por semana: [series, fallos, volumen, peso, sueño]
+    assert len(trace.customdata[0]) == 5
+    assert trace.customdata[0][0] >= 2  # series de la semana 1
+    assert "customdata[1]" in trace.hovertemplate
+    assert "Fallos" in trace.hovertemplate
+
+
+def test_get_exercise_raw_data_incluye_descanso(setup_test_db):
+    db = setup_test_db
+    df = get_exercise_raw_data(db, "Press Convergente")
+    assert "descanso_seg" in df.columns
