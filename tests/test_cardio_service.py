@@ -92,3 +92,54 @@ def test_rechaza_tipo_no_exercise(db):
         upsert_cardio_annotation(
             db, CardioAnnotationInput(hc_id="s1", velocidad_kmh=5.0, inclinacion_pct=None, notas="")
         )
+
+
+def test_get_day_cardio_con_anotacion(db):
+    import json
+
+    from src.cardio_service import get_day_cardio
+
+    ts = lambda iso: int(__import__("datetime").datetime.fromisoformat(iso).timestamp() * 1000)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "UPDATE health_records SET start_epoch_ms = ?, end_epoch_ms = ?, value_json = ? "
+        "WHERE hc_id = 'c1'",
+        (ts("2026-08-10 08:00"), ts("2026-08-10 08:30"), json.dumps({"value": {"title": "Cinta"}})),
+    )
+    conn.execute(
+        "INSERT INTO cardio_annotations (hc_id, velocidad_kmh, inclinacion_pct, notas, created_at, updated_at) "
+        "VALUES ('c1', 5.5, 2.0, 'caminata', 'x', 'x')"
+    )
+    conn.commit()
+    conn.close()
+    rows = get_day_cardio(db, "2026-08-10")
+    assert len(rows) == 1
+    assert rows[0]["hc_id"] == "c1"
+    assert rows[0]["titulo"] == "Cinta"
+    assert rows[0]["duracion_min"] == 30.0
+    assert rows[0]["velocidad_kmh"] == 5.5
+    assert rows[0]["inclinacion_pct"] == 2.0
+
+
+def test_get_day_fc_media_y_sueno(db):
+    from src.cardio_service import get_day_fc_media, get_day_sleep_prev_night
+
+    ts = lambda iso: int(__import__("datetime").datetime.fromisoformat(iso).timestamp() * 1000)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
+        "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at) "
+        "VALUES ('h1', 'HEART_RATE_5MIN', ?, ?, ?, 1, "
+        "'{\"value\": {\"samples\": [{\"time\": 1, \"bpm\": 120}, {\"time\": 2, \"bpm\": 140}]}}', 'x', 'x')",
+        (ts("2026-08-10 12:00"), ts("2026-08-10 12:05"), ts("2026-08-10 12:05")),
+    )
+    conn.execute(
+        "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
+        "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at) "
+        "VALUES ('s1b', 'SLEEP_SESSION', ?, ?, ?, 1, '{\"value\": {}}', 'x', 'x')",
+        (ts("2026-08-09 23:00"), ts("2026-08-10 07:30"), ts("2026-08-10 07:30")),
+    )
+    conn.commit()
+    conn.close()
+    assert get_day_fc_media(db, "2026-08-10") == 130
+    assert get_day_sleep_prev_night(db, "2026-08-10") == 8.5
