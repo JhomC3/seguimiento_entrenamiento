@@ -12,17 +12,16 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from config import CICLO_START, DB_PATH, HC_SYNC_TOKEN, MUSCLE_CATEGORIES
-from src.cardio_service import CardioAnnotationInput, upsert_cardio_annotation
-from src.charts import LAYER_TITLES
+from src.charts import get_exercise_raw_data, get_exercise_session_summary
 from src.dashboard_service import (
-    DEFAULT_LAYERS,
-    analysis_chart_html,
-    build_analysis_viewmodel,
     build_date_navigator,
-    build_day_detail,
     build_nutrition_editor,
     build_session_editor,
+    chart_html,
+    get_ejercicios_por_grupo,
     get_filters,
+    get_first_session_date,
+    get_recent_sessions,
     translate_error,
 )
 from src.database import (
@@ -123,6 +122,11 @@ def _muscle_names() -> list[str]:
     return sorted({m for c in MUSCLE_CATEGORIES for m in c["muscles"]})
 
 
+def _chart_title(filtro: str | None = None) -> str:
+    base = "Rendimiento"
+    return f"{base} – {filtro}" if filtro else base
+
+
 def _render_body(response) -> str:
     return bytes(response.body).decode()
 
@@ -219,6 +223,16 @@ def _plantillas_list_html(
                 "editing_id": editing_id,
                 "error": error,
             },
+        )
+    )
+
+
+def _sesiones_list_html(request: Request) -> str:
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="session_history.html",
+            context={"sessions": get_recent_sessions(DB_PATH)},
         )
     )
 
@@ -333,18 +347,36 @@ def _domain_error_response(
 
 @app.get("/", response_class=HTMLResponse)
 def read_index(request: Request):
-    vm = build_analysis_viewmodel(DB_PATH, "global", None, list(DEFAULT_LAYERS), 8)
+    from datetime import date as _date
+
+    ejercicios_list, grupos_list = get_filters(DB_PATH)
+    categories = get_categories(DB_PATH) or MUSCLE_CATEGORIES
+    fecha = _today_iso()
+    _fecha_date = _date.fromisoformat(fecha)
     return templates.TemplateResponse(
         request=request,
         name="index.html",
         context={
-            "kpi_html": _kpi_row_html(request, vm.kpis),
-            "chart_html": analysis_chart_html(vm),
-            "layers_config": [(layer_id, LAYER_TITLES[layer_id]) for layer_id in DEFAULT_LAYERS],
+            "grupos_list": grupos_list,
+            "ejercicios_list": ejercicios_list,
+            "ejercicios_grupo": ejercicios_list,
+            "muscle_categories": categories,
+            "systemic_chart_html": chart_html(
+                DB_PATH,
+                "systemic",
+                title=_chart_title(),
+            ),
+            "navigator_html": _navigator_html(request, fecha),
+            "editor_html": _editor_html(request, fecha),
+            "dia": day_from_date(_fecha_date),
+            "fecha_display": fecha_display(fecha),
+            "semana": calculate_cycle_week(_fecha_date, CICLO_START_DATE),
             "exercise_form_html": _exercise_form_html(request),
-            "alimento_form_html": _alimento_form_html(request),
             "plantillas_html": _plantillas_list_html(request),
-            "nutrition_templates_html": _plantillas_alimentacion_list_html(request, _today_iso()),
+            "session_history_html": _sesiones_list_html(request),
+            "nutrition_editor_html": _nutrition_editor_html(request, fecha),
+            "nutrition_templates_html": _plantillas_alimentacion_list_html(request, fecha),
+            "alimento_form_html": _alimento_form_html(request),
             "app_config_json": {
                 "categoria_map": get_ejercicio_categoria(DB_PATH),
                 "alimento_map": _alimento_preview_map(),
@@ -352,188 +384,6 @@ def read_index(request: Request):
                 "csrf_token": make_csrf_token(get_csrf_secret()),
             },
         },
-    )
-
-
-def _kpi_row_html(request: Request, kpis) -> str:
-    return _render_body(
-        templates.TemplateResponse(request=request, name="kpi_row.html", context={"kpis": kpis})
-    )
-
-
-def _analysis_filters_html(request: Request, nivel: str, focus: str) -> str:
-    """Chips de foco por nivel: grupo → categorías, músculo → grupos reales,
-    ejercicio → buscador con datalist."""
-    items: list[str] = []
-    if nivel == "grupo":
-        items = [str(c["name"]) for c in get_categories(DB_PATH) or MUSCLE_CATEGORIES]
-    elif nivel == "musculo":
-        _, grupos_list = get_filters(DB_PATH)
-        items = grupos_list
-    return _render_body(
-        templates.TemplateResponse(
-            request=request,
-            name="analysis_filters.html",
-            context={
-                "nivel": nivel,
-                "items": items,
-                "focus": focus,
-                "ejercicios": get_exercises_catalog(DB_PATH) if nivel == "ejercicio" else [],
-            },
-        )
-    )
-
-
-@app.get("/analisis/chart", response_class=HTMLResponse)
-def analisis_chart(
-    request: Request,
-    nivel: str = Query(default="global"),
-    focus: str = Query(default=""),
-    rango: int = Query(default=8),
-    layers: list[str] = Query(default=[]),
-):
-    """Actualiza gráfica + KPIs + filtros según nivel/foco/capas (OOB)."""
-    active = layers or list(DEFAULT_LAYERS)
-    vm = build_analysis_viewmodel(DB_PATH, nivel, focus or None, active, rango)
-    return HTMLResponse(
-        content=chart_oob_wrapper(analysis_chart_html(vm), target="analysis-chart-wrap")
-        + fragment_oob(
-            templates, request, "kpi-row", _kpi_row_html(request, vm.kpis), swap="innerHTML"
-        )
-        + fragment_oob(
-            templates,
-            request,
-            "analysis-filters",
-            _analysis_filters_html(request, nivel, focus),
-            swap="outerHTML",
-        )
-    )
-
-
-@app.post("/cardio/annotation", response_class=HTMLResponse)
-def cardio_annotation_save(
-    request: Request,
-    hc_id: str = Form(...),
-    velocidad_kmh: float | None = Form(None),
-    inclinacion_pct: float | None = Form(None),
-    notas: str = Form(""),
-    fecha: str = Form(""),
-    nivel: str = Form("global"),
-    focus: str = Form(""),
-):
-    """Upsert de velocidad/inclinación sobre una sesión EXERCISE_SESSION."""
-    try:
-        upsert_cardio_annotation(
-            DB_PATH,
-            CardioAnnotationInput(
-                hc_id=hc_id,
-                velocidad_kmh=velocidad_kmh,
-                inclinacion_pct=inclinacion_pct,
-                notas=notas,
-            ),
-        )
-    except Exception as e:
-        return _domain_error_response(request, e, "notice-container")
-    notice = notice_oob(
-        templates,
-        request,
-        target="notice-container",
-        message="Anotación de cardio guardada.",
-        dismiss=2500,
-    )
-    if fecha:
-        return HTMLResponse(
-            content=notice
-            + fragment_oob(
-                templates,
-                request,
-                "day-detail-wrap",
-                _day_detail_html(request, fecha, nivel, focus),
-                swap="outerHTML",
-            )
-        )
-    return HTMLResponse(content=notice)
-
-
-def _day_detail_html(request: Request, fecha: str, nivel: str, focus: str) -> str:
-    vm = build_day_detail(DB_PATH, fecha, nivel, focus or None)
-    return _render_body(
-        templates.TemplateResponse(
-            request=request,
-            name="day_detail.html",
-            context={
-                "fecha_iso": vm.fecha_iso,
-                "nivel": vm.nivel,
-                "focus": vm.focus,
-                "has_entreno": vm.has_entreno,
-                "sets": vm.sets,
-                "pfr": vm.pfr,
-                "volumen": vm.volumen,
-                "sets_fallo": vm.sets_fallo,
-                "nutrientes": vm.nutrientes,
-                "peso": vm.peso,
-                "sueno": vm.sueno,
-                "fc_media": vm.fc_media,
-                "hrv": vm.hrv,
-                "cardio": vm.cardio,
-            },
-        )
-    )
-
-
-@app.get("/analisis/dia", response_class=HTMLResponse)
-def analisis_dia(
-    request: Request,
-    fecha: str = Query(...),
-    nivel: str = Query(default="global"),
-    focus: str = Query(default=""),
-):
-    """Panel '¿Qué pasó el [fecha]' al hacer clic en un día de la gráfica."""
-    try:
-        vm = build_day_detail(DB_PATH, fecha, nivel, focus or None)
-    except Exception as e:
-        return _domain_error_response(request, e, "notice-container")
-    return templates.TemplateResponse(
-        request=request,
-        name="day_detail.html",
-        context={
-            "fecha_iso": vm.fecha_iso,
-            "nivel": vm.nivel,
-            "focus": vm.focus,
-            "has_entreno": vm.has_entreno,
-            "sets": vm.sets,
-            "pfr": vm.pfr,
-            "volumen": vm.volumen,
-            "sets_fallo": vm.sets_fallo,
-            "nutrientes": vm.nutrientes,
-            "peso": vm.peso,
-            "sueno": vm.sueno,
-            "fc_media": vm.fc_media,
-            "hrv": vm.hrv,
-            "cardio": vm.cardio,
-        },
-    )
-
-
-@app.get("/registrar/editor", response_class=HTMLResponse)
-def registrar_editor(request: Request, fecha: str = Query(...)):
-    """Cuerpo del modal de registro: navegador de fecha + ambos editores."""
-    from datetime import date as _date
-
-    fecha_date = _date.fromisoformat(fecha)
-    return _render_body(
-        templates.TemplateResponse(
-            request=request,
-            name="register_editor.html",
-            context={
-                "navigator_html": _navigator_html(request, fecha),
-                "nutrition_editor_html": _nutrition_editor_html(request, fecha),
-                "editor_html": _editor_html(request, fecha),
-                "dia": day_from_date(fecha_date),
-                "fecha_display": fecha_display(fecha),
-                "semana": calculate_cycle_week(fecha_date, CICLO_START_DATE),
-            },
-        )
     )
 
 
@@ -550,9 +400,8 @@ def entrenamiento_session_save(
     kg: list[str] = Form(default=[]),
     reps: list[str] = Form(default=[]),
     rir: list[str] = Form(default=[]),
-    descanso: list[str] = Form(default=[]),
 ):
-    sets = sets_from_form(ejercicio, kg, reps, rir, descansos=descanso)
+    sets = sets_from_form(ejercicio, kg, reps, rir)
     notice_success = notice_oob(
         templates, request, target="editor-notice", message="Entrenamiento guardado."
     )
@@ -563,11 +412,17 @@ def entrenamiento_session_save(
         saved_rows = get_sets_by_fecha(DB_PATH, fecha_to_db(parse_form_date(fecha)))
         if saved_rows:
             return HTMLResponse(
-                content=notice_success + outcome_ok + editor_state_oob(templates, request)
+                content=notice_success
+                + outcome_ok
+                + editor_state_oob(templates, request)
+                + fragment_oob(templates, request, "session-history", _sesiones_list_html(request))
             )
         editor = _editor_html(request, fecha)
         return HTMLResponse(
-            content=notice_success + outcome_ok + editor_wrap_oob(templates, request, editor)
+            content=notice_success
+            + outcome_ok
+            + editor_wrap_oob(templates, request, editor)
+            + fragment_oob(templates, request, "session-history", _sesiones_list_html(request))
         )
     except Exception as e:
         return _domain_error_response(request, e, "editor-notice", extra=outcome_fail)
@@ -583,7 +438,12 @@ def entrenamiento_session_eliminar(request: Request, fecha: str = Form(...)):
     except Exception as e:
         return _domain_error_response(request, e, "editor-notice", extra=outcome_fail)
     editor = _editor_html(request, fecha)
-    return HTMLResponse(content=notice + outcome_ok + editor_wrap_oob(templates, request, editor))
+    return HTMLResponse(
+        content=notice
+        + outcome_ok
+        + editor_wrap_oob(templates, request, editor)
+        + fragment_oob(templates, request, "session-history", _sesiones_list_html(request))
+    )
 
 
 @app.post("/ejercicio/nuevo", response_class=HTMLResponse)
@@ -608,6 +468,11 @@ def ejercicio_nuevo(
         content=notice_success
         + fragment_oob(templates, request, "exercise-create", form_html, swap="outerHTML")
     )
+
+
+@app.get("/sesiones", response_class=HTMLResponse)
+def sesiones_view(request: Request):
+    return HTMLResponse(content=_sesiones_list_html(request))
 
 
 @app.get("/alimentacion/editor", response_class=HTMLResponse)
@@ -930,6 +795,9 @@ def undo(request: Request, fecha: str = Form("")):
     if result["kind"] == "sesion":
         fecha_iso = result["fecha_iso"]
         marker = undo_result_oob(templates, request, fecha_iso, result["has_data"])
+        history_oob = fragment_oob(
+            templates, request, "session-history", _sesiones_list_html(request)
+        )
         if fecha == fecha_iso:
             outcome_ok = STATIC_MARKERS["outcome_ok"]
             editor = _editor_html(request, fecha_iso)
@@ -938,8 +806,9 @@ def undo(request: Request, fecha: str = Form("")):
                 + outcome_ok
                 + marker
                 + editor_wrap_oob(templates, request, editor)
+                + history_oob
             )
-        return HTMLResponse(content=notice_ok + marker)
+        return HTMLResponse(content=notice_ok + marker + history_oob)
     if result["kind"] == "alimentacion":
         fecha_iso = result["fecha_iso"]
         marker = undo_result_oob(templates, request, fecha_iso, result["has_data"])
@@ -965,6 +834,16 @@ def undo(request: Request, fecha: str = Form("")):
     )
 
 
+@app.get("/semana/primer-entreno", response_class=JSONResponse)
+def semana_primer_entreno(
+    semana: int = Query(...),
+    grupo: str | None = Query(None),
+    ejercicio: str | None = Query(None),
+):
+    fecha = get_first_session_date(DB_PATH, semana, grupo, ejercicio)
+    return JSONResponse({"fecha": fecha})
+
+
 @app.get("/exportar/csv", response_class=Response)
 def export_csv():
     with read_connection(DB_PATH) as conn:
@@ -975,6 +854,122 @@ def export_csv():
         media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="entrenamientos.csv"'},
     )
+
+
+@app.get("/select", response_class=HTMLResponse)
+def select_view(request: Request, grupo: str = Query(None), fecha: str = Query(None)):
+    if not grupo:
+        ejercicios_list, _ = get_filters(DB_PATH)
+        chart_html_frag = chart_html(
+            DB_PATH,
+            "systemic",
+            title=_chart_title(),
+        )
+        exercise_list_html = _render_body(
+            templates.TemplateResponse(
+                request=request,
+                name="exercise_list.html",
+                context={
+                    "ejercicios_grupo": ejercicios_list,
+                    "grupo": "",
+                },
+            )
+        )
+        oob_chart = chart_oob_wrapper(chart_html_frag)
+        selected = fecha or _today_iso()
+        navigator_oob = fragment_oob(
+            templates,
+            request,
+            "date-navigator",
+            _navigator_html(request, selected),
+            swap="outerHTML",
+        )
+        return HTMLResponse(content=exercise_list_html + oob_chart + navigator_oob)
+
+    ejercicios_grupo = get_ejercicios_por_grupo(DB_PATH, grupo)
+    chart_html_frag = chart_html(
+        DB_PATH,
+        "muscle_group",
+        grupo,
+        _chart_title(grupo),
+    )
+    exercise_list_html = _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="exercise_list.html",
+            context={
+                "ejercicios_grupo": ejercicios_grupo,
+                "grupo": grupo,
+            },
+        )
+    )
+    oob_chart = chart_oob_wrapper(chart_html_frag)
+    selected = fecha or _today_iso()
+    navigator_oob = fragment_oob(
+        templates,
+        request,
+        "date-navigator",
+        _navigator_html(request, selected, grupo=grupo),
+        swap="outerHTML",
+    )
+    return HTMLResponse(content=exercise_list_html + oob_chart + navigator_oob)
+
+
+@app.get("/grupo/reset", response_class=HTMLResponse)
+def reset_grupo(request: Request, grupo: str = Query(...), fecha: str = Query(None)):
+    chart_html_frag = chart_html(
+        DB_PATH,
+        "muscle_group",
+        grupo,
+        _chart_title(grupo),
+    )
+    oob_chart = chart_oob_wrapper(chart_html_frag)
+    selected = fecha or _today_iso()
+    navigator_oob = fragment_oob(
+        templates,
+        request,
+        "date-navigator",
+        _navigator_html(request, selected, grupo=grupo),
+        swap="outerHTML",
+    )
+    return HTMLResponse(content="<div></div>" + oob_chart + navigator_oob)
+
+
+@app.get("/ejercicio", response_class=HTMLResponse)
+def get_exercise_history(request: Request, ejercicio: str = Query(...), fecha: str = Query(None)):
+    raw_df = get_exercise_raw_data(DB_PATH, ejercicio)
+    raw_data = raw_df.to_dict(orient="records") if not raw_df.empty else []
+
+    session_df = get_exercise_session_summary(DB_PATH, ejercicio)
+    session_summary = session_df.to_dict(orient="records") if not session_df.empty else []
+
+    chart_html_frag = chart_html(
+        DB_PATH,
+        "exercise",
+        ejercicio,
+        _chart_title(ejercicio),
+    )
+    tables_html = _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="exercise_detail.html",
+            context={
+                "raw_data": raw_data,
+                "session_summary": session_summary,
+                "ejercicio": ejercicio,
+            },
+        )
+    )
+    oob_chart = chart_oob_wrapper(chart_html_frag)
+    selected = fecha or _today_iso()
+    navigator_oob = fragment_oob(
+        templates,
+        request,
+        "date-navigator",
+        _navigator_html(request, selected, ejercicio=ejercicio),
+        swap="outerHTML",
+    )
+    return HTMLResponse(content=tables_html + oob_chart + navigator_oob)
 
 
 @app.post("/sync/health-connect")

@@ -8,11 +8,8 @@ import logging
 import sqlite3
 from datetime import date, timedelta
 
-import pandas as pd
-
 from config import CICLO_NUMERO
-from src.analysis_data import daily_sleep_hours, daily_volume, daily_weight
-from src.charts import build_analysis_chart, chart_pfr_timeline
+from src.charts import chart_pfr_timeline
 from src.database import (
     get_alimentos_catalog,
     get_diario_by_fecha,
@@ -22,7 +19,7 @@ from src.database import (
     get_sets_by_fecha,
 )
 from src.db_connection import read_connection
-from src.metrics_engine import calculate_pfr_timeline, rm_ajustado
+from src.metrics_engine import rm_ajustado
 from src.models import ConflictError, NotFoundError, ValidationError
 from src.nutrition_service import diary_totals, objetivos_diarios
 from src.training_service import (
@@ -33,13 +30,8 @@ from src.training_service import (
     parse_form_date,
 )
 from src.view_models import (
-    AnalysisKpis,
-    AnalysisViewModel,
     DateDay,
     DateNavigatorViewModel,
-    DayDetailCardio,
-    DayDetailSet,
-    DayDetailViewModel,
     EditorRow,
     NutritionEditorViewModel,
     NutritionEntryRow,
@@ -49,6 +41,19 @@ from src.view_models import (
 logger = logging.getLogger("dashboard")
 
 DOMAIN_ERRORS = (ValidationError, NotFoundError, ConflictError)
+
+
+def get_recent_sessions(db_path: str, limit: int = 10) -> list[dict]:
+    """Latest sessions (ISO sorted by SQL), each with a display date."""
+    from src.database import get_training_sessions
+
+    sessions = get_training_sessions(db_path)[:limit]
+    for s in sessions:
+        try:
+            s["fecha_display"] = fecha_display(s["fecha"])
+        except ValueError:
+            s["fecha_display"] = s["fecha"]
+    return sessions
 
 
 def get_filters(db_path: str) -> tuple[list[str], list[str]]:
@@ -241,7 +246,6 @@ def _editor_rows(rows: list[dict]) -> list[EditorRow]:
         kg = _as_float(r.get("kg"))
         reps = _as_float(r.get("reps"))
         rir = _as_float(r.get("rir"))
-        descanso = _as_float(r.get("descanso_seg"))
         rm = None
         try:
             if kg is not None and reps is not None:
@@ -254,7 +258,6 @@ def _editor_rows(rows: list[dict]) -> list[EditorRow]:
                 kg=kg,
                 reps=reps,
                 rir=rir,
-                descanso_seg=descanso,
                 rm=rm,
             )
         )
@@ -389,323 +392,4 @@ def build_nutrition_editor(
         parametros=parametros,
         prefilled=prefill_source is not None,
         prefill_source=prefill_source,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Vista de análisis: KPIs + figura de paneles apilados
-# ---------------------------------------------------------------------------
-
-DEFAULT_LAYERS = ("pfr", "volumen", "peso")
-
-
-def _kpi_pfr(db_path: str, nivel: str, focus: str | None) -> tuple[float | None, float | None]:
-    """(PFR actual, variación % vs baseline) con la última fecha del timeline."""
-    timeline = calculate_pfr_timeline(db_path, _filter_type(nivel), focus)
-    if timeline.empty:
-        return None, None
-    last = timeline["rendimiento"].dropna()
-    if last.empty:
-        return None, None
-    actual = float(last.iloc[-1])
-    return actual, round(actual - 100.0, 1)
-
-
-def _filter_type(nivel: str) -> str:
-    from src.charts import NIVEL_FILTER_TYPE
-
-    return NIVEL_FILTER_TYPE.get(nivel, "systemic")
-
-
-def _kpi_last_value(df) -> float | None:
-    """Último valor no nulo de una serie diaria (los registros de salud pueden
-    llegar con json_extract NULL: nunca romper el dashboard por eso)."""
-    if df.empty:
-        return None
-    valid = df["valor"].dropna()
-    if valid.empty:
-        return None
-    return round(float(valid.iloc[-1]), 1)
-
-
-def _kpi_volumen_semana(db_path: str) -> float | None:
-    df = daily_volume(db_path)
-    if df.empty:
-        return None
-    cutoff = df["fecha_dt"].max() - timedelta(days=6)
-    week = df[df["fecha_dt"] >= cutoff]
-    return round(float(week["valor"].sum()), 1) if not week.empty else None
-
-
-def _kpi_peso_actual(db_path: str) -> float | None:
-    return _kpi_last_value(daily_weight(db_path))
-
-
-def _kpi_sueno_anoche(db_path: str) -> float | None:
-    return _kpi_last_value(daily_sleep_hours(db_path))
-
-
-def _kpi_fallos_semana(db_path: str, nivel: str, focus: str | None) -> int:
-    timeline = calculate_pfr_timeline(db_path, _filter_type(nivel), focus)
-    if timeline.empty or "sets_fallo" not in timeline.columns:
-        return 0
-    cutoff = timeline["fecha_dt"].max() - timedelta(days=6)
-    week = timeline[timeline["fecha_dt"] >= cutoff]
-    return int(week["sets_fallo"].sum()) if not week.empty else 0
-
-
-def build_analysis_kpis(db_path: str, nivel: str, focus: str | None) -> AnalysisKpis:
-    pfr_actual, pfr_variacion = _kpi_pfr(db_path, nivel, focus)
-    return AnalysisKpis(
-        pfr_actual=pfr_actual,
-        pfr_variacion=pfr_variacion,
-        volumen_semana=_kpi_volumen_semana(db_path),
-        sets_fallo_semana=_kpi_fallos_semana(db_path, nivel, focus),
-        peso_actual=_kpi_peso_actual(db_path),
-        sueno_anoche=_kpi_sueno_anoche(db_path),
-    )
-
-
-def build_analysis_viewmodel(
-    db_path: str,
-    nivel: str,
-    focus: str | None,
-    layers: list[str] | None = None,
-    rango: int | None = 8,
-) -> AnalysisViewModel:
-    """View model completo: KPIs + figura serializada para el cliente."""
-    active = tuple(layers or DEFAULT_LAYERS)
-    fig = build_analysis_chart(db_path, nivel, focus, list(active), rango)
-    has_data = bool(fig.data)
-    chart_json = _json_for_inline(fig.to_json()) if has_data else ""
-    return AnalysisViewModel(
-        kpis=build_analysis_kpis(db_path, nivel, focus),
-        chart_json=chart_json,
-        nivel=nivel,
-        focus=focus,
-        active_layers=active,
-        rango=rango,
-        has_data=has_data,
-    )
-
-
-def analysis_chart_html(vm: AnalysisViewModel) -> str:
-    """Fragmento de la gráfica de análisis: JSON inerte + div de render."""
-    if not vm.has_data:
-        return (
-            "<div class='flex items-center justify-center h-[300px] text-neutral-500 text-xs'>"
-            "Sin datos para esta selección</div>"
-        )
-    return (
-        f'<script id="analysis-chart-data" type="application/json">{vm.chart_json}</script>'
-        '<div id="analysis-chart-plot" class="plotly-graph-div"></div>'
-    )
-
-
-# ---------------------------------------------------------------------------
-# Panel "¿Qué pasó el [fecha]"
-# ---------------------------------------------------------------------------
-
-
-def _day_health_row(
-    db_path: str, fecha_iso: str, record_type: str, value_path: str
-) -> float | None:
-    """Valor diario de una métrica de salud para una fecha concreta."""
-    with read_connection(db_path) as conn:
-        row = conn.execute(
-            f"""
-            SELECT {value_path} AS valor
-            FROM health_records
-            WHERE record_type = ?
-              AND date(start_epoch_ms / 1000, 'unixepoch', 'localtime') = ?
-              AND deleted_at IS NULL
-            ORDER BY start_epoch_ms DESC
-            LIMIT 1
-            """,
-            (record_type, fecha_iso),
-        ).fetchone()
-    return float(row[0]) if row and row[0] is not None else None
-
-
-def _day_sleep_prev_night(db_path: str, fecha_iso: str) -> float | None:
-    """Horas de sueño de la noche anterior (sesión que termina el día)."""
-    with read_connection(db_path) as conn:
-        row = conn.execute(
-            """
-            SELECT SUM(end_epoch_ms - start_epoch_ms) / 3600000.0
-            FROM health_records
-            WHERE record_type = 'SLEEP_SESSION'
-              AND date(end_epoch_ms / 1000, 'unixepoch', 'localtime') = ?
-              AND deleted_at IS NULL
-            """,
-            (fecha_iso,),
-        ).fetchone()
-    return round(float(row[0]), 1) if row and row[0] is not None else None
-
-
-def _day_fc_media(db_path: str, fecha_iso: str) -> float | None:
-    with read_connection(db_path) as conn:
-        row = conn.execute(
-            """
-            SELECT AVG(json_extract(s.value, '$.bpm'))
-            FROM health_records h, json_each(h.value_json, '$.value.samples') s
-            WHERE h.record_type = 'HEART_RATE_5MIN'
-              AND date(h.start_epoch_ms / 1000, 'unixepoch', 'localtime') = ?
-              AND h.deleted_at IS NULL
-            """,
-            (fecha_iso,),
-        ).fetchone()
-    return round(float(row[0])) if row and row[0] is not None else None
-
-
-def _day_cardio(db_path: str, fecha_iso: str) -> list[DayDetailCardio]:
-    with read_connection(db_path) as conn:
-        rows = conn.execute(
-            """
-            SELECT h.hc_id,
-                   json_extract(h.value_json, '$.value.title') AS titulo,
-                   (h.end_epoch_ms - h.start_epoch_ms) / 60000.0 AS duracion_min,
-                   a.velocidad_kmh,
-                   a.inclinacion_pct,
-                   COALESCE(a.notas, '')
-            FROM health_records h
-            LEFT JOIN cardio_annotations a ON a.hc_id = h.hc_id
-            WHERE h.record_type = 'EXERCISE_SESSION'
-              AND date(h.start_epoch_ms / 1000, 'unixepoch', 'localtime') = ?
-              AND h.deleted_at IS NULL
-            ORDER BY h.start_epoch_ms
-            """,
-            (fecha_iso,),
-        ).fetchall()
-    return [
-        DayDetailCardio(
-            hc_id=r[0],
-            titulo=r[1] or "Sesión de ejercicio",
-            duracion_min=round(float(r[2]), 1) if r[2] is not None else 0.0,
-            velocidad_kmh=float(r[3]) if r[3] is not None else None,
-            inclinacion_pct=float(r[4]) if r[4] is not None else None,
-            notas=str(r[5] or ""),
-        )
-        for r in rows
-    ]
-
-
-def _day_nutrition(db_path: str, fecha_iso: str) -> dict[str, float]:
-    rows = get_diario_by_fecha(db_path, fecha_iso)
-    totals = diary_totals(rows)
-    params = get_parametros_diarios(db_path, fecha_iso) or {}
-    defaults = {
-        "peso_kg": 70.0,
-        "factor_proteina": 1.5,
-        "factor_grasa": 1.1,
-        "kcal_objetivo": 2300.0,
-        "fibra_objetivo": 0.0,
-        "hierro_objetivo": 0.0,
-        "calcio_objetivo": 0.0,
-        "vitamina_c_objetivo": 0.0,
-        "vitamina_a_objetivo": 0.0,
-    }
-    objetivo = objetivos_diarios({**defaults, **{k: float(v) for k, v in params.items()}})
-    consumido = {k: round(float(totals.get(k, 0.0) or 0.0), 1) for k in objetivo}
-    return {
-        "kcal_consumido": consumido.get("kcal", 0.0),
-        "kcal_objetivo": round(float(objetivo.get("kcal", 0.0)), 1),
-        "proteina_consumido": consumido.get("proteina", 0.0),
-        "proteina_objetivo": round(float(objetivo.get("proteina", 0.0)), 1),
-        "grasa_consumido": consumido.get("grasa", 0.0),
-        "grasa_objetivo": round(float(objetivo.get("grasa", 0.0)), 1),
-        "carbohidratos_consumido": consumido.get("carbohidratos", 0.0),
-        "carbohidratos_objetivo": round(float(objetivo.get("carbohidratos", 0.0)), 1),
-        "fibra_consumido": consumido.get("fibra", 0.0),
-        "fibra_objetivo": round(float(objetivo.get("fibra", 0.0)), 1),
-    }
-
-
-def build_day_detail(
-    db_path: str, fecha_iso: str, nivel: str, focus: str | None
-) -> DayDetailViewModel:
-    """Panel '¿qué pasó': entreno del día (filtrado por nivel), nutrición y
-    recuperación (sueño anoche, FC media, HRV, cardio + anotaciones)."""
-    fecha_db = fecha_to_db(parse_form_date(fecha_iso))
-    sets_rows = get_sets_by_fecha(db_path, fecha_db)
-
-    # Filtro por nivel para el bloque de entrenamiento.
-    if focus and nivel in ("grupo", "musculo"):
-        with read_connection(db_path) as conn:
-            if nivel == "grupo":
-                rows = conn.execute(
-                    "SELECT ejercicio FROM ejercicios WHERE LOWER(categoria) = LOWER(?)",
-                    (focus,),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT ejercicio FROM ejercicios WHERE LOWER(grupo_muscular) = LOWER(?)",
-                    (focus,),
-                ).fetchall()
-        targets = {str(r[0]).lower() for r in rows}
-        sets_rows = [r for r in sets_rows if str(r["ejercicio"]).lower() in targets]
-    elif focus and nivel == "ejercicio":
-        sets_rows = [r for r in sets_rows if str(r["ejercicio"]).lower() == focus.lower()]
-
-    sets = [
-        DayDetailSet(
-            ejercicio=r["ejercicio"],
-            kg=float(r["kg"]) if r["kg"] is not None else None,
-            reps=float(r["reps"]) if r["reps"] is not None else None,
-            rir=float(r["rir"]) if r["rir"] is not None else None,
-            descanso_seg=float(r["descanso_seg"]) if r["descanso_seg"] is not None else None,
-            rm_ajustado=(
-                round(rm_ajustado(float(r["kg"]), float(r["reps"]), float(r["rir"]) or 0.0), 1)
-                if r["kg"] is not None and r["reps"] is not None
-                else None
-            ),
-            fallo=(
-                (float(r["rir"]) <= 0 if r["rir"] is not None else False)
-                or (float(r["reps"]) % 1 != 0 if r["reps"] is not None else False)
-            ),
-            forzada=bool(r["rir"] is not None and float(r["rir"]) < 0),
-        )
-        for r in sets_rows
-    ]
-
-    timeline = calculate_pfr_timeline(db_path, _filter_type(nivel), focus)
-    pfr = None
-    volumen = None
-    sets_fallo = 0
-    if not timeline.empty:
-        day = timeline[timeline["fecha_dt"] == fecha_iso]
-        if not day.empty:
-            row = day.iloc[0]
-            pfr = round(float(row["rendimiento"]), 1) if pd.notna(row["rendimiento"]) else None
-            if "sets_fallo" in row:
-                sets_fallo = int(row["sets_fallo"]) if pd.notna(row["sets_fallo"]) else 0
-    volume_df = daily_volume(db_path)
-    if not volume_df.empty:
-        vol = volume_df[volume_df["fecha_dt"] == fecha_iso]
-        if not vol.empty:
-            volumen = round(float(vol.iloc[0]["valor"]), 1)
-
-    params = get_parametros_diarios(db_path, fecha_iso) or {}
-    peso = float(params["peso_kg"]) if params.get("peso_kg") else None
-
-    return DayDetailViewModel(
-        fecha_iso=fecha_iso,
-        nivel=nivel,
-        focus=focus,
-        sets=sets,
-        has_entreno=bool(sets),
-        pfr=pfr,
-        volumen=volumen,
-        sets_fallo=sets_fallo,
-        nutrientes=_day_nutrition(db_path, fecha_iso),
-        peso=peso,
-        sueno=_day_sleep_prev_night(db_path, fecha_iso),
-        fc_media=_day_fc_media(db_path, fecha_iso),
-        hrv=_day_health_row(
-            db_path,
-            fecha_iso,
-            "HEART_RATE_VARIABILITY_RMSSD",
-            "AVG(json_extract(value_json, '$.value.rmssd_ms'))",
-        ),
-        cardio=_day_cardio(db_path, fecha_iso),
     )
