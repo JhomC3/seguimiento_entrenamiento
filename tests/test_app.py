@@ -1576,7 +1576,11 @@ def test_nivel_cascada_grupo_musculo_ejercicio(tmp_path, monkeypatch):
     r = client.get("/nivel", params={"tipo": "musculo", "foco": "Pectoral"})
     assert r.status_code == 200
     assert "Press" in r.text
-    # Detalle del ejercicio
+    # Detalle del ejercicio (con datos)
+    from src.models import TrainingSetInput
+    from src.training_service import save_session
+
+    save_session(db, _fecha(), [TrainingSetInput("Press", 80, 8, 1)])
     r = client.get("/nivel", params={"tipo": "ejercicio", "foco": "Press"})
     assert r.status_code == 200
     assert "Resumen por Sesión" in r.text or "Datos Crudos" in r.text
