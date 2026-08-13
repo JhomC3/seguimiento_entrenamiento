@@ -248,3 +248,55 @@ in `htmx-lifecycle.js`.
 - OOB responses: notices and editor markers/wrappers render via
   `templates/partials/oob_*.html`; no request-derived value is concatenated
   into HTML.
+
+---
+
+# v3 — Popup de registro + cascada (2026-08-12): contrato vigente
+
+> **Reversión del rediseño de análisis (rechazado por el usuario).** La home
+> vuelve a ser la UI anterior (sidebar con plantillas/alta/sesiones, gráfica
+> unificada, colores originales) y los editores se abren como ventana emergente.
+
+## Rutas nuevas
+
+### `GET /editor/popup?fecha=<YYYY-MM-DD>` — cuerpo de la ventana emergente
+
+- Overlay flotante `#editor-popup` (no full-screen; `max-w-4xl`, `overflow-y-auto`).
+- `#popup-body` contiene: `#date-navigator`, `#session-date-title` (día/semana),
+  `#nutrition-templates-section` (plantillas de alimentación junto al editor),
+  `#nutrition-panel[data-editmode]` > `#nutrition-editor-wrap`,
+  `#session-editor[data-editmode]` > `#editor-notice` + `#save-outcome` +
+  `#session-editor-wrap`, y `#cardio-day`.
+- Botón `[data-action="open-editor-popup"]` (+ Registrar) en el header; cierre con
+  `[data-action="close-editor-popup"]` o Esc. El DOM del popup persiste al cerrar
+  (la navegación desde la gráfica sigue actualizando el editor oculto).
+- El swap a `#popup-body` re-sincroniza el editor (`htmx:afterSwap` → `syncEditorFromContent`).
+
+### `GET /nivel?tipo=global|grupo|musculo|ejercicio&foco=<valor>` — cascada
+
+- `#cascade-row` (chips `.level-chip[data-action="set-focus"][data-tipo][data-foco]`):
+  - `tipo=grupo` → categorías (EMPUJE/TIRON/PIERNA/CORE); `&foco=X` → músculos de X.
+  - `tipo=musculo` → músculos del catálogo; `&foco=X` → ejercicios de X.
+  - `tipo=ejercicio` → todos los ejercicios; `&foco=X` → detalle (`#history-section`).
+- `data-tipo` de los chips = mismo nivel si es selección directa, o el siguiente
+  nivel cuando un foco avanza la cascada (grupo→músculo→ejercicio).
+- OOB en cada paso: `#unified-chart` (innerHTML) con el filtro correspondiente
+  (systemic / category / muscle_group / exercise).
+- Niveles de la cabecera: `.level-btn[data-action="set-level"][data-tipo]` (colores anteriores).
+
+### `POST /cardio/annotation` (conservado del rediseño)
+
+- Campos: `hc_id`, `velocidad_kmh`, `inclinacion_pct`, `notas`, `fecha`.
+- OOB: `#notice-container` + `#cardio-day` (outerHTML) cuando `fecha` viene.
+- Solo válido para `EXERCISE_SESSION`; vacío = elimina la anotación.
+- Helpers de lectura del día en `src/cardio_service.py`: `get_day_cardio`,
+  `get_day_fc_media`, `get_day_sleep_prev_night`.
+
+## Cambios sobre el contrato v1
+
+- `POST /entrenamiento/session/save`: campo paralelo `descanso[]` (opcional).
+- `session_editor.html`: RIR `min="-5" step="0.5"`, columna `Desc` (`input[name="descanso"]`),
+  badge `.rir-badge` (FALLO/FORZADA). El editor vive en el popup, no en la home.
+- `chart_pfr_timeline`: hover enriquecido (customdata por semana: series, fallos,
+  volumen, peso, sueño) — el "resumen" ya no ocupa fila propia.
+- Las plantillas de alimentación (`#nutrition-templates-section`) viven en el popup.
