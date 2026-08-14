@@ -194,11 +194,14 @@ def test_chart_muscle_exercises_ejercicios_mas_tenues(setup_test_db):
     fig = chart_muscle_exercises(db, "Pectoral", ["Press Convergente"])
     compilado = fig.data[0]
     ejercicio = fig.data[1]
-    # El compilado es sólido (borgoña, alpha 1) y más grueso.
+    # El compilado es sólido (borgoña, alpha 1) y protagonista.
     assert compilado.line.color == "#e56d88"
     assert compilado.line.width == 2.5
-    # El ejercicio individual es tenue: rgba con alpha 0.55 y línea más fina.
+    # El ejercicio individual: línea translúcida (alpha 0.4) con la MISMA
+    # anchura que el compilado (tenue por transparencia, no por grosor).
     assert ejercicio.line.color.startswith("rgba(")
-    assert ejercicio.line.color.endswith(", 0.55)")
-    assert ejercicio.line.width == 1.5
-    assert ejercicio.marker.size == 5
+    assert ejercicio.line.color.endswith(", 0.4)")
+    assert ejercicio.line.width == 2.5
+    # Los puntos del ejercicio son sólidos y nítidos.
+    assert ejercicio.marker.color == "#7dd3fc"
+    assert ejercicio.marker.size == 6

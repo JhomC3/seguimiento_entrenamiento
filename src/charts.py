@@ -145,7 +145,8 @@ def _pfr_trace(
         mode="lines+markers",
         name=name,
         line={"color": line_color, "width": width},
-        marker={"size": marker_size, "color": line_color},
+        # Los puntos siempre sólidos: nítidos sobre la línea tenue.
+        marker={"size": marker_size, "color": color},
         customdata=weekly[["series", "fallos"]]
         .assign(
             volumen=weekly["customdata"].apply(lambda c: c[2]),
@@ -184,8 +185,10 @@ def chart_muscle_exercises(db_path: str, musculo: str, ejercicios: list[str]) ->
             if df.empty:
                 continue
             color = EXERCISE_PALETTE[idx % len(EXERCISE_PALETTE)]
-            # Los ejercicios individuales van más tenues que el compilado.
-            traces.append(_pfr_trace(df, ejercicio, color, alpha=0.55, width=1.5, marker_size=5))
+            # Ejercicios individuales: línea translúcida pero con la misma
+            # anchura que el compilado (tenue por transparencia, no por grosor);
+            # puntos sólidos y nítidos.
+            traces.append(_pfr_trace(df, ejercicio, color, alpha=0.4, width=2.5, marker_size=6))
 
     if not traces:
         return go.Figure()
