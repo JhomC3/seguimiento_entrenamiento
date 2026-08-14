@@ -1,9 +1,10 @@
-// level-cascade.js — cascada: músculos siempre visibles + multi-selección de
-// ejercicios. Owns: #cascade-row (músculos), #ejercicios-row (chips toggle),
-// #history-section (detalle). Cada paso empuja historial (?musculo=X&ejercicios=a,b)
-// y popstate restaura el estado (el botón atrás navega dentro de la app).
+// level-cascade.js — cascada: músculos siempre visibles con selección simple
+// (click) o múltiple (Shift+click); ejercicios con la misma mecánica.
+// Owns: #cascade-row (músculos), #ejercicios-row (chips toggle), #history-section.
+// Gráfica: 1 músculo → compilado + ejercicios; 2+ músculos → Global + músculos.
+// Cada paso empuja historial (?musculos=A,B&ejercicios=a,b) y popstate restaura.
 
-let selectedMuscle = null;
+let selectedMuscles = new Set();
 let selectedExercises = new Set();
 
 // Cancela requests htmx en vuelo de la cascada (evita que una respuesta vieja
@@ -13,15 +14,19 @@ function trackXhr(e) {
     const path = e.detail && e.detail.requestConfig && e.detail.requestConfig.path;
     if (!path) return;
     if (path.startsWith('/nivel') || path.startsWith('/grafica')) {
-        pendingXhrs.add(e.detail.xhr);
-        e.detail.xhr.addEventListener('loadend', () => pendingXhrs.delete(e.detail.xhr));
+        const xhr = e.detail.xhr;
+        xhr._cascadePath = path;
+        pendingXhrs.add(xhr);
+        xhr.addEventListener('loadend', () => pendingXhrs.delete(xhr));
     }
 }
-function cancelPending() {
+function cancelPending(pathPrefix) {
     pendingXhrs.forEach((xhr) => {
-        if (xhr.readyState < 4) xhr.abort();
+        if (xhr.readyState < 4 && (!pathPrefix || (xhr._cascadePath || '').startsWith(pathPrefix))) {
+            xhr.abort();
+        }
     });
-    pendingXhrs.clear();
+    if (!pathPrefix) pendingXhrs.clear();
 }
 
 function refresh(target, url) {
@@ -32,65 +37,18 @@ function pushState(url) {
     history.pushState({}, '', url);
 }
 
-function markMuscle(muscle) {
+function currentUrl() {
+    const params = new URLSearchParams();
+    if (selectedMuscles.size) params.set('musculos', [...selectedMuscles].join(','));
+    if (selectedExercises.size) params.set('ejercicios', [...selectedExercises].join(','));
+    const q = params.toString();
+    return q ? '?' + q : '/';
+}
+
+function markMuscles() {
     document.querySelectorAll('#cascade-row .level-chip').forEach((chip) => {
-        chip.classList.toggle('selected', chip.dataset.foco === muscle);
+        chip.classList.toggle('selected', selectedMuscles.has(chip.dataset.foco));
     });
-}
-
-function refreshChart(muscle, exercises) {
-    const params = new URLSearchParams({ musculo: muscle });
-    exercises.forEach((e) => params.append('ejercicios', e));
-    htmx.ajax('GET', '/grafica?' + params.toString(), {
-        target: document.body,
-        swap: 'none',
-    });
-}
-
-function selectMuscle(muscle) {
-    if (selectedMuscle === muscle) {
-        // Toggle: volver a oprimir el músculo seleccionado lo deselecciona y
-        // regresa al grupo completo del cuerpo.
-        deselectAll();
-        return;
-    }
-    cancelPending();
-    selectedMuscle = muscle;
-    selectedExercises = new Set();
-    markMuscle(muscle);
-    refresh('#ejercicios-row', '/nivel?tipo=musculo&foco=' + encodeURIComponent(muscle));
-    pushState('?musculo=' + encodeURIComponent(muscle));
-}
-
-function deselectAll() {
-    cancelPending();
-    selectedMuscle = null;
-    selectedExercises = new Set();
-    markMuscle(null);
-    const row = document.getElementById('ejercicios-row');
-    if (row) row.innerHTML = '';
-    // Vuelve al grupo completo del cuerpo: fila de músculos sin marca y
-    // gráfica sistémica (el response de /nivel?tipo=global trae ambos).
-    refresh('#cascade-row', '/nivel?tipo=global');
-    pushState('/');
-}
-
-function popupIsOpen() {
-    const popup = document.getElementById('editor-popup');
-    return popup && !popup.classList.contains('hidden');
-}
-
-function toggleExercise(muscle, ejercicio) {
-    if (selectedExercises.has(ejercicio)) {
-        selectedExercises.delete(ejercicio);
-    } else {
-        selectedExercises.add(ejercicio);
-    }
-    markExercises();
-    refreshChart(muscle, [...selectedExercises]);
-    const params = new URLSearchParams({ musculo: muscle });
-    [...selectedExercises].forEach((e) => params.append('ejercicios', e));
-    pushState('?' + params.toString());
 }
 
 function markExercises() {
@@ -99,25 +57,116 @@ function markExercises() {
     });
 }
 
+function refreshChart() {
+    const params = new URLSearchParams();
+    [...selectedMuscles].forEach((m) => params.append('musculo', m));
+    [...selectedExercises].forEach((e) => params.append('ejercicios', e));
+    htmx.ajax('GET', '/grafica?' + params.toString(), {
+        target: document.body,
+        swap: 'none',
+    });
+}
+
+function refreshExerciseRow() {
+    const row = document.getElementById('ejercicios-row');
+    if (selectedMuscles.size === 1) {
+        // Solo con 1 músculo tiene sentido la fila de ejercicios. Se cancela
+        // solo el pedido previo de la fila (no la carga de los músculos).
+        const muscle = [...selectedMuscles][0];
+        cancelPending('/nivel?tipo=musculo');
+        refresh('#ejercicios-row', '/nivel?tipo=musculo&foco=' + encodeURIComponent(muscle));
+    } else if (row) {
+        row.innerHTML = '';
+    }
+}
+
+function popupIsOpen() {
+    const popup = document.getElementById('editor-popup');
+    return popup && !popup.classList.contains('hidden');
+}
+
+function deselectAll() {
+    cancelPending();
+    selectedMuscles = new Set();
+    selectedExercises = new Set();
+    markMuscles();
+    const row = document.getElementById('ejercicios-row');
+    if (row) row.innerHTML = '';
+    // Vuelve al grupo completo del cuerpo: fila de músculos sin marca y
+    // gráfica sistémica (el response de /nivel?tipo=global trae ambos).
+    refresh('#cascade-row', '/nivel?tipo=global');
+    pushState('/');
+}
+
+function clickMuscle(muscle, shift) {
+    if (shift) {
+        // Shift+click: añade/quita de la selección múltiple.
+        if (selectedMuscles.has(muscle)) {
+            selectedMuscles.delete(muscle);
+            if (selectedMuscles.size === 0) {
+                deselectAll();
+                return;
+            }
+        } else {
+            selectedMuscles.add(muscle);
+        }
+        selectedExercises = new Set();
+        markMuscles();
+        refreshExerciseRow();
+        refreshChart();
+        pushState(currentUrl());
+        return;
+    }
+    // Click simple: selecciona solo este; si ya era el único, deselecciona.
+    if (selectedMuscles.size === 1 && selectedMuscles.has(muscle)) {
+        deselectAll();
+        return;
+    }
+    cancelPending();
+    selectedMuscles = new Set([muscle]);
+    selectedExercises = new Set();
+    markMuscles();
+    refreshExerciseRow();
+    refreshChart();
+    pushState(currentUrl());
+}
+
+function clickExercise(ejercicio, shift) {
+    if (shift) {
+        // Shift+click: añade/quita de la selección de ejercicios.
+        if (selectedExercises.has(ejercicio)) {
+            selectedExercises.delete(ejercicio);
+        } else {
+            selectedExercises.add(ejercicio);
+        }
+    } else {
+        // Click simple: solo este ejercicio.
+        selectedExercises = new Set([ejercicio]);
+    }
+    markExercises();
+    refreshChart();
+    pushState(currentUrl());
+}
+
 function restoreFromURL() {
     const params = new URLSearchParams(location.search);
-    const muscle = params.get('musculo');
-    const exercises = params.getAll('ejercicios').flatMap((v) => v.split(',')).filter(Boolean);
-    // La fila de músculos ya está cargada (loadMuscles se ejecuta siempre en init);
+    const muscles = (params.get('musculos') || '').split(',').filter(Boolean);
+    const exercises = (params.get('ejercicios') || '').split(',').filter(Boolean);
+    // La fila de músculos ya está cargada (loadMuscles se ejecuta siempre);
     // aquí solo se aplica la selección recordada en la URL.
-    if (!muscle) {
-        selectedMuscle = null;
+    if (!muscles.length) {
+        selectedMuscles = new Set();
         selectedExercises = new Set();
-        markMuscle(null);
+        markMuscles();
         const row = document.getElementById('ejercicios-row');
         if (row) row.innerHTML = '';
         return;
     }
-    selectedMuscle = muscle;
+    selectedMuscles = new Set(muscles);
     selectedExercises = new Set(exercises);
-    markMuscle(muscle);
-    refresh('#ejercicios-row', '/nivel?tipo=musculo&foco=' + encodeURIComponent(muscle));
-    refreshChart(muscle, [...selectedExercises]);
+    markMuscles();
+    refreshExerciseRow();
+    refreshChart();
 }
 
 function loadMuscles() {
@@ -130,10 +179,9 @@ export function initLevelCascade() {
         const el = e.target.closest('[data-action]');
         if (!el) return;
         if (el.dataset.action === 'select-muscle') {
-            selectMuscle(el.dataset.foco);
+            clickMuscle(el.dataset.foco, e.shiftKey);
         } else if (el.dataset.action === 'toggle-exercise') {
-            const muscle = el.dataset.padre || selectedMuscle;
-            if (muscle) toggleExercise(muscle, el.dataset.foco);
+            clickExercise(el.dataset.foco, e.shiftKey);
         } else if (el.dataset.action === 'exercise-detail') {
             refresh('#history-section', '/nivel?tipo=ejercicio&foco=' + encodeURIComponent(el.dataset.foco));
         }
@@ -143,11 +191,10 @@ export function initLevelCascade() {
     document.body.addEventListener('htmx:beforeRequest', trackXhr);
 
     // Cada vez que la fila de músculos se renderiza (carga inicial, recarga,
-    // popstate), se re-aplica la marca del músculo seleccionado: la marca se
-    // aplicaba antes de que la fila existiera y se perdía al recargar.
+    // popstate), se re-aplican las marcas de los músculos seleccionados.
     document.body.addEventListener('htmx:afterSwap', function (e) {
         if (e.target && e.target.id === 'cascade-row') {
-            markMuscle(selectedMuscle);
+            markMuscles();
         }
     });
 
@@ -157,12 +204,12 @@ export function initLevelCascade() {
         restoreFromURL();
     });
 
-    // Escape deselecciona el músculo (vuelve al grupo completo del cuerpo),
-    // salvo que la ventana de registro esté abierta (ahí Escape la cierra).
+    // Escape deselecciona todo (vuelve al grupo completo del cuerpo), salvo
+    // que la ventana de registro esté abierta (ahí Escape la cierra).
     document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape') return;
         if (popupIsOpen()) return;
-        if (selectedMuscle) deselectAll();
+        if (selectedMuscles.size) deselectAll();
     });
 
     // Los músculos SIEMPRE se cargan al abrir la página.

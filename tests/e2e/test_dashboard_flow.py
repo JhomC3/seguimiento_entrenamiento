@@ -376,7 +376,7 @@ def test_cascade_musculo_persistente_y_multi_traza(page, server):
     expect(muscle_chip).to_have_class(re.compile(r"\bselected\b"))
     exercise_chip = page.locator('#ejercicios-row .exercise-chip[data-foco="Press"]')
     expect(exercise_chip).to_be_visible(timeout=3000)
-    expect(page.locator("#cascade-row .level-chip")).to_have_count(1)  # sigue visible
+    expect(page.locator("#cascade-row .level-chip")).to_have_count(2)  # sigue visible
 
     # Marcar el ejercicio: la gráfica tiene compilado + línea del ejercicio.
     exercise_chip.click()
@@ -387,8 +387,8 @@ def test_cascade_musculo_persistente_y_multi_traza(page, server):
         timeout=5000,
     )
 
-    # Desmarcar: vuelve a solo el compilado.
-    exercise_chip.click()
+    # Desmarcar (Shift+click): vuelve a solo el compilado.
+    exercise_chip.click(modifiers=["Shift"])
     expect(exercise_chip).to_have_attribute("aria-pressed", "false")
     page.wait_for_function(
         "() => { const el = document.getElementById('unified-chart-plot');"
@@ -409,7 +409,7 @@ def test_grafica_atras_del_navegador_restaura(page, server):
 
     page.locator('#cascade-row .level-chip[data-foco="Pectoral"]').click()
     expect(page.locator("#ejercicios-row .exercise-chip")).to_be_visible(timeout=3000)
-    assert "musculo=Pectoral" in page.url
+    assert "musculos=Pectoral" in page.url
 
     page.go_back()
     page.wait_for_timeout(800)
@@ -512,7 +512,7 @@ def test_muscle_toggle_y_escape_vuelven_al_cuerpo_completo(page, server):
     expect(page.locator("#ejercicios-row .exercise-chip")).to_have_count(0)
     expect(page.locator("#unified-chart")).to_contain_text("Rendimiento", timeout=3000)
     expect(page.locator("#unified-chart")).not_to_contain_text("Pectoral")
-    assert "musculo=" not in page.url
+    assert "musculos=" not in page.url
 
     # Escape también deselecciona.
     muscle_chip.click()
@@ -521,7 +521,7 @@ def test_muscle_toggle_y_escape_vuelven_al_cuerpo_completo(page, server):
     page.wait_for_timeout(500)
     expect(muscle_chip).not_to_have_class(re.compile(r"\bselected\b"))
     expect(page.locator("#ejercicios-row .exercise-chip")).to_have_count(0)
-    assert "musculo=" not in page.url
+    assert "musculos=" not in page.url
 
 
 def test_recarga_mantiene_musculo_y_ejercicios_seleccionados(page, server):
@@ -543,7 +543,7 @@ def test_recarga_mantiene_musculo_y_ejercicios_seleccionados(page, server):
     expect(exercise_chip).to_be_visible(timeout=3000)
     exercise_chip.click()
     expect(exercise_chip).to_have_attribute("aria-pressed", "true")
-    assert "musculo=Pectoral" in page.url
+    assert "musculos=Pectoral" in page.url
     assert "ejercicios=Press" in page.url
 
     # Recargar: el estado debe mantenerse completo y visible.
@@ -561,3 +561,95 @@ def test_recarga_mantiene_musculo_y_ejercicios_seleccionados(page, server):
         " return el && el._fullData && el._fullData.length === 2; }",
         timeout=5000,
     )
+
+
+def test_multimusculo_con_shift_click_mantiene_global(page, server):
+    """Shift+click añade músculos a la selección: la gráfica muestra el Global
+    grueso + cada músculo tenue, y la fila de ejercicios se oculta."""
+    _open_popup(page, server)
+    _fill_row(page, 0)
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+    # Sesión del segundo músculo (día distinto) para que su traza tenga datos.
+    page.locator(f'#popup-body .date-num[data-iso="{_iso(1)}"]').click()
+    page.wait_for_timeout(400)
+    _fill_row(page, 0, ejercicio="Curl", kg="12", reps="10", rir="1")
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+    page.click("#popup-close")
+
+    pectoral = page.locator('#cascade-row .level-chip[data-foco="Pectoral"]')
+    expect(pectoral).to_be_visible(timeout=3000)
+    pectoral.click()
+    expect(pectoral).to_have_class(re.compile(r"\bselected\b"))
+    # Fila de ejercicios visible con 1 músculo.
+    expect(page.locator("#ejercicios-row .exercise-chip")).to_be_visible(timeout=3000)
+
+    # Shift+click en otro músculo: se añade a la selección.
+    biceps = page.locator('#cascade-row .level-chip[data-foco="Biceps"]')
+    biceps.click(modifiers=["Shift"])
+    expect(biceps).to_have_class(re.compile(r"\bselected\b"))
+    expect(pectoral).to_have_class(re.compile(r"\bselected\b"))
+    # Con 2 músculos: la fila de ejercicios se oculta.
+    expect(page.locator("#ejercicios-row .exercise-chip")).to_have_count(0)
+    assert "musculos=Pectoral%2CBiceps" in page.url
+    # Gráfica: Global + 2 músculos tenues.
+    page.wait_for_function(
+        "() => { const el = document.getElementById('unified-chart-plot');"
+        " return el && el._fullData && el._fullData.length === 3; }",
+        timeout=5000,
+    )
+
+    # Click simple en uno de los seleccionados: la selección se reemplaza
+    # (solo ese) y la fila de ejercicios reaparece.
+    biceps.click()
+    expect(pectoral).not_to_have_class(re.compile(r"\bselected\b"))
+    expect(biceps).to_have_class(re.compile(r"\bselected\b"))
+    expect(page.locator("#ejercicios-row .exercise-chip")).to_be_visible(timeout=3000)
+    assert "musculos=Biceps" in page.url
+
+    # Escape deselecciona todo → cuerpo entero puro.
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(500)
+    expect(biceps).not_to_have_class(re.compile(r"\bselected\b"))
+    expect(page.locator("#ejercicios-row .exercise-chip")).to_have_count(0)
+    assert "musculos=" not in page.url
+
+
+def test_multiejercicios_con_shift_click(page, server):
+    """Shift+click añade ejercicios: compilado + cada ejercicio tenue."""
+    _open_popup(page, server)
+    _fill_row(page, 0)
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+    page.click("#popup-close")
+
+    pectoral = page.locator('#cascade-row .level-chip[data-foco="Pectoral"]')
+    expect(pectoral).to_be_visible(timeout=3000)
+    pectoral.click()
+    exercise_chip = page.locator('#ejercicios-row .exercise-chip[data-foco="Press"]')
+    expect(exercise_chip).to_be_visible(timeout=3000)
+    exercise_chip.click()
+    expect(exercise_chip).to_have_attribute("aria-pressed", "true")
+    page.wait_for_function(
+        "() => { const el = document.getElementById('unified-chart-plot');"
+        " return el && el._fullData && el._fullData.length === 2; }",
+        timeout=5000,
+    )
+    assert "ejercicios=Press" in page.url
+
+    # Shift+click sobre el mismo ejercicio lo quita de la selección.
+    exercise_chip.click(modifiers=["Shift"])
+    expect(exercise_chip).to_have_attribute("aria-pressed", "false")
+    page.wait_for_function(
+        "() => { const el = document.getElementById('unified-chart-plot');"
+        " return el && el._fullData && el._fullData.length === 1; }",
+        timeout=5000,
+    )
+    assert "ejercicios=" not in page.url

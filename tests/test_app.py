@@ -1609,3 +1609,22 @@ def test_nivel_foco_desconocido_no_rompe(tmp_path, monkeypatch):
     r = _client().get("/nivel", params={"tipo": "grupo", "foco": "NoExiste"})
     assert r.status_code == 200
     assert 'id="cascade-row"' in r.text
+
+
+def test_grafica_multimusculo_global_y_sin_fila_ejercicios(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    from src.models import TrainingSetInput
+    from src.training_service import save_session
+
+    save_session(db, _fecha(), [TrainingSetInput("Press", 80, 8, 1)])
+    # Dos músculos: OOB con Global, sin refresco de la fila de ejercicios.
+    r = _client().get("/grafica", params={"musculo": ["Pectoral", "Espalda"]})
+    assert r.status_code == 200
+    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
+    assert "Global" in r.text
+    assert 'id="ejercicios-row" hx-swap-oob' not in r.text
+    # Un solo músculo: sí refresca la fila de ejercicios.
+    r2 = _client().get("/grafica", params={"musculo": "Pectoral", "ejercicios": "Press"})
+    assert r2.status_code == 200
+    assert 'id="ejercicios-row" hx-swap-oob="outerHTML"' in r2.text

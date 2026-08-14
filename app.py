@@ -1072,7 +1072,7 @@ def nivel_view(
     if tipo == "musculo" and foco:
         return HTMLResponse(
             content=_ejercicios_row_html(request, foco, [])
-            + chart_oob_wrapper(_chart_muscle_html(foco, []))
+            + chart_oob_wrapper(_chart_selection_html([foco], []))
         )
     if tipo == "global":
         # Estado base: fila de músculos + gráfica sistémica.
@@ -1083,11 +1083,12 @@ def nivel_view(
     return HTMLResponse(content=_cascade_row_html(request, tipo, foco))
 
 
-def _chart_muscle_html(musculo: str, ejercicios: list[str]) -> str:
-    """Fragmento de la gráfica del músculo (compilado + ejercicios seleccionados)."""
-    from src.charts import chart_muscle_exercises
+def _chart_selection_html(musculos: list[str], ejercicios: list[str]) -> str:
+    """Fragmento de la gráfica de la selección (1 músculo: compilado + ejercicios;
+    2+: global + músculos)."""
+    from src.charts import chart_selection
 
-    fig = chart_muscle_exercises(DB_PATH, musculo, ejercicios)
+    fig = chart_selection(DB_PATH, musculos, ejercicios)
     if not fig.data:
         return (
             "<div class='flex items-center justify-center h-[300px] text-neutral-500 text-xs'>"
@@ -1105,21 +1106,23 @@ def _chart_muscle_html(musculo: str, ejercicios: list[str]) -> str:
 @app.get("/grafica", response_class=HTMLResponse)
 def grafica_view(
     request: Request,
-    musculo: str = Query(...),
+    musculo: list[str] = Query(default=[]),
     ejercicios: list[str] = Query(default=[]),
 ):
-    """Gráfica del músculo: compilado siempre + una línea por ejercicio marcado."""
-    chart = _chart_muscle_html(musculo, ejercicios)
-    return HTMLResponse(
-        content=chart_oob_wrapper(chart)
-        + fragment_oob(
+    """Gráfica de la selección: 1 músculo → compilado + ejercicios marcados;
+    2+ músculos → global + músculos marcados. La fila de ejercicios solo se
+    refresca cuando hay exactamente 1 músculo."""
+    chart = _chart_selection_html(musculo, ejercicios)
+    content = chart_oob_wrapper(chart)
+    if len(musculo) == 1:
+        content += fragment_oob(
             templates,
             request,
             "ejercicios-row",
-            _ejercicios_row_html(request, musculo, ejercicios),
+            _ejercicios_row_html(request, musculo[0], ejercicios),
             swap="outerHTML",
         )
-    )
+    return HTMLResponse(content=content)
 
 
 @app.get("/grupo/reset", response_class=HTMLResponse)

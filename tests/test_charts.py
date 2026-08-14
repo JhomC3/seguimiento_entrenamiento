@@ -146,19 +146,19 @@ def test_get_exercise_raw_data_incluye_descanso(setup_test_db):
 
 
 def test_chart_muscle_exercises_compilado_solo(setup_test_db):
-    from src.charts import chart_muscle_exercises
+    from src.charts import chart_selection
 
     db = setup_test_db
-    fig = chart_muscle_exercises(db, "Pectoral", [])
+    fig = chart_selection(db, ["Pectoral"], [])
     assert len(fig.data) == 1  # solo el compilado
     assert fig.data[0].name == "Compilado"
 
 
 def test_chart_muscle_exercises_una_traza_por_ejercicio(setup_test_db):
-    from src.charts import chart_muscle_exercises
+    from src.charts import chart_selection
 
     db = setup_test_db
-    fig = chart_muscle_exercises(db, "Pectoral", ["Press Convergente"])
+    fig = chart_selection(db, ["Pectoral"], ["Press Convergente"])
     assert len(fig.data) == 2  # compilado + ejercicio
     assert fig.data[1].name == "Press Convergente"
     # El hover muestra el nombre del ejercicio (customdata[5]).
@@ -167,10 +167,10 @@ def test_chart_muscle_exercises_una_traza_por_ejercicio(setup_test_db):
 
 
 def test_chart_muscle_exercises_filtra_ejercicios_ajenos(setup_test_db):
-    from src.charts import chart_muscle_exercises
+    from src.charts import chart_selection
 
     db = setup_test_db
-    fig = chart_muscle_exercises(db, "Pectoral", ["Press Convergente", "Curl Bayesian"])
+    fig = chart_selection(db, ["Pectoral"], ["Press Convergente", "Curl Bayesian"])
     # "Curl Bayesian" pertenece a Biceps: se descarta, quedan compilado + Press
     assert len(fig.data) == 2
     names = [t.name for t in fig.data]
@@ -178,20 +178,20 @@ def test_chart_muscle_exercises_filtra_ejercicios_ajenos(setup_test_db):
 
 
 def test_chart_muscle_exercises_vacio_sin_datos(tmp_path):
-    from src.charts import chart_muscle_exercises
+    from src.charts import chart_selection
     from src.database import init_db
 
     db = str(tmp_path / "empty.db")
     init_db(db)
-    fig = chart_muscle_exercises(db, "Pectoral", [])
+    fig = chart_selection(db, ["Pectoral"], [])
     assert len(fig.data) == 0
 
 
 def test_chart_muscle_exercises_ejercicios_mas_tenues(setup_test_db):
-    from src.charts import chart_muscle_exercises
+    from src.charts import chart_selection
 
     db = setup_test_db
-    fig = chart_muscle_exercises(db, "Pectoral", ["Press Convergente"])
+    fig = chart_selection(db, ["Pectoral"], ["Press Convergente"])
     compilado = fig.data[0]
     ejercicio = fig.data[1]
     # El compilado es sólido (borgoña, alpha 1) y protagonista.
@@ -204,3 +204,42 @@ def test_chart_muscle_exercises_ejercicios_mas_tenues(setup_test_db):
     # Los puntos comparten la misma transparencia que su línea.
     assert ejercicio.marker.color == ejercicio.line.color
     assert ejercicio.marker.size == 6
+
+
+def test_chart_selection_dos_musculos_global_mas_tenues(setup_test_db):
+    import sqlite3
+
+    from src.charts import chart_selection
+
+    db = setup_test_db
+    # Datos para el segundo músculo (Biceps) para que ambas trazas existan.
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) "
+        "VALUES (2, 'LUNES', '2026-05-11', 1, 'Curl Bayesian', 10, 12, 1)"
+    )
+    conn.commit()
+    conn.close()
+    fig = chart_selection(db, ["Pectoral", "Biceps"], [])
+    # Global sólido (referencia) + un músculo tenue por cada seleccionado.
+    assert len(fig.data) == 3
+    global_trace = fig.data[0]
+    assert global_trace.name == "Global"
+    assert global_trace.line.color == "#e56d88"
+    assert global_trace.line.width == 2.5
+    for trace in fig.data[1:]:
+        assert trace.line.color.startswith("rgba(")
+        assert trace.line.color.endswith(", 0.4)")
+        assert trace.line.width == 3.5
+    assert "Rendimiento – Cuerpo entero" in fig.layout.title.text
+
+
+def test_chart_selection_dos_musculos_ignora_ejercicios(setup_test_db):
+    from src.charts import chart_selection
+
+    db = setup_test_db
+    # Con 2+ músculos los ejercicios no aplican: solo Global + músculos.
+    fig = chart_selection(db, ["Pectoral", "Biceps"], ["Press Convergente"])
+    names = [t.name for t in fig.data]
+    assert "Press Convergente" not in names
+    assert "Global" in names

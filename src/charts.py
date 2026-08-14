@@ -159,35 +159,56 @@ def _pfr_trace(
     )
 
 
-def chart_muscle_exercises(db_path: str, musculo: str, ejercicios: list[str]) -> go.Figure:
-    """Gráfica del músculo: línea del compilado (todos sus ejercicios) siempre
-    visible + una línea por cada ejercicio seleccionado.
+def chart_selection(db_path: str, musculos: list[str], ejercicios: list[str]) -> go.Figure:
+    """Gráfica de la selección actual:
+
+    - 1 músculo: línea del compilado (todos sus ejercicios) sólida como
+      referencia + una línea tenue por cada ejercicio seleccionado.
+    - 2+ músculos: línea del GLOBAL (cuerpo entero) sólida como referencia +
+      una línea tenue por cada músculo seleccionado. Los ejercicios no aplican.
 
     Los ejercicios que no pertenecen al músculo se descartan.
     """
-    compiled = _weekly_pfr_df(db_path, "muscle_group", musculo)
     traces: list[go.Scatter] = []
-    if not compiled.empty:
-        # El compilado es la línea de referencia: sólida y protagonista.
-        traces.append(_pfr_trace(compiled, "Compilado", "#e56d88"))
+    title = "Rendimiento – Cuerpo entero"
 
-    if musculo and ejercicios:
-        with read_connection(db_path) as conn:
-            rows = conn.execute(
-                "SELECT ejercicio FROM ejercicios WHERE LOWER(grupo_muscular) = LOWER(?)",
-                (musculo,),
-            ).fetchall()
-        valid = {str(r[0]).lower() for r in rows}
-        for idx, ejercicio in enumerate(ejercicios):
-            if ejercicio.lower() not in valid:
-                continue
-            df = _weekly_pfr_df(db_path, "exercise", ejercicio)
+    if len(musculos) == 1:
+        musculo = musculos[0]
+        title = f"Rendimiento – {musculo}"
+        compiled = _weekly_pfr_df(db_path, "muscle_group", musculo)
+        if not compiled.empty:
+            # El compilado es la línea de referencia: sólida y protagonista.
+            traces.append(_pfr_trace(compiled, "Compilado", "#e56d88"))
+
+        if ejercicios:
+            with read_connection(db_path) as conn:
+                rows = conn.execute(
+                    "SELECT ejercicio FROM ejercicios WHERE LOWER(grupo_muscular) = LOWER(?)",
+                    (musculo,),
+                ).fetchall()
+            valid = {str(r[0]).lower() for r in rows}
+            for idx, ejercicio in enumerate(ejercicios):
+                if ejercicio.lower() not in valid:
+                    continue
+                df = _weekly_pfr_df(db_path, "exercise", ejercicio)
+                if df.empty:
+                    continue
+                color = EXERCISE_PALETTE[idx % len(EXERCISE_PALETTE)]
+                # Ejercicios individuales: línea translúcida y gruesa (3.5);
+                # los puntos llevan la misma transparencia que la línea.
+                traces.append(_pfr_trace(df, ejercicio, color, alpha=0.4, width=3.5, marker_size=6))
+    elif len(musculos) >= 2:
+        global_df = _weekly_pfr_df(db_path, "systemic", None)
+        if not global_df.empty:
+            # El global (cuerpo entero) es la línea de referencia sólida.
+            traces.append(_pfr_trace(global_df, "Global", "#e56d88"))
+        for idx, musculo in enumerate(musculos):
+            df = _weekly_pfr_df(db_path, "muscle_group", musculo)
             if df.empty:
                 continue
             color = EXERCISE_PALETTE[idx % len(EXERCISE_PALETTE)]
-            # Ejercicios individuales: línea translúcida y gruesa (3.5); los
-            # puntos llevan la misma transparencia que la línea.
-            traces.append(_pfr_trace(df, ejercicio, color, alpha=0.4, width=3.5, marker_size=6))
+            # Músculos seleccionados: líneas tenues como los ejercicios.
+            traces.append(_pfr_trace(df, musculo, color, alpha=0.4, width=3.5, marker_size=6))
 
     if not traces:
         return go.Figure()
@@ -203,7 +224,7 @@ def chart_muscle_exercises(db_path: str, musculo: str, ejercicios: list[str]) ->
     y_bottom = 0 if y_min >= 0 else y_min - y_padding
 
     fig.update_layout(
-        title={"text": f"Rendimiento – {musculo}", "font": {"color": "white", "size": 14}},
+        title={"text": title, "font": {"color": "white", "size": 14}},
         xaxis={
             "title": "Semana",
             "tickmode": "array",
