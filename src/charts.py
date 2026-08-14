@@ -123,14 +123,29 @@ EXERCISE_PALETTE = [
 ]
 
 
-def _pfr_trace(weekly: pd.DataFrame, name: str, color: str) -> go.Scatter:
+def _hex_to_rgba(hex_color: str, alpha: float) -> str:
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r}, {g}, {b}, {alpha})"
+
+
+def _pfr_trace(
+    weekly: pd.DataFrame,
+    name: str,
+    color: str,
+    *,
+    alpha: float = 1.0,
+    width: float = 2.5,
+    marker_size: int = 7,
+) -> go.Scatter:
+    line_color = color if alpha >= 1.0 else _hex_to_rgba(color, alpha)
     return go.Scatter(
         x=weekly["semana"],
         y=weekly["crecimiento"],
         mode="lines+markers",
         name=name,
-        line={"color": color, "width": 2.5},
-        marker={"size": 7, "color": color},
+        line={"color": line_color, "width": width},
+        marker={"size": marker_size, "color": line_color},
         customdata=weekly[["series", "fallos"]]
         .assign(
             volumen=weekly["customdata"].apply(lambda c: c[2]),
@@ -152,6 +167,7 @@ def chart_muscle_exercises(db_path: str, musculo: str, ejercicios: list[str]) ->
     compiled = _weekly_pfr_df(db_path, "muscle_group", musculo)
     traces: list[go.Scatter] = []
     if not compiled.empty:
+        # El compilado es la línea de referencia: sólida y protagonista.
         traces.append(_pfr_trace(compiled, "Compilado", "#e56d88"))
 
     if musculo and ejercicios:
@@ -168,7 +184,8 @@ def chart_muscle_exercises(db_path: str, musculo: str, ejercicios: list[str]) ->
             if df.empty:
                 continue
             color = EXERCISE_PALETTE[idx % len(EXERCISE_PALETTE)]
-            traces.append(_pfr_trace(df, ejercicio, color))
+            # Los ejercicios individuales van más tenues que el compilado.
+            traces.append(_pfr_trace(df, ejercicio, color, alpha=0.55, width=1.5, marker_size=5))
 
     if not traces:
         return go.Figure()

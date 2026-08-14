@@ -185,3 +185,20 @@ def test_chart_muscle_exercises_vacio_sin_datos(tmp_path):
     init_db(db)
     fig = chart_muscle_exercises(db, "Pectoral", [])
     assert len(fig.data) == 0
+
+
+def test_chart_muscle_exercises_ejercicios_mas_tenues(setup_test_db):
+    from src.charts import chart_muscle_exercises
+
+    db = setup_test_db
+    fig = chart_muscle_exercises(db, "Pectoral", ["Press Convergente"])
+    compilado = fig.data[0]
+    ejercicio = fig.data[1]
+    # El compilado es sólido (borgoña, alpha 1) y más grueso.
+    assert compilado.line.color == "#e56d88"
+    assert compilado.line.width == 2.5
+    # El ejercicio individual es tenue: rgba con alpha 0.55 y línea más fina.
+    assert ejercicio.line.color.startswith("rgba(")
+    assert ejercicio.line.color.endswith(", 0.55)")
+    assert ejercicio.line.width == 1.5
+    assert ejercicio.marker.size == 5
