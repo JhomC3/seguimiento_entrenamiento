@@ -522,3 +522,42 @@ def test_muscle_toggle_y_escape_vuelven_al_cuerpo_completo(page, server):
     expect(muscle_chip).not_to_have_class(re.compile(r"\bselected\b"))
     expect(page.locator("#ejercicios-row .exercise-chip")).to_have_count(0)
     assert "musculo=" not in page.url
+
+
+def test_recarga_mantiene_musculo_y_ejercicios_seleccionados(page, server):
+    """Tras recargar la página, el músculo sigue visiblemente seleccionado,
+    los ejercicios marcados y la gráfica restaurada."""
+    _open_popup(page, server)
+    _fill_row(page, 0)
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+    page.click("#popup-close")
+
+    muscle_chip = page.locator('#cascade-row .level-chip[data-foco="Pectoral"]')
+    expect(muscle_chip).to_be_visible(timeout=3000)
+    muscle_chip.click()
+    expect(muscle_chip).to_have_class(re.compile(r"\bselected\b"))
+    exercise_chip = page.locator('#ejercicios-row .exercise-chip[data-foco="Press"]')
+    expect(exercise_chip).to_be_visible(timeout=3000)
+    exercise_chip.click()
+    expect(exercise_chip).to_have_attribute("aria-pressed", "true")
+    assert "musculo=Pectoral" in page.url
+    assert "ejercicios=Press" in page.url
+
+    # Recargar: el estado debe mantenerse completo y visible.
+    page.reload()
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_selector('#cascade-row .level-chip[data-foco="Pectoral"]', timeout=5000)
+    expect(page.locator('#cascade-row .level-chip[data-foco="Pectoral"]')).to_have_class(
+        re.compile(r"\bselected\b")
+    )
+    expect(page.locator('#ejercicios-row .exercise-chip[data-foco="Press"]')).to_have_attribute(
+        "aria-pressed", "true"
+    )
+    page.wait_for_function(
+        "() => { const el = document.getElementById('unified-chart-plot');"
+        " return el && el._fullData && el._fullData.length === 2; }",
+        timeout=5000,
+    )

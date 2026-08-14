@@ -142,6 +142,15 @@ export function initLevelCascade() {
     // Registra los xhr de la cascada para poder cancelarlos en toggles rápidos.
     document.body.addEventListener('htmx:beforeRequest', trackXhr);
 
+    // Cada vez que la fila de músculos se renderiza (carga inicial, recarga,
+    // popstate), se re-aplica la marca del músculo seleccionado: la marca se
+    // aplicaba antes de que la fila existiera y se perdía al recargar.
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+        if (e.target && e.target.id === 'cascade-row') {
+            markMuscle(selectedMuscle);
+        }
+    });
+
     window.addEventListener('popstate', function () {
         // Al volver atrás, la fila de músculos se recarga y se aplica la selección.
         loadMuscles();

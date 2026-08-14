@@ -39,7 +39,7 @@ Eres un ingeniero de software senior experto en Python, especializado en anális
   - `models.py`: Modelos tipados (`TrainingSetInput`, `TrainingSet`, `Session`, `TemplateInput`, `Template`) y excepciones de dominio (`ValidationError`, `NotFoundError`, `ConflictError`).
   - `dashboard_service.py`: Orquestación de vistas (view models, charts, filtros) y traducción de errores a respuestas seguras.
   - `view_models.py`: `DateNavigatorViewModel`, `SessionEditorViewModel` — solo valores que necesitan las plantillas.
-  - `security.py`: Middleware de headers de seguridad + CSP (nonce por respuesta, sin `'unsafe-inline'` en script-src) y protección CSRF (token firmado + validación de Origin).
+  - `security.py`: Middleware de headers de seguridad + CSP estática (sin nonce ni `'unsafe-inline'` en script-src; `'unsafe-inline'` solo en style-src, requerido por Plotly) y protección CSRF (token firmado + validación de Origin).
   - `mutation_service.py`: Casos de uso de mutación (backup/snapshot/escritura/undo como una operación; pila de undo en memoria, máx. 10).
   - `response_fragments.py`: Render de fragmentos OOB vía partials Jinja (autoescape como única frontera HTML; targets allow-listed).
   - `fetcher.py`: Extracción HTTP de Google Sheets.
@@ -147,6 +147,22 @@ La app `app.py` sirve HTML renderizado con Jinja2 y usa htmx para actualizacione
 - Mantén la identidad visual actual: fondo oscuro (`bg-matte-950`/`bg-neutral-900`), acento borgoña **`burgundy-700` / `burgundy-400`** (`#9b1b30`/`#e56d88`), toques "neón" (`neon-border`, `neon-title`).
 - Las gráficas Plotly usan `plot_bgcolor`/`paper_bgcolor` transparentes para integrarse con el tema oscuro.
 - Respeta el patrón de fracciones de template (`exercise_list.html`, `exercise_detail.html`) y la gráfica única con `hx-swap-oob`.
+
+## 7.5 Web Standards (innegociables)
+
+Referencia completa: `docs/architecture/web-standards.md`. Principios vinculantes:
+
+- **Server-First:** HTML servidor + htmx; JS solo como mejora progresiva. Prohibido SPAs,
+  frameworks client-side o hidratación. Validación y cálculo de datos siempre en servidor.
+- **Tokens como única fuente de verdad:** si un valor visual no está en `tailwind.config.js`
+  o en las CSS custom properties, no se usa.
+- **WCAG 2.2 AA:** contraste ≥4.5:1, navegación por teclado, focus visible, errores nunca
+  solo con color, `prefers-reduced-motion`, ARIA solo sin elemento nativo.
+- **Core Web Vitals:** LCP ≤2.5s, INP ≤200ms, CLS ≤0.1; swaps htmx sin layout shift.
+- **Seguridad:** CSP estática sin nonce ni `'unsafe-inline'` en script-src (style-src sí lo
+  requiere Plotly), CSRF + Origin en mutaciones, SQL parametrizado, secretos nunca en cliente.
+- **Estados de UI siempre diseñados** (vacío/carga/error/éxito) y toda mutación con backup +
+  push a la pila de undo.
 
 ## 8. Control de Calidad y Pruebas
 
