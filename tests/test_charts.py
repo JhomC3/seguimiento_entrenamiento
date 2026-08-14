@@ -197,11 +197,10 @@ def test_chart_muscle_exercises_ejercicios_mas_tenues(setup_test_db):
     # El compilado es sólido (borgoña, alpha 1) y protagonista.
     assert compilado.line.color == "#e56d88"
     assert compilado.line.width == 2.5
-    # El ejercicio individual: línea translúcida (alpha 0.4) con la MISMA
-    # anchura que el compilado (tenue por transparencia, no por grosor).
+    # El ejercicio individual: línea translúcida (alpha 0.4) y gruesa (3.5).
     assert ejercicio.line.color.startswith("rgba(")
     assert ejercicio.line.color.endswith(", 0.4)")
-    assert ejercicio.line.width == 2.5
-    # Los puntos del ejercicio son sólidos y nítidos.
-    assert ejercicio.marker.color == "#7dd3fc"
+    assert ejercicio.line.width == 3.5
+    # Los puntos comparten la misma transparencia que su línea.
+    assert ejercicio.marker.color == ejercicio.line.color
     assert ejercicio.marker.size == 6
