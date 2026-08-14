@@ -485,3 +485,40 @@ def test_navigate_por_fecha_del_navegador_del_popup(page, server):
     page.locator(f'#popup-body .date-num[data-iso="{iso_a}"]').click()
     expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso_a, timeout=3000)
     expect(page.locator('input[name="kg"]')).to_have_value("80")
+
+
+def test_muscle_toggle_y_escape_vuelven_al_cuerpo_completo(page, server):
+    """Oprimir de nuevo el músculo seleccionado (o Escape) vuelve al grupo
+    completo del cuerpo: gráfica sistémica, ejercicios limpios, URL base."""
+    _open_popup(page, server)
+    _fill_row(page, 0)
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+    page.click("#popup-close")
+
+    muscle_chip = page.locator('#cascade-row .level-chip[data-foco="Pectoral"]')
+    expect(muscle_chip).to_be_visible(timeout=3000)
+
+    # Seleccionar el músculo: se marca y aparecen sus ejercicios.
+    muscle_chip.click()
+    expect(muscle_chip).to_have_class(re.compile(r"\bselected\b"))
+    expect(page.locator("#ejercicios-row .exercise-chip")).to_be_visible(timeout=3000)
+
+    # Oprimir de nuevo: se deselecciona y vuelve al cuerpo completo.
+    muscle_chip.click()
+    expect(muscle_chip).not_to_have_class(re.compile(r"\bselected\b"))
+    expect(page.locator("#ejercicios-row .exercise-chip")).to_have_count(0)
+    expect(page.locator("#unified-chart")).to_contain_text("Rendimiento", timeout=3000)
+    expect(page.locator("#unified-chart")).not_to_contain_text("Pectoral")
+    assert "musculo=" not in page.url
+
+    # Escape también deselecciona.
+    muscle_chip.click()
+    expect(muscle_chip).to_have_class(re.compile(r"\bselected\b"))
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(500)
+    expect(muscle_chip).not_to_have_class(re.compile(r"\bselected\b"))
+    expect(page.locator("#ejercicios-row .exercise-chip")).to_have_count(0)
+    assert "musculo=" not in page.url

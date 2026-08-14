@@ -6,6 +6,24 @@
 let selectedMuscle = null;
 let selectedExercises = new Set();
 
+// Cancela requests htmx en vuelo de la cascada (evita que una respuesta vieja
+// sobrescriba el estado tras un toggle rápido o Escape).
+let pendingXhrs = new Set();
+function trackXhr(e) {
+    const path = e.detail && e.detail.requestConfig && e.detail.requestConfig.path;
+    if (!path) return;
+    if (path.startsWith('/nivel') || path.startsWith('/grafica')) {
+        pendingXhrs.add(e.detail.xhr);
+        e.detail.xhr.addEventListener('loadend', () => pendingXhrs.delete(e.detail.xhr));
+    }
+}
+function cancelPending() {
+    pendingXhrs.forEach((xhr) => {
+        if (xhr.readyState < 4) xhr.abort();
+    });
+    pendingXhrs.clear();
+}
+
 function refresh(target, url) {
     htmx.ajax('GET', url, { target: target, swap: 'innerHTML' });
 }
@@ -30,11 +48,36 @@ function refreshChart(muscle, exercises) {
 }
 
 function selectMuscle(muscle) {
+    if (selectedMuscle === muscle) {
+        // Toggle: volver a oprimir el músculo seleccionado lo deselecciona y
+        // regresa al grupo completo del cuerpo.
+        deselectAll();
+        return;
+    }
+    cancelPending();
     selectedMuscle = muscle;
     selectedExercises = new Set();
     markMuscle(muscle);
     refresh('#ejercicios-row', '/nivel?tipo=musculo&foco=' + encodeURIComponent(muscle));
     pushState('?musculo=' + encodeURIComponent(muscle));
+}
+
+function deselectAll() {
+    cancelPending();
+    selectedMuscle = null;
+    selectedExercises = new Set();
+    markMuscle(null);
+    const row = document.getElementById('ejercicios-row');
+    if (row) row.innerHTML = '';
+    // Vuelve al grupo completo del cuerpo: fila de músculos sin marca y
+    // gráfica sistémica (el response de /nivel?tipo=global trae ambos).
+    refresh('#cascade-row', '/nivel?tipo=global');
+    pushState('/');
+}
+
+function popupIsOpen() {
+    const popup = document.getElementById('editor-popup');
+    return popup && !popup.classList.contains('hidden');
 }
 
 function toggleExercise(muscle, ejercicio) {
@@ -96,10 +139,21 @@ export function initLevelCascade() {
         }
     });
 
+    // Registra los xhr de la cascada para poder cancelarlos en toggles rápidos.
+    document.body.addEventListener('htmx:beforeRequest', trackXhr);
+
     window.addEventListener('popstate', function () {
         // Al volver atrás, la fila de músculos se recarga y se aplica la selección.
         loadMuscles();
         restoreFromURL();
+    });
+
+    // Escape deselecciona el músculo (vuelve al grupo completo del cuerpo),
+    // salvo que la ventana de registro esté abierta (ahí Escape la cierra).
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        if (popupIsOpen()) return;
+        if (selectedMuscle) deselectAll();
     });
 
     // Los músculos SIEMPRE se cargan al abrir la página.
