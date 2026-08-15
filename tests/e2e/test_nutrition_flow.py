@@ -1,7 +1,6 @@
 """Browser tests: nutrition editor inside the register popup."""
 
 import datetime
-import time as _time
 
 from playwright.sync_api import expect
 
@@ -88,7 +87,9 @@ def _fill_nutrition_day(page):
     alimento = row.locator('input[name="alimento"]')
     if alimento.is_disabled():
         page.click('[data-action="nutrition-toggle-edit"]')
-        page.wait_for_timeout(500)
+        page.wait_for_selector(
+            "#nutrition-rows .nutrition-row input[name='alimento']:not([disabled])", timeout=3000
+        )
     alimento.fill("Avena")
     row.locator('input[name="cantidad"]').fill("120")
 
@@ -98,14 +99,14 @@ def _jump_date(page, iso):
         f"const el = document.querySelector('#popup-body #date-jump'); "
         f"el.value = '{iso}'; el.dispatchEvent(new Event('change', {{ bubbles: true }}));"
     )
-    for _ in range(40):
-        if page.evaluate(
-            "document.querySelector('#nutrition-form input[name=\"fecha\"]')?.value === "
-            + repr(iso)
-        ):
-            return
-        _time.sleep(0.25)
-    raise AssertionError(f"la navegación a {iso} no completó")
+    page.wait_for_function(
+        "document.querySelector('#nutrition-form input[name=\"fecha\"]')?.value !== ''",
+    )
+    page.wait_for_selector(
+        f"#nutrition-form input[name='fecha'][value='{iso}']",
+        state="attached",
+        timeout=5000,
+    )
 
 
 def _simulate_drag(page, source_sel, target_sel):
@@ -151,9 +152,8 @@ def test_nutrition_templates_save_reorder_apply(page, server):
     page.click('[data-action="confirm-meal-template-save"]')
     page.wait_for_selector("#notice-container .notice", timeout=5000)
     expect(page.locator("#nutrition-templates .pt-card")).to_have_count(2)
-    page.wait_for_timeout(400)
     _simulate_drag(page, "#nutrition-templates .pt-card:nth-child(2)", "#nutrition-templates")
-    page.wait_for_timeout(600)
+    page.wait_for_selector("#notice-container .notice-success", timeout=5000)
     page.reload()
     page.wait_for_function("document.body.dataset.appReady === '1'")
     page.wait_for_selector("#popup-body #nutrition-form", timeout=5000)

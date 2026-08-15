@@ -10,6 +10,7 @@ from fastapi import FastAPI, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.gzip import GZipMiddleware
 
 from config import CICLO_START, DB_PATH, HC_SYNC_TOKEN, MUSCLE_CATEGORIES
 from src.charts import get_exercise_raw_data, get_exercise_session_summary
@@ -112,6 +113,7 @@ app = FastAPI(title="Gym Tracker", lifespan=lifespan)
 app.add_middleware(CSRFProtectionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(LanSyncOnlyMiddleware)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 templates.env.globals["static_url"] = static_url
@@ -1000,7 +1002,7 @@ def _ejercicios_row_html(request: Request, musculo: str, seleccionados: list[str
             context={
                 "items": _cascade_items("musculo", musculo),
                 "padre": musculo,
-                 "seleccionados": seleccionados,
+                "seleccionados": seleccionados,
             },
         )
     )
@@ -1093,8 +1095,6 @@ def grafica_view(
             swap="outerHTML",
         )
     return HTMLResponse(content=content)
-
-
 
 
 @app.post("/sync/health-connect")

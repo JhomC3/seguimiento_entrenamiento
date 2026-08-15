@@ -734,7 +734,7 @@ def test_wcag_contrast_critical_elements(page, server):
 
 def test_lazy_plotly_no_request_on_empty_chart(page, server):
     plotly_requests = []
-    page.on("request", lambda r: plotly_requests.append(r.url) if "plot.ly" in r.url else None)
+    page.on("request", lambda r: plotly_requests.append(r.url) if "plotly" in r.url else None)
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
     page.wait_for_selector("#unified-chart-data", state="detached")  # sin datos: no hay JSON
@@ -744,7 +744,7 @@ def test_lazy_plotly_no_request_on_empty_chart(page, server):
 
 def test_lazy_plotly_single_request_and_shell_stable(page, server):
     plotly_requests = []
-    page.on("request", lambda r: plotly_requests.append(r.url) if "plot.ly" in r.url else None)
+    page.on("request", lambda r: plotly_requests.append(r.url) if "plotly" in r.url else None)
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
     empty_height = page.locator("#unified-chart-container").bounding_box()["height"]
@@ -925,6 +925,7 @@ def test_reorder_failure_restores_order_and_notifies(page, server):
 
     def fail_reorder(route):
         route.abort()
+
     page.route("**/plantilla/reordenar", fail_reorder)
     cards.nth(1).locator('[data-action="move-item"][data-dir="-1"]').click()
     page.wait_for_timeout(600)
@@ -932,15 +933,21 @@ def test_reorder_failure_restores_order_and_notifies(page, server):
     expect(page.locator("#plantillas-list .pt-card").nth(0)).to_have_attribute(
         "data-pt-nombre", "Press Day"
     )
-    notices = page.evaluate("[...document.querySelectorAll('#notice-container .notice, #editor-notice .notice')].map(n => n.textContent).join('|')")
+    notices = page.evaluate(
+        "[...document.querySelectorAll('#notice-container .notice, #editor-notice .notice')].map(n => n.textContent).join('|')"
+    )
     assert "No se pudo guardar el orden" in notices
 
 
 def test_nutrition_apply_confirms_replacement(page, server):
     _open_popup(page, server)
     # Crear una plantilla de alimentación: guardar el día con una fila.
-    page.locator("#nutrition-rows .nutrition-row").first.locator('input[name="alimento"]').fill("Pollo")
-    page.locator("#nutrition-rows .nutrition-row").first.locator('input[name="cantidad"]').fill("150")
+    page.locator("#nutrition-rows .nutrition-row").first.locator('input[name="alimento"]').fill(
+        "Pollo"
+    )
+    page.locator("#nutrition-rows .nutrition-row").first.locator('input[name="cantidad"]').fill(
+        "150"
+    )
     page.locator('[data-action="nutrition-toggle-template-form"]').click()
     page.locator('#save-meal-template-form input[name="nombre"]').fill("Comida A")
     page.locator('[data-action="confirm-meal-template-save"]').click()
@@ -970,8 +977,12 @@ def test_date_arrows_ignored_outside_navigator(page, server):
     page.wait_for_function("document.body.dataset.appReady === '1'")
     # Foco fuera del navigator: las flechas no navegan.
     page.locator('[data-action="open-editor-popup"]').focus()
-    fecha_before = page.evaluate("document.querySelector('.date-num.selected') ? document.querySelector('.date-num.selected').dataset.iso : null")
+    fecha_before = page.evaluate(
+        "document.querySelector('.date-num.selected') ? document.querySelector('.date-num.selected').dataset.iso : null"
+    )
     page.keyboard.press("ArrowRight")
     page.wait_for_timeout(400)
-    fecha_after = page.evaluate("document.querySelector('.date-num.selected') ? document.querySelector('.date-num.selected').dataset.iso : null")
+    fecha_after = page.evaluate(
+        "document.querySelector('.date-num.selected') ? document.querySelector('.date-num.selected').dataset.iso : null"
+    )
     assert fecha_before == fecha_after

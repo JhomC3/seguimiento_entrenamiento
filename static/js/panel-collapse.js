@@ -17,7 +17,7 @@ function applyCollapsed(panelId, collapsed) {
     if (!root) return;
     root.classList.toggle('collapsed', collapsed);
     const btn = root.querySelector('.collapse-chevron');
-    if (btn) btn.setAttribute('aria-expanded', collapsed ? '0' : '1');
+    if (btn) btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
     try {
         localStorage.setItem(KEYS[panelId], collapsed ? '1' : '0');
     } catch (err) {

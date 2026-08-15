@@ -6,12 +6,14 @@
 // Plotly is lazy-loaded: the pinned/SRI <script> is appended exactly once,
 // only after a valid non-empty figure JSON appears. The promise is cached so
 // re-renders reuse the loaded library; failures surface as a safe notice.
+// Se usa el dist "basic" (scatter/líneas/marcadores), ~80 % más ligero que el
+// full; si alguna gráfica necesita trazas gl/3d, migrar con su propio SRI.
 
 import { openEditorPopup } from './editor-popup.js';
 
-const PLOTLY_SRC = 'https://cdn.plot.ly/plotly-2.32.0.min.js';
+const PLOTLY_SRC = 'https://cdn.jsdelivr.net/npm/plotly.js-basic-dist@2.32.0/plotly-basic.min.js';
 const PLOTLY_INTEGRITY =
-    'sha384-7TVmlZWH60iKX5Uk7lSvQhjtcgw2tkFjuwLcXoRSR4zXTyWFJRm9aPAguMh7CIra';
+    'sha384-pR9im8+rAwCpsFtVibaZ6ll8RjHAP9rxOLJOFa05gAjmTkzo0Twd+H8wEdymZ7Dc';
 
 let plotlyPromise = null;
 

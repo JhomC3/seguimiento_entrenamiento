@@ -3,11 +3,11 @@
 
     <form id="alimento-create-form" hx-post="/alimento/nuevo" hx-swap="none" class="flex flex-col gap-2">
         <input
-            name="nombre" required placeholder="Nombre del alimento"
+            name="nombre" required placeholder="Nombre del alimento" aria-label="Nombre del alimento"
             class="bg-matte-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-200 placeholder-neutral-400 focus:border-burgundy-700 focus:outline-none"
         >
         <input
-            name="categoria" placeholder="Categoría (ej: Fruta)"
+            name="categoria" placeholder="Categoría (ej: Fruta)" aria-label="Categoría"
             class="bg-matte-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-200 placeholder-neutral-400 focus:border-burgundy-700 focus:outline-none"
         >
         <div class="grid grid-cols-3 gap-1.5">

@@ -529,7 +529,7 @@ def test_base_template_cdn_scripts_pin_sri(tmp_path, monkeypatch):
     )
     with open(loader_path) as f:
         loader = f.read()
-    assert "cdn.plot.ly" in loader
+    assert "plotly.js-basic-dist" in loader
     assert "integrity = PLOTLY_INTEGRITY" in loader or "PLOTLY_INTEGRITY" in loader
     assert "crossOrigin = 'anonymous'" in loader
 
@@ -635,7 +635,6 @@ def test_mutating_routes_return_200(tmp_path, monkeypatch):
         data={"ejercicio": "Fondos", "grupo_muscular": "Pectoral", "categoria": "EMPUJE"},
     )
     assert r.status_code == 200
-
 
 
 def test_ejercicio_nuevo_oob_markers(tmp_path, monkeypatch):
@@ -802,7 +801,6 @@ def test_semana_primer_entreno_sin_datos(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/semana/primer-entreno?semana=99")
     assert r.json() == {"fecha": None}
-
 
 
 def test_export_csv_orden_cronologico(tmp_path, monkeypatch):

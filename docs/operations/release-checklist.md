@@ -13,16 +13,21 @@ the release.
 ## 2. Automated gates
 
 ```bash
+npm ci
 uv sync --locked
 uv run ruff format --check .
 uv run ruff check .
 uv run mypy app.py src tests
 uv run pytest -q --ignore=tests/e2e        # coverage floor 90% enforced
 uv run python scripts/check_module_coverage.py src/charts.py src/metrics_engine.py --min 90
-uv run pytest tests/e2e -q --no-cov         # browser tests (coverage gate lives in unit runs)
+uv run pytest tests/test_frontend_budget.py -q --no-cov
+uv run pytest tests/e2e -q --no-cov --ignore=tests/e2e/test_accessibility.py
+uv run pytest tests/e2e/test_accessibility.py -q --no-cov
+./scripts/run_lighthouse.sh                # P/A/BP/SEO >= 90
 ```
 
-- [ ] All green on a clean checkout (CI `quality`, `unit`, `browser` jobs pass).
+- [ ] Generated assets up to date: `uv run python scripts/build_design_tokens.py --check && ./scripts/build_css.sh && git diff --exit-code -- static/css/tokens.css static/css/tailwind.css`
+- [ ] All green on a clean checkout (CI `quality`, `unit`, `browser`, `lighthouse` jobs pass).
 
 ## 3. Database
 

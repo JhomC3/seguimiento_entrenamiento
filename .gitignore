@@ -41,3 +41,6 @@ android/sdk/
 # Logs de arranque local
 .tmp/*.log
 .npm/
+
+# Tooling npm (build-time, no runtime)
+node_modules/
