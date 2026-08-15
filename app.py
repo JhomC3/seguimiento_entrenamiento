@@ -37,6 +37,7 @@ from src.database import (
 from src.db_connection import read_connection
 from src.exercise_service import create_exercise
 from src.health_sync_service import MAX_BODY_BYTES, ingest_health_records, parse_payload
+from src.logging_setup import setup_logging
 from src.models import AlimentoInput, TemplateInput, ValidationError
 from src.mutation_service import (
     delete_diary_with_undo_snapshot,
@@ -89,6 +90,7 @@ from src.training_service import (
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    setup_logging()
     lan_mode = lan_sync_only_enabled()
     has_secret = bool(os.environ.get("GYM_CSRF_SECRET"))
     if lan_mode and not has_secret:
