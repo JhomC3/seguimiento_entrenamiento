@@ -963,6 +963,18 @@ def undo(request: Request, fecha: str = Form("")):
     )
 
 
+@app.get("/healthz", response_class=JSONResponse)
+def healthz():
+    """Liveness: la app responde y la DB es consultable."""
+    try:
+        with read_connection(DB_PATH) as conn:
+            conn.execute("SELECT 1").fetchone()
+    except Exception:
+        logging.getLogger("dashboard").exception("healthz: la DB no responde")
+        return JSONResponse({"status": "error", "db": "error"}, status_code=503)
+    return JSONResponse({"status": "ok", "db": "ok"})
+
+
 @app.get("/semana/primer-entreno", response_class=JSONResponse)
 def semana_primer_entreno(
     semana: int = Query(...),

@@ -1778,3 +1778,33 @@ def test_index_serves_initial_muscles_noscript_and_seo(tmp_path, monkeypatch):
     # SEO descriptivo.
     assert "<title>Gym Tracker — Progreso de entrenamiento</title>" in home
     assert 'name="description"' in home
+
+
+# ---------------------------------------------------------------------------
+# Backend plan Task 3: healthz liveness endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_healthz_ok(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    resp = _client().get("/healthz")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["db"] == "ok"
+
+
+def test_healthz_db_caida_devuelve_503(tmp_path, monkeypatch):
+    import src.db_connection as dbc
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+
+    def broken(_):
+        raise OSError("db caída")
+
+    monkeypatch.setattr(dbc, "connect_db", broken)
+    resp = _client().get("/healthz")
+    assert resp.status_code == 503
+    assert resp.json()["db"] == "error"
