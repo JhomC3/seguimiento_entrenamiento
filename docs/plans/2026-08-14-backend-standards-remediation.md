@@ -122,6 +122,7 @@ def setup_logging(level: int = logging.INFO) -> None:
 ```python
 from src.logging_setup import setup_logging
 
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     setup_logging()
@@ -156,6 +157,7 @@ def test_request_id_header_presente(client):
     resp = client.get("/")
     assert resp.headers.get("x-request-id")
 
+
 def test_request_id_log_de_peticion(caplog):
     with caplog.at_level(logging.INFO, logger="access"):
         client.get("/fecha/editor?fecha=2026-08-14")
@@ -175,6 +177,7 @@ Expected: FAIL — no hay header `x-request-id` ni log de acceso
 import time
 import uuid
 from src.logging_setup import request_id_var
+
 
 class RequestIdMiddleware:
     """Asigna request_id por petición, lo propaga a los logs y emite un
@@ -206,9 +209,13 @@ class RequestIdMiddleware:
             duration_ms = (time.perf_counter() - start) * 1000
             logging.getLogger("access").info(
                 "%s %s status=%s duration_ms=%.1f",
-                scope["method"], scope.get("path", ""), status_holder["status"], duration_ms,
+                scope["method"],
+                scope.get("path", ""),
+                status_holder["status"],
+                duration_ms,
             )
             request_id_var.reset(token)
+
 
 # Tras los add_middleware existentes (SecurityHeaders, CSRF) y ANTES de mount:
 app.add_middleware(RequestIdMiddleware)
@@ -243,6 +250,7 @@ def test_healthz_ok(client, tmp_path, monkeypatch):
     body = resp.json()
     assert body["status"] == "ok"
     assert body["db"] == "ok"
+
 
 def test_healthz_db_caida_devuelve_503(monkeypatch):
     import src.db_connection as dbc
@@ -393,6 +401,7 @@ def test_connect_activa_wal(tmp_path):
         conn.close()
     assert row[0] == "wal"
 
+
 def test_backup_db_via_api_conserva_datos(tmp_path):
     db = tmp_path / "orig.db"
     conn = connect_db(str(db))
@@ -442,9 +451,10 @@ def copy_db(source_path: str, dest_path: str) -> None:
 `src/database.py` (`backup_db`): sustituir `shutil.copy2(db_path, dest)` por:
 
 ```python
-    from src.backup_utils import copy_db, prune_backups
-    ...
-    copy_db(db_path, dest)
+from src.backup_utils import copy_db, prune_backups
+
+...
+copy_db(db_path, dest)
 ```
 
 `src/migrations/runner.py` (`_backup_before_upgrade`): sustituir `shutil.copy2(db_path, dest)` por `copy_db(db_path, dest)` (import del mismo helper).
@@ -497,10 +507,10 @@ Expected: FAIL — índice ausente
 VERSION = 14
 NAME = "training_fecha_index"
 
+
 def migrate(conn) -> None:
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_training_fecha_set_orden "
-        "ON training_sets(fecha, set_orden)"
+        "CREATE INDEX IF NOT EXISTS idx_training_fecha_set_orden ON training_sets(fecha, set_orden)"
     )
 ```
 
@@ -552,10 +562,20 @@ def test_import_reemplaza_google_y_hace_backup(tmp_path, training_module):
     db_path = str(tmp_path / "db.sqlite")
     init_db(db_path)
     df_ej = pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press"}])
-    df_ciclo = pd.DataFrame([
-        {"semana": 1, "dia": "LUNES", "fecha": "2026-08-10", "set_orden": 1,
-         "ejercicio": "Press", "reps": 10, "kg": 80.0, "rir": 2},
-    ])
+    df_ciclo = pd.DataFrame(
+        [
+            {
+                "semana": 1,
+                "dia": "LUNES",
+                "fecha": "2026-08-10",
+                "set_orden": 1,
+                "ejercicio": "Press",
+                "reps": 10,
+                "kg": 80.0,
+                "rir": 2,
+            },
+        ]
+    )
     training_module.import_training_tables(db_path, df_ej, df_ciclo)
     backup_dir = Path(db_path).parent / "backups"
     assert list(backup_dir.glob("lifestyle-*.db"))
@@ -568,10 +588,20 @@ def test_import_idempotente(tmp_path, training_module):
     db_path = str(tmp_path / "db.sqlite")
     init_db(db_path)
     df_ej = pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press"}])
-    df_ciclo = pd.DataFrame([
-        {"semana": 1, "dia": "LUNES", "fecha": "2026-08-10", "set_orden": 1,
-         "ejercicio": "Press", "reps": 10, "kg": 80.0, "rir": 2},
-    ])
+    df_ciclo = pd.DataFrame(
+        [
+            {
+                "semana": 1,
+                "dia": "LUNES",
+                "fecha": "2026-08-10",
+                "set_orden": 1,
+                "ejercicio": "Press",
+                "reps": 10,
+                "kg": 80.0,
+                "rir": 2,
+            },
+        ]
+    )
     training_module.import_training_tables(db_path, df_ej, df_ciclo)
     training_module.import_training_tables(db_path, df_ej, df_ciclo)
     with read_connection(db_path) as conn:
@@ -590,7 +620,10 @@ Expected: FAIL — `AttributeError: module has no attribute 'import_training_tab
 from src.db_connection import connect_db
 from src.database import backup_db, init_db
 
-def import_training_tables(db_path: str, df_ejercicios: pd.DataFrame, df_ciclo: pd.DataFrame) -> dict:
+
+def import_training_tables(
+    db_path: str, df_ejercicios: pd.DataFrame, df_ciclo: pd.DataFrame
+) -> dict:
     """Reemplazo atómico de las filas origen='google' con backup previo."""
     if df_ejercicios.empty or df_ciclo.empty:
         raise ValueError("no se descargaron datos válidos")
@@ -606,8 +639,10 @@ def import_training_tables(db_path: str, df_ejercicios: pd.DataFrame, df_ciclo: 
             conn.executemany(
                 "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'google')",
-                [(r.semana, r.dia, r.fecha, r.set_orden, r.ejercicio, r.reps, r.kg, r.rir)
-                 for r in df_ciclo.itertuples()],
+                [
+                    (r.semana, r.dia, r.fecha, r.set_orden, r.ejercicio, r.reps, r.kg, r.rir)
+                    for r in df_ciclo.itertuples()
+                ],
             )
     finally:
         conn.close()
@@ -725,8 +760,10 @@ class CountingConnection:
     def __init__(self, conn):
         self._conn = conn
         self.executions = 0
+
     def __getattr__(self, name):
         return getattr(self._conn, name)
+
     def execute(self, *args, **kwargs):
         self.executions += 1
         return self._conn.execute(*args, **kwargs)
@@ -766,8 +803,11 @@ def get_plantillas(db_path: str) -> list[dict]:
     by_id: dict[int, dict] = {}
     for r in rows:
         by_id[r[0]] = {
-            "id": r[0], "nombre": r[1], "clasificacion": r[2],
-            "updated_at": r[3], "ejercicios": [],
+            "id": r[0],
+            "nombre": r[1],
+            "clasificacion": r[2],
+            "updated_at": r[3],
+            "ejercicios": [],
         }
     for pid, _ord, ej in sets_rows:
         if pid in by_id:
@@ -821,9 +861,7 @@ Expected: FAIL o PASS según el estado (si pasa, el test queda como guarda de re
 ```python
 def _resync_sequence(conn, table: str) -> None:
     row = conn.execute(f"SELECT COALESCE(MAX(id), 0) FROM {table}").fetchone()
-    conn.execute(
-        "UPDATE sqlite_sequence SET seq = ? WHERE name = ?", (row[0], table)
-    )
+    conn.execute("UPDATE sqlite_sequence SET seq = ? WHERE name = ?", (row[0], table))
 ```
 
 > `table` proviene únicamente de constantes del módulo (`"plantillas"`), nunca de input; el f-string es seguro.
@@ -857,17 +895,22 @@ def test_session_save_lote_excesivo_devuelve_400(client, csrf_headers):
     ejercicios = ["Press"] * 150
     resp = client.post(
         "/entrenamiento/session/save",
-        data={"fecha": "2026-08-14", "ejercicio": ejercicios,
-              "kg": ["80"] * 150, "reps": ["10"] * 150, "rir": ["2"] * 150},
+        data={
+            "fecha": "2026-08-14",
+            "ejercicio": ejercicios,
+            "kg": ["80"] * 150,
+            "reps": ["10"] * 150,
+            "rir": ["2"] * 150,
+        },
         headers=csrf_headers,
     )
     assert resp.status_code == 400
 
+
 def test_alimentacion_save_lote_excesivo_devuelve_400(client, csrf_headers):
     resp = client.post(
         "/alimentacion/save",
-        data={"fecha": "2026-08-14", "alimento": ["Pollo"] * 150,
-              "cantidad": ["150"] * 150},
+        data={"fecha": "2026-08-14", "alimento": ["Pollo"] * 150, "cantidad": ["150"] * 150},
         headers=csrf_headers,
     )
     assert resp.status_code == 400
@@ -883,10 +926,11 @@ Expected: FAIL — 200 (se guarda sin límite)
 **Step 3: Write minimal implementation** (constantes + chequeo al inicio de cada handler mutante de listas)
 
 ```python
-MAX_FORM_SETS = 100          # series por sesión
-MAX_DIARY_ROWS = 100         # filas del diario
-MAX_REORDER_IDS = 500        # ids de reordenamiento
-MAX_NAME_LEN = 200           # nombres (ejercicio, alimento, plantilla)
+MAX_FORM_SETS = 100  # series por sesión
+MAX_DIARY_ROWS = 100  # filas del diario
+MAX_REORDER_IDS = 500  # ids de reordenamiento
+MAX_NAME_LEN = 200  # nombres (ejercicio, alimento, plantilla)
+
 
 def _check_lote(rows: list, max_rows: int, campo: str) -> None:
     if len(rows) > max_rows:

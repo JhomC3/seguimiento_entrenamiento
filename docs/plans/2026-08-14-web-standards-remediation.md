@@ -55,11 +55,12 @@ def test_lan_sync_only_blocks_remote_dashboard() -> None:
     result = run_asgi(app, client=("192.168.1.25", 50000), path="/")
     assert result.status == 403
 
+
 def test_lan_sync_only_allows_only_sync_post() -> None:
-    allowed = run_asgi(app, client=("192.168.1.25", 50000),
-                       path="/sync/health-connect", method="POST")
-    denied = run_asgi(app, client=("192.168.1.25", 50000),
-                      path="/exportar/csv")
+    allowed = run_asgi(
+        app, client=("192.168.1.25", 50000), path="/sync/health-connect", method="POST"
+    )
+    denied = run_asgi(app, client=("192.168.1.25", 50000), path="/exportar/csv")
     assert allowed.status != 403
     assert denied.status == 403
 ~~~
@@ -141,6 +142,7 @@ def test_chart_colours_use_canonical_tokens() -> None:
     assert chart_color("primary") == color("burgundy.400")
     assert EXERCISE_PALETTE == palette("chart.exercise")
 
+
 def test_tokens_css_is_generator_output() -> None:
     assert render_css(read_tokens()) == Path("static/css/tokens.css").read_text()
 ~~~
@@ -213,6 +215,7 @@ def test_navigator_has_a_bounded_selected_window() -> None:
     vm = build_date_navigator(DB, "2026-08-14", CYCLE_START, TODAY)
     assert len(vm.dates) <= 31
     assert any(day.selected for day in vm.dates)
+
 
 def test_versioned_static_asset_is_immutable(client) -> None:
     response = client.get(static_url("css/app.css"))
