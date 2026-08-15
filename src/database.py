@@ -28,6 +28,7 @@ def backup_db(db_path: str, *, keep: int = 30) -> str:
 
 
 def load_ejercicios(db_path: str, df: pd.DataFrame) -> None:
+    """Test-support API: seed de ejercicios desde un DataFrame (tests de charts/DB)."""
     with transaction(db_path) as conn:
         for _, row in df.iterrows():
             conn.execute(
@@ -37,6 +38,7 @@ def load_ejercicios(db_path: str, df: pd.DataFrame) -> None:
 
 
 def load_training_data(db_path: str, df: pd.DataFrame) -> None:
+    """Test-support API: seed de training_sets desde un DataFrame (tests de charts/DB)."""
     df = df.copy()
     df["origen"] = "google"
     with transaction(db_path) as conn:
@@ -111,35 +113,6 @@ def delete_session_by_fecha(db_path: str, fecha: str) -> int:
         return cur.rowcount
 
 
-def get_training_sessions(db_path: str) -> list[dict]:
-    if not os.path.exists(db_path):
-        return []
-    with read_connection(db_path) as conn:
-        rows = conn.execute("""
-            SELECT semana, dia, fecha,
-                   COUNT(DISTINCT ejercicio) AS n_ejercicios,
-                   COUNT(*) AS n_series,
-                   SUM(CASE WHEN origen = 'manual' THEN 1 ELSE 0 END) AS manual_sets,
-                   SUM(CASE WHEN origen = 'google' THEN 1 ELSE 0 END) AS google_sets
-            FROM training_sets
-            WHERE fecha IS NOT NULL
-            GROUP BY semana, dia, fecha
-            ORDER BY fecha DESC
-        """).fetchall()
-    return [
-        {
-            "semana": r[0],
-            "dia": r[1],
-            "fecha": r[2],
-            "n_ejercicios": r[3],
-            "n_series": r[4],
-            "manual_sets": r[5] or 0,
-            "google_sets": r[6] or 0,
-        }
-        for r in rows
-    ]
-
-
 def get_session_sets(db_path: str, semana: int, dia: str, fecha: str) -> list[dict]:
     with read_connection(db_path) as conn:
         rows = conn.execute(
@@ -163,15 +136,6 @@ def get_session_sets(db_path: str, semana: int, dia: str, fecha: str) -> list[di
         }
         for r in rows
     ]
-
-
-def delete_session(db_path: str, semana: int, dia: str, fecha: str) -> int:
-    with transaction(db_path) as conn:
-        cur = conn.execute(
-            "DELETE FROM training_sets WHERE semana = ? AND dia = ? AND fecha = ?",
-            (semana, dia, fecha),
-        )
-        return cur.rowcount
 
 
 def _plantilla_sets(conn: sqlite3.Connection, plantilla_id: int) -> list[str]:

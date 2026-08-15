@@ -628,23 +628,6 @@ def test_v006_convierte_fechas_a_iso(tmp_path):
     assert fechas == ["2026-08-06", "2026-02-10", None]
 
 
-def test_get_training_sessions_ordena_por_fecha_iso(tmp_path):
-    from src.db_connection import transaction
-    from src.training_service import get_training_sessions
-
-    db = str(tmp_path / "g.db")
-    init_db(db)
-    for iso in ("2026-03-01", "2026-01-15", "2026-02-10"):
-        with transaction(db) as conn:
-            conn.execute(
-                "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) "
-                "VALUES (?, 'LUNES', ?, 1, 'Press', 90, 7, 1.2)",
-                (1, iso),
-            )
-    sessions = get_training_sessions(db)
-    assert [s["fecha"] for s in sessions] == ["2026-03-01", "2026-02-10", "2026-01-15"]
-
-
 def test_v008_creates_parametros_diarios_and_nullable_qty(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)

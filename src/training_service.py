@@ -2,7 +2,7 @@ import math
 from datetime import date, datetime, timedelta
 
 from config import CICLO_START
-from src.database import get_exercises_catalog, get_training_sessions
+from src.database import get_exercises_catalog
 from src.db_connection import transaction
 from src.models import Session, TrainingSetInput, ValidationError
 
@@ -204,10 +204,3 @@ def restore_session_rows(db_path: str, fecha_iso: str, rows: list) -> None:
                     origen,
                 ),
             )
-
-
-def get_sessions_page(db_path: str, page: int = 1, limit: int = 20) -> tuple[list[dict], int, int]:
-    sessions = get_training_sessions(db_path)
-    total = len(sessions)
-    offset = (page - 1) * limit
-    return sessions[offset : offset + limit], total, page
