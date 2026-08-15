@@ -200,8 +200,10 @@
                         <td class="nutrition-preview vita-cell py-0.5 px-1.5 text-right text-neutral-400">{{ '%g'|format(r.vitamina_a) }}</td>
                         <td class="set-actions-column py-0.5">
                             <div class="row-actions flex w-full items-center justify-center gap-px opacity-0 group-hover:opacity-100 transition-opacity duration-150 {% if readonly %}hidden{% endif %}">
-                                <button type="button" data-action="nutrition-row-remove" class="row-btn" title="Eliminar fila">−</button>
-                                <button type="button" data-action="nutrition-row-add" class="row-btn" title="Agregar fila">+</button>
+                                <button type="button" data-action="move-item" data-dir="-1" class="row-btn" title="Mover fila arriba" aria-label="Mover fila arriba">↑</button>
+                                <button type="button" data-action="move-item" data-dir="1" class="row-btn" title="Mover fila abajo" aria-label="Mover fila abajo">↓</button>
+                                <button type="button" data-action="nutrition-row-remove" class="row-btn" title="Eliminar fila" aria-label="Eliminar fila">−</button>
+                                <button type="button" data-action="nutrition-row-add" class="row-btn" title="Agregar fila" aria-label="Agregar fila">+</button>
                             </div>
                         </td>
                     </tr>
@@ -232,8 +234,10 @@
                         <td class="nutrition-preview vita-cell py-0.5 px-1.5 text-right text-neutral-400">—</td>
                         <td class="set-actions-column py-0.5">
                             <div class="row-actions flex w-full items-center justify-center gap-px opacity-0 group-hover:opacity-100 transition-opacity duration-150 {% if readonly %}hidden{% endif %}">
-                                <button type="button" data-action="nutrition-row-remove" class="row-btn" title="Eliminar fila">−</button>
-                                <button type="button" data-action="nutrition-row-add" class="row-btn" title="Agregar fila">+</button>
+                                <button type="button" data-action="move-item" data-dir="-1" class="row-btn" title="Mover fila arriba" aria-label="Mover fila arriba">↑</button>
+                                <button type="button" data-action="move-item" data-dir="1" class="row-btn" title="Mover fila abajo" aria-label="Mover fila abajo">↓</button>
+                                <button type="button" data-action="nutrition-row-remove" class="row-btn" title="Eliminar fila" aria-label="Eliminar fila">−</button>
+                                <button type="button" data-action="nutrition-row-add" class="row-btn" title="Agregar fila" aria-label="Agregar fila">+</button>
                             </div>
                         </td>
                     </tr>

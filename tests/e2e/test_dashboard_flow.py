@@ -837,3 +837,141 @@ def test_confirm_dialog_inside_popup_escape_chain(page, server):
     # Escape ahora cierra el popup (cancel del dialog nativo).
     page.keyboard.press("Escape")
     page.wait_for_selector("#editor-popup", state="hidden", timeout=5000)
+
+
+# ---------------------------------------------------------------------------
+# Web plan Task 7: keyboard reorder, apply policy, undo, scoped arrows
+# ---------------------------------------------------------------------------
+
+
+def _edit_mode_on(page):
+    """Entra en modo edición de la sesión (pencil)."""
+    btn = page.locator('[data-action="toggle-edit"]')
+    if "on" not in (btn.get_attribute("class") or ""):
+        btn.click()
+        page.wait_for_timeout(150)
+
+
+def test_session_rows_move_with_buttons(page, server):
+    _open_popup(page, server)
+    _edit_mode_on(page)
+    _fill_row(page, 0, ejercicio="Press")
+    page.locator("#set-rows .set-row").first.locator('[data-action="row-add"]').click()
+    page.wait_for_timeout(150)
+    rows = page.locator("#set-rows .set-row")
+    expect(rows).to_have_count(2)
+    rows.nth(1).locator('input[name="kg"]').fill("90")
+    rows.nth(1).locator('[data-action="move-item"][data-dir="-1"]').click()
+    page.wait_for_timeout(150)
+    assert rows.nth(0).locator('input[name="kg"]').input_value() == "90"
+    assert rows.nth(0).locator(".set-num").inner_text() == "1"
+
+
+def test_training_cards_reorder_and_persist(page, server):
+    _open_popup(page, server)
+    page.locator("#session-editor [data-action='toggle-edit']").click()
+    page.wait_for_timeout(150)
+    # Guardar dos plantillas vía el form del editor (requiere fila con ejercicio).
+    for i, nombre in enumerate(("Press Day", "Back Day")):
+        _fill_row(page, 0, ejercicio="Press")
+        page.locator('[data-action="toggle-template-form"]').click()
+        page.wait_for_selector("#confirm-modal[open]", timeout=3000)
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#save-template-form input[name='nombre']", timeout=3000)
+        page.locator('#save-template-form input[name="nombre"]').fill(nombre)
+        page.locator('#save-template-form input[name="nombre"]').evaluate("el => el.focus()")
+        page.keyboard.press("Enter")
+        # Segunda confirmación: guardar la plantilla con ese nombre.
+        page.wait_for_selector("#confirm-modal[open]", timeout=3000)
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(400)
+    cards = page.locator("#plantillas-list .pt-card")
+    expect(cards).to_have_count(2, timeout=3000)
+    assert cards.nth(0).get_attribute("data-pt-nombre") == "Press Day"
+    # Mover el segundo arriba.
+    cards.nth(1).locator('[data-action="move-item"][data-dir="-1"]').click()
+    page.wait_for_timeout(500)
+    expect(page.locator("#plantillas-list .pt-card").nth(0)).to_have_attribute(
+        "data-pt-nombre", "Back Day"
+    )
+    # Persistencia tras recarga (el popup se reabre solo vía ?registro).
+    page.reload()
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_selector("#plantillas-list .pt-card", timeout=5000)
+    expect(page.locator("#plantillas-list .pt-card").nth(0)).to_have_attribute(
+        "data-pt-nombre", "Back Day"
+    )
+
+
+def test_reorder_failure_restores_order_and_notifies(page, server):
+    _open_popup(page, server)
+    page.locator("#session-editor [data-action='toggle-edit']").click()
+    page.wait_for_timeout(150)
+    for nombre in ("Press Day", "Back Day"):
+        _fill_row(page, 0, ejercicio="Press")
+        page.locator('[data-action="toggle-template-form"]').click()
+        page.wait_for_selector("#confirm-modal[open]", timeout=3000)
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#save-template-form input[name='nombre']", timeout=3000)
+        page.locator('#save-template-form input[name="nombre"]').fill(nombre)
+        page.locator('#save-template-form input[name="nombre"]').evaluate("el => el.focus()")
+        page.keyboard.press("Enter")
+        # Segunda confirmación: guardar la plantilla con ese nombre.
+        page.wait_for_selector("#confirm-modal[open]", timeout=3000)
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(400)
+    cards = page.locator("#plantillas-list .pt-card")
+    expect(cards).to_have_count(2, timeout=3000)
+
+    def fail_reorder(route):
+        route.abort()
+    page.route("**/plantilla/reordenar", fail_reorder)
+    cards.nth(1).locator('[data-action="move-item"][data-dir="-1"]').click()
+    page.wait_for_timeout(600)
+    page.unroute("**/plantilla/reordenar")
+    expect(page.locator("#plantillas-list .pt-card").nth(0)).to_have_attribute(
+        "data-pt-nombre", "Press Day"
+    )
+    notices = page.evaluate("[...document.querySelectorAll('#notice-container .notice, #editor-notice .notice')].map(n => n.textContent).join('|')")
+    assert "No se pudo guardar el orden" in notices
+
+
+def test_nutrition_apply_confirms_replacement(page, server):
+    _open_popup(page, server)
+    # Crear una plantilla de alimentación: guardar el día con una fila.
+    page.locator("#nutrition-rows .nutrition-row").first.locator('input[name="alimento"]').fill("Pollo")
+    page.locator("#nutrition-rows .nutrition-row").first.locator('input[name="cantidad"]').fill("150")
+    page.locator('[data-action="nutrition-toggle-template-form"]').click()
+    page.locator('#save-meal-template-form input[name="nombre"]').fill("Comida A")
+    page.locator('[data-action="confirm-meal-template-save"]').click()
+    page.wait_for_timeout(500)
+    apply_btn = page.locator('[data-action="apply-meal-template"]')
+    expect(apply_btn).to_have_count(1, timeout=3000)
+    # El día ya tiene filas: aplicar exige confirmación de reemplazo.
+    apply_btn.click()
+    page.wait_for_selector("#confirm-modal[open]", timeout=3000)
+    msg = page.locator("#confirm-msg").inner_text()
+    assert "Reemplazar" in msg
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(600)
+    assert page.locator("#nutrition-rows .nutrition-row").count() >= 1
+
+
+def test_undo_button_visible_with_hint(page, server):
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    undo = page.locator('[data-action="undo-last"]')
+    expect(undo).to_be_visible()
+    assert "CTRL+Z" in undo.inner_text().upper()
+
+
+def test_date_arrows_ignored_outside_navigator(page, server):
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    # Foco fuera del navigator: las flechas no navegan.
+    page.locator('[data-action="open-editor-popup"]').focus()
+    fecha_before = page.evaluate("document.querySelector('.date-num.selected') ? document.querySelector('.date-num.selected').dataset.iso : null")
+    page.keyboard.press("ArrowRight")
+    page.wait_for_timeout(400)
+    fecha_after = page.evaluate("document.querySelector('.date-num.selected') ? document.querySelector('.date-num.selected').dataset.iso : null")
+    assert fecha_before == fecha_after

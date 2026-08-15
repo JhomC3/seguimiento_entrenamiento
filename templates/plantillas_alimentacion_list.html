@@ -7,14 +7,15 @@
                 <span class="text-xs font-bold text-neutral-200 truncate">{{ pt.nombre }}</span>
                 <span class="text-xs text-neutral-400">{{ pt.alimentos|length }} alimentos</span>
             </div>
-            <div class="flex items-center gap-1.5">
-                <a
-                    href="/alimentacion/plantilla/aplicar/{{ pt.id }}?fecha={{ selected_iso }}"
-                    hx-get="/alimentacion/plantilla/aplicar/{{ pt.id }}?fecha={{ selected_iso }}"
-                    hx-target="#nutrition-editor-wrap"
-                    hx-swap="innerHTML"
+            <div class="flex items-center gap-1">
+                <button
+                    type="button"
+                    data-action="apply-meal-template"
+                    data-pt-id="{{ pt.id }}"
                     class="text-xs font-bold text-neutral-400 hover:text-burgundy-400 border border-neutral-800 hover:border-burgundy-700 rounded px-2 py-0.5 transition-all uppercase tracking-widest"
-                >Aplicar</a>
+                >Aplicar</button>
+                <button type="button" data-action="move-item" data-dir="-1" class="row-btn" title="Mover plantilla arriba" aria-label="Mover plantilla arriba">↑</button>
+                <button type="button" data-action="move-item" data-dir="1" class="row-btn" title="Mover plantilla abajo" aria-label="Mover plantilla abajo">↓</button>
                 <button
                     type="button"
                     data-action="delete-meal-template"

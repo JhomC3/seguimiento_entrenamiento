@@ -10,10 +10,18 @@
                 class="text-xs font-bold text-neutral-400 hover:text-burgundy-400 border border-neutral-800 hover:border-burgundy-700 rounded px-2 py-1 transition-all uppercase tracking-widest"
             >Exportar CSV</a>
         </div>
-        <button
-            data-action="open-editor-popup"
-            class="bg-burgundy-700 hover:bg-burgundy-600 text-white text-xs font-black tracking-widest uppercase rounded-full px-4 py-2 transition-colors"
-        >+ Registrar</button>
+        <div class="flex items-center gap-3">
+            <button
+                type="button"
+                data-action="undo-last"
+                class="text-xs font-bold text-neutral-400 hover:text-burgundy-400 border border-neutral-800 hover:border-burgundy-700 rounded px-2 py-1 transition-all uppercase tracking-widest"
+                title="Deshacer la última acción (Ctrl+Z)"
+            >↶ Deshacer (Ctrl+Z)</button>
+            <button
+                data-action="open-editor-popup"
+                class="bg-burgundy-700 hover:bg-burgundy-600 text-white text-xs font-black tracking-widest uppercase rounded-full px-5 h-11 transition-colors"
+            >+ Registrar</button>
+        </div>
     </header>
 
     <!-- Músculos (fila persistente) + ejercicios del músculo seleccionado -->

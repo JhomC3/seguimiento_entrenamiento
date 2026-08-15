@@ -20,19 +20,38 @@ body {
     background: var(--t-surfaces-scrollbar-hover);
 }
 
-/* Remove default browser focus/active outlines */
+/* Foco visible: fallback siempre visible; se suprime solo cuando el navegador
+   soporta :focus-visible (el anillo se muestra solo para navegación por teclado). */
 button {
     -webkit-tap-highlight-color: transparent;
 }
 button:focus {
-    outline: none;
-}
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-    outline: 2px solid var(--t-focus-ring) !important;
+    outline: 2px solid var(--t-focus-ring);
     outline-offset: 2px;
+}
+@supports (selector(:focus-visible)) {
+    button:focus {
+        outline: none;
+    }
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible {
+        outline: 2px solid var(--t-focus-ring) !important;
+        outline-offset: 2px;
+    }
+}
+
+/* Movimiento reducido: sin animaciones ni transiciones (WCAG 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
 }
 
 /* Neon glow effects (tokens: glow.*) */

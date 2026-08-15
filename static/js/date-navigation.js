@@ -134,7 +134,10 @@ export function initDateNavigation() {
     });
 
     document.addEventListener('keydown', function (e) {
-        const inField = e.target.closest && e.target.closest('input, textarea, select');
+        // Las flechas solo actúan cuando el foco está dentro del navigator.
+        const inNav = e.target.closest && e.target.closest('#date-navigator');
+        if (!inNav) return;
+        const inField = e.target.closest('input, textarea, select');
         if (inField) return;
         if (e.key === 'ArrowLeft') {
             e.preventDefault();

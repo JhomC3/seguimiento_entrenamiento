@@ -160,9 +160,11 @@
                         </td>
                         <td class="rm-cell py-0.5 px-1.5 text-center font-bold text-burgundy-300 whitespace-nowrap">{{ "%g"|format(r.rm) if r.rm is not none else "—" }}</td>
                         <td class="set-actions-column py-0.5">
-                            <div class="row-actions flex w-full items-center justify-center gap-px opacity-0 group-hover:opacity-100 transition-opacity duration-150 {% if readonly %}hidden{% endif %}">
-                                <button type="button" data-action="row-remove" class="row-btn" title="Eliminar fila">−</button>
-                                <button type="button" data-action="row-add" class="row-btn" title="Agregar fila">+</button>
+                            <div class="row-actions flex w-full items-center justify-center gap-px opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 {% if readonly %}hidden{% endif %}">
+                                <button type="button" data-action="move-item" data-dir="-1" class="row-btn" title="Mover serie arriba" aria-label="Mover serie arriba">↑</button>
+                                <button type="button" data-action="move-item" data-dir="1" class="row-btn" title="Mover serie abajo" aria-label="Mover serie abajo">↓</button>
+                                <button type="button" data-action="row-remove" class="row-btn" title="Eliminar fila" aria-label="Eliminar fila">−</button>
+                                <button type="button" data-action="row-add" class="row-btn" title="Agregar fila" aria-label="Agregar fila">+</button>
                             </div>
                         </td>
                     </tr>

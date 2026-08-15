@@ -138,6 +138,9 @@ def test_nutrition_templates_save_reorder_apply(page, server):
     # 2) Aplicar por drag sobre el panel (otra fecha, sin datos)
     _jump_date(page, _iso(9))
     _simulate_drag(page, "#nutrition-templates .pt-card", "#nutrition-panel")
+    # El día prefillado tiene filas: la aplicación exige confirmación.
+    page.wait_for_selector("#confirm-modal[open]", timeout=5000)
+    page.keyboard.press("Enter")
     page.wait_for_selector("#notice-container .notice", timeout=5000)
     expect(page.locator('#nutrition-rows input[name="alimento"]').first).to_have_value("Avena")
 

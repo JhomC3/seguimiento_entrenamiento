@@ -2,8 +2,8 @@
 
 /* Botones +/− de filas (overlay glass, visibles al hover) */
 .row-btn {
-    width: 16px;
-    height: 16px;
+    width: 24px;
+    height: 24px;
     border-radius: 9999px;
     display: inline-flex;
     align-items: center;

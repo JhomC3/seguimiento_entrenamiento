@@ -82,7 +82,7 @@ export function renderUnifiedChart() {
                 if (!points || !points.length) return;
                 const semana = points[0].x;
                 if (semana == null) return;
-                firstTrainingOfWeek(semana);
+                firstTrainingOfWeek(semana, 0);
             });
         })
         .catch(function (err) {
@@ -90,16 +90,28 @@ export function renderUnifiedChart() {
         });
 }
 
-function firstTrainingOfWeek(semana) {
+function firstTrainingOfWeek(semana, attempt) {
     const params = new URLSearchParams({ semana: String(semana) });
     fetch(`/semana/primer-entreno?${params.toString()}`)
-        .then(r => r.json())
-        .then(data => {
+        .then(function (r) {
+            if (!r.ok) {
+                throw new Error('No se pudo obtener el primer entreno de la semana.');
+            }
+            return r.json();
+        })
+        .then(function (data) {
             // El clic en un punto abre la ventana de registro en el primer
             // entreno de esa semana (alimentación + sesión + cardio del día).
             if (data && data.fecha) openEditorPopup(data.fecha);
         })
-        .catch(() => {});
+        .catch(function (err) {
+            if (!attempt) {
+                // Un reintento para fallos transitorios de red (GET idempotente).
+                setTimeout(function () { firstTrainingOfWeek(semana, 1); }, 400);
+                return;
+            }
+            showChartError(err && err.message ? err.message : 'No se pudo abrir el entreno de la semana.');
+        });
 }
 
 export function initChartInteractions() {

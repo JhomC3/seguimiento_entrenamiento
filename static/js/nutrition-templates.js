@@ -2,6 +2,10 @@
 // header del editor, lista del sidebar con drag&drop para reordenar y aplicar).
 // Espejo del patrón DnD HTML5 de templates.js con estado local.
 
+import { showNotice } from './notices.js';
+import { bindMoveButtons, persistOrderWithHtmx, syncMoveButtons } from './reorder-controls.js';
+import { showConfirmDialog } from './state.js';
+
 let dragCard = null;
 let dragOrderStart = null;
 let droppedOnList = false;
@@ -34,26 +38,42 @@ function getDragAfterElement(list, y) {
     return closest.element;
 }
 
-function persistDragOrder() {
-    const ids = entrenosOrder();
-    if (dragOrderStart && dragOrderStart.join() !== ids.join()) {
-        htmx.ajax('POST', '/alimentacion/plantilla/reordenar', {
-            values: { id: ids },
-            target: 'body',
-            swap: 'none',
-        });
-    }
+function persistDragOrder(beforeOrder) {
+    const list = listEl();
+    if (!list) return;
+    persistOrderWithHtmx(
+        '/alimentacion/plantilla/reordenar',
+        entrenosOrder(),
+        list,
+        beforeOrder || '',
+        function () {
+            showNotice('No se pudo guardar el orden. Reintenta.', 'error');
+        }
+    );
 }
 
 function applyTemplate(plantillaId) {
     const fecha = currentFecha();
     if (!fecha) return;
-    // El body ya trae los OOB (editor + notice): swap none, solo OOB.
-    htmx.ajax(
-        'GET',
-        '/alimentacion/plantilla/aplicar/' + plantillaId + '?fecha=' + encodeURIComponent(fecha),
-        { target: 'body', swap: 'none' }
-    );
+    // Política compartida: el editor de nutrición es siempre editable; si el
+    // día ya tiene filas se exige confirmación de reemplazo. Un solo request
+    // htmx con OOB de aviso.
+    const hasRows = document.querySelectorAll('#nutrition-rows .nutrition-row').length > 0;
+    const proceed = function () {
+        // El body ya trae los OOB (editor + notice): swap none, solo OOB.
+        htmx.ajax(
+            'GET',
+            '/alimentacion/plantilla/aplicar/' + plantillaId + '?fecha=' + encodeURIComponent(fecha),
+            { target: 'body', swap: 'none' }
+        );
+    };
+    if (hasRows) {
+        document.getElementById('confirm-msg').textContent =
+            '¿Reemplazar el día de alimentación con esta plantilla?';
+        showConfirmDialog(proceed, null);
+    } else {
+        proceed();
+    }
 }
 
 function deleteTemplate(plantillaId) {
@@ -124,8 +144,14 @@ export function initNutritionTemplatesDnD() {
             confirmTemplateSave();
         } else if (action === 'delete-meal-template') {
             deleteTemplate(el.dataset.ptId);
+        } else if (action === 'apply-meal-template') {
+            applyTemplate(el.dataset.ptId);
         }
     });
+    bindMoveButtons('#nutrition-templates', '.pt-card', function (item, before) {
+        persistDragOrder(before);
+    });
+    syncMoveButtons('#nutrition-templates', '.pt-card');
     refreshNutritionTemplatesDnD();
 }
 

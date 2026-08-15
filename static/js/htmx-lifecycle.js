@@ -48,6 +48,13 @@ export function initLifecycle() {
         if (cbs && cbs.onSave) cbs.onSave();
     });
 
+    // Botón visible de deshacer: misma acción que Ctrl/Cmd+Z.
+    document.addEventListener('click', function (e) {
+        if (e.target.closest && e.target.closest('[data-action="undo-last"]')) {
+            undoAction();
+        }
+    });
+
     // htmx descarta el cuerpo de las respuestas 4xx por defecto, lo que impedía
     // que los avisos de error de dominio (validación, CSRF) llegaran al DOM vía OOB.
     // Se permite el swap solo en 4xx (respuestas propias); los 500 internos se

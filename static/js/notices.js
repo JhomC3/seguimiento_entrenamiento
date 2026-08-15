@@ -24,3 +24,17 @@ export function flashEditorNotice(msg, type) {
     box.appendChild(div);
     scheduleNotices();
 }
+
+export function showNotice(msg, type) {
+    const container = document.getElementById('notice-container');
+    const box = document.getElementById('editor-notice');
+    const target = box && box.textContent.trim() === '' ? box : container;
+    if (!target) return;
+    const div = document.createElement('div');
+    div.className = `notice ${type === 'error' ? 'notice-error' : 'notice-success'}`;
+    div.dataset.dismiss = '4000';
+    div.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    div.textContent = msg;
+    target.appendChild(div);
+    scheduleNotices();
+}

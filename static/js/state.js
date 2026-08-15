@@ -71,7 +71,12 @@ export function fmtNum(v) {
 export function showConfirmDialog(onSave, onDiscard) {
     confirmCbs = { onSave, onDiscard };
     const dialog = document.getElementById('confirm-modal');
-    if (dialog && typeof dialog.showModal === 'function') dialog.showModal();
+    if (dialog && typeof dialog.showModal === 'function') {
+        dialog.showModal();
+        // Foco inicial en la acción primaria.
+        const primary = dialog.querySelector('#confirm-save');
+        if (primary) primary.focus();
+    }
 }
 
 export function hideConfirmDialog() {
