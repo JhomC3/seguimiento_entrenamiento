@@ -154,7 +154,7 @@ read a valid token. The LAN is therefore **HealthSync-only**:
   remote request — dashboard, static, exports, mutations — is rejected with a
   bare **403** (empty body, no HTML) before the request body is parsed.
 - **`X-Forwarded-For` is never trusted**; only the TCP peer address.
-- **Rate limit:** bounded per-peer fixed window, `GYM_SYNC_RATE_LIMIT_PER_MINUTE`
+- **Rate limit:** bounded per-peer fixed window, `GYM_SYNC_RATE_LIMIT_PER_MINUTE` (default 30/min)
   (default 30/min). Exceeding it returns **429 + `Retry-After`**.
 - **Startup consistency:** lifespan raises `RuntimeError` if the gate is on
   without `GYM_CSRF_SECRET`, or if a secret is set without the gate (the

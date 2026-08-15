@@ -42,6 +42,9 @@ uv run pytest tests/e2e/test_accessibility.py -q --no-cov
 - [ ] `uv run pytest tests/test_security.py -v` passes.
 - [ ] Deployment stays loopback-only (`--host 127.0.0.1`) unless the auth design in
       `docs/architecture/security-model.md` is implemented.
+- [ ] Smoke con la app levantada: `curl -i http://127.0.0.1:8000/healthz` → 200
+      `{"status":"ok","db":"ok"}`; `curl -i http://127.0.0.1:8000/docs` → 404.
+- [ ] Surface assertions: `rg -n 'get_sessions_page|get_training_sessions' src app.py` → 0.
 
 ## 4b. Android app (HealthSync) — si el release toca `android/`
 

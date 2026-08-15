@@ -69,10 +69,12 @@ SQLite (data/lifestyle.db)
   detalles internos (log servidor + mensaje genérico). El contrato JSON del sync usa
   `{"detail": ...}`; no se introduce un formato nuevo sin documentarlo en
   `docs/architecture/health-sync-contract.md`.
-- **OpenAPI:** FastAPI genera `/openapi.json`, `/docs` y `/redoc` automáticamente. El
-  contrato OpenAPI se revisa en cada cambio de ruta/parámetros; los endpoints internos
-  (CSRF, htmx) no necesitan documentarse para consumo externo, pero el inventario de
-  rutas debe ser conocido e intencional.
+- **OpenAPI:** las rutas de documentación (`/openapi.json`, `/docs`, `/redoc`) están
+  **deshabilitadas por decisión** (sin consumidores externos de API; OWASP API9). El
+  contrato real vive en `docs/architecture/current-ui-contract.md` (UI) y
+  `docs/architecture/health-sync-contract.md` (sync). El inventario de rutas debe ser
+  conocido e intencional; cualquier endpoint nuevo requiere su test y su entrada en
+  el contrato.
 - **Inventario de rutas:** toda ruta muerta (no referenciada por templates/JS/android)
   se elimina en la misma iteración que la deja obsoleta. No acumular endpoints legacy.
 - **Paginación:** aplicar offset/limit solo cuando la vista lo requiera y el volumen lo
@@ -146,8 +148,8 @@ Android):
 - **Security misconfiguration:** CSP/headers/CSRF en `src/security.py` (ver
   `web-standards.md` §5 y `security-model.md`); `GYM_CSRF_SECRET` fuera del fallback de
   desarrollo en cualquier arranque no-loopback; `start_server.sh` sin secret → abortar.
-- **Inventory:** rutas muertas se eliminan (§3); `/docs`/`/openapi.json` se conocen y
-  deciden explícitamente (habilitados por defecto de FastAPI — revisar si se mantienen).
+- **Inventory:** rutas muertas se eliminan (§3); `/docs`/`/redoc`/`/openapi.json`
+  deshabilitados (decisión explícita); liveness en `/healthz`.
 - **Secrets:** nunca en git (`.gitignore` cubre `data/hc_sync_token`, `.env` si existiera);
   el token HC viaja solo al servidor (server-side) y a la app Android (Keystore/DataStore).
 - **Dependencias:** `uv.lock` como fuente de verdad; `uv sync --locked` en CI.
@@ -160,11 +162,14 @@ Si no se puede medir, no se puede operar:
   (`security`, `dashboard`, `mutations`, `health_sync`); mantener ese patrón y emitir
   contexto útil (path, ruta, resultado) en `logger.warning`/`logger.exception`. Todo
   error inesperado se registra con stack (`logger.exception`), nunca silenciado.
-- **`request_id`:** cada petición debe poder correlacionarse (middleware que genera un
-  id y lo propaga a los logs). Pendiente de implementar; cualquier nuevo log de
-  petición debe incluirlo.
-- **Health check:** exponer un endpoint de liveness simple (p. ej. `GET /healthz`) que
-  verifique que la app arranca y la DB responde — requisito de deployment mínimo.
+- **`request_id`:** implementado vía `RequestIdMiddleware` (`app.py`, el add_middleware
+  más externo): genera `uuid4().hex[:12]` por petición, lo propaga con
+  `contextvars` (`src/logging_setup.py`) a todos los logs (`[request_id]` en el
+  formatter) y lo expone en el header `x-request-id` de toda respuesta (incluidos los
+  403/429 de middlewares internos). Emite un access log propio con método, path,
+  status y duración.
+- **Health check:** `GET /healthz` (liveness): `{"status": "ok", "db": "ok"}` con `SELECT 1`
+  contra la DB; 503 si no responde (nunca detalles internos en la respuesta).
 - **Métricas:** sin necesidad de Prometheus/Grafana en este tamaño; la telemetría mínima
   es: uvicorn access log (RPS/status/latencia) + logs de error con stack. Si se añade
   instrumentación, preferir percentiles (p95/p99) sobre promedios.

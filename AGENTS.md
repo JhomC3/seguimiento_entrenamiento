@@ -35,7 +35,7 @@ Eres un ingeniero de software senior experto en Python, especializado en anális
 - `config.py`: Constantes globales, URLs de descarga de Google Sheets (entrenamiento + nutrición) y `DB_PATH` (configurable vía `LIFESTYLE_DB_PATH`; `GYM_DB_PATH` queda como alias de compatibilidad). `HC_SYNC_TOKEN` se lee del env o, si falta, del archivo `data/hc_sync_token`.
 - `src/`: Lógica central del sistema.
   - `db_connection.py`: Fábrica `connect_db` (foreign_keys ON, row_factory, busy_timeout) + context managers `read_connection` / `transaction`.
-  - `migrations/`: Migraciones versionadas `v001`..`v013` (no existe `v004`) — v005 recomputa `semana`, v006 normaliza fechas a ISO, v007–v009 alimentación, v010 Health Connect, v011 `descanso_seg`, v012 `cardio_annotations`, v013 `undo_entries` (journal de undo persistente) — y `runner.py` (transaccionales, con backup automático antes de aplicar migraciones pendientes). La app aplica las migraciones pendientes en el arranque.
+  - `migrations/`: Migraciones versionadas `v001`..`v014` (no existe `v004`) — v005 recomputa `semana`, v006 normaliza fechas a ISO, v007–v009 alimentación, v010 Health Connect, v011 `descanso_seg`, v012 `cardio_annotations`, v013 `undo_entries` (journal de undo persistente), v014 índice `training_sets(fecha, set_orden)` — y `runner.py` (transaccionales, con backup automático antes de aplicar migraciones pendientes). La app aplica las migraciones pendientes en el arranque.
   - `models.py`: Modelos tipados (`TrainingSetInput`, `TrainingSet`, `Session`, `TemplateInput`, `Template`) y excepciones de dominio (`ValidationError`, `NotFoundError`, `ConflictError`).
   - `dashboard_service.py`: Orquestación de vistas (view models, charts, filtros) y traducción de errores a respuestas seguras.
   - `view_models.py`: `DateNavigatorViewModel`, `SessionEditorViewModel` — solo valores que necesitan las plantillas.
@@ -125,6 +125,7 @@ La app `app.py` sirve HTML renderizado con Jinja2 y usa htmx para actualizacione
 - **`POST /ejercicio/nuevo`** → crea ejercicio desde el UI (OOB `#notice-container`, `#exercise-create`).
 - **`GET /plantillas` / `POST /plantilla/guardar|editar|eliminar|reordenar` / `GET /plantilla/aplicar/{id}`** → CRUD y drag&drop de plantillas (OOB `#plantillas-section`, `#session-editor-wrap`).
 - **`POST /undo`** → deshace la última acción (journal `undo_entries` en SQLite, máx. 10).
+- **`GET /healthz`** → liveness JSON (`{"status": "ok", "db": "ok"}`; 503 si la DB no responde). `/docs`, `/redoc` y `/openapi.json` están **deshabilitados** (sin inventario público).
 - **`GET /exportar/csv`** → descarga CSV de `training_sets`.
 - **`POST /sync/health-connect`** → API JSON (no htmx) de ingesta de Health Connect: autenticada con `X-Sync-Token` (`HC_SYNC_TOKEN` env; sin env → 503), exenta del CSRF de formularios **solo por igualdad exacta de ruta** (`CSRF_EXEMPT_PATHS` en `src/security.py`), lotes ≤500 ops / 1 MiB, upsert condicionado por revisión + baja lógica, acuse individual por `hc_id`+revisión (contrato en `docs/architecture/health-sync-contract.md`).
 - **`GET /exportar/health-connect.csv`** → CSV de `health_records` activos (orden `record_type, start_epoch_ms`); `?incluir_borrados=1` para auditoría de bajas.
