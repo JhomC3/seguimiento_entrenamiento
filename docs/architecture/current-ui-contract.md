@@ -102,7 +102,7 @@
 
 - `GET /plantillas[?editar=<id>]` → fragmento `plantillas_list.html`
   (`target: '#plantillas-section'`). Tarjetas `#plantillas-list .pt-card[data-pt-id]`
-  con acciones Aplicar/Editar/Eliminar y botones mover (`data-action="move-item"`).
+  con acciones Aplicar/Editar/Eliminar y manija de reordenar (`data-action="move-grip"`).
 - `POST /plantilla/guardar` — `nombre`, `ejercicio[]` (hidden sync). OOB
   `#notice-container` + `#plantillas-section` (outerHTML). Journal (`entrenos`).
 - `POST /plantilla/editar/{id}` — mismo patrón; error conserva `editing_id`.
@@ -112,8 +112,9 @@
 - `GET /plantilla/aplicar/{id}?fecha=` — exige modo edición; confirmación de reemplazo
   si el día tiene datos; OOB `#editor-notice` + `#session-editor-wrap`
   (con marcador `#plantilla-applied` para el dirty-baseline).
-- Reordenamiento por teclado: botones ↑/↓ (`data-action="move-item"`), deshabilitados en
-  los extremos; el DnD sigue siendo una mejora.
+- Reordenamiento por teclado: manija `[data-action="move-grip"]` por tarjeta; con el foco
+  en la manija, las flechas ↑/↓ mueven el elemento (sin límites: el extremo no mueve).
+  El DnD con puntero sigue siendo una mejora.
 
 ### Plantillas de alimentación
 

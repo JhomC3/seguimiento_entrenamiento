@@ -7,7 +7,7 @@
 
 import { flashEditorNotice } from './notices.js';
 import { initRowSortable, syncSortableState } from './row-sortable.js';
-import { bindMoveButtons, moveListElement, syncMoveButtons } from './reorder-controls.js';
+import { bindGripMoves } from './reorder-controls.js';
 import {
     captureBaseline,
     currentFecha,
@@ -142,7 +142,6 @@ export function renumberRows() {
     document.querySelectorAll('#set-rows .set-row').forEach((row, i) => {
         row.querySelector('.set-num').textContent = i + 1;
     });
-    syncMoveButtons('#set-rows', '.set-row');
 }
 
 /* ---------- Altura del panel: UNA medición estandarizada, constante en todo estado ---------- */
@@ -290,7 +289,7 @@ export function initEditorActions() {
         }
     });
 
-    bindMoveButtons('#set-rows', '.set-row', function () {
+    bindGripMoves('#set-rows', '.set-row', function () {
         renumberRows();
         updateEditActions();
         recalcRM();

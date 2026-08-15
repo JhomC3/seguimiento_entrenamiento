@@ -23,6 +23,30 @@
     background: rgba(255, 255, 255, 0.15);
 }
 
+/* Manija de reordenar (teclado: foco + ↑/↓; puntero: arrastre es mejora) */
+.row-grip {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--t-surfaces-neutral-500);
+    cursor: grab;
+    transition: all .15s;
+}
+.row-grip:hover,
+.row-grip:focus-visible {
+    color: var(--t-burgundy-400);
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.10);
+}
+.row-grip:active {
+    cursor: grabbing;
+}
+
 /* Spinners numéricos: se mantienen nativos, solo baja un poco su color al aparecer */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {

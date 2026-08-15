@@ -6,7 +6,7 @@
 
 import { getAlimentoMap, hideConfirmDialog, showConfirmDialog } from './state.js';
 import { doNav } from './date-navigation.js';
-import { bindMoveButtons, syncMoveButtons } from './reorder-controls.js';
+import { bindGripMoves } from './reorder-controls.js';
 
 const PREVIEW_CELLS = [
     ['kcal', 'kcal-cell'],
@@ -200,7 +200,6 @@ function renumber() {
         const num = row.querySelector('.nutrition-num');
         if (num) num.textContent = String(i + 1);
     });
-    syncMoveButtons('#nutrition-rows', '.nutrition-row');
 }
 
 function nutritionAddRow() {
@@ -386,7 +385,7 @@ export function initNutritionEditor() {
         document.addEventListener('click', onClick);
         document.addEventListener('input', onInput);
         document.addEventListener('submit', onFormSubmit, true);
-        bindMoveButtons('#nutrition-rows', '.nutrition-row', function () {
+        bindGripMoves('#nutrition-rows', '.nutrition-row', function () {
             updateConsumido();
         });
         bound = true;

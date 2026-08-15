@@ -852,7 +852,7 @@ def _edit_mode_on(page):
         page.wait_for_timeout(150)
 
 
-def test_session_rows_move_with_buttons(page, server):
+def test_session_rows_move_with_grip(page, server):
     _open_popup(page, server)
     _edit_mode_on(page)
     _fill_row(page, 0, ejercicio="Press")
@@ -861,7 +861,9 @@ def test_session_rows_move_with_buttons(page, server):
     rows = page.locator("#set-rows .set-row")
     expect(rows).to_have_count(2)
     rows.nth(1).locator('input[name="kg"]').fill("90")
-    rows.nth(1).locator('[data-action="move-item"][data-dir="-1"]').click()
+    grip = rows.nth(1).locator('[data-action="move-grip"]')
+    grip.focus()
+    page.keyboard.press("ArrowUp")
     page.wait_for_timeout(150)
     assert rows.nth(0).locator('input[name="kg"]').input_value() == "90"
     assert rows.nth(0).locator(".set-num").inner_text() == "1"
@@ -888,8 +890,10 @@ def test_training_cards_reorder_and_persist(page, server):
     cards = page.locator("#plantillas-list .pt-card")
     expect(cards).to_have_count(2, timeout=3000)
     assert cards.nth(0).get_attribute("data-pt-nombre") == "Press Day"
-    # Mover el segundo arriba.
-    cards.nth(1).locator('[data-action="move-item"][data-dir="-1"]').click()
+    # Mover el segundo arriba (foco en la manija + flecha).
+    grip = cards.nth(1).locator('[data-action="move-grip"]')
+    grip.focus()
+    page.keyboard.press("ArrowUp")
     page.wait_for_timeout(500)
     expect(page.locator("#plantillas-list .pt-card").nth(0)).to_have_attribute(
         "data-pt-nombre", "Back Day"
@@ -927,7 +931,9 @@ def test_reorder_failure_restores_order_and_notifies(page, server):
         route.abort()
 
     page.route("**/plantilla/reordenar", fail_reorder)
-    cards.nth(1).locator('[data-action="move-item"][data-dir="-1"]').click()
+    grip = cards.nth(1).locator('[data-action="move-grip"]')
+    grip.focus()
+    page.keyboard.press("ArrowUp")
     page.wait_for_timeout(600)
     page.unroute("**/plantilla/reordenar")
     expect(page.locator("#plantillas-list .pt-card").nth(0)).to_have_attribute(

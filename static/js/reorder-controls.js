@@ -1,7 +1,7 @@
-// reorder-controls.js — shared keyboard reorder: explicit ↑/↓ buttons for
-// every sortable list. Pointer DnD remains an enhancement on top; the buttons
-// are the accessible path and the only one that must work without a mouse.
-// Public API: moveListElement, syncMoveButtons, persistOrderWithHtmx.
+// reorder-controls.js — shared keyboard reorder: a single grip handle per
+// item. Focusing the grip and pressing ArrowUp/ArrowDown moves the item;
+// pointer DnD remains an enhancement on top. Public API:
+// moveListElement, bindGripMoves, persistOrderWithHtmx.
 
 import { showNotice } from './notices.js';
 
@@ -17,32 +17,22 @@ export function moveListElement(item, delta) {
     return true;
 }
 
-export function syncMoveButtons(listSelector, itemSelector) {
-    const list = document.querySelector(listSelector);
-    if (!list) return;
-    const items = Array.from(list.querySelectorAll(itemSelector));
-    items.forEach((item, i) => {
-        const up = item.querySelector('[data-action="move-item"][data-dir="-1"]');
-        const down = item.querySelector('[data-action="move-item"][data-dir="1"]');
-        if (up) up.disabled = i === 0;
-        if (down) down.disabled = i === items.length - 1;
-    });
-}
-
-export function bindMoveButtons(listSelector, itemSelector, onChange) {
-    document.addEventListener('click', function (e) {
-        const btn = e.target.closest('[data-action="move-item"]');
-        if (!btn) return;
-        const item = btn.closest(itemSelector);
+export function bindGripMoves(listSelector, itemSelector, onChange) {
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+        if (document.activeElement !== e.target) return;
+        const grip = e.target.closest('[data-action="move-grip"]');
+        if (!grip) return;
+        const item = grip.closest(itemSelector);
         if (!item || !item.parentElement.closest(listSelector)) return;
-        const delta = parseInt(btn.dataset.dir, 10) || 0;
+        e.preventDefault();
         const list = item.parentElement;
         const before = Array.from(list.children)
             .map(function (c) { return c.dataset.ptId || c.dataset.rowId || ''; })
             .join(',');
-        if (moveListElement(item, delta)) {
-            syncMoveButtons(listSelector, itemSelector);
-            if (onChange) onChange(item, before);
+        const delta = e.key === 'ArrowUp' ? -1 : 1;
+        if (moveListElement(item, delta) && onChange) {
+            onChange(item, before);
         }
     });
 }
@@ -60,7 +50,6 @@ export function persistOrderWithHtmx(url, ids, listEl, beforeOrder, onError) {
             const card = byId[id];
             if (card) listEl.appendChild(card);
         });
-        syncMoveButtons('#' + listEl.id, '.pt-card');
     };
 
     const onAfter = function (e) {

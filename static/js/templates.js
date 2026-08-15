@@ -7,7 +7,7 @@
 // ptAddRow, ptRemoveRow, initTemplateSortable, entrenosOrder, initEntrenoDnD.
 
 import { flashEditorNotice, showNotice } from './notices.js';
-import { bindMoveButtons, persistOrderWithHtmx, syncMoveButtons } from './reorder-controls.js';
+import { bindGripMoves, persistOrderWithHtmx } from './reorder-controls.js';
 import {
     currentFecha,
     editorEditmode,
@@ -217,11 +217,10 @@ export function initTemplateActions() {
                 break;
         }
     });
-    bindMoveButtons('#plantillas-list', '.pt-card', function (item, before) {
+    bindGripMoves('#plantillas-list', '.pt-card', function (item, before) {
         persistDragOrder(before);
     });
-    bindMoveButtons('#plantilla-edit-rows', '.pt-row', null);
-    syncMoveButtons('#plantillas-list', '.pt-card');
+    bindGripMoves('#plantilla-edit-rows', '.pt-row', null);
 }
 
 /* ---------- Drag & drop nativo de entrenos: lista -> reordenar, panel -> aplicar ---------- */
