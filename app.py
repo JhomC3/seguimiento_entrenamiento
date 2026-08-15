@@ -730,7 +730,7 @@ def export_nutrition_csv():
             "FROM diario_alimentacion ORDER BY fecha, orden",
             conn,
         )
-    csv = df.to_csv(index=False)
+    csv = "\ufeff" + df.to_csv(index=False)
     return Response(
         content=csv,
         media_type="text/csv",
@@ -915,7 +915,7 @@ def semana_primer_entreno(
 def export_csv():
     with read_connection(DB_PATH) as conn:
         df = pd.read_sql_query("SELECT * FROM training_sets ORDER BY fecha, set_orden", conn)
-    csv = df.to_csv(index=False)
+    csv = "\ufeff" + df.to_csv(index=False)
     return Response(
         content=csv,
         media_type="text/csv",
@@ -1247,7 +1247,7 @@ def export_health_connect_csv(incluir_borrados: bool = Query(default=False)):
             f"ORDER BY record_type, start_epoch_ms",
             conn,
         )
-    csv = df.to_csv(index=False)
+    csv = "\ufeff" + df.to_csv(index=False)
     return Response(
         content=csv,
         media_type="text/csv",

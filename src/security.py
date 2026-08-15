@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import logging
 import os
+import secrets
 import time
 
 logger = logging.getLogger("security")
@@ -31,6 +32,8 @@ DEFAULT_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "same-origin",
     "X-Frame-Options": "DENY",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
 }
 
 CSRF_HEADER = "X-CSRF-Token"
@@ -50,8 +53,10 @@ def _window_seconds() -> int:
 
 CSRF_WINDOW_SECONDS = _window_seconds()
 
-# Development fallback only. Set GYM_CSRF_SECRET for any non-local deployment.
-_DEV_SECRET = "dev-only-secret-do-not-use-in-production"
+# Loopback-only fallback: cryptographically random per process, never public.
+# Tokens signed with it become invalid on restart (acceptable: loopback dev,
+# reload re-embeds a fresh token). GYM_CSRF_SECRET (LAN launcher) overrides it.
+_FALLBACK_SECRET = secrets.token_urlsafe(48)
 
 
 class SecurityHeadersMiddleware:
@@ -78,8 +83,8 @@ class SecurityHeadersMiddleware:
 
 
 def get_csrf_secret() -> str:
-    """CSRF signing secret: environment in non-development deployments."""
-    return os.environ.get("GYM_CSRF_SECRET", _DEV_SECRET)
+    """CSRF signing secret: environment for the LAN launcher, random otherwise."""
+    return os.environ.get("GYM_CSRF_SECRET", _FALLBACK_SECRET)
 
 
 def _sign(secret: str, value: str) -> str:

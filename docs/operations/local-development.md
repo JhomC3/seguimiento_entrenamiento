@@ -37,7 +37,7 @@ uv run uvicorn app:app --host 127.0.0.1 --port 8000
 | Variable | Purpose | Default |
 |---|---|---|
 | `LIFESTYLE_DB_PATH` | SQLite database path | `data/lifestyle.db` (`GYM_DB_PATH` es alias) |
-| `GYM_CSRF_SECRET` | HMAC secret for CSRF tokens (persisted in `data/csrf_secret` by `start_server.sh`) | dev-only fallback (loopback; Task 2 lo elimina) |
+| `GYM_CSRF_SECRET` | HMAC secret for CSRF tokens (persisted in `data/csrf_secret` by `start_server.sh`) | random per-process fallback (loopback only; tokens invalidan al reiniciar) |
 | `GYM_LAN_SYNC_ONLY` | `1` = LAN gate activo: remoto solo `POST /sync/health-connect` | desactivado |
 | `GYM_SYNC_RATE_LIMIT_PER_MINUTE` | Rate limit del sync por peer remoto (429 + `Retry-After`) | 30 |
 | `SHEET_ID` / `GIDS` | Google Sheets source (config.py) | project defaults |

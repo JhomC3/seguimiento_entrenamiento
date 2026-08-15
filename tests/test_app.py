@@ -876,6 +876,36 @@ def test_export_csv_orden_cronologico(tmp_path, monkeypatch):
     assert fechas == ["2026-01-09", "2026-01-15", "2026-02-03"]
 
 
+def test_export_csv_con_bom(tmp_path, monkeypatch):
+    import codecs
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    resp = _client().get("/exportar/csv")
+    assert resp.status_code == 200
+    assert resp.content.startswith(codecs.BOM_UTF8)
+
+
+def test_export_nutrition_csv_con_bom(tmp_path, monkeypatch):
+    import codecs
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    resp = _client().get("/alimentacion/exportar/csv")
+    assert resp.status_code == 200
+    assert resp.content.startswith(codecs.BOM_UTF8)
+
+
+def test_export_health_connect_csv_con_bom(tmp_path, monkeypatch):
+    import codecs
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    resp = _client().get("/exportar/health-connect.csv")
+    assert resp.status_code == 200
+    assert resp.content.startswith(codecs.BOM_UTF8)
+
+
 def test_undo_restaura_origen_google(tmp_path, monkeypatch):
     from src.db_connection import transaction
 

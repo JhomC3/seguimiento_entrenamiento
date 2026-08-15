@@ -65,6 +65,18 @@ def test_frame_options_header(client):
     assert r.headers["x-frame-options"] == "DENY"
 
 
+def test_permissions_policy_header(client):
+    r = client.get("/")
+    assert r.headers["permissions-policy"] == (
+        "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    )
+
+
+def test_cross_origin_opener_policy_header(client):
+    r = client.get("/")
+    assert r.headers["cross-origin-opener-policy"] == "same-origin"
+
+
 def _csp_of(response) -> str:
     return response.headers["content-security-policy"]
 
@@ -407,6 +419,15 @@ def test_csrf_token_fuera_de_ventana(monkeypatch):
     token = make_csrf_token(get_csrf_secret())
     monkeypatch.setattr(sec.time, "time", lambda: 1_000_000 + sec.CSRF_WINDOW_SECONDS + 1)
     assert not valid_csrf_token(token, get_csrf_secret())
+
+
+def test_missing_csrf_env_uses_nonpublic_random_secret(monkeypatch):
+    from src.security import get_csrf_secret
+
+    monkeypatch.delenv("GYM_CSRF_SECRET", raising=False)
+    secret = get_csrf_secret()
+    assert secret != "dev-only-secret-do-not-use-in-production"
+    assert len(secret) >= 32
 
 
 # ---------------------------------------------------------------------------
