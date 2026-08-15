@@ -16,6 +16,7 @@ from src.migrations import (
     v010_health_connect,
     v011_descanso_seg,
     v012_cardio_annotations,
+    v013_persistent_undo,
 )
 
 MIGRATIONS = [
@@ -30,6 +31,7 @@ MIGRATIONS = [
     v010_health_connect,
     v011_descanso_seg,
     v012_cardio_annotations,
+    v013_persistent_undo,
 ]
 
 _CURRENT_VERSION = max(m.VERSION for m in MIGRATIONS)

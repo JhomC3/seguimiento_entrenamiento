@@ -291,6 +291,11 @@ def snapshot_entrenos(db_path: str) -> list:
 
 def restore_entrenos(db_path: str, snapshot: list) -> None:
     plantillas, sets = snapshot[0], snapshot[1]
+
+    def val(r, idx: int, key: str):
+        """Fila sqlite3.Row (legado en memoria) o dict (journal persistido)."""
+        return r[key] if isinstance(r, dict) else r[idx]
+
     with transaction(db_path) as conn:
         conn.execute("DELETE FROM plantilla_sets")
         conn.execute("DELETE FROM plantillas")
@@ -298,12 +303,19 @@ def restore_entrenos(db_path: str, snapshot: list) -> None:
             conn.execute(
                 "INSERT INTO plantillas (id, nombre, clasificacion, created_at, updated_at, orden) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                (r[0], r[1], r[2], r[3], r[4], r[5]),
+                tuple(
+                    val(r, i, k)
+                    for i, k in enumerate(
+                        ("id", "nombre", "clasificacion", "created_at", "updated_at", "orden")
+                    )
+                ),
             )
         for r in sets:
             conn.execute(
                 "INSERT INTO plantilla_sets (plantilla_id, set_orden, ejercicio) VALUES (?, ?, ?)",
-                (r[0], r[1], r[2]),
+                tuple(
+                    val(r, i, k) for i, k in enumerate(("plantilla_id", "set_orden", "ejercicio"))
+                ),
             )
         max_id = conn.execute("SELECT COALESCE(MAX(id), 0) FROM plantillas").fetchone()[0]
         conn.execute("UPDATE sqlite_sequence SET seq = ? WHERE name = 'plantillas'", (max_id,))

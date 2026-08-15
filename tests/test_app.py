@@ -417,7 +417,7 @@ def test_undo_pila_limitada_a_10(tmp_path, monkeypatch):
     client = _client()
     for i in range(12):
         client.post("/plantilla/guardar", data={"nombre": f"E{i}", "ejercicio": ["Press"]})
-    assert undo_stack_size() == 10
+    assert undo_stack_size(db) == 10
 
 
 def test_entreno_guardado_con_papelera_cuando_hay_datos(tmp_path, monkeypatch):
@@ -754,7 +754,7 @@ def test_delete_session_failure_returns_500_and_keeps_state(tmp_path, monkeypatc
     assert "Ocurrió un error inesperado" in r.text
     assert "Entreno eliminado" not in r.text
     assert 'data-ok="0"' in r.text
-    assert undo_stack_size() == 0
+    assert undo_stack_size(db) == 0
     assert len(get_sets_by_fecha(db, fecha_to_db(datetime.date.today()))) == 1
 
 
@@ -769,7 +769,7 @@ def test_delete_template_failure_returns_500_and_keeps_state(tmp_path, monkeypat
     assert r.status_code == 500
     assert "Ocurrió un error inesperado" in r.text
     assert "Entreno eliminado" not in r.text
-    assert undo_stack_size() == 1  # solo el guardar previo
+    assert undo_stack_size(db) == 1  # solo el guardar previo
     assert len(get_plantillas(db)) == 1
 
 
@@ -785,7 +785,7 @@ def test_reorder_failure_returns_500_and_keeps_order(tmp_path, monkeypatch):
     r = client.post("/plantilla/reordenar", data={"id": ["2", "1"]})
     assert r.status_code == 500
     assert "Ocurrió un error inesperado" in r.text
-    assert undo_stack_size() == 2  # solo los guardar previos
+    assert undo_stack_size(db) == 2  # solo los guardar previos
     assert [p["nombre"] for p in get_plantillas(db)] == ["A", "B"]
 
 
@@ -799,7 +799,7 @@ def test_undo_failure_returns_500_and_keeps_stack(tmp_path, monkeypatch):
     r = _client().post("/undo", data={"fecha": _fecha()})
     assert r.status_code == 500
     assert "Ocurrió un error inesperado" in r.text
-    assert undo_stack_size() == 1  # la entrada no se pierde
+    assert undo_stack_size(db) == 1  # la entrada no se pierde
     assert len(get_plantillas(db)) == 1
 
 
