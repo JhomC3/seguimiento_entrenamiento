@@ -15,8 +15,9 @@ def _reset_handler():
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
-    import app as appmod
     from fastapi.testclient import TestClient
+
+    import app as appmod
     from src.database import init_db
 
     db = str(tmp_path / "gym.db")
