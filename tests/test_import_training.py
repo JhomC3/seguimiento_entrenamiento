@@ -7,8 +7,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from src.db_connection import read_connection
 from src.database import init_db
+from src.db_connection import read_connection
 
 _SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "import_google_sheets.py"
 
