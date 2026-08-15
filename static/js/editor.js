@@ -3,7 +3,7 @@
 // Public API: initEditorActions, syncEditButtons, updateEditActions,
 // syncEditorFromContent, setPanelReadonly, handleEditorState, enterEditMode,
 // exitEditMode, toggleEdit, addRowAfter, removeRow, renumberRows, fitRowsToPanel,
-// recalcRM, submitSave, eliminarSesion.
+// recalcRM, submitSave, eliminarSesion, stepRir.
 
 import { flashEditorNotice } from './notices.js';
 import { initRowSortable, syncSortableState } from './row-sortable.js';
@@ -234,6 +234,24 @@ export function eliminarSesion() {
     }, null);
 }
 
+/* ---------- RIR: cualquier decimal, flechas ±0,1 ---------- */
+const RIR_STEP = 0.1;
+const RIR_MIN = -5;
+
+function cleanStepVal(v) {
+    return parseFloat(v.toFixed(10));
+}
+
+export function stepRir(input, delta) {
+    if (input.disabled || input.readOnly) return;
+    const raw = input.value.trim();
+    const current = raw === '' ? 0 : parseFloat(raw);
+    if (isNaN(current)) return;
+    const next = Math.max(RIR_MIN, cleanStepVal(current + delta));
+    input.value = String(next);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 /* ---------- Acciones delegadas del editor ---------- */
 export function initEditorActions() {
     document.addEventListener('click', function (e) {
@@ -261,6 +279,20 @@ export function initEditorActions() {
             case 'row-remove':
                 removeRow(el);
                 break;
+            case 'rir-step': {
+                const row = el.closest('.set-row');
+                const input = row && row.querySelector('input[name="rir"]');
+                if (input) stepRir(input, parseFloat(el.dataset.delta) || RIR_STEP);
+                break;
+            }
         }
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+        const input = e.target.closest && e.target.closest('#session-form input[name="rir"]');
+        if (!input) return;
+        e.preventDefault();
+        stepRir(input, e.key === 'ArrowUp' ? RIR_STEP : -RIR_STEP);
     });
 }

@@ -216,3 +216,35 @@
 #nutrition-panel .nutrient-col {
     width: 7.5%;
 }
+
+/* RIR: cualquier decimal es válido (step="any"); las flechas propias avanzan 0,1.
+   Se ocultan los spinners nativos del input number, cuyo salto seguiría al step. */
+#session-form input[name="rir"]::-webkit-outer-spin-button,
+#session-form input[name="rir"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+#session-form input[name="rir"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+.rir-step {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.28);
+    font-size: 7px;
+    line-height: 1;
+    cursor: pointer;
+    transition: color .15s, background .15s;
+}
+.rir-step:hover:not(:disabled) {
+    color: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.06);
+}
+.rir-step:disabled {
+    cursor: default;
+    opacity: 0.15;
+}

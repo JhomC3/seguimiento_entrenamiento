@@ -269,6 +269,34 @@ def test_invalid_numeric_input_blocks_save(page, server):
     expect(page.locator("#editor-notice")).not_to_contain_text("Entrenamiento guardado")
 
 
+def test_rir_any_decimal_and_01_step(page, server):
+    """RIR acepta cualquier decimal y las flechas (botones y teclado) avanzan 0,1."""
+    _goto_date(page, server, _iso(10))
+    row = page.locator("#set-rows .set-row").first
+    rir = row.locator('input[name="rir"]')
+    expect(rir).to_have_attribute("step", "any")
+
+    rir.fill("0.25")
+    row.locator('[data-action="rir-step"][data-delta="0.1"]').click()
+    expect(rir).to_have_value("0.35")
+    row.locator('[data-action="rir-step"][data-delta="-0.1"]').click()
+    expect(rir).to_have_value("0.25")
+
+    rir.focus()
+    page.keyboard.press("ArrowDown")
+    expect(rir).to_have_value("0.15")
+    page.keyboard.press("ArrowUp")
+    expect(rir).to_have_value("0.25")
+
+    # Guardado con decimal arbitrario: el servidor lo acepta tal cual.
+    _fill_row(page, 0, rir="0.25")
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+    expect(rir).to_have_value("0.25")
+
+
 # ---------------------------------------------------------------------------
 # XSS execution regressions (Task 1)
 # ---------------------------------------------------------------------------
