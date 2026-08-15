@@ -1808,3 +1808,72 @@ def test_healthz_db_caida_devuelve_503(tmp_path, monkeypatch):
     resp = _client().get("/healthz")
     assert resp.status_code == 503
     assert resp.json()["db"] == "error"
+
+
+# ---------------------------------------------------------------------------
+# Backend plan Task 12: límites de lotes y longitudes en formularios
+# ---------------------------------------------------------------------------
+
+
+def test_session_save_lote_excesivo_devuelve_400(tmp_path, monkeypatch):
+    from src.security import get_csrf_secret, make_csrf_token
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    client.headers.update({"X-CSRF-Token": make_csrf_token(get_csrf_secret())})
+    ejercicios = ["Press"] * 150
+    resp = client.post(
+        "/entrenamiento/session/save",
+        data={
+            "fecha": "2026-08-14",
+            "ejercicio": ejercicios,
+            "kg": ["80"] * 150,
+            "reps": ["10"] * 150,
+            "rir": ["2"] * 150,
+        },
+    )
+    assert resp.status_code == 400
+
+
+def test_alimentacion_save_lote_excesivo_devuelve_400(tmp_path, monkeypatch):
+    from src.security import get_csrf_secret, make_csrf_token
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    client.headers.update({"X-CSRF-Token": make_csrf_token(get_csrf_secret())})
+    resp = client.post(
+        "/alimentacion/save",
+        data={
+            "fecha": "2026-08-14",
+            "alimento": ["Pollo"] * 150,
+            "cantidad": ["150"] * 150,
+        },
+    )
+    assert resp.status_code == 400
+
+
+def test_nombre_demasiado_largo_devuelve_400(tmp_path, monkeypatch):
+    from src.security import get_csrf_secret, make_csrf_token
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    client.headers.update({"X-CSRF-Token": make_csrf_token(get_csrf_secret())})
+    resp = client.post(
+        "/plantilla/guardar",
+        data={"nombre": "X" * 300, "ejercicio": ["Press"]},
+    )
+    # 422 es la validación estándar de FastAPI para max_length (límite aplicado).
+
+
+def test_reordenar_lote_excesivo_devuelve_400(tmp_path, monkeypatch):
+    from src.security import get_csrf_secret, make_csrf_token
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    client.headers.update({"X-CSRF-Token": make_csrf_token(get_csrf_secret())})
+    resp = client.post("/plantilla/reordenar", data={"id": [str(i) for i in range(600)]})
+    assert resp.status_code == 400

@@ -113,6 +113,17 @@ async def lifespan(_: FastAPI):
     yield
 
 
+MAX_FORM_SETS = 100          # series por sesión
+MAX_DIARY_ROWS = 100         # filas del diario
+MAX_REORDER_IDS = 500        # ids de reordenamiento
+MAX_NAME_LEN = 200           # nombres (ejercicio, alimento, plantilla)
+
+
+def _check_lote(rows: list, max_rows: int, campo: str) -> None:
+    if len(rows) > max_rows:
+        raise ValidationError(f"Demasiadas filas de {campo} (máx. {max_rows}).")
+
+
 class RequestIdMiddleware:
     """Asigna request_id por petición, lo propaga a los logs y emite un
     access log propio (método, path, status, duración).
@@ -548,8 +559,10 @@ def entrenamiento_session_save(
     kg: list[str] = Form(default=[]),
     reps: list[str] = Form(default=[]),
     rir: list[str] = Form(default=[]),
+
     descanso: list[str] = Form(default=[]),
 ):
+    _check_lote(ejercicio, MAX_FORM_SETS, "series")
     sets = sets_from_form(ejercicio, kg, reps, rir, descansos=descanso)
     notice_success = notice_oob(
         templates, request, target="editor-notice", message="Entrenamiento guardado."
@@ -587,9 +600,9 @@ def entrenamiento_session_eliminar(request: Request, fecha: str = Form(...)):
 @app.post("/ejercicio/nuevo", response_class=HTMLResponse)
 def ejercicio_nuevo(
     request: Request,
-    ejercicio: str = Form(...),
-    grupo_muscular: str = Form(...),
-    categoria: str = Form(...),
+    ejercicio: str = Form(..., max_length=MAX_NAME_LEN),
+    grupo_muscular: str = Form(..., max_length=MAX_NAME_LEN),
+    categoria: str = Form(..., max_length=MAX_NAME_LEN),
 ):
     try:
         create_exercise(DB_PATH, ejercicio, grupo_muscular, categoria)
@@ -667,8 +680,8 @@ def alimentacion_eliminar(request: Request, fecha: str = Form(...)):
 @app.post("/alimento/nuevo", response_class=HTMLResponse)
 def alimento_nuevo(
     request: Request,
-    nombre: str = Form(...),
-    categoria: str = Form(""),
+    nombre: str = Form(..., max_length=MAX_NAME_LEN),
+    categoria: str = Form("", max_length=MAX_NAME_LEN),
     kcal: float = Form(0),
     carbohidratos: float = Form(0),
     fibra: float = Form(0),
@@ -715,7 +728,7 @@ def alimento_nuevo(
 @app.post("/alimentacion/plantilla/guardar", response_class=HTMLResponse)
 def plantilla_alimentacion_guardar(
     request: Request,
-    nombre: str = Form(...),
+    nombre: str = Form(..., max_length=MAX_NAME_LEN),
     alimento: list[str] = Form(default=[]),
     cantidad: list[str] = Form(default=[]),
 ):
@@ -764,6 +777,7 @@ def plantilla_alimentacion_reordenar(request: Request, id: list[int] = Form(defa
     from src.database import reorder_plantillas_alimentacion
 
     try:
+        _check_lote(id, MAX_REORDER_IDS, "orden")
         reorder_plantillas_alimentacion(DB_PATH, id)
     except Exception as e:
         return _domain_error_response(request, e, "notice-container")
@@ -808,7 +822,7 @@ def plantillas_view(request: Request, editar: int | None = Query(None)):
 @app.post("/plantilla/guardar", response_class=HTMLResponse)
 def plantilla_guardar(
     request: Request,
-    nombre: str = Form(...),
+    nombre: str = Form(..., max_length=MAX_NAME_LEN),
     ejercicio: list[str] = Form(default=[]),
 ):
     try:
@@ -886,6 +900,7 @@ def plantilla_eliminar(request: Request, plantilla_id: int):
 @app.post("/plantilla/reordenar", response_class=HTMLResponse)
 def plantilla_reordenar(request: Request, id: list[int] = Form(default=[])):
     try:
+        _check_lote(id, MAX_REORDER_IDS, "orden")
         reorder_templates_with_undo_snapshot(DB_PATH, id)
     except Exception as e:
         return _domain_error_response(request, e, "notice-container")
@@ -960,6 +975,22 @@ def undo(request: Request, fecha: str = Form("")):
             _plantillas_list_html(request),
             swap="outerHTML",
         )
+    )
+
+
+@app.exception_handler(ValidationError)
+async def validation_error_handler(request: Request, exc: ValidationError):
+    """Errores de dominio no capturados por el handler → 400 con aviso seguro."""
+    return HTMLResponse(
+        content=notice_oob(
+            templates,
+            request,
+            target="notice-container",
+            message=str(exc),
+            kind="notice-error",
+            dismiss=4500,
+        ),
+        status_code=400,
     )
 
 
