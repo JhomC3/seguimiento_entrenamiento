@@ -13,6 +13,18 @@ def _reset_handler():
     yield
 
 
+@pytest.fixture()
+def client(tmp_path, monkeypatch):
+    import app as appmod
+    from fastapi.testclient import TestClient
+    from src.database import init_db
+
+    db = str(tmp_path / "gym.db")
+    init_db(db)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    return TestClient(appmod.app)
+
+
 def test_setup_logging_instala_handler_y_nivel():
     setup_logging(logging.INFO)
     root = logging.getLogger()
@@ -48,3 +60,35 @@ def test_request_id_default_guion(caplog):
 def test_setup_logging_respects_level_param():
     setup_logging(logging.WARNING)
     assert logging.getLogger().level <= logging.WARNING
+
+
+# ---------------------------------------------------------------------------
+# Backend plan Task 2: request_id middleware + access log
+# ---------------------------------------------------------------------------
+
+
+def test_request_id_header_presente(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert resp.headers.get("x-request-id")
+
+
+def test_request_id_header_en_rechazo_csrf(client):
+    resp = client.post("/entrenamiento/session/save", data={})
+    assert resp.status_code == 403
+    assert resp.headers.get("x-request-id")
+
+
+def test_request_id_log_de_peticion(caplog, client):
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="access"):
+        client.get("/fecha/editor?fecha=2026-08-14")
+    assert any("GET /fecha/editor" in r.getMessage() for r in caplog.records)
+    assert any(getattr(r, "request_id", None) for r in caplog.records)
+
+
+def test_request_ids_unicos_por_peticion(client):
+    r1 = client.get("/").headers.get("x-request-id")
+    r2 = client.get("/").headers.get("x-request-id")
+    assert r1 and r2 and r1 != r2

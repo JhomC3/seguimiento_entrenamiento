@@ -2,6 +2,8 @@ import hmac
 import json
 import logging
 import os
+import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import date
 
@@ -37,7 +39,7 @@ from src.database import (
 from src.db_connection import read_connection
 from src.exercise_service import create_exercise
 from src.health_sync_service import MAX_BODY_BYTES, ingest_health_records, parse_payload
-from src.logging_setup import setup_logging
+from src.logging_setup import request_id_var, setup_logging
 from src.models import AlimentoInput, TemplateInput, ValidationError
 from src.mutation_service import (
     delete_diary_with_undo_snapshot,
@@ -111,11 +113,55 @@ async def lifespan(_: FastAPI):
     yield
 
 
+class RequestIdMiddleware:
+    """Asigna request_id por petición, lo propaga a los logs y emite un
+    access log propio (método, path, status, duración).
+
+    Registrado como ÚLTIMO add_middleware: queda el más externo de la pila y
+    su header x-request-id llega a toda respuesta, incluidas las de 403/429
+    de los middlewares internos.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        request_id = uuid.uuid4().hex[:12]
+        token = request_id_var.set(request_id)
+        start = time.perf_counter()
+        status_holder = {"status": 500}
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                status_holder["status"] = message["status"]
+                headers = dict(message.get("headers", []))
+                headers[b"x-request-id"] = request_id.encode()
+                message["headers"] = list(headers.items())
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            duration_ms = (time.perf_counter() - start) * 1000
+            logging.getLogger("access").info(
+                "%s %s status=%s duration_ms=%.1f",
+                scope["method"],
+                scope.get("path", ""),
+                status_holder["status"],
+                duration_ms,
+            )
+            request_id_var.reset(token)
+
+
 app = FastAPI(title="Gym Tracker", lifespan=lifespan)
 app.add_middleware(CSRFProtectionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(LanSyncOnlyMiddleware)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(RequestIdMiddleware)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 templates.env.globals["static_url"] = static_url
