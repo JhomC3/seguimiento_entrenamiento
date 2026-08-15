@@ -1704,16 +1704,21 @@ def test_rir_help_uses_aria_describedby(tmp_path, monkeypatch):
     assert 'id="rir-help-1"' in editor
 
 
-def test_nutrition_objetivo_consumido_in_tfoot_with_scope_row(tmp_path, monkeypatch):
+def test_nutrition_objetivo_consumido_above_data_rows_with_scope(tmp_path, monkeypatch):
+    """Objetivo/Consumido se renderizan ARRIBA de las filas (en el thead), con
+    scope='row' en sus celdas de etiqueta y scope='col' en las cabeceras."""
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     frag = _client().get("/alimentacion/editor?fecha=2026-08-14").text
-    thead_end = frag.index("</thead>")
-    tfoot_start = frag.index("<tfoot")
-    assert thead_end < tfoot_start
     objetivo = frag.index(">Objetivo<")
-    assert tfoot_start < objetivo
+    consumido = frag.index(">Consumido<")
+    thead_end = frag.index("</thead>")
+    tbody_start = frag.index("<tbody")
+    # Ambos totales quedan dentro del thead, antes del tbody (debajo de las filas NO).
+    assert objetivo < consumido < thead_end < tbody_start
+    assert "<tfoot" not in frag
     assert 'scope="row"' in frag
+    assert 'scope="col"' in frag
 
 
 def test_heading_outline_h1_to_h2(tmp_path, monkeypatch):

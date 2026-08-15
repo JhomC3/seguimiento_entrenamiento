@@ -3,7 +3,7 @@
 // Espejo del patrón DnD HTML5 de templates.js con estado local.
 
 import { showNotice } from './notices.js';
-import { bindGripMoves, persistOrderWithHtmx } from './reorder-controls.js';
+import { persistOrderWithHtmx } from './reorder-controls.js';
 import { showConfirmDialog } from './state.js';
 
 let dragCard = null;
@@ -148,9 +148,6 @@ export function initNutritionTemplatesDnD() {
             applyTemplate(el.dataset.ptId);
         }
     });
-    bindGripMoves('#nutrition-templates', '.pt-card', function (item, before) {
-        persistDragOrder(before);
-    });
     refreshNutritionTemplatesDnD();
 }
 
@@ -215,8 +212,8 @@ function bindDnD(list) {
 
     list.addEventListener('dragend', function () {
         if (dragCard) dragCard.classList.remove('dragging');
-        if (droppedOnList) {
-            persistDragOrder();
+        if (droppedOnList && dragOrderStart) {
+            persistDragOrder(dragOrderStart.join(','));
         }
         dragCard = null;
         dragOrderStart = null;

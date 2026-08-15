@@ -7,7 +7,6 @@
 
 import { flashEditorNotice } from './notices.js';
 import { initRowSortable, syncSortableState } from './row-sortable.js';
-import { bindGripMoves } from './reorder-controls.js';
 import {
     captureBaseline,
     currentFecha,
@@ -289,12 +288,6 @@ export function initEditorActions() {
         }
     });
 
-    bindGripMoves('#set-rows', '.set-row', function () {
-        renumberRows();
-        updateEditActions();
-        recalcRM();
-        fitRowsToPanel();
-    });
 
     document.addEventListener('keydown', function (e) {
         if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;

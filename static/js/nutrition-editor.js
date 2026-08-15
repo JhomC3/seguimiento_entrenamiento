@@ -5,8 +5,8 @@
 // vivo, parámetros (peso/factores/kcal) y eliminación del día.
 
 import { getAlimentoMap, hideConfirmDialog, showConfirmDialog } from './state.js';
+import { syncNutritionSortableState } from './row-sortable.js';
 import { doNav } from './date-navigation.js';
-import { bindGripMoves } from './reorder-controls.js';
 
 const PREVIEW_CELLS = [
     ['kcal', 'kcal-cell'],
@@ -127,6 +127,7 @@ function enterNutritionEditMode() {
     form.querySelectorAll('.row-actions').forEach(el => { el.classList.remove('hidden'); el.hidden = false; });
     const p = panel();
     if (p) p.dataset.editmode = '1';
+    syncNutritionSortableState();
     const st = document.getElementById('nutrition-editor-state');
     if (st) st.dataset.readonly = '0';
     captureBaseline();
@@ -200,6 +201,11 @@ function renumber() {
         const num = row.querySelector('.nutrition-num');
         if (num) num.textContent = String(i + 1);
     });
+}
+
+export function refreshNutritionRowsOrder() {
+    renumber();
+    updateConsumido();
 }
 
 function nutritionAddRow() {
@@ -385,9 +391,6 @@ export function initNutritionEditor() {
         document.addEventListener('click', onClick);
         document.addEventListener('input', onInput);
         document.addEventListener('submit', onFormSubmit, true);
-        bindGripMoves('#nutrition-rows', '.nutrition-row', function () {
-            updateConsumido();
-        });
         bound = true;
     }
     refreshNutritionEditor();

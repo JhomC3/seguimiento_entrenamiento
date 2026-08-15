@@ -72,7 +72,10 @@ Principios POUR aplicados al proyecto:
 - **Perceptible:** contraste ≥ 4.5:1 en texto normal (verificar burgundy sobre matte en
   texto pequeño); nunca comunicar con color únicamente (un error es rojo **+ icono + texto**).
   Respetar `prefers-reduced-motion` en transiciones/animaciones (htmx, fade-in).
-- **Operable:** 100% navegable por teclado; foco siempre visible (nunca `outline: none`
+- **Operable:** navegable por teclado en general; foco siempre visible (nunca `outline: none`
+  global), con una **excepción documentada**: el reordenamiento de filas/tarjetas es solo con
+  ratón (DnD desde cualquier parte no-control de la fila) por decisión del proyecto — se
+  registra como desviación consciente de WCAG 2.1.1 en `current-ui-contract.md`.
   indiscriminado); objetivos táctiles ≥ 44×44 px en botones/inputs del editor.
 - **Comprensible:** jerarquía de encabezados h1→h2 sin saltos; labels asociados a inputs;
   mensajes de error predictivos junto al campo (notices con texto claro).

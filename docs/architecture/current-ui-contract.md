@@ -102,7 +102,7 @@
 
 - `GET /plantillas[?editar=<id>]` → fragmento `plantillas_list.html`
   (`target: '#plantillas-section'`). Tarjetas `#plantillas-list .pt-card[data-pt-id]`
-  con acciones Aplicar/Editar/Eliminar y manija de reordenar (`data-action="move-grip"`).
+  con acciones Aplicar/Editar/Eliminar; se reordenan arrastrando el cuerpo de la tarjeta.
 - `POST /plantilla/guardar` — `nombre`, `ejercicio[]` (hidden sync). OOB
   `#notice-container` + `#plantillas-section` (outerHTML). Journal (`entrenos`).
 - `POST /plantilla/editar/{id}` — mismo patrón; error conserva `editing_id`.
@@ -112,9 +112,12 @@
 - `GET /plantilla/aplicar/{id}?fecha=` — exige modo edición; confirmación de reemplazo
   si el día tiene datos; OOB `#editor-notice` + `#session-editor-wrap`
   (con marcador `#plantilla-applied` para el dirty-baseline).
-- Reordenamiento por teclado: manija `[data-action="move-grip"]` por tarjeta; con el foco
-  en la manija, las flechas ↑/↓ mueven el elemento (sin límites: el extremo no mueve).
-  El DnD con puntero sigue siendo una mejora.
+- Reordenamiento **solo con ratón** (decisión explícita del usuario; desviación de WCAG
+  2.1.1 documentada en `web-standards.md`): tarjetas y filas de editor se arrastran desde
+  cualquier parte no-control de la fila (el `dragstart` de las tarjetas excluye
+  `input/select/button`; Sortable de filas filtra esos mismos controles). En las tarjetas,
+  el `dragend` persiste el orden completo vía `persistOrderWithHtmx` y, ante fallo,
+  restaura el DOM y avisa.
 
 ### Plantillas de alimentación
 
@@ -134,8 +137,9 @@
   cliente. OOB `#nutrition-editor-wrap` + `#nutrition-date-navigator`.
 - `POST /alimentacion/eliminar` — `fecha`.
 - `POST /alimento/nuevo` — alta de alimento; OOB `#alimento-create` + `#app-config`.
-- Tabla: `<caption>`, `scope="col"`, filas `Objetivo`/`Consumido` en `<tfoot>`
-  con `scope="row"`.
+- Tabla: `<caption>`, `scope="col"` en las cabeceras; filas `Objetivo`/`Consumido`
+  en el `<thead>` (arriba de las filas, decisión visual del usuario) con `scope="row"`
+  en sus celdas de etiqueta.
 
 ### `POST /undo`
 

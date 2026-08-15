@@ -852,7 +852,38 @@ def _edit_mode_on(page):
         page.wait_for_timeout(150)
 
 
-def test_session_rows_move_with_grip(page, server):
+
+
+
+def _drag_row_up(page, rows, idx, cell_selector):
+    """Arrastra la fila idx hasta la posición de la fila idx-1 (Sortable).
+
+    Se agarra desde una celda no-control (el selector indicado) para no
+    disparar inputs/selects/buttons.
+    """
+    src = rows.nth(idx).locator(cell_selector).first.bounding_box()
+    dst = rows.nth(idx - 1).locator(cell_selector).first.bounding_box()
+    page.mouse.move(src["x"] + 10, src["y"] + src["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(dst["x"] + 10, dst["y"] + dst["height"] / 2, steps=8)
+    page.mouse.up()
+
+
+def _drag_card_up(page, source_selector, target_selector):
+    """Arrastra una tarjeta sobre la anterior (HTML5 draggable nativo).
+
+    drag_to usa el drag de Chromium (la API mouse no dispara dragstart).
+    Se agarra de la esquina superior (nombre), nunca del centro: el centro
+    cae sobre los botones Aplicar/Editar/Eliminar y el dragstart los excluye.
+    """
+    page.locator(source_selector).drag_to(
+        page.locator(target_selector),
+        source_position={"x": 6, "y": 6},
+        target_position={"x": 6, "y": 6},
+    )
+
+
+def test_session_rows_reorder_by_drag(page, server):
     _open_popup(page, server)
     _edit_mode_on(page)
     _fill_row(page, 0, ejercicio="Press")
@@ -861,10 +892,8 @@ def test_session_rows_move_with_grip(page, server):
     rows = page.locator("#set-rows .set-row")
     expect(rows).to_have_count(2)
     rows.nth(1).locator('input[name="kg"]').fill("90")
-    grip = rows.nth(1).locator('[data-action="move-grip"]')
-    grip.focus()
-    page.keyboard.press("ArrowUp")
-    page.wait_for_timeout(150)
+    _drag_row_up(page, rows, 1, ".set-num")
+    page.wait_for_timeout(200)
     assert rows.nth(0).locator('input[name="kg"]').input_value() == "90"
     assert rows.nth(0).locator(".set-num").inner_text() == "1"
 
@@ -890,11 +919,9 @@ def test_training_cards_reorder_and_persist(page, server):
     cards = page.locator("#plantillas-list .pt-card")
     expect(cards).to_have_count(2, timeout=3000)
     assert cards.nth(0).get_attribute("data-pt-nombre") == "Press Day"
-    # Mover el segundo arriba (foco en la manija + flecha).
-    grip = cards.nth(1).locator('[data-action="move-grip"]')
-    grip.focus()
-    page.keyboard.press("ArrowUp")
-    page.wait_for_timeout(500)
+    # Mover el segundo arriba con el ratón (cuerpo de la tarjeta).
+    _drag_card_up(page, "#plantillas-list .pt-card:nth-child(2)", "#plantillas-list .pt-card:nth-child(1)")
+    page.wait_for_timeout(600)
     expect(page.locator("#plantillas-list .pt-card").nth(0)).to_have_attribute(
         "data-pt-nombre", "Back Day"
     )
@@ -931,10 +958,8 @@ def test_reorder_failure_restores_order_and_notifies(page, server):
         route.abort()
 
     page.route("**/plantilla/reordenar", fail_reorder)
-    grip = cards.nth(1).locator('[data-action="move-grip"]')
-    grip.focus()
-    page.keyboard.press("ArrowUp")
-    page.wait_for_timeout(600)
+    _drag_card_up(page, "#plantillas-list .pt-card:nth-child(2)", "#plantillas-list .pt-card:nth-child(1)")
+    page.wait_for_timeout(800)
     page.unroute("**/plantilla/reordenar")
     expect(page.locator("#plantillas-list .pt-card").nth(0)).to_have_attribute(
         "data-pt-nombre", "Press Day"
@@ -986,3 +1011,22 @@ def test_date_arrows_ignored_outside_navigator(page, server):
         "document.querySelector('.date-num.selected') ? document.querySelector('.date-num.selected').dataset.iso : null"
     )
     assert fecha_before == fecha_after
+
+
+def test_nutrition_rows_reorder_by_drag(page, server):
+    _open_popup(page, server)
+    page.locator('[data-action="nutrition-row-add"]').click()
+    page.wait_for_timeout(120)
+    rows = page.locator("#nutrition-rows .nutrition-row")
+    expect(rows).to_have_count(2)
+    rows.nth(0).locator('input[name="alimento"]').fill("Avena")
+    rows.nth(0).locator('input[name="cantidad"]').fill("120")
+    rows.nth(1).locator('input[name="alimento"]').fill("Pollo")
+    rows.nth(1).locator('input[name="cantidad"]').fill("150")
+    if rows.nth(0).locator('input[name="alimento"]').is_disabled():
+        page.locator('[data-action="nutrition-toggle-edit"]').evaluate("el => el.click()")
+        page.wait_for_timeout(150)
+    _drag_row_up(page, rows, 1, ".nutrition-preview")
+    page.wait_for_timeout(250)
+    expect(rows.nth(0).locator('input[name="alimento"]')).to_have_value("Pollo")
+    expect(rows.nth(1).locator('input[name="alimento"]')).to_have_value("Avena")

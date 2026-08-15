@@ -10,10 +10,11 @@ import { initEditorPopup } from './editor-popup.js';
 import { initLevelCascade } from './level-cascade.js';
 import { fitRowsToPanel, initEditorActions, initEditorRowSortable, syncEditorFromContent } from './editor.js';
 import { initLifecycle } from './htmx-lifecycle.js';
-import { initNutritionEditor } from './nutrition-editor.js';
+import { initNutritionEditor, refreshNutritionRowsOrder } from './nutrition-editor.js';
 import { initNutritionTemplatesDnD } from './nutrition-templates.js';
 import { scheduleNotices } from './notices.js';
 import { initPanelCollapse } from './panel-collapse.js';
+import { initNutritionRowSortable } from './row-sortable.js';
 import { getCsrfToken, setAlimentoMap, setCategoriaMap, setCicloStart, setCsrfToken } from './state.js';
 import { initEntrenoDnD, initTemplateActions, initTemplateSortable } from './templates.js';
 
@@ -54,6 +55,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initEditorActions();
     initTemplateActions();
     initNutritionEditor();
+    initNutritionRowSortable(refreshNutritionRowsOrder);
     initNutritionTemplatesDnD();
     initPanelCollapse();
     scheduleNotices();
