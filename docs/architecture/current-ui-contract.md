@@ -295,8 +295,10 @@ in `htmx-lifecycle.js`.
 ## Cambios sobre el contrato v1
 
 - `POST /entrenamiento/session/save`: campo paralelo `descanso[]` (opcional).
-- `session_editor.html`: RIR `min="-5" step="0.5"`, columna `Desc` (`input[name="descanso"]`),
-  badge `.rir-badge` (FALLO/FORZADA). El editor vive en el popup, no en la home.
+- `session_editor.html`: RIR `min="-5" step="any"` (cualquier decimal) con steppers propios
+  `[data-action="rir-step"][data-delta="±0.1"]` (▲/▼) y ArrowUp/ArrowDown = ±0,1 (spinner
+  nativo oculto), columna `Desc` (`input[name="descanso"]`), badge `.rir-badge`
+  (FALLO/FORZADA). El editor vive en el popup, no en la home.
 - `chart_pfr_timeline`: hover enriquecido (customdata por semana: series, fallos,
   volumen, peso, sueño) — el "resumen" ya no ocupa fila propia.
 - Las plantillas de alimentación (`#nutrition-templates-section`) viven en el popup.

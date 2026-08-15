@@ -129,6 +129,30 @@ La app `app.py` sirve HTML renderizado con Jinja2 y usa htmx para actualizacione
 3. La gráfica única `#unified-chart` se refresca mediante `hx-swap-oob="innerHTML"` en la misma respuesta.
 4. Seleccionar un ejercicio carga `exercise_detail.html` en `#history-section` y actualiza la gráfica unificada.
 
+## 5.5 Backend Standards (innegociables)
+
+Referencia completa: `docs/architecture/backend-standards.md` (forense: `docs/analysis/2026-08-14-forensic-backend-standards.md`). Principios vinculantes:
+
+- **Monolito modular con dominio puro:** handlers delgados → servicios de dominio tipados
+  → `src/database.py` (única capa con SQL). Prohibido lógica de negocio en `app.py`,
+  SQL fuera de `database.py` o capas de abstracción sin necesidad real.
+- **Datos:** toda escritura multi-fila en `transaction(...)`; constraints (UNIQUE/FK) en
+  la DB, no solo en código; migraciones versionadas con backup; backups pre-mutación con
+  retención; índices con intención; WAL activado en `connect_db`.
+- **Validación en el borde:** nunca confiar en el cliente; valores calculados siempre en
+  servidor (nutrientes, RM); errores de dominio → 400 con mensaje seguro, inesperados →
+  500 genérico + `logger.exception` (stack solo server-side).
+- **Seguridad OWASP aplicada:** `GYM_CSRF_SECRET` obligatorio en arranques no-loopback
+  (`start_server.sh` debe generarlo/persistirlo); token de sync con `compare_digest`;
+  límites de cuerpo/lote; sin rutas muertas ni endpoints sin inventario conocido;
+  URLs externas solo constantes (sin SSRF).
+- **Observabilidad:** logs con contexto correlacionable (`request_id` cuando exista);
+  health endpoint; nunca fallos silenciosos.
+- **Idempotencia y resiliencia:** upsert por revisión en sync, importaciones que
+  reemplazan solo `origen='google'` (con backup previo), mutaciones con backup + undo.
+- **Testing:** pirámide con gates `pytest` + `ruff` + `mypy` + cobertura ≥90 %; todo
+  cambio de contrato lleva su test.
+
 ## 6. Reglas de Codificación (Coding Standards)
 
 - **Tipado Estricto:** Usa anotaciones de tipo (Type Hints) en todas las firmas de funciones en `src/`.
