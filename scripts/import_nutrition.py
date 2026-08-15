@@ -124,10 +124,20 @@ def main() -> int:
                 [tuple(r[col] for col in _DIARIO_COLUMNS) for r in diario_rows],
             )
             conn.executemany(
-                "INSERT OR REPLACE INTO parametros_diarios (fecha, peso_kg, factor_proteina, "
-                "factor_grasa, kcal_objetivo, fibra_objetivo, hierro_objetivo, calcio_objetivo, "
-                "vitamina_c_objetivo, vitamina_a_objetivo) "
-                "VALUES (?, 70, 1.5, 1.1, ?, ?, ?, ?, ?, ?)",
+                """INSERT INTO parametros_diarios (fecha, peso_kg, factor_proteina,
+                       factor_grasa, kcal_objetivo, fibra_objetivo, hierro_objetivo,
+                       calcio_objetivo, vitamina_c_objetivo, vitamina_a_objetivo)
+                   VALUES (?, 70, 1.5, 1.1, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(fecha) DO UPDATE SET
+                       peso_kg = excluded.peso_kg,
+                       factor_proteina = excluded.factor_proteina,
+                       factor_grasa = excluded.factor_grasa,
+                       kcal_objetivo = excluded.kcal_objetivo,
+                       fibra_objetivo = excluded.fibra_objetivo,
+                       hierro_objetivo = excluded.hierro_objetivo,
+                       calcio_objetivo = excluded.calcio_objetivo,
+                       vitamina_c_objetivo = excluded.vitamina_c_objetivo,
+                       vitamina_a_objetivo = excluded.vitamina_a_objetivo""",
                 [
                     (
                         p["fecha"],

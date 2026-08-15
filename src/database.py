@@ -468,15 +468,29 @@ def get_parametros_diarios(db_path: str, fecha: str) -> dict | None:
 
 
 def save_parametros_diarios(db_path: str, fecha: str, params: dict) -> None:
-    """UPSERT de los parámetros del día; solo se actualizan los campos presentes."""
+    """UPSERT de los parámetros del día; solo se actualizan los campos presentes.
+
+    ON CONFLICT preserva el rowid (INSERT OR REPLACE lo cambiaba) y los campos
+    no enviados conservan su valor previo.
+    """
     current = get_parametros_diarios(db_path, fecha) or {}
     merged = {**current, **params}
     with transaction(db_path) as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO parametros_diarios (fecha, peso_kg, factor_proteina, "
-            "factor_grasa, kcal_objetivo, fibra_objetivo, hierro_objetivo, calcio_objetivo, "
-            "vitamina_c_objetivo, vitamina_a_objetivo) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            """INSERT INTO parametros_diarios (fecha, peso_kg, factor_proteina,
+                   factor_grasa, kcal_objetivo, fibra_objetivo, hierro_objetivo,
+                   calcio_objetivo, vitamina_c_objetivo, vitamina_a_objetivo)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(fecha) DO UPDATE SET
+                   peso_kg = excluded.peso_kg,
+                   factor_proteina = excluded.factor_proteina,
+                   factor_grasa = excluded.factor_grasa,
+                   kcal_objetivo = excluded.kcal_objetivo,
+                   fibra_objetivo = excluded.fibra_objetivo,
+                   hierro_objetivo = excluded.hierro_objetivo,
+                   calcio_objetivo = excluded.calcio_objetivo,
+                   vitamina_c_objetivo = excluded.vitamina_c_objetivo,
+                   vitamina_a_objetivo = excluded.vitamina_a_objetivo""",
             (
                 fecha,
                 *[float(merged.get(col, 0.0)) for col in _PARAMETROS_COLUMNS],

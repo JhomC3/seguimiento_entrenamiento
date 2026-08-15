@@ -889,3 +889,26 @@ def test_v012_cardio_annotations_schema(tmp_path):
     fk = conn.execute("PRAGMA foreign_key_list(cardio_annotations)").fetchall()
     assert any(f[2] == "health_records" and f[3] == "hc_id" for f in fk)
     conn.close()
+
+
+def test_save_parametros_preserva_rowid(tmp_path):
+    from src.database import save_parametros_diarios
+    from src.db_connection import read_connection
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    save_parametros_diarios(db_path, "2026-08-14", {"peso_kg": 80.0})
+    with read_connection(db_path) as conn:
+        rowid_1 = conn.execute(
+            "SELECT rowid FROM parametros_diarios WHERE fecha = ?", ("2026-08-14",)
+        ).fetchone()[0]
+    save_parametros_diarios(db_path, "2026-08-14", {"kcal_objetivo": 2400.0})
+    with read_connection(db_path) as conn:
+        rowid_2 = conn.execute(
+            "SELECT rowid FROM parametros_diarios WHERE fecha = ?", ("2026-08-14",)
+        ).fetchone()[0]
+        peso = conn.execute(
+            "SELECT peso_kg FROM parametros_diarios WHERE fecha = ?", ("2026-08-14",)
+        ).fetchone()[0]
+    assert rowid_1 == rowid_2
+    assert peso == 80.0
