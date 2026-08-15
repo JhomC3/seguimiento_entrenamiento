@@ -665,3 +665,152 @@ def test_other_mutations_still_require_csrf(client):
     """El resto de rutas mutantes del dashboard conservan el CSRF intacto."""
     r = client.post("/entrenamiento/session/save", data={})
     assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# LAN sync-only isolation (web plan Task 1)
+# ---------------------------------------------------------------------------
+
+
+def _lan_scope(*, method="GET", path="/", client=("192.168.1.25", 50000), headers=None):
+    return {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "scheme": "http",
+        "server": ("0.0.0.0", 8000),
+        "client": client,
+        "headers": headers or [],
+    }
+
+
+async def _lan_inner(scope, receive, send):
+    await send({"type": "http.response.start", "status": 200, "headers": []})
+    await send({"type": "http.response.body", "body": b"ok"})
+
+
+def _run_lan(scope, middleware=None):
+    """Ejecuta un scope contra LanSyncOnlyMiddleware; devuelve (status, headers)."""
+    from src.network_access import LanSyncOnlyMiddleware
+
+    mw = middleware or LanSyncOnlyMiddleware(_lan_inner)
+    outcome = {}
+
+    async def send(message):
+        if message["type"] == "http.response.start":
+            outcome["status"] = message["status"]
+            outcome["headers"] = message["headers"]
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    _run(mw(scope, receive, send))
+    return outcome.get("status", 0), outcome.get("headers", [])
+
+
+def _lan_headers(headers) -> dict:
+    return {k.decode(): v.decode() for k, v in headers}
+
+
+def test_lan_sync_only_blocks_remote_dashboard(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    status, _ = _run_lan(_lan_scope(path="/"))
+    assert status == 403
+
+
+def test_lan_sync_only_allows_only_sync_post(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    allowed, _ = _run_lan(_lan_scope(method="POST", path="/sync/health-connect"))
+    denied, _ = _run_lan(_lan_scope(path="/exportar/csv"))
+    assert allowed == 200
+    assert denied == 403
+
+
+def test_lan_sync_only_allows_loopback_everything(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    for addr in ("127.0.0.1", "::1"):
+        status, _ = _run_lan(_lan_scope(path="/", client=(addr, 55555)))
+        assert status == 200
+        status, _ = _run_lan(
+            _lan_scope(method="POST", path="/alimentacion/save", client=(addr, 55555))
+        )
+        assert status == 200
+
+
+def test_lan_sync_only_ignores_x_forwarded_for(monkeypatch):
+    """Solo se confía en scope['client']; X-Forwarded-For jamás se lee."""
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    spoofed = [(b"x-forwarded-for", b"127.0.0.1")]
+    status, _ = _run_lan(_lan_scope(path="/", headers=spoofed))
+    assert status == 403
+
+
+def test_lan_sync_only_exact_route_enforcement(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    for path in ("/sync/health-connect/extra", "/sync/other", "/sync/health-connect", "/"):
+        status, _ = _run_lan(_lan_scope(method="POST", path=path))
+        if path == "/sync/health-connect":
+            assert status == 200
+        else:
+            assert status == 403
+
+
+def test_lan_sync_only_get_sync_rejected(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    status, _ = _run_lan(_lan_scope(method="GET", path="/sync/health-connect"))
+    assert status == 403
+
+
+def test_lan_sync_only_rejects_without_html(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    status, headers = _run_lan(_lan_scope(path="/"))
+    assert status == 403
+    h = _lan_headers(headers)
+    assert "text/html" not in h.get("content-type", "")
+
+
+def test_lan_sync_rate_limit_429_with_retry_after(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    monkeypatch.setenv("GYM_SYNC_RATE_LIMIT_PER_MINUTE", "2")
+    mw = None
+    from src.network_access import LanSyncOnlyMiddleware
+
+    mw = LanSyncOnlyMiddleware(_lan_inner)
+    scope = _lan_scope(method="POST", path="/sync/health-connect")
+    assert _run_lan(scope, mw)[0] == 200
+    assert _run_lan(scope, mw)[0] == 200
+    status, headers = _run_lan(scope, mw)
+    assert status == 429
+    h = _lan_headers(headers)
+    assert int(h["retry-after"]) >= 1
+
+
+def test_lan_sync_rate_limit_exempts_loopback(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    monkeypatch.setenv("GYM_SYNC_RATE_LIMIT_PER_MINUTE", "2")
+    from src.network_access import LanSyncOnlyMiddleware
+
+    mw = LanSyncOnlyMiddleware(_lan_inner)
+    for _ in range(5):
+        status, _ = _run_lan(
+            _lan_scope(method="POST", path="/sync/health-connect", client=("127.0.0.1", 50000)), mw
+        )
+        assert status == 200
+
+
+def test_lan_sync_only_inert_without_flag():
+    """Sin GYM_LAN_SYNC_ONLY el middleware no bloquea nada (modo loopback dev)."""
+    status, _ = _run_lan(_lan_scope(path="/"))
+    assert status == 200
+
+
+def test_lan_sync_only_rate_limit_uses_env_bounded(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    monkeypatch.setenv("GYM_SYNC_RATE_LIMIT_PER_MINUTE", "0")
+    from src.network_access import sync_rate_limit_per_minute
+
+    assert sync_rate_limit_per_minute() == 1
+    monkeypatch.setenv("GYM_SYNC_RATE_LIMIT_PER_MINUTE", "abc")
+    assert sync_rate_limit_per_minute() == 30

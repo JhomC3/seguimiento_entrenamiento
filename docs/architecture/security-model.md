@@ -140,11 +140,41 @@ No third-party runtime is involved in styles.
   document must be updated with the exposure model. On startup, the app logs a
   warning while `GYM_CSRF_SECRET` is unset (dev secret active).
 
+### 2.6 LAN exposure: sync-only gate (`src/network_access.py`)
+
+CSRF does not authenticate users: a remote peer could load the dashboard and
+read a valid token. The LAN is therefore **HealthSync-only**:
+
+- **`LanSyncOnlyMiddleware`** (activated by `GYM_LAN_SYNC_ONLY=1`, set only by
+  `scripts/start_server.sh`) classifies each request by the ASGI
+  `scope['client']` address (`ipaddress.ip_address(...).is_loopback`; covers
+  `127.0.0.0/8` and `::1`). Loopback traffic passes untouched.
+- **Remote traffic is allowed only for `POST /sync/health-connect`** (exact path
+  match, never a prefix), which authenticates with `X-Sync-Token`. Every other
+  remote request — dashboard, static, exports, mutations — is rejected with a
+  bare **403** (empty body, no HTML) before the request body is parsed.
+- **`X-Forwarded-For` is never trusted**; only the TCP peer address.
+- **Rate limit:** bounded per-peer fixed window, `GYM_SYNC_RATE_LIMIT_PER_MINUTE`
+  (default 30/min). Exceeding it returns **429 + `Retry-After`**.
+- **Startup consistency:** lifespan raises `RuntimeError` if the gate is on
+  without `GYM_CSRF_SECRET`, or if a secret is set without the gate (the
+  dashboard would be reachable from the LAN). A manual
+  `uvicorn app:app --host 0.0.0.0` without the flag is an **accepted risk**,
+  not a supported configuration.
+- The middleware is registered **outside** the CSRF middleware: remote
+  dashboard traffic never reaches CSRF parsing. The exact-path CSRF exemption
+  for `/sync/health-connect` remains, since the sync endpoint keeps its own
+  credential.
+
 ## 3. Before exposing on a network
+
+The dashboard itself is **never** exposed: the only remote surface is
+`POST /sync/health-connect` (token-authenticated, rate-limited). Any future
+remote UI access requires real authentication first.
 
 1. Add authentication (login + session cookies) and authorization (owner-only).
 2. Move CSRF secret to a managed environment variable; disable fallback secrets.
-3. Switch server binding away from `127.0.0.1` only after 1–2 are done.
+3. Keep the dashboard loopback-only; expose only HealthSync (the gate).
 4. Re-run the full security test suite and the browser suite against the new
    deployment origin.
 

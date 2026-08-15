@@ -48,6 +48,7 @@ from src.mutation_service import (
     save_template_with_undo_snapshot,
     undo_last_action,
 )
+from src.network_access import LanSyncOnlyMiddleware, lan_sync_only_enabled
 from src.nutrition_service import (
     NUTRIENT_FIELDS,
     apply_meal_template,
@@ -86,17 +87,30 @@ from src.training_service import (
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    init_db(DB_PATH)
-    if os.environ.get("GYM_CSRF_SECRET") is None:
+    lan_mode = lan_sync_only_enabled()
+    has_secret = bool(os.environ.get("GYM_CSRF_SECRET"))
+    if lan_mode and not has_secret:
+        raise RuntimeError(
+            "GYM_LAN_SYNC_ONLY=1 requires GYM_CSRF_SECRET "
+            "(data/csrf_secret, generado por scripts/start_server.sh)"
+        )
+    if has_secret and not lan_mode:
+        raise RuntimeError(
+            "GYM_CSRF_SECRET is set without GYM_LAN_SYNC_ONLY=1: the dashboard "
+            "would be reachable from the LAN; use scripts/start_server.sh"
+        )
+    if not has_secret:
         logging.getLogger("security").warning(
             "GYM_CSRF_SECRET no configurado: usando secreto de desarrollo."
         )
+    init_db(DB_PATH)
     yield
 
 
 app = FastAPI(title="Gym Tracker", lifespan=lifespan)
 app.add_middleware(CSRFProtectionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(LanSyncOnlyMiddleware)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
