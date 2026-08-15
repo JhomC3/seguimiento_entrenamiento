@@ -31,9 +31,7 @@ def setup_logging(level: int = logging.INFO) -> None:
     if not _installed:
         handler = logging.StreamHandler()
         handler.setFormatter(
-            logging.Formatter(
-                "%(asctime)s %(levelname)s %(name)s [%(request_id)s] %(message)s"
-            )
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s [%(request_id)s] %(message)s")
         )
         handler.addFilter(RequestIdFilter())
         root.addHandler(handler)

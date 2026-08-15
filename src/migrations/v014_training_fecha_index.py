@@ -9,6 +9,5 @@ NAME = "training_fecha_index"
 
 def migrate(conn) -> None:
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_training_fecha_set_orden "
-        "ON training_sets(fecha, set_orden)"
+        "CREATE INDEX IF NOT EXISTS idx_training_fecha_set_orden ON training_sets(fecha, set_orden)"
     )

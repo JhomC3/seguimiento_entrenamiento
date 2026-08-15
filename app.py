@@ -113,10 +113,10 @@ async def lifespan(_: FastAPI):
     yield
 
 
-MAX_FORM_SETS = 100          # series por sesión
-MAX_DIARY_ROWS = 100         # filas del diario
-MAX_REORDER_IDS = 500        # ids de reordenamiento
-MAX_NAME_LEN = 200           # nombres (ejercicio, alimento, plantilla)
+MAX_FORM_SETS = 100  # series por sesión
+MAX_DIARY_ROWS = 100  # filas del diario
+MAX_REORDER_IDS = 500  # ids de reordenamiento
+MAX_NAME_LEN = 200  # nombres (ejercicio, alimento, plantilla)
 
 
 def _check_lote(rows: list, max_rows: int, campo: str) -> None:
@@ -167,7 +167,9 @@ class RequestIdMiddleware:
             request_id_var.reset(token)
 
 
-app = FastAPI(title="Gym Tracker", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app = FastAPI(
+    title="Gym Tracker", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan
+)
 app.add_middleware(CSRFProtectionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(LanSyncOnlyMiddleware)
@@ -559,7 +561,6 @@ def entrenamiento_session_save(
     kg: list[str] = Form(default=[]),
     reps: list[str] = Form(default=[]),
     rir: list[str] = Form(default=[]),
-
     descanso: list[str] = Form(default=[]),
 ):
     _check_lote(ejercicio, MAX_FORM_SETS, "series")

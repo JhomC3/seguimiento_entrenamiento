@@ -244,7 +244,6 @@ def test_validate_sets_accepts_empty_descanso(db):
     assert sets[0].descanso_seg is None
 
 
-
 def test_get_sets_by_fecha(db):
     save_session(
         db,

@@ -923,7 +923,6 @@ def test_save_parametros_preserva_rowid(tmp_path):
 def test_get_plantillas_una_sola_consulta(tmp_path, monkeypatch):
     """Sin N+1: 1 query de plantillas + 1 de sets (≤2 ejecuciones)."""
     import src.database as dbmod
-    from src.db_connection import read_connection
 
     db_path = str(tmp_path / "db.sqlite")
     init_db(db_path)
@@ -968,7 +967,6 @@ def test_get_plantillas_una_sola_consulta(tmp_path, monkeypatch):
 def test_get_plantillas_alimentacion_una_sola_consulta(tmp_path, monkeypatch):
     """Sin N+1: 1 query de plantillas + 1 de alimentos (≤2 ejecuciones)."""
     import src.database as dbmod
-    from src.db_connection import read_connection
 
     db_path = str(tmp_path / "db.sqlite")
     init_db(db_path)
