@@ -13,7 +13,12 @@
 
 La arquitectura del proyecto **es** el patrón recomendado por la industria para webs rápidas:
 HTML renderizado en servidor + htmx para actualizaciones parciales, con JavaScript como capa
-de **mejora progresiva** (el dashboard funciona sin JS; el JS solo añade interacción).
+de interacción.
+
+- **Política no-JS honesta:** la vista inicial (título, fila de músculos, gráfica vacía
+  server-side y export CSV) funciona sin JavaScript; editar, navegar por fechas, aplicar
+  plantillas, deshacer y las gráficas requieren JS. Un aviso `<noscript>` lo dice y ofrece
+  la exportación. No se afirma funcionalidad inexistente sin JS.
 
 - HTML5 semántico obligatorio (`<header>`, `<nav>`, `<main>`, `<section>`, `<article>`,
   `<form>`, `<button>`, `<label>`). Un `<div>` interactivo (con click handlers) es un

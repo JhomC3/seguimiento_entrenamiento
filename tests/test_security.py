@@ -515,7 +515,7 @@ def test_hostile_exercise_in_lists_renders_inert(authed_client):
         },
     )
     assert r.status_code == 200
-    r = authed_client.get("/select")
+    r = authed_client.get("/nivel?tipo=musculo&foco=Pectoral")
     assert r.status_code == 200
     _assert_inert_fragment(r.text)
     r = authed_client.get("/")

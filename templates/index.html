@@ -27,6 +27,7 @@
     <!-- Músculos (fila persistente) + ejercicios del músculo seleccionado -->
     <div class="flex flex-col gap-2 border-b border-neutral-800 pb-4">
         <div id="cascade-row">
+            {{ cascade_row_html | safe }}
             <span class="htmx-indicator text-xs text-neutral-400">Cargando niveles…</span>
         </div>
         <div id="ejercicios-row">
@@ -47,6 +48,13 @@
         <section id="history-section" class="flex flex-col gap-4"></section>
     </main>
 </div>
+
+<noscript>
+    <div class="notice notice-error" role="alert">
+        El dashboard requiere JavaScript para editar, navegar y ver las gráficas.
+        Sin JS puedes ver la vista inicial y <a href="/exportar/csv" class="underline">exportar los datos en CSV</a>.
+    </div>
+</noscript>
 
 <!-- Ventana emergente de registro (alimentación + sesión + cardio) -->
 <dialog id="editor-popup" class="editor-popup-dialog" aria-labelledby="popup-fecha-title">

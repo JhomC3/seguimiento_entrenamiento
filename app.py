@@ -19,7 +19,6 @@ from src.dashboard_service import (
     build_nutrition_editor,
     build_session_editor,
     chart_html,
-    get_ejercicios_por_grupo,
     get_filters,
     get_first_session_date,
     translate_error,
@@ -376,6 +375,7 @@ def read_index(request: Request):
             "ejercicios_list": ejercicios_list,
             "ejercicios_grupo": ejercicios_list,
             "muscle_categories": categories,
+            "cascade_row_html": _cascade_row_html(request, "musculo", ""),
             "systemic_chart_html": chart_html(
                 DB_PATH,
                 "systemic",
@@ -935,65 +935,6 @@ def export_csv():
     )
 
 
-@app.get("/select", response_class=HTMLResponse)
-def select_view(request: Request, grupo: str = Query(None), fecha: str = Query(None)):
-    if not grupo:
-        ejercicios_list, _ = get_filters(DB_PATH)
-        chart_html_frag = chart_html(
-            DB_PATH,
-            "systemic",
-            title=_chart_title(),
-        )
-        exercise_list_html = _render_body(
-            templates.TemplateResponse(
-                request=request,
-                name="exercise_list.html",
-                context={
-                    "ejercicios_grupo": ejercicios_list,
-                    "grupo": "",
-                },
-            )
-        )
-        oob_chart = chart_oob_wrapper(chart_html_frag)
-        selected = fecha or _today_iso()
-        navigator_oob = fragment_oob(
-            templates,
-            request,
-            "date-navigator",
-            _navigator_html(request, selected),
-            swap="outerHTML",
-        )
-        return HTMLResponse(content=exercise_list_html + oob_chart + navigator_oob)
-
-    ejercicios_grupo = get_ejercicios_por_grupo(DB_PATH, grupo)
-    chart_html_frag = chart_html(
-        DB_PATH,
-        "muscle_group",
-        grupo,
-        _chart_title(grupo),
-    )
-    exercise_list_html = _render_body(
-        templates.TemplateResponse(
-            request=request,
-            name="exercise_list.html",
-            context={
-                "ejercicios_grupo": ejercicios_grupo,
-                "grupo": grupo,
-            },
-        )
-    )
-    oob_chart = chart_oob_wrapper(chart_html_frag)
-    selected = fecha or _today_iso()
-    navigator_oob = fragment_oob(
-        templates,
-        request,
-        "date-navigator",
-        _navigator_html(request, selected, grupo=grupo),
-        swap="outerHTML",
-    )
-    return HTMLResponse(content=exercise_list_html + oob_chart + navigator_oob)
-
-
 def _cascade_items(nivel: str, foco: str) -> list[str]:
     """Siguiente fila de la cascada: categorías → músculos → ejercicios."""
     from src.db_connection import read_connection
@@ -1059,9 +1000,32 @@ def _ejercicios_row_html(request: Request, musculo: str, seleccionados: list[str
             context={
                 "items": _cascade_items("musculo", musculo),
                 "padre": musculo,
-                "seleccionados": seleccionados,
+                 "seleccionados": seleccionados,
             },
         )
+    )
+
+
+def _chart_selection_html(musculos: list[str], ejercicios: list[str]) -> str:
+    """Fragmento de la gráfica de la selección (1 músculo: compilado + ejercicios;
+    2+: global + músculos). Mismo shell (header + altura) que chart_html para
+    que el swap no mueva layout."""
+    from src.charts import chart_selection
+
+    fig = chart_selection(DB_PATH, musculos, ejercicios)
+    header = _chart_header_html("Rendimiento – " + ", ".join(musculos))
+    if not fig.data:
+        return (
+            header
+            + "<div class='flex items-center justify-center chart-empty text-neutral-400 text-xs'>"
+            "Sin datos para esta selección</div>"
+        )
+    from src.dashboard_service import _json_for_inline
+
+    return (
+        header + f'<script id="unified-chart-data" type="application/json">'
+        f"{_json_for_inline(fig.to_json())}</script>"
+        '<div id="unified-chart-plot" class="plotly-graph-div"></div>'
     )
 
 
@@ -1109,29 +1073,6 @@ def nivel_view(
     return HTMLResponse(content=_cascade_row_html(request, tipo, foco))
 
 
-def _chart_selection_html(musculos: list[str], ejercicios: list[str]) -> str:
-    """Fragmento de la gráfica de la selección (1 músculo: compilado + ejercicios;
-    2+: global + músculos). Mismo shell (header + altura) que chart_html para
-    que el swap no mueva layout."""
-    from src.charts import chart_selection
-
-    fig = chart_selection(DB_PATH, musculos, ejercicios)
-    header = _chart_header_html("Rendimiento – " + ", ".join(musculos))
-    if not fig.data:
-        return (
-            header
-            + "<div class='flex items-center justify-center chart-empty text-neutral-400 text-xs'>"
-            "Sin datos para esta selección</div>"
-        )
-    from src.dashboard_service import _json_for_inline
-
-    return (
-        header + f'<script id="unified-chart-data" type="application/json">'
-        f"{_json_for_inline(fig.to_json())}</script>"
-        '<div id="unified-chart-plot" class="plotly-graph-div"></div>'
-    )
-
-
 @app.get("/grafica", response_class=HTMLResponse)
 def grafica_view(
     request: Request,
@@ -1154,61 +1095,6 @@ def grafica_view(
     return HTMLResponse(content=content)
 
 
-@app.get("/grupo/reset", response_class=HTMLResponse)
-def reset_grupo(request: Request, grupo: str = Query(...), fecha: str = Query(None)):
-    chart_html_frag = chart_html(
-        DB_PATH,
-        "muscle_group",
-        grupo,
-        _chart_title(grupo),
-    )
-    oob_chart = chart_oob_wrapper(chart_html_frag)
-    selected = fecha or _today_iso()
-    navigator_oob = fragment_oob(
-        templates,
-        request,
-        "date-navigator",
-        _navigator_html(request, selected, grupo=grupo),
-        swap="outerHTML",
-    )
-    return HTMLResponse(content="<div></div>" + oob_chart + navigator_oob)
-
-
-@app.get("/ejercicio", response_class=HTMLResponse)
-def get_exercise_history(request: Request, ejercicio: str = Query(...), fecha: str = Query(None)):
-    raw_df = get_exercise_raw_data(DB_PATH, ejercicio)
-    raw_data = raw_df.to_dict(orient="records") if not raw_df.empty else []
-
-    session_df = get_exercise_session_summary(DB_PATH, ejercicio)
-    session_summary = session_df.to_dict(orient="records") if not session_df.empty else []
-
-    chart_html_frag = chart_html(
-        DB_PATH,
-        "exercise",
-        ejercicio,
-        _chart_title(ejercicio),
-    )
-    tables_html = _render_body(
-        templates.TemplateResponse(
-            request=request,
-            name="exercise_detail.html",
-            context={
-                "raw_data": raw_data,
-                "session_summary": session_summary,
-                "ejercicio": ejercicio,
-            },
-        )
-    )
-    oob_chart = chart_oob_wrapper(chart_html_frag)
-    selected = fecha or _today_iso()
-    navigator_oob = fragment_oob(
-        templates,
-        request,
-        "date-navigator",
-        _navigator_html(request, selected, ejercicio=ejercicio),
-        swap="outerHTML",
-    )
-    return HTMLResponse(content=tables_html + oob_chart + navigator_oob)
 
 
 @app.post("/sync/health-connect")

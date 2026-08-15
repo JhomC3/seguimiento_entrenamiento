@@ -170,7 +170,11 @@ function restoreFromURL() {
 }
 
 function loadMuscles() {
-    // Estado base: fila de músculos + gráfica sistémica, siempre al iniciar.
+    // Estado base: fila de músculos + gráfica sistémica. La fila inicial se
+    // sirve server-side en el index; solo se pide si no está presente
+    // (recarga del popup, popstate).
+    const row = document.getElementById('cascade-row');
+    if (row && row.querySelector('.level-chip')) return;
     refresh('#cascade-row', '/nivel?tipo=global');
 }
 
