@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 from config import CICLO_NUMERO
 from src.analysis_data import daily_sleep_hours, daily_volume, daily_weight
 from src.db_connection import read_connection
+from src.design_tokens import color, palette
 from src.metrics_engine import RM_FACTOR, calculate_pfr_timeline
 from src.training_service import calculate_cycle_week, parse_cycle_start
 
@@ -111,16 +112,17 @@ HOVER_TEMPLATE = (
     "<extra></extra>"
 )
 
-# Paleta para trazas por ejercicio (sobre el tema oscuro del proyecto)
-EXERCISE_PALETTE = [
-    "#7dd3fc",
-    "#a3e635",
-    "#c084fc",
-    "#fbbf24",
-    "#34d399",
-    "#60a5fa",
-    "#f472b6",
-]
+# Paleta para trazas por ejercicio (canonical: static/design-tokens.json)
+EXERCISE_PALETTE = palette("chart.exercise")
+
+
+def chart_color(path: str) -> str:
+    """Color de gráfica desde los tokens canónicos ("chart.axes", "primary", ...)."""
+    if path == "primary":
+        path = "chart.primary"
+    elif not path.startswith("chart."):
+        path = f"chart.{path}"
+    return color(path)
 
 
 def _hex_to_rgba(hex_color: str, alpha: float) -> str:
@@ -178,7 +180,7 @@ def chart_selection(db_path: str, musculos: list[str], ejercicios: list[str]) ->
         compiled = _weekly_pfr_df(db_path, "muscle_group", musculo)
         if not compiled.empty:
             # El compilado es la línea de referencia: sólida y protagonista.
-            traces.append(_pfr_trace(compiled, "Compilado", "#e56d88"))
+            traces.append(_pfr_trace(compiled, "Compilado", chart_color("primary")))
 
         if ejercicios:
             with read_connection(db_path) as conn:
@@ -201,7 +203,7 @@ def chart_selection(db_path: str, musculos: list[str], ejercicios: list[str]) ->
         global_df = _weekly_pfr_df(db_path, "systemic", None)
         if not global_df.empty:
             # El global (cuerpo entero) es la línea de referencia sólida.
-            traces.append(_pfr_trace(global_df, "Global", "#e56d88"))
+            traces.append(_pfr_trace(global_df, "Global", chart_color("primary")))
         for idx, musculo in enumerate(musculos):
             df = _weekly_pfr_df(db_path, "muscle_group", musculo)
             if df.empty:
@@ -224,34 +226,34 @@ def chart_selection(db_path: str, musculos: list[str], ejercicios: list[str]) ->
     y_bottom = 0 if y_min >= 0 else y_min - y_padding
 
     fig.update_layout(
-        title={"text": title, "font": {"color": "white", "size": 14}},
+        title={"text": title, "font": {"color": chart_color("hover.text"), "size": 14}},
         xaxis={
             "title": "Semana",
             "tickmode": "array",
             "tickvals": sorted({int(v) for t in traces for v in t.x}),
-            "tickfont": {"size": 10, "color": "#a3a3a3"},
+            "tickfont": {"size": 10, "color": chart_color("axes")},
             "showgrid": False,
         },
         yaxis={
             "title": "Crecimiento (%)",
             "range": [y_bottom, y_max + y_padding],
             "showgrid": False,
-            "zerolinecolor": "#333",
-            "tickfont": {"color": "#a3a3a3"},
+            "zerolinecolor": chart_color("grid"),
+            "tickfont": {"color": chart_color("axes")},
         },
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        font={"color": "#a3a3a3"},
+        plot_bgcolor=chart_color("background"),
+        paper_bgcolor=chart_color("background"),
+        font={"color": chart_color("axes")},
         margin={"l": 60, "r": 20, "t": 50, "b": 50},
         hovermode="x unified",
         hoverlabel={
-            "bgcolor": "#1a1a1a",
-            "font": {"color": "white", "size": 12},
-            "bordercolor": "#333",
+            "bgcolor": chart_color("hover.bg"),
+            "font": {"color": chart_color("hover.text"), "size": 12},
+            "bordercolor": chart_color("grid"),
         },
         legend={
-            "font": {"color": "#a3a3a3", "size": 11},
-            "bgcolor": "rgba(0,0,0,0)",
+            "font": {"color": chart_color("axes"), "size": 11},
+            "bgcolor": chart_color("background"),
         },
     )
     return fig
@@ -285,8 +287,8 @@ def chart_pfr_timeline(
             y=weekly["crecimiento"],
             mode="lines+markers",
             name="Crecimiento",
-            line={"color": "#e56d88", "width": 2.5},
-            marker={"size": 8, "color": "#e56d88"},
+            line={"color": chart_color("primary"), "width": 2.5},
+            marker={"size": 8, "color": chart_color("primary")},
             customdata=weekly["customdata"].tolist(),
             hovertemplate=(
                 "Semana %{x}<br>Crecimiento: %{y:.1f}%"
@@ -298,31 +300,31 @@ def chart_pfr_timeline(
     )
 
     fig.update_layout(
-        title={"text": title, "font": {"color": "white", "size": 14}},
+        title={"text": title, "font": {"color": chart_color("hover.text"), "size": 14}},
         xaxis={
             "title": "Semana",
             "tickmode": "array",
             "tickvals": weekly["semana"],
             "ticktext": [str(n) for n in weekly["semana"]],
-            "tickfont": {"size": 10, "color": "#a3a3a3"},
+            "tickfont": {"size": 10, "color": chart_color("axes")},
             "showgrid": False,
         },
         yaxis={
             "title": "Crecimiento (%)",
             "range": [y_bottom, y_max + y_padding],
             "showgrid": False,
-            "zerolinecolor": "#333",
-            "tickfont": {"color": "#a3a3a3"},
+            "zerolinecolor": chart_color("grid"),
+            "tickfont": {"color": chart_color("axes")},
         },
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        font={"color": "#a3a3a3"},
+        plot_bgcolor=chart_color("background"),
+        paper_bgcolor=chart_color("background"),
+        font={"color": chart_color("axes")},
         margin={"l": 60, "r": 20, "t": 50, "b": 50},
         hovermode="x unified",
         hoverlabel={
-            "bgcolor": "#1a1a1a",
-            "font": {"color": "white", "size": 12},
-            "bordercolor": "#333",
+            "bgcolor": chart_color("hover.bg"),
+            "font": {"color": chart_color("hover.text"), "size": 12},
+            "bordercolor": chart_color("grid"),
         },
     )
 
