@@ -99,7 +99,9 @@ def _fill_nutrition_day(page):
     alimento = row.locator('input[name="alimento"]')
     if alimento.is_disabled():
         page.locator('[data-action="nutrition-toggle-edit"]').evaluate("el => el.click()")
-        page.wait_for_selector("#nutrition-rows .nutrition-row input[name='alimento']:not([disabled])", timeout=3000)
+        page.wait_for_selector(
+            "#nutrition-rows .nutrition-row input[name='alimento']:not([disabled])", timeout=3000
+        )
     alimento.fill("Avena")
     row.locator('input[name="cantidad"]').fill("120")
 
