@@ -74,6 +74,7 @@ from src.security import (
     get_csrf_secret,
     make_csrf_token,
 )
+from src.static_assets import is_current_digest, static_url
 from src.template_service import apply_template_rows
 from src.training_service import (
     calculate_cycle_week,
@@ -114,14 +115,24 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(LanSyncOnlyMiddleware)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+templates.env.globals["static_url"] = static_url
 
 
 @app.middleware("http")
-async def no_cache_static(request: Request, call_next):
-    """Revalidación de assets en desarrollo: el navegador nunca usa JS/CSS viejos."""
+async def static_cache_policy(request: Request, call_next):
+    """Assets con digest vigente → immutable (1 año); el resto → no-cache.
+
+    Evita copias de assets y deploys con caché vieja: el navegador solo
+    revalida cuando el ?v= no coincide con el digest actual del archivo.
+    """
     response = await call_next(request)
     if request.url.path.startswith("/static"):
-        response.headers["Cache-Control"] = "no-cache"
+        rel = request.url.path[len("/static/") :]
+        version = request.query_params.get("v")
+        if is_current_digest(rel, version):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
     return response
 
 

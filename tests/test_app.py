@@ -439,8 +439,8 @@ def test_index_references_static_assets(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/")
-    assert 'href="/static/css/app.css"' in r.text
-    assert 'src="/static/js/app.js"' in r.text
+    assert 'href="/static/css/app.css?v=' in r.text
+    assert 'src="/static/js/app.js?v=' in r.text
 
 
 def test_static_css_served(tmp_path, monkeypatch):
@@ -465,11 +465,13 @@ def test_app_css_imports_ordered(tmp_path, monkeypatch):
     r = _client().get("/static/css/app.css")
     assert r.status_code == 200
     ordered = [
+        "tokens.css",
         "theme.css",
         "components.css",
         "date-navigator.css",
         "session-editor.css",
         "templates.css",
+        "cascade.css",
     ]
     positions = [r.text.find(f'"{name}"') for name in ordered]
     assert all(p >= 0 for p in positions), f"missing import: {r.text}"
@@ -489,7 +491,7 @@ def test_base_template_has_no_inline_style_block(tmp_path, monkeypatch):
         source = f.read()
     assert "<style>" not in source
     assert ".date-num {" not in source
-    assert 'href="/static/css/app.css"' in source
+    assert "static_url('css/app.css')" in source
 
 
 def test_base_template_loads_only_module_js(tmp_path, monkeypatch):
@@ -497,7 +499,7 @@ def test_base_template_loads_only_module_js(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "DB_PATH", db)
     with open(os.path.join(os.path.dirname(__file__), "..", "templates", "base.html")) as f:
         source = f.read()
-    assert '<script type="module" src="/static/js/app.js"></script>' in source
+    assert "static_url('js/app.js')" in source
     for banned in (
         "function submitSave",
         "function doNav",
@@ -538,7 +540,7 @@ def test_base_template_sin_cdn_tailwind(tmp_path, monkeypatch):
     with open(os.path.join(os.path.dirname(__file__), "..", "templates", "base.html")) as f:
         source = f.read()
     assert "cdn.tailwindcss.com" not in source
-    assert '<link rel="stylesheet" href="/static/css/tailwind.css">' in source
+    assert "static_url('css/tailwind.css')" in source
 
 
 def test_static_tailwind_css_served(tmp_path, monkeypatch):
@@ -830,9 +832,9 @@ def test_select_grupo_filtra_navegador_sin_saltar_editor(tmp_path, monkeypatch):
 
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    save_session(db, "2026-05-04", [TrainingSetInput("Press", 80, 8, 1)])
-    save_session(db, "2026-05-06", [TrainingSetInput("Press", 82, 8, 1)])
-    save_session(db, "2026-05-08", [TrainingSetInput("Press", 84, 8, 1)])
+    save_session(db, "2026-05-20", [TrainingSetInput("Press", 80, 8, 1)])
+    save_session(db, "2026-05-22", [TrainingSetInput("Press", 82, 8, 1)])
+    save_session(db, "2026-05-24", [TrainingSetInput("Press", 84, 8, 1)])
     r = _client().get("/select?grupo=Pectoral&fecha=2026-06-01")
     assert 'id="date-navigator" hx-swap-oob="outerHTML"' in r.text
     assert "filter-jump" not in r.text
@@ -858,8 +860,8 @@ def test_ejercicio_filtra_navegador_sin_saltar_editor(tmp_path, monkeypatch):
 
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    save_session(db, "2026-05-04", [TrainingSetInput("Press", 80, 8, 1)])
-    save_session(db, "2026-05-05", [TrainingSetInput("Press", 82, 8, 1)])
+    save_session(db, "2026-05-25", [TrainingSetInput("Press", 80, 8, 1)])
+    save_session(db, "2026-05-26", [TrainingSetInput("Press", 82, 8, 1)])
     r = _client().get("/ejercicio?ejercicio=Press&fecha=2026-06-01")
     assert "filter-jump" not in r.text
     assert 'id="date-navigator" hx-swap-oob="outerHTML"' in r.text

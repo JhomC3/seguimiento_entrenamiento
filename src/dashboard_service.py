@@ -194,12 +194,19 @@ def build_date_navigator(
     grupo: str | None = None,
     ejercicio: str | None = None,
 ) -> DateNavigatorViewModel:
+    """Navigator with a bounded 31-day window centered on the selection.
+
+    La ventana se recorta a [ciclo_start, fin del mes siguiente a hoy]; el
+    salto preciso (input date) y las flechas navegan el centro de la ventana.
+    """
     selected = parse_form_date(fecha_iso)
     data_dates = fechas_con_datos(db_path, grupo, ejercicio)
-    dates = []
-    d = ciclo_start
     end = _end_of_next_month(today)
-    while d <= end:
+    start = max(ciclo_start, selected - timedelta(days=15))
+    limit_end = min(end, selected + timedelta(days=15))
+    dates = []
+    d = start
+    while d <= limit_end:
         iso = d.strftime("%Y-%m-%d")
         dates.append(
             DateDay(
