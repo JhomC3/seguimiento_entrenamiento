@@ -167,3 +167,22 @@ def test_backup_db_via_api_conserva_datos(tmp_path):
         assert check.execute("SELECT v FROM t").fetchone()[0] == 42
     finally:
         check.close()
+
+
+# ---------------------------------------------------------------------------
+# Backend plan Task 7: v014 índice training_sets(fecha, set_orden)
+# ---------------------------------------------------------------------------
+
+
+def test_v014_index_training_fecha(tmp_path):
+    from src.database import init_db
+    from src.db_connection import read_connection
+
+    db_path = str(tmp_path / "mig.db")
+    init_db(db_path)
+    with read_connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
+            ("idx_training_fecha_set_orden",),
+        ).fetchall()
+    assert len(rows) == 1

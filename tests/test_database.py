@@ -103,7 +103,7 @@ def test_migrations_recorded_in_schema_migrations(tmp_path):
         r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()
     )
     conn.close()
-    assert versions == [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+    assert versions == [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
 
 
 def test_migrates_intermediate_state_without_orden(tmp_path):
@@ -384,7 +384,7 @@ def test_v009_creates_meal_templates(tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM plantilla_alimentos").fetchone()[0] == 0
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 13
+    assert max_version == 14
 
 
 def test_v009_is_latest_schema_version(tmp_path):
@@ -393,7 +393,7 @@ def test_v009_is_latest_schema_version(tmp_path):
     conn = sqlite3.connect(db_path)
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 13
+    assert max_version == 14
 
 
 def test_v007_migration_idempotent(tmp_path):
@@ -653,7 +653,7 @@ def test_v008_creates_parametros_diarios_and_nullable_qty(tmp_path):
         assert col in params
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 13
+    assert max_version == 14
 
 
 def test_v008_preserves_diario_rows(tmp_path):
@@ -845,7 +845,7 @@ def test_v010_health_records_schema(tmp_path):
         "deleted_at",
     } <= cols
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
-    assert max_version == 13
+    assert max_version == 14
     pk_cols = {
         r[1] for r in conn.execute("PRAGMA table_info(health_records)").fetchall() if r[5] == 1
     }
