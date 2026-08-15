@@ -852,9 +852,6 @@ def _edit_mode_on(page):
         page.wait_for_timeout(150)
 
 
-
-
-
 def _drag_row_up(page, rows, idx, cell_selector):
     """Arrastra la fila idx hasta la posición de la fila idx-1 (Sortable).
 
@@ -920,7 +917,9 @@ def test_training_cards_reorder_and_persist(page, server):
     expect(cards).to_have_count(2, timeout=3000)
     assert cards.nth(0).get_attribute("data-pt-nombre") == "Press Day"
     # Mover el segundo arriba con el ratón (cuerpo de la tarjeta).
-    _drag_card_up(page, "#plantillas-list .pt-card:nth-child(2)", "#plantillas-list .pt-card:nth-child(1)")
+    _drag_card_up(
+        page, "#plantillas-list .pt-card:nth-child(2)", "#plantillas-list .pt-card:nth-child(1)"
+    )
     page.wait_for_timeout(600)
     expect(page.locator("#plantillas-list .pt-card").nth(0)).to_have_attribute(
         "data-pt-nombre", "Back Day"
@@ -958,7 +957,9 @@ def test_reorder_failure_restores_order_and_notifies(page, server):
         route.abort()
 
     page.route("**/plantilla/reordenar", fail_reorder)
-    _drag_card_up(page, "#plantillas-list .pt-card:nth-child(2)", "#plantillas-list .pt-card:nth-child(1)")
+    _drag_card_up(
+        page, "#plantillas-list .pt-card:nth-child(2)", "#plantillas-list .pt-card:nth-child(1)"
+    )
     page.wait_for_timeout(800)
     page.unroute("**/plantilla/reordenar")
     expect(page.locator("#plantillas-list .pt-card").nth(0)).to_have_attribute(
@@ -993,8 +994,6 @@ def test_nutrition_apply_confirms_replacement(page, server):
     page.keyboard.press("Enter")
     page.wait_for_timeout(600)
     assert page.locator("#nutrition-rows .nutrition-row").count() >= 1
-
-
 
 
 def test_date_arrows_ignored_outside_navigator(page, server):
