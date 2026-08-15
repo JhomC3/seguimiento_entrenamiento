@@ -1,6 +1,20 @@
 """Backup retention helpers shared by app backups and migration pre-upgrade backups."""
 
+import sqlite3
 from pathlib import Path
+
+
+def copy_db(source_path: str, dest_path: str) -> None:
+    """Copia consistente de una base SQLite usando la API de backup online del
+    motor (incluye frames WAL sin checkpointear: un shutil.copy2 del .db podría
+    producir un backup inconsistente con WAL activo)."""
+    source = sqlite3.connect(source_path)
+    dest = sqlite3.connect(dest_path)
+    try:
+        source.backup(dest)
+    finally:
+        dest.close()
+        source.close()
 
 
 def prune_backups(backups_dir: str, keep: int) -> None:
