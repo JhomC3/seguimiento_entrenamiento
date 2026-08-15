@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from src.logging_setup import RequestIdFilter, request_id_var, setup_logging
+from src.logging_setup import request_id_var, setup_logging
 
 
 @pytest.fixture(autouse=True)
