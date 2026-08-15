@@ -15,7 +15,7 @@
 ### `GET /` (index, HTML completo)
 
 - Renderiza `index.html` (extends `base.html`).
-- Sirve server-side: header (título, export CSV, botón Deshacer, botón Registrar),
+- Sirve server-side: header (título, export CSV, botón Registrar),
   **fila inicial de músculos** (`#cascade-row`, chips `data-action="select-muscle"`),
   gráfica sistémica (`#unified-chart` con `#unified-chart-data` JSON + `#unified-chart-plot`),
   `#history-section` vacío, `<noscript>` con enlace a `/exportar/csv` y los partials
@@ -147,8 +147,7 @@
 - Pila vacía: `#notice-container` error "Nada que deshacer.".
 - Efectos: backup pre-mutación; pop del journal `undo_entries` **solo tras un restore
   exitoso** (la entrada persiste si el restore falla).
-- Accesible por botón visible `[data-action="undo-last"]` y Ctrl/Cmd+Z (nunca en campos
-  de texto).
+- Accesible por Ctrl/Cmd+Z (nunca en campos de texto).
 
 ### Exports
 

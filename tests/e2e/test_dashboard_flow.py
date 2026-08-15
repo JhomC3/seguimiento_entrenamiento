@@ -970,12 +970,6 @@ def test_nutrition_apply_confirms_replacement(page, server):
     assert page.locator("#nutrition-rows .nutrition-row").count() >= 1
 
 
-def test_undo_button_visible_with_hint(page, server):
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
-    undo = page.locator('[data-action="undo-last"]')
-    expect(undo).to_be_visible()
-    assert "CTRL+Z" in undo.inner_text().upper()
 
 
 def test_date_arrows_ignored_outside_navigator(page, server):
