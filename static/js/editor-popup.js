@@ -1,6 +1,10 @@
-// editor-popup.js — ventana emergente de registro diario.
-// Owns: #editor-popup (open/close), #popup-body (fetches /editor/popup?fecha=),
-// #popup-fecha-title. Reutiliza date-navigation.js (←/→, salto de fecha).
+// editor-popup.js — ventana emergente de registro diario (dialog nativo).
+// Owns: #editor-popup (open/close via showModal/close), #popup-body (fetches
+// /editor/popup?fecha=), #popup-fecha-title. Reutiliza date-navigation.js.
+
+import { closeDialog, openDialog } from './modal-dialog.js';
+
+let suppressPopstate = false;
 
 function todayIso() {
     const d = new Date();
@@ -20,8 +24,7 @@ export function openEditorPopup(fechaIso) {
     if (!popup) return;
     const iso = fechaIso || todayIso();
     setFechaTitle(iso);
-    popup.classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
+    openDialog(popup);
     const body = document.getElementById('popup-body');
     if (body) {
         htmx.ajax('GET', '/editor/popup?fecha=' + iso, {
@@ -38,12 +41,12 @@ export function openEditorPopup(fechaIso) {
 export function closeEditorPopup() {
     const popup = document.getElementById('editor-popup');
     if (!popup) return;
-    popup.classList.add('hidden');
-    document.body.style.overflow = '';
-    // Deshace la entrada ?registro del historial: "atrás" no se queda atascado
-    // en el registro y la navegación del navegador no sale de la app.
+    closeDialog(popup);
+    // Deshace la entrada ?registro del historial sin que el popstate resultante
+    // vuelva a abrir la ventana (suppressPopstate se limpia en ese evento).
     const params = new URLSearchParams(location.search);
     if (params.has('registro')) {
+        suppressPopstate = true;
         history.back();
     }
 }
@@ -59,23 +62,29 @@ export function initEditorPopup() {
         }
     });
 
-    document.addEventListener('keydown', function (e) {
-        const popup = document.getElementById('editor-popup');
-        if (!popup || popup.classList.contains('hidden')) return;
-        if (e.key === 'Escape') closeEditorPopup();
-    });
+    // Escape: el dialog nativo dispara "cancel"; lo interceptamos para que el
+    // cierre también deshaga la entrada ?registro del historial.
+    const popup = document.getElementById('editor-popup');
+    if (popup) {
+        popup.addEventListener('cancel', function (e) {
+            e.preventDefault();
+            closeEditorPopup();
+        });
+    }
 
     // Sincroniza la ventana con el historial (atrás/adelante del navegador).
     window.addEventListener('popstate', function () {
-        const popup = document.getElementById('editor-popup');
+        const el = document.getElementById('editor-popup');
+        if (!el) return;
         const params = new URLSearchParams(location.search);
+        if (suppressPopstate) {
+            suppressPopstate = false;
+            return;
+        }
         if (params.has('registro')) {
-            if (popup && popup.classList.contains('hidden')) {
-                openEditorPopup(params.get('registro'));
-            }
-        } else if (popup && !popup.classList.contains('hidden')) {
-            popup.classList.add('hidden');
-            document.body.style.overflow = '';
+            if (!el.open) openEditorPopup(params.get('registro'));
+        } else if (el.open) {
+            closeDialog(el);
         }
     });
 

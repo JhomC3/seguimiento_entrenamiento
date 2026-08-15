@@ -40,6 +40,7 @@ function showChartError(message) {
     const div = document.createElement('div');
     div.className = 'notice notice-error';
     div.dataset.dismiss = '5000';
+    div.setAttribute('role', 'alert');
     div.textContent = message;
     container.appendChild(div);
     import('./notices.js').then(function (notices) {

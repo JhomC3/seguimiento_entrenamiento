@@ -113,15 +113,15 @@ input[type="number"]::-webkit-outer-spin-button {
 
 /* Modal de confirmación de cambios sin guardar */
 #confirm-modal {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    max-width: none;
+}
+#confirm-modal::backdrop {
     background: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
-    z-index: 80;
 }
 #confirm-modal .confirm-card {
     background: #121212;
@@ -131,6 +131,24 @@ input[type="number"]::-webkit-outer-spin-button {
     width: min(380px, calc(100vw - 40px));
     box-shadow: 0 0 24px rgba(155, 27, 48, 0.25);
 }
-#confirm-modal.hidden {
-    display: none;
+
+/* Popup de registro: dialog nativo con el lenguaje visual glass anterior */
+.editor-popup-dialog {
+    border: 0;
+    padding: 0;
+    margin: 0 auto;
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    background: transparent;
+}
+.editor-popup-dialog::backdrop {
+    background: rgba(10, 10, 10, 0.45);
+    backdrop-filter: blur(12px) saturate(1.2);
+    -webkit-backdrop-filter: blur(12px) saturate(1.2);
+}
+@supports not (backdrop-filter: blur(1px)) {
+    .editor-popup-dialog::backdrop {
+        background: rgba(10, 10, 10, 0.78);
+    }
 }

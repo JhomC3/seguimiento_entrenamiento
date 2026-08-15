@@ -82,7 +82,7 @@ function refreshExerciseRow() {
 
 function popupIsOpen() {
     const popup = document.getElementById('editor-popup');
-    return popup && !popup.classList.contains('hidden');
+    return popup && popup.open;
 }
 
 function deselectAll() {

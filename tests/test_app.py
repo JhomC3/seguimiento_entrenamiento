@@ -94,7 +94,7 @@ def test_index_uses_stable_card(tmp_path, monkeypatch):
     assert 'id="session-editor-wrap"' in r2.text
     assert "rm-cell" in r2.text
     assert 'id="save-outcome" data-ok="0" hidden' in r2.text
-    assert '<div id="editor-notice"></div>' in r2.text
+    assert 'id="editor-notice" role="status" aria-live="polite" aria-atomic="true"' in r2.text
 
 
 def test_save_valid_returns_ok_marker(tmp_path, monkeypatch):
@@ -1694,3 +1694,109 @@ def test_index_has_favicon_link_and_file(tmp_path, monkeypatch):
     html = client.get("/").text
     assert 'rel="icon"' in html
     assert client.get("/static/favicon.svg").status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Web plan Task 6: status announcements, labels, table semantics, dialogs
+# ---------------------------------------------------------------------------
+
+
+def test_status_regions_are_live_regions(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    home = client.get("/").text
+    assert 'role="status" aria-live="polite" aria-atomic="true"' in home
+    editor = client.get("/editor/popup?fecha=2026-08-14").text
+    assert 'role="status" aria-live="polite" aria-atomic="true"' in editor
+
+
+def test_error_notices_are_alerts(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    from starlette.requests import Request
+
+    from app import templates
+    from src.response_fragments import notice_oob
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "raw_path": b"/",
+            "query_string": b"",
+            "headers": [],
+            "server": ("testserver", 80),
+            "scheme": "http",
+            "client": ("127.0.0.1", 1234),
+        }
+    )
+    ok = notice_oob(
+        templates, request, target="editor-notice", message="bien", kind="notice-success"
+    )
+    err = notice_oob(templates, request, target="editor-notice", message="mal", kind="notice-error")
+    assert 'role="alert"' not in ok
+    assert 'role="alert"' in err
+
+
+def test_data_tables_have_caption_and_scope(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    editor = _client().get("/fecha/editor?fecha=2026-08-14").text
+    assert "<caption" in editor
+    assert 'scope="col"' in editor
+
+
+def test_session_inputs_have_accessible_names(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    editor = _client().get("/fecha/editor?fecha=2026-08-14").text
+    for label in (
+        "Peso, serie 1",
+        "Reps, serie 1",
+        "RIR, serie 1",
+        "Descanso, serie 1",
+        "Ejercicio, serie 1",
+    ):
+        assert label in editor, label
+
+
+def test_rir_help_uses_aria_describedby(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    editor = _client().get("/fecha/editor?fecha=2026-08-14").text
+    assert 'aria-describedby="rir-help-1"' in editor
+    assert 'id="rir-help-1"' in editor
+
+
+def test_nutrition_objetivo_consumido_in_tfoot_with_scope_row(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    frag = _client().get("/alimentacion/editor?fecha=2026-08-14").text
+    thead_end = frag.index("</thead>")
+    tfoot_start = frag.index("<tfoot")
+    assert thead_end < tfoot_start
+    objetivo = frag.index(">Objetivo<")
+    assert tfoot_start < objetivo
+    assert 'scope="row"' in frag
+
+
+def test_heading_outline_h1_to_h2(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    home = _client().get("/").text
+    h1 = home.index("<h1")
+    chart_h2 = home.index('<h2 class="text-sm font-black tracking-[0.2em]')
+    assert h1 < chart_h2
+    assert "<h2" in home
+
+
+def test_popup_and_confirm_are_native_dialogs(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    home = _client().get("/").text
+    assert '<dialog id="editor-popup"' in home
+    assert '<dialog id="confirm-modal"' in home
+    assert 'role="dialog"' not in home
+    assert 'aria-labelledby="popup-fecha-title"' in home

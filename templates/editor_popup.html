@@ -18,7 +18,7 @@
 </section>
 
 <div id="session-editor" data-editmode="0" class="bg-neutral-900 border border-transparent rounded-xl px-2 pt-2 pb-2 flex flex-col gap-2 neon-border metallic-border relative">
-    <div id="editor-notice"></div>
+    <div id="editor-notice" role="status" aria-live="polite" aria-atomic="true"></div>
     <div id="save-outcome" data-ok="0" hidden></div>
     <section id="session-editor-wrap">
         {{ editor_html | safe }}

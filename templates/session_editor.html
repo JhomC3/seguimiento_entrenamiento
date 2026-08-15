@@ -32,6 +32,7 @@
                 <form id="save-template-form" hx-post="/plantilla/guardar" hx-swap="none" class="flex items-center gap-1.5">
                     <input
                         name="nombre"
+                        aria-label="Nombre del entreno"
                         placeholder="Nombre del entreno"
                         title="Enter para guardar"
                         class="w-36 sm:w-44 bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-400 focus:outline-none transition-colors"
@@ -68,19 +69,20 @@
         <input type="hidden" name="fecha" value="{{ fecha_iso }}">
         <div class="table-scroll overflow-x-auto overflow-y-auto">
             <table class="w-full text-left border-collapse text-xs">
+                <caption class="sr-only">Series de entrenamiento del día</caption>
                 <colgroup>
                     <col span="7">
                     <col class="set-actions-column">
                 </colgroup>
                 <thead>
                     <tr>
-                        <th class="w-8 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-center">#</th>
-                        <th class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Ejercicio</th>
-                        <th class="w-20 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Peso</th>
-                        <th class="w-20 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Reps</th>
-                        <th class="w-20 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">RIR</th>
-                        <th class="w-16 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Desc</th>
-                        <th class="w-20 py-0.5 px-1.5 font-bold text-burgundy-400 uppercase tracking-wider text-center">RMₐ</th>
+                        <th scope="col" class="w-8 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-center">#</th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Ejercicio</th>
+                        <th scope="col" class="w-20 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Peso</th>
+                        <th scope="col" class="w-20 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Reps</th>
+                        <th scope="col" class="w-20 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">RIR</th>
+                        <th scope="col" class="w-16 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Desc</th>
+                        <th scope="col" class="w-20 py-0.5 px-1.5 font-bold text-burgundy-400 uppercase tracking-wider text-center">RMₐ</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-800/40" id="set-rows">
@@ -90,6 +92,7 @@
                         <td class="py-0.5 px-1.5">
                             <select
                                 name="ejercicio"
+                                aria-label="Ejercicio, serie {{ loop.index }}"
                                 class="ej-select w-full appearance-none bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                                 {% if readonly %}disabled{% endif %}
                             >
@@ -101,6 +104,7 @@
                         <td class="py-0.5 px-1.5">
                             <input
                                 name="kg" type="number" step="0.1" min="0" placeholder="kg"
+                                aria-label="Peso, serie {{ loop.index }}"
                                 value="{{ "%g"|format(r.kg) if r.kg is not none and r.kg != "" else "" }}"
                                 class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 placeholder-neutral-400 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                                 {% if readonly %}disabled{% endif %}
@@ -109,6 +113,7 @@
                         <td class="py-0.5 px-1.5">
                             <input
                                 name="reps" type="number" step="1" min="0" placeholder="reps"
+                                aria-label="Reps, serie {{ loop.index }}"
                                 value="{{ "%g"|format(r.reps) if r.reps is not none and r.reps != "" else "" }}"
                                 class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 placeholder-neutral-400 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                                 {% if readonly %}disabled{% endif %}
@@ -116,13 +121,16 @@
                         </td>
                         <td class="py-0.5 px-1.5">
                             <div class="relative">
-                                <input
-                                    name="rir" type="number" step="any" min="-5" placeholder="RIR"
-                                    value="{{ "%g"|format(r.rir) if r.rir is not none and r.rir != "" else "" }}"
+                                 <input
+                                     name="rir" type="number" step="any" min="-5" placeholder="RIR"
+                                     aria-label="RIR, serie {{ loop.index }}"
+                                     aria-describedby="rir-help-{{ loop.index }}"
+                                     value="{{ "%g"|format(r.rir) if r.rir is not none and r.rir != "" else "" }}"
                                     class="w-full pr-4 bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 placeholder-neutral-400 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                                     title="0 = fallo · negativo = forzadas"
                                     {% if readonly %}disabled{% endif %}
                                 >
+                                <span id="rir-help-{{ loop.index }}" class="sr-only">0 = fallo · negativo = forzadas</span>
                                 <div class="absolute inset-y-0.5 right-0.5 flex flex-col w-3">
                                     <button
                                         type="button" data-action="rir-step" data-delta="0.1"
@@ -139,13 +147,16 @@
                             </div>
                         </td>
                         <td class="py-0.5 px-1.5">
-                            <input
-                                name="descanso" type="number" step="5" min="0" placeholder="s"
-                                value="{{ "%g"|format(r.descanso_seg) if r.descanso_seg is not none and r.descanso_seg != "" else "" }}"
+                             <input
+                                 name="descanso" type="number" step="5" min="0" placeholder="s"
+                                 aria-label="Descanso, serie {{ loop.index }}"
+                                 aria-describedby="descanso-help-{{ loop.index }}"
+                                 value="{{ "%g"|format(r.descanso_seg) if r.descanso_seg is not none and r.descanso_seg != "" else "" }}"
                                 class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 placeholder-neutral-400 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                                 title="Descanso entre series (segundos, opcional)"
                                 {% if readonly %}disabled{% endif %}
                             >
+                            <span id="descanso-help-{{ loop.index }}" class="sr-only">Descanso entre series (segundos, opcional)</span>
                         </td>
                         <td class="rm-cell py-0.5 px-1.5 text-center font-bold text-burgundy-300 whitespace-nowrap">{{ "%g"|format(r.rm) if r.rm is not none else "—" }}</td>
                         <td class="set-actions-column py-0.5">

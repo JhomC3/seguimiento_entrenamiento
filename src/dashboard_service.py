@@ -145,7 +145,7 @@ def _chart_header_html(title: str) -> str:
     y la selección de cascada para que ambos estados ocupen el mismo shell."""
     return (
         '<div class="flex items-baseline gap-2 min-w-0 pl-3 mb-3">'
-        f'<h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title truncate">{html.escape(title)}</h3>'
+        f'<h2 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title truncate">{html.escape(title)}</h2>'
         f'<span class="text-xs text-neutral-400 flex-none">Ciclo {CICLO_NUMERO}</span>'
         "</div>"
     )

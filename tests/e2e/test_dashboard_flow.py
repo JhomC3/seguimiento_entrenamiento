@@ -761,7 +761,7 @@ def test_lazy_plotly_single_request_and_shell_stable(page, server):
     )
     _wait_editor_settled(page)
     page.click("#popup-close")
-    page.wait_for_selector("#editor-popup.hidden", state="attached", timeout=5000)
+    page.wait_for_selector("#editor-popup", state="hidden", timeout=5000)
 
     # La gráfica con datos se pide vía la cascada de niveles (Press = Pectoral).
     page.locator('.level-chip[data-action="select-muscle"][data-foco="Pectoral"]').click()
@@ -769,3 +769,71 @@ def test_lazy_plotly_single_request_and_shell_stable(page, server):
     loaded_height = page.locator("#unified-chart-container").bounding_box()["height"]
     assert abs(loaded_height - empty_height) <= 1.0, (empty_height, loaded_height)
     assert len(plotly_requests) == 1, plotly_requests
+
+
+# ---------------------------------------------------------------------------
+# Web plan Task 6: native dialogs and focus management
+# ---------------------------------------------------------------------------
+
+
+def test_popup_dialog_focus_roundtrip(page, server):
+    """Abrir el popup mueve el foco dentro; cerrarlo lo devuelve al botón."""
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    trigger = page.locator('[data-action="open-editor-popup"]')
+    trigger.focus()
+    trigger.click()
+    page.wait_for_selector("#popup-body #session-editor-wrap", timeout=5000)
+    page.wait_for_timeout(200)
+    inside = page.evaluate(
+        "document.getElementById('editor-popup').contains(document.activeElement)"
+    )
+    assert inside, "el foco debe estar dentro del popup tras abrirlo"
+    page.click("#popup-close")
+    page.wait_for_selector("#editor-popup", state="hidden", timeout=5000)
+    restored = page.evaluate(
+        "document.activeElement === document.querySelector('[data-action=\"open-editor-popup\"]')"
+    )
+    assert restored, "el foco debe volver al botón que abrió el popup"
+
+
+def test_confirm_dialog_focus_and_escape(page, server):
+    """La confirmación de cambios sin guardar: foco dentro, Escape la cierra
+    y restaura el foco al elemento que la disparó."""
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    _open_popup(page, server)
+    page.locator("#set-rows .set-row").first.locator('input[name="kg"]').fill("80")
+    page.wait_for_timeout(150)
+    page.locator('.date-num[data-iso="' + _iso(1) + '"]').click()
+    page.wait_for_selector("#confirm-modal[open]", timeout=5000)
+    inside = page.evaluate(
+        "document.getElementById('confirm-modal').contains(document.activeElement)"
+    )
+    assert inside, "el foco debe estar dentro de la confirmación"
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#confirm-modal", state="hidden", timeout=5000)
+    assert page.locator("#editor-popup").evaluate("el => el.open"), "el popup debe seguir abierto"
+
+
+def test_confirm_dialog_inside_popup_escape_chain(page, server):
+    """Escape cierra solo la confirmación anidada; el popup sigue abierto y el
+    foco vuelve a la confirmación anterior/dentro del popup."""
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    _open_popup(page, server)
+    page.locator("#set-rows .set-row").first.locator('input[name="kg"]').fill("80")
+    page.wait_for_timeout(150)
+    page.locator('.date-num[data-iso="' + _iso(1) + '"]').click()
+    page.wait_for_selector("#confirm-modal[open]", timeout=5000)
+    # Escape sobre la confirmación: se cierra solo ella.
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#confirm-modal", state="hidden", timeout=5000)
+    assert page.locator("#editor-popup").evaluate("el => el.open")
+    inside = page.evaluate(
+        "document.getElementById('editor-popup').contains(document.activeElement)"
+    )
+    assert inside, "el foco debe quedar dentro del popup tras cerrar la confirmación"
+    # Escape ahora cierra el popup (cancel del dialog nativo).
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#editor-popup", state="hidden", timeout=5000)
