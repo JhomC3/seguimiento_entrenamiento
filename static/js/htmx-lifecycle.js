@@ -17,7 +17,11 @@ import {
     initNutritionRowSortable,
     syncNutritionSortableState,
 } from './row-sortable.js';
-import { refreshNutritionEditor, refreshNutritionRowsOrder } from './nutrition-editor.js';
+import {
+    ensureNutritionEditable,
+    refreshNutritionEditor,
+    refreshNutritionRowsOrder,
+} from './nutrition-editor.js';
 import { refreshNutritionTemplatesDnD } from './nutrition-templates.js';
 import {
     confirmEntrenoSave,
@@ -79,7 +83,7 @@ export function initLifecycle() {
                 // Apertura del popup: el editor llega por swap al cuerpo del popup.
                 syncEditorFromContent();
                 initEditorRowSortable();
-                initNutritionRowSortable(refreshNutritionRowsOrder);
+                initNutritionRowSortable(refreshNutritionRowsOrder, ensureNutritionEditable);
                 fitRowsToPanel();
                 // Las plantillas (entrenamiento y alimentación) viven en el popup:
                 // re-vincular su DnD tras el swap.
@@ -125,7 +129,7 @@ export function initLifecycle() {
         // re-baseline para el dirty-check y totales tras cada intercambio.
         if (e.detail.successful && document.getElementById('nutrition-form')) {
             refreshNutritionEditor();
-            initNutritionRowSortable(refreshNutritionRowsOrder);
+            initNutritionRowSortable(refreshNutritionRowsOrder, ensureNutritionEditable);
             syncNutritionSortableState();
         }
         refreshNutritionTemplatesDnD();

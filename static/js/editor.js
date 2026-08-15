@@ -171,12 +171,19 @@ export function fitRowsToPanel() {
     editor.style.setProperty('--table-h', full + 'px');
 }
 
-/* Sortable de filas con el re-numbering y dirty-state del editor */
+/* Sortable de filas con el re-numbering y dirty-state del editor.
+   El arrastre está siempre activo: si el editor está en solo lectura, el
+   onStart entra en modo edición para que el reorden persista al guardar. */
 export function initEditorRowSortable() {
-    initRowSortable(function () {
-        renumberRows();
-        updateEditActions();
-    });
+    initRowSortable(
+        function () {
+            renumberRows();
+            updateEditActions();
+        },
+        function () {
+            if (editorEditmode() !== '1') enterEditMode();
+        }
+    );
 }
 
 function updateRirBadge(row) {

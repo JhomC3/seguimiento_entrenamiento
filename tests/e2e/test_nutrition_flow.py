@@ -221,3 +221,44 @@ def test_nutrition_prefill_empty_day(page, server):
     expect(page.locator("#nutrition-editor-state")).to_have_attribute(
         "data-has-data", "1", timeout=5000
     )
+
+
+def _drag_row_up(page, rows, idx, cell_selector):
+    """Arrastra la fila idx hasta la posición de la fila idx-1 (Sortable).
+
+    Se agarra desde una celda no-control (el selector indicado) para no
+    disparar inputs/selects/buttons.
+    """
+    src = rows.nth(idx).locator(cell_selector).first.bounding_box()
+    dst = rows.nth(idx - 1).locator(cell_selector).first.bounding_box()
+    page.mouse.move(src["x"] + 10, src["y"] + src["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(dst["x"] + 10, dst["y"] + dst["height"] / 2, steps=8)
+    page.mouse.up()
+
+
+def test_nutrition_saved_day_reorder_without_edit_mode(page, server):
+    """Un día guardado está en solo lectura; el arrastre entra solo en modo
+    edición y reordena (sin lápiz previo)."""
+    _open_popup(page, server)
+    _fill_alimento_form(page)
+    page.wait_for_selector("#notice-container .notice-success", timeout=5000)
+    # Dos filas con datos (el clon puede repetir Avena; se distingue por cantidad).
+    _fill_nutrition_day(page)
+    page.locator('[data-action="nutrition-row-add"]').click()
+    page.wait_for_timeout(120)
+    rows = page.locator("#nutrition-rows .nutrition-row")
+    rows.nth(1).locator('input[name="alimento"]').fill("Avena")
+    rows.nth(1).locator('input[name="cantidad"]').fill("150")
+    page.fill("#param-peso", "69")
+    _save_nutrition(page)
+    expect(page.locator("#nutrition-editor-state")).to_have_attribute("data-has-data", "1")
+    expect(page.locator("#nutrition-editor-state")).to_have_attribute("data-readonly", "1")
+    # Arrastrar la fila 2 sobre la fila 1 sin el lápiz.
+    rows = page.locator("#nutrition-rows .nutrition-row")
+    _drag_row_up(page, rows, 1, ".nutrition-preview")
+    page.wait_for_timeout(250)
+    expect(rows.nth(0).locator('input[name="cantidad"]')).to_have_value("150")
+    expect(rows.nth(1).locator('input[name="cantidad"]')).to_have_value("120")
+    # Auto-entró en modo edición.
+    expect(page.locator("#nutrition-editor-state")).to_have_attribute("data-readonly", "0")

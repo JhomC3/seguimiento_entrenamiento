@@ -135,6 +135,10 @@ function enterNutritionEditMode() {
     syncNutritionButtons();
 }
 
+export function ensureNutritionEditable() {
+    if (panelEditmode() !== '1') enterNutritionEditMode();
+}
+
 function exitNutritionEditMode() {
     // Igual que el editor de sesión: re-render del servidor para salir de edición.
     const p = panel();

@@ -115,9 +115,11 @@
 - Reordenamiento **solo con ratón** (decisión explícita del usuario; desviación de WCAG
   2.1.1 documentada en `web-standards.md`): tarjetas y filas de editor se arrastran desde
   cualquier parte no-control de la fila (el `dragstart` de las tarjetas excluye
-  `input/select/button`; Sortable de filas filtra esos mismos controles). En las tarjetas,
-  el `dragend` persiste el orden completo vía `persistOrderWithHtmx` y, ante fallo,
-  restaura el DOM y avisa.
+  `input/select/button`; Sortable de filas filtra esos mismos controles). El Sortable de
+  filas está **siempre activo**: si el editor está en solo lectura (día con datos), el
+  `onStart` entra solo en modo edición para que el reorden persista al guardar. En las
+  tarjetas, el `dragend` persiste el orden completo vía `persistOrderWithHtmx` y, ante
+  fallo, restaura el DOM y avisa.
 
 ### Plantillas de alimentación
 

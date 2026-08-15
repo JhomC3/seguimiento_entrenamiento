@@ -880,19 +880,29 @@ def _drag_card_up(page, source_selector, target_selector):
     )
 
 
-def test_session_rows_reorder_by_drag(page, server):
+def test_session_rows_reorder_by_drag_auto_enters_edit(page, server):
+    """El arrastre funciona en un día guardado (solo lectura) y entra solo en
+    modo edición: sin lápiz previo."""
     _open_popup(page, server)
-    _edit_mode_on(page)
     _fill_row(page, 0, ejercicio="Press")
     page.locator("#set-rows .set-row").first.locator('[data-action="row-add"]').click()
     page.wait_for_timeout(150)
     rows = page.locator("#set-rows .set-row")
     expect(rows).to_have_count(2)
-    rows.nth(1).locator('input[name="kg"]').fill("90")
+    _fill_row(page, 1, ejercicio="Press", kg="90")
+    # Guardar: el día queda en solo lectura (tiene datos).
+    page.locator('#edit-actions button[type="submit"]').evaluate("el => el.click()")
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=3000
+    )
+    expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "1")
+    # Arrastrar sin lápiz: auto-entra en edición y reordena.
+    rows = page.locator("#set-rows .set-row")
     _drag_row_up(page, rows, 1, ".set-num")
-    page.wait_for_timeout(200)
+    page.wait_for_timeout(250)
     assert rows.nth(0).locator('input[name="kg"]').input_value() == "90"
     assert rows.nth(0).locator(".set-num").inner_text() == "1"
+    expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "0")
 
 
 def test_training_cards_reorder_and_persist(page, server):
