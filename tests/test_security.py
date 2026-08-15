@@ -835,3 +835,13 @@ def test_lan_sync_only_rate_limit_uses_env_bounded(monkeypatch):
     assert sync_rate_limit_per_minute() == 1
     monkeypatch.setenv("GYM_SYNC_RATE_LIMIT_PER_MINUTE", "abc")
     assert sync_rate_limit_per_minute() == 30
+
+
+# ---------------------------------------------------------------------------
+# Backend plan Task 4: docs/OpenAPI inventory disabled
+# ---------------------------------------------------------------------------
+
+
+def test_docs_y_openapi_deshabilitados(client):
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert client.get(path).status_code == 404, path

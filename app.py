@@ -156,7 +156,7 @@ class RequestIdMiddleware:
             request_id_var.reset(token)
 
 
-app = FastAPI(title="Gym Tracker", lifespan=lifespan)
+app = FastAPI(title="Gym Tracker", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.add_middleware(CSRFProtectionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(LanSyncOnlyMiddleware)
