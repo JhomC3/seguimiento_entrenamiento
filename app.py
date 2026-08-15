@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from config import CICLO_START, DB_PATH, HC_SYNC_TOKEN, MUSCLE_CATEGORIES
 from src.charts import get_exercise_raw_data, get_exercise_session_summary
 from src.dashboard_service import (
+    _chart_header_html,
     build_date_navigator,
     build_nutrition_editor,
     build_session_editor,
@@ -1099,19 +1100,22 @@ def nivel_view(
 
 def _chart_selection_html(musculos: list[str], ejercicios: list[str]) -> str:
     """Fragmento de la gráfica de la selección (1 músculo: compilado + ejercicios;
-    2+: global + músculos)."""
+    2+: global + músculos). Mismo shell (header + altura) que chart_html para
+    que el swap no mueva layout."""
     from src.charts import chart_selection
 
     fig = chart_selection(DB_PATH, musculos, ejercicios)
+    header = _chart_header_html("Rendimiento – " + ", ".join(musculos))
     if not fig.data:
         return (
-            "<div class='flex items-center justify-center h-[300px] text-neutral-500 text-xs'>"
+            header
+            + "<div class='flex items-center justify-center chart-empty text-neutral-400 text-xs'>"
             "Sin datos para esta selección</div>"
         )
     from src.dashboard_service import _json_for_inline
 
     return (
-        f'<script id="unified-chart-data" type="application/json">'
+        header + f'<script id="unified-chart-data" type="application/json">'
         f"{_json_for_inline(fig.to_json())}</script>"
         '<div id="unified-chart-plot" class="plotly-graph-div"></div>'
     )

@@ -508,16 +508,28 @@ def test_base_template_loads_only_module_js(tmp_path, monkeypatch):
 
 
 def test_base_template_cdn_scripts_pin_sri(tmp_path, monkeypatch):
-    """Tripwire: every third-party <script src> must carry integrity= and crossorigin=."""
+    """Tripwire: every third-party <script src> must carry integrity= and crossorigin=.
+
+    Plotly se carga bajo demanda (static/js/chart-interaction.js) y debe
+    mantener el mismo contrato SRI en sus constantes.
+    """
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     with open(os.path.join(os.path.dirname(__file__), "..", "templates", "base.html")) as f:
         source = f.read()
     scripts = re.findall(r'<script\s+src="https://[^"]+"[^>]*>', source)
-    assert len(scripts) == 3, f"CDNs esperados: htmx, sortablejs, plotly; hay {len(scripts)}"
+    assert len(scripts) == 2, f"CDNs eager esperados: htmx, sortablejs; hay {len(scripts)}"
     for tag in scripts:
         assert "integrity=" in tag, f"script sin SRI: {tag}"
         assert "crossorigin=" in tag, f"script sin crossorigin: {tag}"
+    loader_path = os.path.join(
+        os.path.dirname(__file__), "..", "static", "js", "chart-interaction.js"
+    )
+    with open(loader_path) as f:
+        loader = f.read()
+    assert "cdn.plot.ly" in loader
+    assert "integrity = PLOTLY_INTEGRITY" in loader or "PLOTLY_INTEGRITY" in loader
+    assert "crossOrigin = 'anonymous'" in loader
 
 
 def test_base_template_sin_cdn_tailwind(tmp_path, monkeypatch):
@@ -1658,3 +1670,25 @@ def test_grafica_multimusculo_global_y_sin_fila_ejercicios(tmp_path, monkeypatch
     r2 = _client().get("/grafica", params={"musculo": "Pectoral", "ejercicios": "Press"})
     assert r2.status_code == 200
     assert 'id="ejercicios-row" hx-swap-oob="outerHTML"' in r2.text
+
+
+def test_cdn_scripts_are_deferred_and_no_eager_plotly(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    html = _client().get("/").text
+    for src in ("htmx.org", "sortablejs"):
+        import re as _re
+
+        m = _re.search(r"<script[^>]*src=\"[^\"]*" + src.split(".")[0] + r"[^\"]*\"[^>]*>", html)
+        assert m, f"script de {src} no encontrado"
+        assert "defer" in m.group(0), f"{src} sin defer"
+    assert "cdn.plot.ly" not in html, "Plotly no debe cargarse eager en el documento"
+
+
+def test_index_has_favicon_link_and_file(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    html = client.get("/").text
+    assert 'rel="icon"' in html
+    assert client.get("/static/favicon.svg").status_code == 200

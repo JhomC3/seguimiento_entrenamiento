@@ -4,14 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gym Tracker</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
     <!-- Tailwind compilado estáticamente (sin CDN runtime) -->
     <link rel="stylesheet" href="/static/css/tailwind.css">
-    <!-- HTMX CDN (SRI pinned) -->
-    <script src="https://unpkg.com/htmx.org@1.9.10/dist/htmx.min.js" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous"></script>
-    <!-- SortableJS CDN (SRI pinned) -->
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js" integrity="sha384-HZZ/fukV+9G8gwTNjN7zQDG0Sp7MsZy5DDN6VfY3Be7V9dvQpEpR2jF2HlyFUUjU" crossorigin="anonymous"></script>
-    <!-- Plotly CDN (SRI pinned) -->
-    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" integrity="sha384-7TVmlZWH60iKX5Uk7lSvQhjtcgw2tkFjuwLcXoRSR4zXTyWFJRm9aPAguMh7CIra" crossorigin="anonymous"></script>
+    <!-- HTMX CDN (SRI pinned, deferred) -->
+    <script src="https://unpkg.com/htmx.org@1.9.10/dist/htmx.min.js" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous" defer></script>
+    <!-- SortableJS CDN (SRI pinned, deferred) -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js" integrity="sha384-HZZ/fukV+9G8gwTNjN7zQDG0Sp7MsZy5DDN6VfY3Be7V9dvQpEpR2jF2HlyFUUjU" crossorigin="anonymous" defer></script>
+    <!-- Plotly se carga bajo demanda (ver static/js/chart-interaction.js) -->
     <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body class="bg-matte-950 text-neutral-100 min-h-screen font-sans antialiased selection:bg-burgundy-700 selection:text-white">

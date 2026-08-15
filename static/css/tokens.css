@@ -27,10 +27,10 @@
   --t-burgundy-900: #4d0013;
   --t-burgundy-950: #2d020c;
   --t-focus-ring: #e56d88;
-  --t-semantics-success-text: rgba(110, 231, 183, 0.6);
+  --t-semantics-success-text: rgba(110, 231, 183, 0.8);
   --t-semantics-success-border: rgba(16, 185, 129, 0.12);
   --t-semantics-success-bg: rgba(16, 185, 129, 0.05);
-  --t-semantics-danger-text: rgba(252, 165, 165, 0.6);
+  --t-semantics-danger-text: rgba(252, 165, 165, 0.8);
   --t-semantics-danger-border: rgba(239, 68, 68, 0.12);
   --t-semantics-danger-bg: rgba(239, 68, 68, 0.05);
   --t-glow-neon-border: 0 0 20px rgba(255, 30, 70, 0.10), 0 0 40px rgba(255, 30, 70, 0.06), 0 0 80px rgba(255, 30, 70, 0.03);

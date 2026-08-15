@@ -140,6 +140,17 @@ def _json_for_inline(serialized: str) -> str:
     )
 
 
+def _chart_header_html(title: str) -> str:
+    """Header del panel de gráfica (título + ciclo). Compartido por chart_html
+    y la selección de cascada para que ambos estados ocupen el mismo shell."""
+    return (
+        '<div class="flex items-baseline gap-2 min-w-0 pl-3 mb-3">'
+        f'<h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title truncate">{html.escape(title)}</h3>'
+        f'<span class="text-xs text-neutral-400 flex-none">Ciclo {CICLO_NUMERO}</span>'
+        "</div>"
+    )
+
+
 def chart_html(
     db_path: str,
     filter_type: str,
@@ -154,12 +165,7 @@ def chart_html(
     scripts ejecutables inline: la CSP no necesita nonce y los swaps de htmx
     no dependen del manejo de scripts.
     """
-    header = (
-        '<div class="flex items-baseline gap-2 min-w-0 pl-3 mb-3">'
-        f'<h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title truncate">{html.escape(title)}</h3>'
-        f'<span class="text-[11px] text-neutral-500 flex-none">Ciclo {CICLO_NUMERO}</span>'
-        "</div>"
-    )
+    header = _chart_header_html(title)
     fig = chart_pfr_timeline(db_path, filter_type, filter_value, "")
     if fig.data:
         data = _json_for_inline(fig.to_json())
@@ -170,7 +176,7 @@ def chart_html(
         )
     return (
         header
-        + "<div class='flex items-center justify-center h-[300px] text-neutral-500 text-xs'>Sin datos</div>"
+        + "<div class='flex items-center justify-center chart-empty text-neutral-400 text-xs'>Sin datos</div>"
     )
 
 

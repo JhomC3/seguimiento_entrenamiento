@@ -19,10 +19,17 @@
     from { opacity: 0; }
     to { opacity: 1; }
 }
+/* El shell de la gráfica tiene altura final: estados vacío y cargado ocupan
+   el mismo espacio (CLS 0). La altura vive aquí (CSS commitado), no en
+   clases arbitrarias de Tailwind que no se escanean desde Python. */
+#unified-chart-plot,
+#unified-chart .chart-empty {
+    height: 450px;
+}
 
 /* Niveles de análisis y cascada */
 .level-btn {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     letter-spacing: .15em;
     text-transform: uppercase;
@@ -43,7 +50,7 @@
     background: rgba(155, 27, 48, 0.15);
 }
 .level-chip {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     letter-spacing: .12em;
     text-transform: uppercase;
@@ -70,7 +77,7 @@
     background: rgba(155, 27, 48, 0.15);
 }
 .detail-link {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--t-surfaces-neutral-500);
     cursor: pointer;
     background: transparent;

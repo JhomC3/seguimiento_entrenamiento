@@ -244,6 +244,7 @@ def chart_selection(db_path: str, musculos: list[str], ejercicios: list[str]) ->
         plot_bgcolor=chart_color("background"),
         paper_bgcolor=chart_color("background"),
         font={"color": chart_color("axes")},
+        height=450,
         margin={"l": 60, "r": 20, "t": 50, "b": 50},
         hovermode="x unified",
         hoverlabel={
@@ -319,6 +320,7 @@ def chart_pfr_timeline(
         plot_bgcolor=chart_color("background"),
         paper_bgcolor=chart_color("background"),
         font={"color": chart_color("axes")},
+        height=450,
         margin={"l": 60, "r": 20, "t": 50, "b": 50},
         hovermode="x unified",
         hoverlabel={

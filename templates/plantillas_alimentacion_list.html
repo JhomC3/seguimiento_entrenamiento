@@ -5,7 +5,7 @@
         <div class="pt-card bg-matte-950 border border-neutral-800 rounded-lg px-3 py-2 flex flex-col gap-1.5" draggable="true" data-pt-id="{{ pt.id }}">
             <div class="flex items-center justify-between gap-2">
                 <span class="text-xs font-bold text-neutral-200 truncate">{{ pt.nombre }}</span>
-                <span class="text-[10px] text-neutral-600">{{ pt.alimentos|length }} alimentos</span>
+                <span class="text-xs text-neutral-400">{{ pt.alimentos|length }} alimentos</span>
             </div>
             <div class="flex items-center gap-1.5">
                 <a
@@ -13,18 +13,18 @@
                     hx-get="/alimentacion/plantilla/aplicar/{{ pt.id }}?fecha={{ selected_iso }}"
                     hx-target="#nutrition-editor-wrap"
                     hx-swap="innerHTML"
-                    class="text-[10px] font-bold text-neutral-500 hover:text-burgundy-400 border border-neutral-800 hover:border-burgundy-700 rounded px-2 py-0.5 transition-all uppercase tracking-widest"
+                    class="text-xs font-bold text-neutral-400 hover:text-burgundy-400 border border-neutral-800 hover:border-burgundy-700 rounded px-2 py-0.5 transition-all uppercase tracking-widest"
                 >Aplicar</a>
                 <button
                     type="button"
                     data-action="delete-meal-template"
                     data-pt-id="{{ pt.id }}"
-                    class="text-[10px] font-bold text-neutral-600 hover:text-red-400 border border-neutral-800 hover:border-red-700 rounded px-2 py-0.5 transition-all uppercase tracking-widest"
+                    class="text-xs font-bold text-neutral-400 hover:text-red-400 border border-neutral-800 hover:border-red-700 rounded px-2 py-0.5 transition-all uppercase tracking-widest"
                 >Eliminar</button>
             </div>
         </div>
         {% else %}
-        <p class="text-[11px] text-neutral-600">Guarda un día desde el panel de alimentación.</p>
+        <p class="text-xs text-neutral-400">Guarda un día desde el panel de alimentación.</p>
         {% endfor %}
     </div>
 </div>

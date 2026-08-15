@@ -681,3 +681,91 @@ def test_multiejercicios_con_shift_click(page, server):
         timeout=5000,
     )
     assert "ejercicios=" not in page.url
+
+
+# ---------------------------------------------------------------------------
+# Web plan Task 4: WCAG contrast and lazy Plotly
+# ---------------------------------------------------------------------------
+
+
+def _wcag_in_page(page, selector, pseudo=None):
+    """Devuelve el ratio de contraste WCAG del color de texto calculado del
+    elemento contra el background del body (fondo más claro disponible)."""
+    return page.evaluate(
+        """([sel, pseudo]) => {
+            const el = document.querySelector(sel);
+            if (!el) return null;
+            const cs = getComputedStyle(el, pseudo || null);
+            const bg = getComputedStyle(document.body).backgroundColor;
+            const lin = (v) => {
+                const c = v / 255;
+                return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+            };
+            const lum = (rgb) => {
+                const m = rgb.match(/\\(([\\d.]+), ([\\d.]+), ([\\d.]+)/);
+                if (!m) return 0;
+                return 0.2126 * lin(+m[1]) + 0.7152 * lin(+m[2]) + 0.0722 * lin(+m[3]);
+            };
+            const l1 = lum(cs.color);
+            const l2 = lum(bg);
+            const [hi, lo] = l1 > l2 ? [l1, l2] : [l2, l1];
+            return (hi + 0.05) / (lo + 0.05);
+        }""",
+        [selector, pseudo],
+    )
+
+
+def test_wcag_contrast_critical_elements(page, server):
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    vacio = _wcag_in_page(page, "#unified-chart .flex.items-center")
+    assert vacio is not None and vacio >= 4.5, f"vacio: {vacio}"
+
+    # El navigator y los inputs viven en el popup de registro.
+    _open_popup(page, server)
+    ratios = {
+        "hoy": _wcag_in_page(page, ".today-btn"),
+        "placeholder": _wcag_in_page(page, "input[placeholder]", "::placeholder"),
+    }
+    assert all(r is not None for r in ratios.values()), ratios
+    for name, ratio in ratios.items():
+        assert ratio >= 4.5, f"{name}: {ratio:.2f}:1"
+
+
+def test_lazy_plotly_no_request_on_empty_chart(page, server):
+    plotly_requests = []
+    page.on("request", lambda r: plotly_requests.append(r.url) if "plot.ly" in r.url else None)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_selector("#unified-chart-data", state="detached")  # sin datos: no hay JSON
+    page.wait_for_selector("#unified-chart .flex.items-center")
+    assert plotly_requests == [], plotly_requests
+
+
+def test_lazy_plotly_single_request_and_shell_stable(page, server):
+    plotly_requests = []
+    page.on("request", lambda r: plotly_requests.append(r.url) if "plot.ly" in r.url else None)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    empty_height = page.locator("#unified-chart-container").bounding_box()["height"]
+
+    _goto_date(page, server, _iso(1))
+    _wait_editor_settled(page)
+    _fill_row(page, 0)
+    # Envío nativo del form: el contenedor scrolleable del popup engaña a la
+    # actionability de Playwright, así que se enfoca el input por DOM.
+    page.locator('input[name="kg"]').first.evaluate("el => el.focus()")
+    page.keyboard.press("Enter")
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=3000
+    )
+    _wait_editor_settled(page)
+    page.click("#popup-close")
+    page.wait_for_selector("#editor-popup.hidden", state="attached", timeout=5000)
+
+    # La gráfica con datos se pide vía la cascada de niveles (Press = Pectoral).
+    page.locator('.level-chip[data-action="select-muscle"][data-foco="Pectoral"]').click()
+    page.wait_for_selector("#unified-chart-plot .main-svg", timeout=15000)
+    loaded_height = page.locator("#unified-chart-container").bounding_box()["height"]
+    assert abs(loaded_height - empty_height) <= 1.0, (empty_height, loaded_height)
+    assert len(plotly_requests) == 1, plotly_requests

@@ -180,7 +180,7 @@
 #nutrition-panel .row-actions .row-btn {
     width: 14px;
     height: 14px;
-    font-size: 10px;
+    font-size: 12px;
 }
 
 /* Colapso de panel: se oculta todo salvo la primera fila del header
@@ -234,14 +234,14 @@
     padding: 0;
     border: 0;
     background: transparent;
-    color: rgba(255, 255, 255, 0.28);
-    font-size: 7px;
-    line-height: 1;
+    color: var(--t-surfaces-neutral-400);
+    font-size: 12px;
+    line-height: 1.1;
     cursor: pointer;
     transition: color .15s, background .15s;
 }
 .rir-step:hover:not(:disabled) {
-    color: rgba(255, 255, 255, 0.8);
+    color: #ffffff;
     background: rgba(255, 255, 255, 0.06);
 }
 .rir-step:disabled {

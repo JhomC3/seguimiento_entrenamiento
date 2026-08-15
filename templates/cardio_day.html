@@ -5,16 +5,16 @@
         </div>
     </div>
     {% if not cardio %}
-    <p class="text-[11px] text-neutral-600 px-1 pb-1">Sin sesiones de ejercicio sincronizadas este día.</p>
+    <p class="text-xs text-neutral-400 px-1 pb-1">Sin sesiones de ejercicio sincronizadas este día.</p>
     {% endif %}
     {% for c in cardio %}
     <div class="bg-matte-950 border border-neutral-800 rounded-lg px-3 py-2 flex flex-col gap-1.5 mx-1">
         <div class="flex items-center justify-between gap-2">
             <span class="text-xs font-bold text-neutral-200 truncate">{{ c.titulo }}</span>
-            <span class="text-[10px] text-neutral-500">{{ "%.0f"|format(c.duracion_min) }} min</span>
+            <span class="text-xs text-neutral-400">{{ "%.0f"|format(c.duracion_min) }} min</span>
         </div>
         {% if c.velocidad_kmh is not none or c.inclinacion_pct is not none or c.notas %}
-        <div class="text-[10px] text-neutral-400">
+        <div class="text-xs text-neutral-400">
             {% if c.velocidad_kmh is not none %}<span class="mr-2">Vel {{ "%.1f"|format(c.velocidad_kmh) }} km/h</span>{% endif %}
             {% if c.inclinacion_pct is not none %}<span class="mr-2">Inc {{ "%.1f"|format(c.inclinacion_pct) }}%</span>{% endif %}
             {% if c.notas %}<span>{{ c.notas }}</span>{% endif %}
@@ -24,14 +24,14 @@
             <input type="hidden" name="hc_id" value="{{ c.hc_id }}">
             <input type="hidden" name="fecha" value="{{ fecha_iso }}">
             <label class="flex flex-col gap-0.5 flex-1">
-                <span class="text-[9px] text-neutral-500 uppercase tracking-wider">Vel (km/h)</span>
-                <input type="number" name="velocidad_kmh" step="0.1" min="0" value="{{ c.velocidad_kmh if c.velocidad_kmh is not none else '' }}" class="bg-matte-950 border border-neutral-800 rounded px-1.5 py-0.5 text-[11px] text-neutral-200 w-full">
+                <span class="text-xs text-neutral-400 uppercase tracking-wider">Vel (km/h)</span>
+                <input type="number" name="velocidad_kmh" step="0.1" min="0" value="{{ c.velocidad_kmh if c.velocidad_kmh is not none else '' }}" class="bg-matte-950 border border-neutral-800 rounded px-1.5 py-0.5 text-xs text-neutral-200 w-full">
             </label>
             <label class="flex flex-col gap-0.5 flex-1">
-                <span class="text-[9px] text-neutral-500 uppercase tracking-wider">Inc (%)</span>
-                <input type="number" name="inclinacion_pct" step="0.5" min="0" value="{{ c.inclinacion_pct if c.inclinacion_pct is not none else '' }}" class="bg-matte-950 border border-neutral-800 rounded px-1.5 py-0.5 text-[11px] text-neutral-200 w-full">
+                <span class="text-xs text-neutral-400 uppercase tracking-wider">Inc (%)</span>
+                <input type="number" name="inclinacion_pct" step="0.5" min="0" value="{{ c.inclinacion_pct if c.inclinacion_pct is not none else '' }}" class="bg-matte-950 border border-neutral-800 rounded px-1.5 py-0.5 text-xs text-neutral-200 w-full">
             </label>
-            <button type="submit" class="text-[10px] font-bold text-burgundy-400 border border-burgundy-700 hover:bg-burgundy-700/20 rounded px-2 py-1 transition-colors">Guardar</button>
+            <button type="submit" class="text-xs font-bold text-burgundy-400 border border-burgundy-700 hover:bg-burgundy-700/20 rounded px-2 py-1 transition-colors">Guardar</button>
         </form>
     </div>
     {% endfor %}

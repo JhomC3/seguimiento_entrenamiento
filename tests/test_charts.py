@@ -96,7 +96,7 @@ def test_chart_html_header_ciclo_igual_que_semana_panel(setup_test_db):
     from src.dashboard_service import chart_html
 
     html = chart_html(setup_test_db, "systemic", title="Rendimiento – Empuje")
-    assert 'class="text-[11px] text-neutral-500 flex-none">Ciclo 1<' in html
+    assert 'class="text-xs text-neutral-400 flex-none">Ciclo 1<' in html
     assert 'neon-title truncate">Rendimiento – Empuje<' in html
 
 

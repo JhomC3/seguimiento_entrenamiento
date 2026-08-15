@@ -34,7 +34,7 @@
                         name="nombre"
                         placeholder="Nombre del entreno"
                         title="Enter para guardar"
-                        class="w-36 sm:w-44 bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-600 focus:outline-none transition-colors"
+                        class="w-36 sm:w-44 bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-400 focus:outline-none transition-colors"
                     >
                     <button type="button" data-action="cancel-template-form" class="btn-x" aria-label="Cancelar" title="Cancelar">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
@@ -74,19 +74,19 @@
                 </colgroup>
                 <thead>
                     <tr>
-                        <th class="w-8 py-0.5 px-1.5 font-bold text-neutral-500 uppercase tracking-wider text-center">#</th>
-                        <th class="py-0.5 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Ejercicio</th>
-                        <th class="w-20 py-0.5 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Peso</th>
-                        <th class="w-20 py-0.5 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Reps</th>
-                        <th class="w-20 py-0.5 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">RIR</th>
-                        <th class="w-16 py-0.5 px-1.5 font-bold text-neutral-500 uppercase tracking-wider">Desc</th>
+                        <th class="w-8 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-center">#</th>
+                        <th class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Ejercicio</th>
+                        <th class="w-20 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Peso</th>
+                        <th class="w-20 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Reps</th>
+                        <th class="w-20 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">RIR</th>
+                        <th class="w-16 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Desc</th>
                         <th class="w-20 py-0.5 px-1.5 font-bold text-burgundy-400 uppercase tracking-wider text-center">RMₐ</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-800/40" id="set-rows">
                     {% for r in rows %}
                     <tr class="set-row group transition-colors duration-150">
-                        <td class="set-num py-0.5 px-1.5 text-neutral-600 font-bold text-center">{{ loop.index }}</td>
+                        <td class="set-num py-0.5 px-1.5 text-neutral-400 font-bold text-center">{{ loop.index }}</td>
                         <td class="py-0.5 px-1.5">
                             <select
                                 name="ejercicio"
@@ -102,7 +102,7 @@
                             <input
                                 name="kg" type="number" step="0.1" min="0" placeholder="kg"
                                 value="{{ "%g"|format(r.kg) if r.kg is not none and r.kg != "" else "" }}"
-                                class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
+                                class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 placeholder-neutral-400 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                                 {% if readonly %}disabled{% endif %}
                             >
                         </td>
@@ -110,7 +110,7 @@
                             <input
                                 name="reps" type="number" step="1" min="0" placeholder="reps"
                                 value="{{ "%g"|format(r.reps) if r.reps is not none and r.reps != "" else "" }}"
-                                class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
+                                class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 placeholder-neutral-400 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                                 {% if readonly %}disabled{% endif %}
                             >
                         </td>
@@ -119,7 +119,7 @@
                                 <input
                                     name="rir" type="number" step="any" min="-5" placeholder="RIR"
                                     value="{{ "%g"|format(r.rir) if r.rir is not none and r.rir != "" else "" }}"
-                                    class="w-full pr-4 bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
+                                    class="w-full pr-4 bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 placeholder-neutral-400 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                                     title="0 = fallo · negativo = forzadas"
                                     {% if readonly %}disabled{% endif %}
                                 >
@@ -135,14 +135,14 @@
                                         {% if readonly %}disabled{% endif %}
                                     >▼</button>
                                 </div>
-                                <span class="rir-badge hidden absolute -top-1 -left-1 text-[8px] font-black px-1 rounded bg-burgundy-700 text-white"></span>
+                                <span class="rir-badge hidden absolute -top-1 -left-1 text-xs font-black px-1 rounded bg-burgundy-700 text-white"></span>
                             </div>
                         </td>
                         <td class="py-0.5 px-1.5">
                             <input
                                 name="descanso" type="number" step="5" min="0" placeholder="s"
                                 value="{{ "%g"|format(r.descanso_seg) if r.descanso_seg is not none and r.descanso_seg != "" else "" }}"
-                                class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 placeholder-neutral-600 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
+                                class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 placeholder-neutral-400 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
                                 title="Descanso entre series (segundos, opcional)"
                                 {% if readonly %}disabled{% endif %}
                             >
