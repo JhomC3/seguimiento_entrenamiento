@@ -181,3 +181,29 @@ P0 LAN sync-only + CSRF, pipeline de tokens, contraste WCAG AA, Plotly lazy, nav
 acotado + assets versionados, dialogs nativos + regiones live, teclado/reordenamiento,
 undo persistente (v013), rutas legacy retiradas, gates axe/Lighthouse. El estado
 detallado del backend (este informe) se añade al completar su propio plan.
+
+### Estado del backend (2026-08-15, plan `2026-08-14-backend-standards-remediation.md`)
+
+| Hallazgo | Estado | Evidencia |
+|---|---|---|
+| P0: CSRF dev fallback + 0.0.0.0 | Resuelto (plan frontend Tasks 1–2) | `start_server.sh` genera/persiste `data/csrf_secret`; fallback aleatorio por proceso; gate LAN sync-only |
+| P2: rate limit sync | Resuelto (plan frontend Task 1) | `LanSyncOnlyMiddleware` + `GYM_SYNC_RATE_LIMIT_PER_MINUTE` (429 + Retry-After) |
+| Form parsing sin límites | Resuelto | Task 12: lotes (100/100/500) + `Form(max_length=200)` + exception handler `ValidationError` → 400 |
+| Sin request_id / telemetría | Resuelto | Task 1–2: `RequestIdMiddleware` (más externo) + `src/logging_setup.py` (contextvars) + access log con duración + header `x-request-id` |
+| Sin config de logging | Resuelto | Task 1: `setup_logging` idempotente con `[request_id]` en el formatter |
+| Sin /healthz | Resuelto | Task 3: `GET /healthz` → 200/503 (SELECT 1) |
+| /docs·/redoc·/openapi.json | Resuelto | Task 4: `docs_url=None, redoc_url=None, openapi_url=None` (404) |
+| Código muerto backend | Resuelto | Task 5: `get_sessions_page`, `get_training_sessions`, `delete_session(semana,dia,fecha)` eliminados; rutas legacy retiradas (plan frontend Task 9) |
+| SQLite sin WAL | Resuelto | Task 6: `PRAGMA journal_mode = WAL` en `connect_db` |
+| Backup por copy2 | Resuelto | Task 6: `copy_db` con API de backup online del motor (runner + `backup_db`) |
+| Índices incompletos | Resuelto | Task 7: v014 `idx_training_fecha_set_orden` (v006 ahora es index-aware) |
+| Import sin backup | Resuelto | Task 8: `import_training_tables` (backup + `connect_db`, idempotente) |
+| INSERT OR REPLACE | Resuelto | Task 9: `ON CONFLICT(fecha) DO UPDATE` (rowid estable) en `save_parametros_diarios` + import nutrición |
+| N+1 plantillas | Resuelto | Task 10: 2 queries por lista (tests de conteo) |
+| sqlite_sequence manual | Resuelto | Task 11: helper `_resync_sequence` |
+| Undo en memoria | Resuelto (plan frontend Task 8) | v013 `undo_entries` en SQLite (máx. 10, solo snapshots `before`) |
+| Drift AGENTS/contracts | Resuelto | Tasks 14 (backend) + 10 (frontend): v001..v014, 40 record types, /healthz, docs off |
+| CSV sin BOM | Resuelto (plan frontend Task 2) | BOM UTF-8 en los 3 exports |
+
+Pendientes conocidos: pandas en memoria (decisión documentada, volumen pequeño) y
+constantes hardcodeadas (documentadas como límites operativos).
