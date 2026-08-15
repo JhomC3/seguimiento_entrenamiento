@@ -44,3 +44,6 @@ android/sdk/
 
 # Tooling npm (build-time, no runtime)
 node_modules/
+
+# Artefactos locales de Lighthouse CI
+.lighthouseci/

@@ -217,4 +217,3 @@ def test_failed_restore_keeps_entry(tmp_path, monkeypatch):
     with pytest.raises(OSError):
         undo_last_action(db, "2025-04-24")
     assert undo_stack_size(db) == 1
-

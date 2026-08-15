@@ -19,6 +19,4 @@ def migrate(conn) -> None:
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )"""
     )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_undo_entries_newest ON undo_entries(id DESC)"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_undo_entries_newest ON undo_entries(id DESC)")
