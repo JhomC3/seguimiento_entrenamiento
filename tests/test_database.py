@@ -1007,3 +1007,16 @@ def test_get_plantillas_alimentacion_una_sola_consulta(tmp_path, monkeypatch):
     result = dbmod.get_plantillas_alimentacion(db_path)
     assert len(result) == 2
     assert executions and len(executions) <= 2, executions
+
+
+def test_restore_entrenos_resecuencia_ids(tmp_path):
+    from src.database import delete_plantilla, restore_entrenos, snapshot_entrenos
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    pid = insert_plantilla(db_path, "A", "EMPUJE", ["Press"])
+    snapshot = snapshot_entrenos(db_path)
+    delete_plantilla(db_path, pid)
+    restore_entrenos(db_path, snapshot)
+    pid2 = insert_plantilla(db_path, "B", "JALON", ["Remo"])
+    assert pid2 > pid

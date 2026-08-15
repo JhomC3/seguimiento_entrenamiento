@@ -258,6 +258,15 @@ def snapshot_entrenos(db_path: str) -> list:
     return [plantillas, sets]
 
 
+def _resync_sequence(conn, table: str) -> None:
+    """Re-sincroniza sqlite_sequence tras restaurar ids explícitos.
+
+    `table` proviene únicamente de constantes del módulo (nunca de input).
+    """
+    row = conn.execute(f"SELECT COALESCE(MAX(id), 0) FROM {table}").fetchone()
+    conn.execute("UPDATE sqlite_sequence SET seq = ? WHERE name = ?", (row[0], table))
+
+
 def restore_entrenos(db_path: str, snapshot: list) -> None:
     plantillas, sets = snapshot[0], snapshot[1]
 
@@ -286,8 +295,7 @@ def restore_entrenos(db_path: str, snapshot: list) -> None:
                     val(r, i, k) for i, k in enumerate(("plantilla_id", "set_orden", "ejercicio"))
                 ),
             )
-        max_id = conn.execute("SELECT COALESCE(MAX(id), 0) FROM plantillas").fetchone()[0]
-        conn.execute("UPDATE sqlite_sequence SET seq = ? WHERE name = 'plantillas'", (max_id,))
+        _resync_sequence(conn, "plantillas")
 
 
 def get_ejercicio_categoria(db_path: str) -> dict[str, str]:
