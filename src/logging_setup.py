@@ -11,6 +11,8 @@ request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 
 _ROOT_HANDLER_KIND = logging.StreamHandler
 
+_installed = False
+
 
 class RequestIdFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
@@ -21,9 +23,12 @@ class RequestIdFilter(logging.Filter):
 def setup_logging(level: int = logging.INFO) -> None:
     """Idempotent root handler with request_id in every record.
 
-    El nivel se fija siempre (idempotencia solo evita duplicar handlers)."""
+    El nivel se fija siempre; la instalación del handler es una sola vez
+    (flag de módulo: pytest instala sus propios StreamHandler y no deben
+    confundirse con el nuestro)."""
+    global _installed
     root = logging.getLogger()
-    if not any(isinstance(h, _ROOT_HANDLER_KIND) for h in root.handlers):
+    if not _installed:
         handler = logging.StreamHandler()
         handler.setFormatter(
             logging.Formatter(
@@ -32,4 +37,5 @@ def setup_logging(level: int = logging.INFO) -> None:
         )
         handler.addFilter(RequestIdFilter())
         root.addHandler(handler)
+        _installed = True
     root.setLevel(level)
