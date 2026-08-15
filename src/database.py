@@ -153,16 +153,23 @@ def get_plantillas(db_path: str) -> list[dict]:
         rows = conn.execute(
             "SELECT id, nombre, clasificacion, updated_at FROM plantillas ORDER BY orden, nombre"
         ).fetchall()
-        return [
-            {
-                "id": r[0],
-                "nombre": r[1],
-                "clasificacion": r[2],
-                "updated_at": r[3],
-                "ejercicios": _plantilla_sets(conn, r[0]),
-            }
-            for r in rows
-        ]
+        sets_rows = conn.execute(
+            "SELECT plantilla_id, set_orden, ejercicio FROM plantilla_sets "
+            "ORDER BY plantilla_id, set_orden"
+        ).fetchall()
+    by_id: dict[int, dict] = {}
+    for r in rows:
+        by_id[r[0]] = {
+            "id": r[0],
+            "nombre": r[1],
+            "clasificacion": r[2],
+            "updated_at": r[3],
+            "ejercicios": [],
+        }
+    for pid, _ord, ejercicio in sets_rows:
+        if pid in by_id:
+            by_id[pid]["ejercicios"].append(ejercicio)
+    return list(by_id.values())
 
 
 def get_plantilla(db_path: str, plantilla_id: int) -> dict | None:
@@ -515,18 +522,17 @@ def get_plantillas_alimentacion(db_path: str) -> list[dict]:
         rows = conn.execute(
             "SELECT id, nombre FROM plantillas_alimentacion ORDER BY orden, nombre"
         ).fetchall()
-        result = []
-        for pid, nombre in rows:
-            alimentos = [
-                {"alimento": a, "cantidad_g": c}
-                for a, c in conn.execute(
-                    "SELECT alimento, cantidad_g FROM plantilla_alimentos "
-                    "WHERE plantilla_id = ? ORDER BY orden",
-                    (pid,),
-                )
-            ]
-            result.append({"id": pid, "nombre": nombre, "alimentos": alimentos})
-        return result
+        alimentos_rows = conn.execute(
+            "SELECT plantilla_id, alimento, cantidad_g FROM plantilla_alimentos "
+            "ORDER BY plantilla_id, orden"
+        ).fetchall()
+    by_id: dict[int, dict] = {}
+    for pid, nombre in rows:
+        by_id[pid] = {"id": pid, "nombre": nombre, "alimentos": []}
+    for pid, alimento, cantidad_g in alimentos_rows:
+        if pid in by_id:
+            by_id[pid]["alimentos"].append({"alimento": alimento, "cantidad_g": cantidad_g})
+    return list(by_id.values())
 
 
 def find_plantilla_alimentacion_by_nombre(db_path: str, nombre: str) -> int | None:

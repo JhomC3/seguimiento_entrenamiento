@@ -2,7 +2,13 @@ import sqlite3
 
 import pandas as pd
 
-from src.database import init_db, load_ejercicios, load_training_data
+from src.database import (
+    init_db,
+    insert_plantilla,
+    insert_plantilla_alimentacion,
+    load_ejercicios,
+    load_training_data,
+)
 
 
 def test_init_db_creates_tables(tmp_path):
@@ -912,3 +918,86 @@ def test_save_parametros_preserva_rowid(tmp_path):
         ).fetchone()[0]
     assert rowid_1 == rowid_2
     assert peso == 80.0
+
+
+def test_get_plantillas_una_sola_consulta(tmp_path, monkeypatch):
+    """Sin N+1: 1 query de plantillas + 1 de sets (≤2 ejecuciones)."""
+    import src.database as dbmod
+    from src.db_connection import read_connection
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    insert_plantilla(db_path, "A", "EMPUJE", ["Press", "Press Militar"])
+    insert_plantilla(db_path, "B", "JALON", ["Remo"])
+
+    executions = []
+
+    def counting_conn(conn):
+        class Wrapper:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+            def execute(self, *args, **kwargs):
+                executions.append(args[0] if args else "")
+                return self._inner.execute(*args, **kwargs)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        return Wrapper(conn)
+
+    original = dbmod.read_connection
+    monkeypatch.setattr(
+        dbmod, "read_connection", lambda path: counting_conn(original(path))
+    )
+    result = dbmod.get_plantillas(db_path)
+    assert len(result) == 2
+    assert [p["nombre"] for p in result] == ["A", "B"]
+    assert executions and len(executions) <= 2, executions
+
+
+def test_get_plantillas_alimentacion_una_sola_consulta(tmp_path, monkeypatch):
+    """Sin N+1: 1 query de plantillas + 1 de alimentos (≤2 ejecuciones)."""
+    import src.database as dbmod
+    from src.db_connection import read_connection
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    insert_plantilla_alimentacion(db_path, "Comida A", [{"alimento": "Avena", "cantidad_g": 100}])
+    insert_plantilla_alimentacion(db_path, "Comida B", [{"alimento": "Pollo", "cantidad_g": 150}])
+
+    executions = []
+
+    def counting_conn(conn):
+        class Wrapper:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+            def execute(self, *args, **kwargs):
+                executions.append(args[0] if args else "")
+                return self._inner.execute(*args, **kwargs)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        return Wrapper(conn)
+
+    original = dbmod.read_connection
+    monkeypatch.setattr(
+        dbmod, "read_connection", lambda path: counting_conn(original(path))
+    )
+    result = dbmod.get_plantillas_alimentacion(db_path)
+    assert len(result) == 2
+    assert executions and len(executions) <= 2, executions
