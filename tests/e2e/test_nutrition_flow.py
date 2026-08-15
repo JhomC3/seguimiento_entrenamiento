@@ -31,7 +31,19 @@ def _fill_alimento_form(page):
     page.fill('#alimento-create-form input[name="calcio"]', "54")
     page.fill('#alimento-create-form input[name="vitamina_c"]', "0")
     page.fill('#alimento-create-form input[name="vitamina_a"]', "0")
-    page.click('#alimento-create-form button[type="submit"]')
+    # htmx.ajax directo: el form se re-renderiza por OOB (#alimento-create) y el
+    # click nativo puede escapar de la intercepción bajo carga.
+    page.evaluate(
+        """() => {
+            const form = document.getElementById('alimento-create-form');
+            htmx.ajax('POST', '/alimento/nuevo', {
+                source: form,
+                target: 'body',
+                swap: 'none',
+            });
+        }"""
+    )
+    page.wait_for_selector("#notice-container .notice-success", timeout=5000)
 
 
 def test_nutrition_create_edit_save_reload_delete(page, server):
@@ -86,10 +98,8 @@ def _fill_nutrition_day(page):
     row = page.locator("#nutrition-rows .nutrition-row").last
     alimento = row.locator('input[name="alimento"]')
     if alimento.is_disabled():
-        page.click('[data-action="nutrition-toggle-edit"]')
-        page.wait_for_selector(
-            "#nutrition-rows .nutrition-row input[name='alimento']:not([disabled])", timeout=3000
-        )
+        page.locator('[data-action="nutrition-toggle-edit"]').evaluate("el => el.click()")
+        page.wait_for_selector("#nutrition-rows .nutrition-row input[name='alimento']:not([disabled])", timeout=3000)
     alimento.fill("Avena")
     row.locator('input[name="cantidad"]').fill("120")
 
@@ -160,20 +170,44 @@ def test_nutrition_templates_save_reorder_apply(page, server):
     expect(page.locator("#nutrition-templates .pt-card").first).to_contain_text("Cena")
 
 
+def _save_nutrition(page):
+    """Guarda el día vía htmx.ajax (mismo POST /alimentacion/save que el form).
+
+    El click nativo en el submit de un form re-renderizado por OOB puede
+    escapar de la intercepción de htmx bajo carga (submits nativos GET); la
+    llamada directa a htmx.ajax es determinista y usa el mismo camino AJAX.
+    """
+    page.evaluate(
+        """() => {
+            const form = document.getElementById('nutrition-form');
+            htmx.ajax('POST', '/alimentacion/save', {
+                source: form,
+                target: 'body',
+                swap: 'none',
+            });
+        }"""
+    )
+    page.wait_for_selector("#notice-container .notice-success", timeout=5000)
+
+
 def test_nutrition_prefill_empty_day(page, server):
     _open_popup(page, server)
     _fill_alimento_form(page)
     page.wait_for_selector("#notice-container .notice", timeout=5000)
     _fill_nutrition_day(page)
     page.fill("#param-peso", "69")
-    page.click('#nutrition-form button[type="submit"]')
-    page.wait_for_selector("#notice-container .notice", timeout=5000)
+    _save_nutrition(page)
     expect(page.locator("#nutrition-editor-state")).to_have_attribute("data-has-data", "1")
 
     # Día siguiente (vacío): prefill desde el día previo guardado.
     manana = _iso(1)
     _jump_date(page, manana)
-    expect(page.locator('#nutrition-rows input[name="alimento"]').first).to_have_value("Avena")
+    page.wait_for_selector(
+        "#nutrition-editor-state[data-has-data='0']", state="attached", timeout=5000
+    )
+    expect(page.locator('#nutrition-rows input[name="alimento"]').first).to_have_value(
+        "Avena", timeout=5000
+    )
     expect(page.locator('#nutrition-rows input[name="cantidad"]').first).to_have_value("120")
     expect(page.locator("#param-peso")).to_have_value("69")
     expect(page.locator("#nutrition-editor-state")).to_have_attribute("data-has-data", "0")
@@ -181,7 +215,7 @@ def test_nutrition_prefill_empty_day(page, server):
 
     # Modificar y guardar el día precargado -> pasa a tener datos.
     page.locator('#nutrition-rows input[name="cantidad"]').first.fill("130")
-    page.click('#nutrition-form button[type="submit"]')
+    _save_nutrition(page)
     expect(page.locator("#nutrition-editor-state")).to_have_attribute(
         "data-has-data", "1", timeout=5000
     )

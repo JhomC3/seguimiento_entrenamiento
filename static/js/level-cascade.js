@@ -203,7 +203,9 @@ export function initLevelCascade() {
     });
 
     window.addEventListener('popstate', function () {
-        // Al volver atrás, la fila de músculos se recarga y se aplica la selección.
+        // Al volver atrás, las respuestas en vuelo de la cascada podrían
+        // sobrescribir el estado restaurado: se cancelan antes de restaurar.
+        cancelPending();
         loadMuscles();
         restoreFromURL();
     });
