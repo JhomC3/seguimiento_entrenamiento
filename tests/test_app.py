@@ -1866,6 +1866,7 @@ def test_nombre_demasiado_largo_devuelve_400(tmp_path, monkeypatch):
         data={"nombre": "X" * 300, "ejercicio": ["Press"]},
     )
     # 422 es la validación estándar de FastAPI para max_length (límite aplicado).
+    assert resp.status_code == 422
 
 
 def test_reordenar_lote_excesivo_devuelve_400(tmp_path, monkeypatch):
