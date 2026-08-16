@@ -168,11 +168,15 @@
 
 ### Gestor de splits
 
-- `GET /splits` → página completa (`splits.html`, extiende `base.html`). **Orden
-  visual:** header (form `#split-save-form` con hidden `split_id`/`nombre`) →
-  `#split-board` (board semanal + resumen de series, ambos en `split_board.html`)
-  → catálogo `#splits-catalog` → `#splits-section` (lista de splits guardados).
-  `?abrir=<id>` precarga un split.
+- `GET /splits` → página completa (`splits.html`, extiende `base.html`). **Layout
+  de dos columnas** (`.splits-layout`): escritorio = catálogo a la izquierda
+  (`.splits-catalog-col`, 300px, `position: sticky` con scroll propio dentro del
+  viewport) + editor a la derecha (`.splits-editor-col`); móvil = una columna con
+  el orden del DOM: editor (`#split-board`) → resumen → catálogo → lista
+  (`#splits-section`). Header: form `#split-save-form` (hidden `split_id`/`nombre`,
+  botón **"Editar"** visible cuando hay un split abierto, hint `#split-dirty-hint`
+  "Modificado" cuando hay cambios sin guardar, "Nuevo", "Guardar").
+  `?abrir=<id>` precarga un split (nombre precargado en el input).
 - **Catálogo desplegable:** un `<details class="split-catalog-group">` por grupo
   muscular (nativo: `aria-expanded`, teclado y focus; inicia cerrado) con chips
   `div.split-item-card.split-catalog-chip[role=button][tabindex=0]` que muestran
@@ -189,30 +193,47 @@
   (o `HIIT`) y **nunca confía en datos del cliente**. Upsert por nombre; con
   `split_id` edita/renombra. Límite `MAX_SPLIT_ITEMS=300` (server `_check_lote` +
   guard client-side `data-max-items` en `#split-open-state`: si se supera, no se
-  toca el DOM y se muestra notice seguro). OOB `#notice-container` +
-  `#splits-section` (outerHTML) + `#split-board` (innerHTML).
+  toca el DOM y se muestra notice seguro). Un split sin ningún ejercicio se
+  rechaza ("El split debe tener al menos un ejercicio."). OOB `#notice-container`
+  + `#splits-section` (outerHTML) + `#split-board` (innerHTML).
 - `POST /split/eliminar/{split_id}` → confirmación client-side (`#confirm-modal`);
   OOB notice + `#splits-section` + `#split-board` (board vacío).
+- **Modo visualización / edición:** un split guardado se abre en modo
+  visualización (`#split-board-week[data-editmode="0"]`: sin botones de eliminar
+  ni borrar día, Sortables deshabilitados, drag inerte). El botón **"Editar"**
+  (header o `split-edit-open` en la lista) activa el modo edición
+  (`data-editmode="1"` + `aria-pressed` en el botón). Toda mutación marca el
+  editor como modificado (`data-dirty` + `#split-dirty-hint`); Guardar persiste y
+  el OOB vuelve a modo visualización. Un split nuevo/vacío arranca en edición.
+- **Borrar día:** botón `data-action="split-day-clear"` por día (icono papelera,
+  `aria-label="Borrar todos los ejercicios del {día}"`) con confirmación
+  (`#confirm-modal`): elimina solo las instancias de ese día (el servidor lo
+  aplica al Guardar), recalcula la preview y marca modificado. No afecta a los
+  demás días ni borra el split.
 - Regla de negocio: **1 instancia = 1 serie** (duplicados permitidos, sin fusión).
   `SplitMetrics` (server-authoritative) cubre los 7 días (vacíos con 0) y expone
-  `total_series`, `by_group`, `by_exercise`; el resumen muestra **Semana**
-  (`#split-metrics-week`), **Por ejercicio** (`#split-metrics-exercises`) y
-  **Por día** (`#split-metrics-days`, 7 filas con series + grupos). Sin "Días
-  activos" ni "Ejercicios distintos". La preview client-side de `splits.js` se
-  descarta en cada render OOB.
+  `total_series`, `by_group`, `by_exercise`, `by_group_exercises` (grupo →
+  ejercicios, jerarquía del ledger) y `days`. **Resumen compacto tipo ledger**
+  (`#split-summary-week` + `#split-summary-days`): "Semana — N series" una sola
+  vez; por grupo (destacado, total a la derecha) sus ejercicios anidados con
+  total a la derecha y separadores sutiles; diario denso "Lunes — N series —
+  Grupo n · Grupo n" (7 filas). Sin "Días activos" ni "Ejercicios distintos";
+  el detalle por ejercicio solo aparece en el resumen semanal. La preview
+  client-side de `splits.js` se descarta en cada render OOB.
 - **DnD estándar (SortableJS, mismo patrón que `row-sortable.js`):**
   - catálogo: fuentes `group:{name:'split-days', pull:'clone', put:false}`,
     `sort:false` — el clon aterriza con `finalizeCard` (uid nuevo, `data-dia` del
     destino, botón de eliminar) y el chip original permanece;
   - días: `group:{name:'split-days', pull:true, put:true}`, `filter:'button'`,
-    `animation:150`, `ghostClass:'sortable-ghost'`, `chosenClass:'sortable-chosen'`;
-    inserción en la posición exacta del puntero (mitad de la tarjeta destino);
-  - `onMove` pinta `drop-target` en la zona; `onEnd` limpia;
+    `animation:150`, `ghostClass:'sortable-ghost'`, `chosenClass:'sortable-chosen'`,
+    `disabled` según editmode; inserción en la posición exacta del puntero
+    (mitad de la tarjeta destino);
+  - `onMove` pinta `drop-target` en la zona (y devuelve `false` con Shift para
+    neutralizar a Sortable en el modo duplicación); `onEnd` limpia;
   - **arrastre normal mueve; Shift duplica** (instancia o día completo). Chromium
     headless no inicia el drag de Sortable con Shift: el modo Shift usa un drag
     por puntero propio (`mousedown` con `shiftKey` → `mousemove` → `mouseup`),
-    con `onMove(shiftKey)=false` para neutralizar a Sortable en navegadores
-    reales. Inserción por Y (mitad de la tarjeta destino; final si cae debajo);
+    con inserción por Y (mitad de la tarjeta destino; final si cae debajo);
   - **copia de día completo:** handle `button.split-day-copy-handle` por día con
     `data-action="split-day-copy"`, `aria-label` y `title`; Shift+arrastre copia
     el bloque (cada copia con `dia` del destino y uid propio); Shift+click copia
@@ -220,13 +241,20 @@
     no se inicia; el día origen nunca se mueve ni se borra;
   - alternativas accesibles: click en chip (`split-add-item`, Enter/Espacio) y
     Shift+click en el handle de día.
-- `splits.js` re-sincroniza `split_id`/`max_items` tras cada OOB de `#split-board`
-  (marcador `#split-open-state[data-split-id][data-max-items]`), recrea los
-  Sortables de los días (`initBoardSortables`: destroy + create) y re-vincula los
-  handles (`bindDayCopyHandles`, por elemento) y tras `/undo` refetches el board
-  del split abierto. No queda DnD nativo paralelo a nivel `document` (los drags
-  de items son SortableJS; el drag por puntero del modo Shift se registra en
-  `mousedown`/`mousemove`/`mouseup`, no en `dragstart`).
+- `splits.js` re-sincroniza `split_id`/`max_items`/`editmode`/`nombre` tras cada
+  OOB de `#split-board` (marcador `#split-open-state[data-split-id][data-max-items]
+  [data-editmode][data-nombre]`), recrea los Sortables de los días
+  (`initBoardSortables`: destroy + create) y re-vincula los handles
+  (`bindDayCopyHandles`, por elemento) y tras `/undo` refetches el board del
+  split abierto. **El re-init escucha `htmx:oobAfterSwap` además de
+  `htmx:afterSwap`** (los swaps OOB disparan el primero, con target = elemento
+  OOB): sin esto, tras abrir/guardar un split los días quedan sin Sortable y el
+  drag muere. No queda DnD nativo paralelo a nivel `document` (los drags de items
+  son SortableJS; el drag por puntero del modo Shift se registra en
+  `mousedown`/`mousemove`/`mouseup`, no en `dragstart`). `initSplits` es
+  resiliente: guard `typeof Sortable` en las sub-inits (CDN caído → click-add y
+  el resto siguen vivos, con `console.warn`), try/catch por sub-init y reintento
+  en `window load`.
 
 ### Exports
 
@@ -266,12 +294,15 @@ hook se conservan como alias):
   parámetros), `.field-input` (+`.field-input-sm`) (formularios de alta).
 - **Contenedores:** `.panel` (+`.panel-tight`/`.panel-default`/`.panel-spacious`),
   `.panel-title` (+`.panel-title-neon`, `.panel-title-divider`), `.card`.
-- **Splits:** `.split-columns`, `.split-day-zone` (+`.drop-target` durante el
-  arrastre), `.split-day-header`, `.split-day-select`, `.split-day-count`,
-  `.split-day-items`, `.split-day-copy-handle`, `.split-catalog-group`,
+- **Splits:** `.splits-layout`, `.splits-editor-col`, `.splits-catalog-col`,
+  `.split-columns`, `.split-day-zone` (+`.drop-target` durante el arrastre),
+  `.split-day-header`, `.split-day-select`, `.split-day-count`, `.split-day-items`,
+  `.split-day-copy-handle`, `.split-day-clear-btn`, `.split-catalog-group`,
   `.split-catalog-summary`, `.split-catalog-body`, `.split-catalog-chip`,
   `.split-item-card` (+`.dragging`, `.copy-mode`), `.split-item-name`,
-  `.split-metric`, `.split-empty`.
+  `.split-summary-row`, `.split-summary-total`, `.split-summary-name`,
+  `.split-summary-group`, `.split-summary-exercise`, `.split-summary-day`,
+  `.split-summary-groups`, `.split-metric`, `.split-empty`.
 - El gate `scripts/audit_consistency.py` (CI, `tests/test_ui_consistency.py`) prohíbe
   reintroducir utilidades de color inline, micro-tipografía y hex literales.
 
