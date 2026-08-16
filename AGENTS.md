@@ -35,7 +35,7 @@ Eres un ingeniero de software senior experto en Python, especializado en anális
 - `config.py`: Constantes globales, URLs de descarga de Google Sheets (entrenamiento + nutrición) y `DB_PATH` (configurable vía `LIFESTYLE_DB_PATH`; `GYM_DB_PATH` queda como alias de compatibilidad). `HC_SYNC_TOKEN` se lee del env o, si falta, del archivo `data/hc_sync_token`.
 - `src/`: Lógica central del sistema.
   - `db_connection.py`: Fábrica `connect_db` (foreign_keys ON, row_factory, busy_timeout) + context managers `read_connection` / `transaction`.
-  - `migrations/`: Migraciones versionadas `v001`..`v014` (no existe `v004`) — v005 recomputa `semana`, v006 normaliza fechas a ISO, v007–v009 alimentación, v010 Health Connect, v011 `descanso_seg`, v012 `cardio_annotations`, v013 `undo_entries` (journal de undo persistente), v014 índice `training_sets(fecha, set_orden)` — y `runner.py` (transaccionales, con backup automático antes de aplicar migraciones pendientes). La app aplica las migraciones pendientes en el arranque.
+  - `migrations/`: Migraciones versionadas `v001`..`v015` (no existe `v004`) — v005 recomputa `semana`, v006 normaliza fechas a ISO, v007–v009 alimentación, v010 Health Connect, v011 `descanso_seg`, v012 `cardio_annotations`, v013 `undo_entries` (journal de undo persistente), v014 índice `training_sets(fecha, set_orden)`, v015 `training_splits`/`training_split_items` (gestor de splits) — y `runner.py` (transaccionales, con backup automático antes de aplicar migraciones pendientes). La app aplica las migraciones pendientes en el arranque.
   - `models.py`: Modelos tipados (`TrainingSetInput`, `TrainingSet`, `Session`, `TemplateInput`, `Template`) y excepciones de dominio (`ValidationError`, `NotFoundError`, `ConflictError`).
   - `dashboard_service.py`: Orquestación de vistas (view models, charts, filtros) y traducción de errores a respuestas seguras.
   - `view_models.py`: `DateNavigatorViewModel`, `SessionEditorViewModel` — solo valores que necesitan las plantillas.
@@ -63,11 +63,11 @@ Eres un ingeniero de software senior experto en Python, especializado en anális
   - `base.html`: Shell de layout (~70 líneas: metadata, CDNs, Tailwind config, partials, `{% block content %}`).
   - `partials/`: `notices.html`, `confirm_modal.html`, `app_config.html`.
   - `index.html`: Pantalla principal con categorías musculares y gráfica unificada.
-  - Fragmentos por feature: `editor_popup.html` (popup de registro), `session_editor.html`, `date_navigator.html`, `cardio_day.html`, `nutrition_editor.html`, `cascade_row.html`/`ejercicios_row.html` (cascada de niveles), `session_history.html`, `exercise_detail.html`, `exercise_create_form.html`, `plantillas_list.html`, `plantillas_alimentacion_list.html`, `alimento_create_form.html`.
+  - Fragmentos por feature: `editor_popup.html` (popup de registro), `session_editor.html`, `date_navigator.html`, `cardio_day.html`, `nutrition_editor.html`, `cascade_row.html`/`ejercicios_row.html` (cascada de niveles), `session_history.html`, `exercise_detail.html`, `exercise_create_form.html`, `plantillas_list.html`, `plantillas_alimentacion_list.html`, `alimento_create_form.html`, `splits.html` (página del gestor de splits) + `partials/split_board.html`, `partials/split_list.html`.
 - `data/`: Contiene la base de datos local SQLite `lifestyle.db` (regenerable), `backups/` y los secretos gitignored `hc_sync_token` / `csrf_secret` (generados por `scripts/start_server.sh`).
 - `tests/`: Pruebas unitarias, integración y `e2e/` (Playwright, servidor aislado + DB temporal).
 - `docs/`: Arquitectura (`current-ui-contract.md`, `security-model.md`, `health-sync-contract.md`), operaciones (`local-development.md`, `release-checklist.md`, `health-sync-migration.md`), planes.
-- `scripts/`: `import_google_sheets.py` (carga del CSV de entrenamiento), `import_nutrition.py` (alimentación; idempotente, backup previo, reemplaza solo `origen='google'`), `start_server.sh` (arranque LAN sync-only: genera/persiste `hc_sync_token` + `csrf_secret`), `build_css.sh` (compila Tailwind), `build_design_tokens.py` (genera `static/design-tokens.json`), `check_module_coverage.py` (pisos de cobertura por módulo), `verify_editor.py` (chequeo del editor).
+- `scripts/`: `import_google_sheets.py` (carga del CSV de entrenamiento), `import_nutrition.py` (alimentación; idempotente, backup previo, reemplaza solo `origen='google'`), `start_server.sh` (arranque LAN sync-only: genera/persiste `hc_sync_token` + `csrf_secret`), `build_css.sh` (compila Tailwind), `build_design_tokens.py` (genera `static/design-tokens.json`), `check_module_coverage.py` (pisos de cobertura por módulo), `audit_ui.py` (barrido de auditoría funcional de UI con Playwright sobre copia de la DB real), `audit_consistency.py` (gate de vocabulario canónico de componentes en CI).
 - `assets/body_map.svg`: Mapa corporal (recurso visual).
 - `android/`: App HealthSync (Kotlin) — extractor de Health Connect → backend. Gradle SIEMPRE desde `android/` con `GRADLE_USER_HOME=$PWD/.gradle` y `ANDROID_HOME=$PWD/android/sdk` (sandbox): `JAVA_HOME=/opt/homebrew/opt/openjdk@21 GRADLE_USER_HOME=$PWD/.gradle ANDROID_HOME=$PWD/android/sdk ./gradlew assembleDebug test`. Estructura: `HealthConnectManager` (SDK, permisos = catálogo + background + history), `RecordTypes.kt` (catálogo Android de 17 tipos núcleo, con permisos vía `getReadPermission`; la allow-list de ingesta del servidor en `health_sync_service.py` es un superset de 40 — son ámbitos compatibles, no un espejo), `data/` (Room: `health_records`, `health_sync_state`, `sync_targets`, `health_outbox`), `HealthRepository` (Changes API por tipo + outbox por destino), `HealthSyncClient` (HTTPS, lotes ≤500 ops), `SyncWorker`/`SyncScheduler`/`SyncService` (WorkManager 1h + manual), `SyncPlanner`/`SyncExecutor`/`HealthInventory`, `SecureTargetStore` (URL en DataStore, token cifrado en Keystore). **UI minimalista sin formulario**: el destino se embebe en builds debug vía `BuildConfig.DEFAULT_SYNC_URL`/`DEFAULT_SYNC_TOKEN` (token leído de `data/hc_sync_token` en build-time; release sin secreto); la UI es solo estado + "Permisos esenciales" + "Sincronizar AHORA".
 
@@ -75,7 +75,8 @@ Eres un ingeniero de software senior experto en Python, especializado en anális
 
 La base `data/lifestyle.db` tiene las tablas `ejercicios`, `training_sets`, `plantillas`,
 `plantilla_sets`, `alimentos`, `diario_alimentacion`, `parametros_diarios`,
-`health_records`, `cardio_annotations` y `schema_migrations` (versiones aplicadas).
+`health_records`, `cardio_annotations`, `training_splits`, `training_split_items`
+y `schema_migrations` (versiones aplicadas).
 El esquema se gestiona exclusivamente con las migraciones versionadas en
 `src/migrations/`; no se hacen `ALTER TABLE` a mano.
 
@@ -114,6 +115,9 @@ El esquema se gestiona exclusivamente con las migraciones versionadas en
 
 **`cardio_annotations`** (migración v012): anotaciones manuales sobre sesiones `EXERCISE_SESSION` espejadas. `id` PK, `hc_id` TEXT UNIQUE FK → `health_records(hc_id)` ON DELETE CASCADE, `velocidad_kmh`, `inclinacion_pct`, `notas`, `created_at`, `updated_at`. Una anotación con todos los campos vacíos se elimina.
 
+**`training_splits`** (migración v015): splits semanales de entrenamiento. `id` PK, `nombre` (UNIQUE case-insensitive vía índice en `LOWER(nombre)`), `created_at`, `updated_at`.
+**`training_split_items`** (migración v015): `id` PK, `split_id` FK → `training_splits(id)` ON DELETE CASCADE, `dia` (canónico `LUNES..DOMINGO`), `orden` (renumerado por día en el servidor), `item_type` (`'ejercicio'` | `'hiit'`), `ejercicio`, `grupo_muscular` (derivado del catálogo en servidor; `'HIIT'` para cardio). UNIQUE `(split_id, dia, orden)`; los duplicados del mismo ejercicio en un día son válidos (cada instancia = 1 serie).
+
 ## 5. Arquitectura del Dashboard (FastAPI + htmx)
 
 La app `app.py` sirve HTML renderizado con Jinja2 y usa htmx para actualizaciones parciales:
@@ -124,6 +128,7 @@ La app `app.py` sirve HTML renderizado con Jinja2 y usa htmx para actualizacione
 - **`POST /entrenamiento/session/save`** y **`POST /entrenamiento/session/eliminar`** → mutaciones OOB (`#editor-notice`, `#save-outcome`, `#session-editor-wrap`, `#editor-state`).
 - **`POST /ejercicio/nuevo`** → crea ejercicio desde el UI (OOB `#notice-container`, `#exercise-create`).
 - **`GET /plantillas` / `POST /plantilla/guardar|editar|eliminar|reordenar` / `GET /plantilla/aplicar/{id}`** → CRUD y drag&drop de plantillas (OOB `#plantillas-section`, `#session-editor-wrap`).
+- **`GET /splits` (página completa; `?abrir={id}` precarga) / `GET /split/{split_id}` (board) / `POST /split/guardar` / `POST /split/eliminar/{split_id}`** → gestor de splits semanales (catálogo arrastrable con duplicados = series, HIIT como item especial, métricas server-authoritative; OOB `#splits-section`, `#split-board`; undo kind `'splits'`).
 - **`POST /undo`** → deshace la última acción (journal `undo_entries` en SQLite, máx. 10).
 - **`GET /healthz`** → liveness JSON (`{"status": "ok", "db": "ok"}`; 503 si la DB no responde). `/docs`, `/redoc` y `/openapi.json` están **deshabilitados** (sin inventario público).
 - **`GET /exportar/csv`** → descarga CSV de `training_sets`.
@@ -184,6 +189,7 @@ Referencia completa: `docs/architecture/backend-standards.md` (forense: `docs/an
 ## 7. Estética del Frontend
 
 - Mantén la identidad visual actual: fondo oscuro (`bg-matte-950`/`bg-neutral-900`), acento borgoña **`burgundy-600` / `burgundy-400`** (`#9b1b30`/`#e56d88`), toques "neón" (`neon-border`, `neon-title`). **Fuente única de verdad: `static/design-tokens.json`** (generado por `scripts/build_design_tokens.py`); si un valor visual no está ahí, no se usa.
+- **Vocabulario canónico de componentes en `static/css/components.css`** (única fuente): `.btn` (`.btn-primary`, `.btn-ghost`, `.btn-outline`, `.btn-text`), `.cell-input`/`.cell-select` (celdas de tabla), `.field-input` (formularios de alta), `.panel`/`.panel-title`/`.card`. Queda **prohibido** repetir utilidades de color inline (`bg-white/[0.04]`, `bg-burgundy-700 hover:…`, `bg-matte-950 border…`), micro-tipografía (`text-[9-11px]`) y hex literales en templates/CSS. El gate `scripts/audit_consistency.py` (en CI) lo verifica; las clases que el JS/tests usan como hook se conservan como alias.
 - Las gráficas Plotly usan `plot_bgcolor`/`paper_bgcolor` transparentes para integrarse con el tema oscuro.
 - Respeta el patrón de fracciones de template (`exercise_detail.html`) y la gráfica única con `hx-swap-oob`.
 

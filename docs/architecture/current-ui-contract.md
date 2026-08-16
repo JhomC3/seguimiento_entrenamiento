@@ -40,6 +40,14 @@
 - Cargado por `editor-popup.js` con `htmx.ajax(target: '#popup-body')`; el popup se abre
   con `showModal()` y la fecha viaja en `?registro=<iso>` (historial).
 
+### `GET /cardio/day?fecha=<YYYY-MM-DD>`
+
+- Fragmento del panel de cardio de la fecha (`cardio_day.html`), usado por
+  `date-navigation.js` (`doNav`) para refrescar `#cardio-day` al navegar fechas dentro
+  del popup (sin esto, el panel queda con el día de apertura).
+- Mismo contenido que el bloque `#cardio-day` del popup; `POST /cardio/annotation`
+  responde OOB `#cardio-day` (outerHTML) tras guardar.
+
 ### `POST /entrenamiento/session/save`
 
 - Campos: `fecha` (ISO), `ejercicio[]`, `kg[]`, `reps[]`, `rir[]`, `descanso[]`
@@ -89,6 +97,8 @@
 - Campos: `hc_id`, `velocidad_kmh`, `inclinacion_pct`, `notas`, `fecha`.
 - Upsert de anotación sobre una sesión `EXERCISE_SESSION` espejada; anotación vacía se
   elimina. OOB de aviso vía `#notice-container`.
+- El submit del popup convierte `FormData` a objeto plano (htmx no serializa FormData
+  como `values`) y omite los campos vacíos (`float | None = Form(None)`).
 
 ### `POST /ejercicio/nuevo`
 
@@ -149,11 +159,44 @@
 - OOB éxito: `#notice-container` ("Acción deshecha."); para `sesion` además
   `#undo-result` (outerHTML, `data-fecha`, `data-has-data`, hidden), `#save-outcome`
   (`data-ok="1"`) y `#session-editor-wrap` cuando se deshace la fecha actual; para
-  `entrenos`: `#plantillas-section` (outerHTML).
+  `entrenos`: `#plantillas-section` (outerHTML); para `splits`: `#splits-section`
+  (outerHTML).
 - Pila vacía: `#notice-container` error "Nada que deshacer.".
 - Efectos: backup pre-mutación; pop del journal `undo_entries` **solo tras un restore
   exitoso** (la entrada persiste si el restore falla).
 - Accesible por Ctrl/Cmd+Z (nunca en campos de texto).
+
+### Gestor de splits
+
+- `GET /splits` → página completa (`splits.html`, extiende `base.html`): header con
+  form `#split-save-form` (hidden `split_id`, `nombre`), catálogo `#splits-catalog`
+  (chips `data-action="split-add-item"` con `data-ejercicio`/`data-grupo`/
+  `data-item-type`, incluye el chip especial `HIIT` con `data-item-type="hiit"`),
+  board `#split-board` (7 zonas `.split-day-zone[data-day=LUNES..DOMINGO]` + métricas
+  server-rendered) y lista `#splits-section` (cards `data-action="split-open"`/
+  `split-delete"` con `data-split-id`). `?abrir=<id>` precarga un split.
+- `GET /split/{split_id}` → fragmento `#split-board` (innerHTML) con el split y sus
+  métricas; 400 "El split no existe." para ids desconocidos.
+- `POST /split/guardar` — `split_id` (opcional), `nombre` (≤200), arrays alineados
+  `dia[]`, `item_type[]`, `ejercicio[]` en orden visual (día a día, instancia a
+  instancia). El servidor renumera `orden` por día, deriva `grupo_muscular` del
+  catálogo (o `HIIT`) y **nunca confía en datos del cliente**. Upsert por nombre
+  (patrón `plantilla/guardar`); con `split_id` edita/renombra ese split. Límite
+  `MAX_SPLIT_ITEMS=300`. OOB `#notice-container` + `#splits-section` (outerHTML) +
+  `#split-board` (innerHTML).
+- `POST /split/eliminar/{split_id}` → confirmación client-side (`#confirm-modal`);
+  OOB notice + `#splits-section` + `#split-board` (board vacío).
+- Regla de negocio: **1 instancia = 1 serie** (duplicados permitidos en el mismo día,
+  sin fusión). Métricas semanales y por día calculadas en `split_service.py`
+  (server-authoritative); la preview client-side (`splits.js`, tras cada drag) solo
+  es visual y se descarta en cada render OOB.
+- DnD nativo (DragEvent): catálogo → día crea una copia (el chip original permanece);
+  reordenar dentro del día y mover entre días arrastrando la tarjeta. Alternativa
+  accesible: `split-add-item` añade al día seleccionado (`split-day-select`,
+  `aria-pressed`). Search `split-catalog-search` filtra el catálogo client-side.
+- `splits.js` re-sincroniza `split_id` tras cada OOB de `#split-board` (marcador
+  `#split-open-state[data-split-id]`) y tras `/undo` refetches el board del split
+  abierto.
 
 ### Exports
 
@@ -177,6 +220,28 @@
 - `GET /select`, `GET /grupo/reset`, `GET /ejercicio` **no existen** (404 desde la
   retirada de 2026-08-15). El cliente actual solo usa `/nivel` y `/grafica`.
 - `GET /docs`, `/redoc`, `/openapi.json` deshabilitados (sin inventario público).
+
+## 6. Vocabulario de componentes (2026-08-15)
+
+Todo el styling vive en `static/css/components.css` sobre los design tokens; los
+templates usan solo estas clases canónicas (las clases que el JS/tests usan como
+hook se conservan como alias):
+
+- **Botones:** `.btn` + `.btn-primary` (acción principal), `.btn-ghost`
+  (Cancelar/Guardar de paneles), `.btn-outline` (+`.btn-outline-danger`) (acciones
+  de tarjetas), `.btn-text` (enlace con borde). Alias compatibles: `.row-btn`,
+  `.btn-x`, `.btn-check`, `.edit-toggle`, `.pt-btn`, `.today-btn`, `.nav-arrow`,
+  `.rir-step`, `.collapse-chevron`.
+- **Inputs:** `.cell-input`/`.cell-select` (celdas de tabla; +`.cell-input-sm` para
+  parámetros), `.field-input` (+`.field-input-sm`) (formularios de alta).
+- **Contenedores:** `.panel` (+`.panel-tight`/`.panel-default`/`.panel-spacious`),
+  `.panel-title` (+`.panel-title-neon`, `.panel-title-divider`), `.card`.
+- **Splits:** `.split-columns`, `.split-day-zone` (+`.drop-target` durante el
+  arrastre), `.split-day-header`, `.split-day-select`, `.split-day-count`,
+  `.split-day-items`, `.split-catalog-chip`, `.split-item-card` (+`.dragging`),
+  `.split-item-name`, `.split-item-group`, `.split-metric`, `.split-empty`.
+- El gate `scripts/audit_consistency.py` (CI, `tests/test_ui_consistency.py`) prohíbe
+  reintroducir utilidades de color inline, micro-tipografía y hex literales.
 
 ---
 
