@@ -69,6 +69,84 @@ class Template:
     updated: bool = False
 
 
+SPLIT_DAYS: tuple[str, ...] = (
+    "LUNES",
+    "MARTES",
+    "MIERCOLES",
+    "JUEVES",
+    "VIERNES",
+    "SABADO",
+    "DOMINGO",
+)
+
+
+@dataclass(frozen=True)
+class SplitItemInput:
+    """A split item submitted from the form, before persistence.
+
+    `grupo_muscular` nunca se acepta del cliente: el servidor lo deriva del
+    catálogo (o del tipo especial HIIT).
+    """
+
+    dia: str
+    item_type: str = "ejercicio"
+    ejercicio: str = ""
+
+
+@dataclass(frozen=True)
+class SplitInput:
+    """A weekly split submitted from the form."""
+
+    nombre: str
+    items: list[SplitItemInput] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class SplitItem:
+    """A persisted split item. Each item counts as one set/series."""
+
+    id: int
+    dia: str
+    orden: int
+    item_type: str
+    ejercicio: str
+    grupo_muscular: str
+
+
+@dataclass(frozen=True)
+class Split:
+    """A stored weekly split."""
+
+    id: int
+    nombre: str
+    updated_at: str
+    items: list[SplitItem] = field(default_factory=list)
+    updated: bool = False
+
+
+@dataclass(frozen=True)
+class SplitDaySummary:
+    """Per-day metrics of a split: one item == one series."""
+
+    dia: str
+    series: int
+    by_exercise: dict[str, int]
+    by_group: dict[str, int]
+
+
+@dataclass(frozen=True)
+class SplitMetrics:
+    """Server-authoritative metrics for a split's current items."""
+
+    total_instances: int
+    total_series: int
+    active_days: int
+    distinct_exercises: int
+    by_group: dict[str, int]
+    by_exercise: dict[str, int]
+    days: list[SplitDaySummary]
+
+
 @dataclass(frozen=True)
 class NutritionEntryInput:
     """A food entry submitted from the nutrition form, before persistence."""
