@@ -1,6 +1,5 @@
 """Tests de integración de las rutas del gestor de splits (CSRF, OOB, undo)."""
 
-
 from fastapi.testclient import TestClient
 
 import app as appmod
