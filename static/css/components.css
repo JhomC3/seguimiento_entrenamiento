@@ -435,24 +435,10 @@ input[type="number"]::-webkit-outer-spin-button {
     flex: 1;
 }
 
-/* Chip del catálogo (arrastrable o click para agregar al día seleccionado). */
+/* Chip del catálogo (variante de .split-item-card: arrastrable o click para
+   agregar al día seleccionado; sin grupo visible ni botón de eliminar). */
 .split-catalog-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--t-surfaces-neutral-200);
-    background: var(--t-overlay-white-004);
-    border: 1px solid var(--t-surfaces-neutral-800);
-    border-radius: 8px;
     cursor: grab;
-    transition: border-color .15s, color .15s;
-}
-.split-catalog-chip:hover {
-    color: var(--t-burgundy-400);
-    border-color: var(--t-burgundy-600);
 }
 .split-catalog-chip:active {
     cursor: grabbing;
@@ -480,6 +466,11 @@ input[type="number"]::-webkit-outer-spin-button {
 .split-item-card.dragging {
     opacity: 0.5;
 }
+/* Modo copia (Shift): indica visualmente que la operación duplicará. */
+.split-item-card.copy-mode {
+    outline: 1px dashed var(--t-burgundy-600);
+    outline-offset: 1px;
+}
 .split-item-card:focus-within {
     outline: 2px solid var(--t-burgundy-600);
     outline-offset: 1px;
@@ -494,11 +485,81 @@ input[type="number"]::-webkit-outer-spin-button {
     font-weight: 700;
     color: var(--t-surfaces-neutral-200);
 }
-.split-item-group {
-    font-size: 12px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+
+/* Handle de copia de día completo (Shift + arrastrar). */
+.split-day-copy-handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    background: var(--t-overlay-white-004);
+    border: 1px solid var(--t-surfaces-neutral-800);
     color: var(--t-surfaces-neutral-400);
+    cursor: grab;
+    transition: border-color .15s, color .15s;
+}
+.split-day-copy-handle:hover {
+    color: var(--t-burgundy-400);
+    border-color: var(--t-burgundy-600);
+}
+.split-day-copy-handle:focus-visible {
+    outline: 2px solid var(--t-burgundy-600);
+    outline-offset: 1px;
+}
+.split-day-copy-handle.dragging-day {
+    border-color: var(--t-burgundy-600);
+    box-shadow: 0 0 8px var(--t-overlay-burgundy-025);
+}
+
+/* Catálogo desplegable por grupo muscular (details/summary nativos). */
+.split-catalog-group {
+    background: var(--t-overlay-white-004);
+    border: 1px solid var(--t-surfaces-neutral-800);
+    border-radius: 8px;
+}
+.split-catalog-summary {
+    list-style: none;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--t-burgundy-400);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.split-catalog-summary::-webkit-details-marker {
+    display: none;
+}
+.split-catalog-summary::after {
+    content: '▾';
+    font-size: 12px;
+    color: var(--t-surfaces-neutral-400);
+    transition: transform .15s;
+}
+.split-catalog-group[open] > .split-catalog-summary::after {
+    transform: rotate(180deg);
+}
+.split-catalog-summary:focus-visible {
+    outline: 2px solid var(--t-burgundy-600);
+    outline-offset: -2px;
+    border-radius: 8px;
+}
+.split-catalog-body {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 10px 10px;
+    animation: split-fade .15s ease;
+}
+@keyframes split-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
 /* Celdas métricas y placeholders de estados vacíos. */
@@ -508,6 +569,9 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 .split-metric strong {
     color: var(--t-burgundy-400);
+}
+.split-metric span {
+    color: var(--t-surfaces-neutral-400);
 }
 .split-empty {
     font-size: 12px;
