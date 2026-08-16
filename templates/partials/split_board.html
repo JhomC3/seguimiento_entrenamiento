@@ -1,6 +1,7 @@
 {# Board semanal de splits: 7 zonas de destino + métricas server-rendered.
    Cada instancia colocada = 1 serie. Las métricas se recalculan en el
    servidor (guardar/cargar); la preview client-side nunca se envía. #}
+<div id="split-open-state" data-split-id="{{ open_split_id or '' }}" hidden></div>
 <div class="panel panel-default">
     <h2 class="panel-title panel-title-neon panel-title-divider">
         Semana{% if split %} — {{ split.nombre }}{% endif %}
@@ -39,20 +40,20 @@
     </div>
 </div>
 
-{# Métricas semanales (autoritativas del servidor) #}
-<div class="panel panel-default">
+{# Métricas semanales (autoritativas del servidor; preview client-side nunca viaja) #}
+<div class="panel panel-default" id="split-metrics-panel">
     <h2 class="panel-title panel-title-neon panel-title-divider">Resumen semanal</h2>
-    {% if not metrics %}
-    <p class="split-empty">Aún no hay ejercicios. Arrastra del catálogo o usa Agregar.</p>
-    {% else %}
     <div id="split-metrics-preview" class="flex flex-wrap gap-x-4 gap-y-2">
-        <span class="split-metric">Series: <strong>{{ metrics.total_series }}</strong></span>
-        <span class="split-metric">Días activos: <strong>{{ metrics.active_days }}</strong></span>
-        <span class="split-metric">Ejercicios distintos: <strong>{{ metrics.distinct_exercises }}</strong></span>
+        <span class="split-metric">Series: <strong>{% if metrics %}{{ metrics.total_series }}{% else %}0{% endif %}</strong></span>
+        <span class="split-metric">Días activos: <strong>{% if metrics %}{{ metrics.active_days }}{% else %}0{% endif %}</strong></span>
+        <span class="split-metric">Ejercicios distintos: <strong>{% if metrics %}{{ metrics.distinct_exercises }}{% else %}0{% endif %}</strong></span>
+        {% if metrics %}
         {% for grupo, n in metrics.by_group.items() %}
-        <span class="split-metric">{{ grupo }}: <strong>{{ n }}</strong></span>
+        <span class="split-metric" data-preview-group="{{ grupo }}">{{ grupo }}: <strong>{{ n }}</strong></span>
         {% endfor %}
+        {% endif %}
     </div>
+    {% if metrics %}
     <div id="split-metrics-detail" class="flex flex-col gap-1.5">
         {% for d in metrics.days %}
         <p class="split-metric">

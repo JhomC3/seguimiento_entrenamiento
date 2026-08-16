@@ -16,6 +16,7 @@ import { scheduleNotices } from './notices.js';
 import { initPanelCollapse } from './panel-collapse.js';
 import { initNutritionRowSortable } from './row-sortable.js';
 import { getCsrfToken, setAlimentoMap, setCategoriaMap, setCicloStart, setCsrfToken } from './state.js';
+import { initSplits } from './splits.js';
 import { initEntrenoDnD, initTemplateActions, initTemplateSortable } from './templates.js';
 
 function loadConfig() {
@@ -63,6 +64,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initEditorRowSortable();
     initTemplateSortable();
     initEntrenoDnD();
+    initSplits();
     fitRowsToPanel();
     document.body.dataset.appReady = '1';
 });
