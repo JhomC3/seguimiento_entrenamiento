@@ -239,3 +239,23 @@ def test_split_items_from_form_alinea(db):
     assert items[1].item_type == "hiit"
     with pytest.raises(ValidationError):
         split_items_from_form(["LUNES"], ["ejercicio", "hiit"], ["Press", "HIIT"])
+
+
+def test_metricas_by_group_exercises(db):
+    items = [
+        _item(dia="LUNES", ejercicio="Press"),
+        _item(dia="LUNES", ejercicio="Press"),
+        _item(dia="LUNES", ejercicio="Curl"),
+        _item(dia="MARTES", item_type="hiit", ejercicio="HIIT"),
+    ]
+    metrics = compute_split_metrics(_persisted(items))
+    assert metrics.by_group_exercises == {
+        "Pectoral": {"Press": 2},
+        "Biceps": {"Curl": 1},
+        "HIIT": {"HIIT": 1},
+    }
+
+
+def test_metricas_by_group_exercises_vacio(db):
+    metrics = compute_split_metrics([])
+    assert metrics.by_group_exercises == {}

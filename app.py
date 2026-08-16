@@ -347,6 +347,9 @@ def _split_board_html(
                 "metrics": metrics,
                 "open_split_id": split.id if split else None,
                 "max_items": MAX_SPLIT_ITEMS,
+                # Un split guardado se abre en modo visualización; "Editar" lo
+                # habilita client-side (patrón del editor de sesión).
+                "editmode": "0" if split else "1",
             },
         )
     )

@@ -393,17 +393,6 @@ function copyDayTo(fromDay, toDay, y) {
 }
 
 /* ---------- Preview client-side de métricas (nunca se envía al servidor) ---------- */
-function metricRow(labelText, value, suffix) {
-    const p = document.createElement('p');
-    p.className = 'split-metric';
-    p.appendChild(document.createTextNode(labelText));
-    const strong = document.createElement('strong');
-    strong.textContent = String(value);
-    p.appendChild(strong);
-    if (suffix) p.appendChild(document.createTextNode(suffix));
-    return p;
-}
-
 function tally(cards, key) {
     const counts = {};
     cards.forEach(function (c) {
@@ -411,6 +400,20 @@ function tally(cards, key) {
         counts[k] = (counts[k] || 0) + 1;
     });
     return counts;
+}
+
+function summaryRow(nameText, totalText, extraClass) {
+    const row = document.createElement('div');
+    row.className = 'split-summary-row' + (extraClass ? ' ' + extraClass : '');
+    const name = document.createElement('span');
+    name.className = 'split-summary-name';
+    name.textContent = nameText;
+    const total = document.createElement('span');
+    total.className = 'split-summary-total';
+    total.textContent = totalText;
+    row.appendChild(name);
+    row.appendChild(total);
+    return row;
 }
 
 function updatePreview() {
@@ -427,41 +430,52 @@ function updatePreview() {
         items.forEach(function (c) { cards.push(c); });
     });
 
-    // Resumen semanal: total + por grupo.
-    const week = document.getElementById('split-metrics-week');
+    // Resumen semanal ledger: Semana (una vez) → grupos → ejercicios anidados.
+    const week = document.getElementById('split-summary-week');
     if (week) {
-        week.replaceChildren(metricRow('Semana — ', cards.length, ' series'));
+        week.replaceChildren();
+        week.appendChild(summaryRow('Semana — ' + cards.length + ' series', '', 'split-summary-total'));
         const groups = tally(cards, 'grupo');
         Object.keys(groups).sort().forEach(function (g) {
-            week.appendChild(metricRow('· ' + g + ': ', groups[g], ' series'));
+            const groupEl = document.createElement('div');
+            groupEl.className = 'split-summary-group';
+            groupEl.appendChild(summaryRow(g, groups[g] + ' series'));
+            const byExercise = {};
+            cards.forEach(function (c) {
+                if (c.dataset.grupo !== g) return;
+                const ej = c.dataset.ejercicio;
+                byExercise[ej] = (byExercise[ej] || 0) + 1;
+            });
+            Object.keys(byExercise).sort().forEach(function (ej) {
+                groupEl.appendChild(summaryRow(ej, byExercise[ej] + ' series', 'split-summary-exercise'));
+            });
+            week.appendChild(groupEl);
         });
     }
 
-    // Resumen por ejercicio (totales semanales).
-    const ex = document.getElementById('split-metrics-exercises');
-    if (ex) {
-        ex.replaceChildren();
-        const byExercise = tally(cards, 'ejercicio');
-        Object.keys(byExercise).sort().forEach(function (ej) {
-            ex.appendChild(metricRow(ej + ': ', byExercise[ej], ' series'));
-        });
-    }
-
-    // Resumen por día: los 7 días, series totales + por grupo.
-    const days = document.getElementById('split-metrics-days');
+    // Resumen diario denso: día — N series — G n · G n.
+    const days = document.getElementById('split-summary-days');
     if (days) {
-        days.replaceChildren();
+        days.querySelectorAll('.split-summary-day').forEach(function (row) { row.remove(); });
+        const heading = days.querySelector('.panel-title');
         SPLIT_DAYS.forEach(function (day) {
             const dayCards = cards.filter(function (c) { return c.dataset.dia === day; });
-            const row = metricRow(dayLabel(day) + ' — ', dayCards.length, ' series');
+            const row = document.createElement('div');
+            row.className = 'split-summary-row split-summary-day';
+            const name = document.createElement('span');
+            name.className = 'split-summary-name';
+            name.textContent = dayLabel(day) + ' — ' + dayCards.length + ' series';
             const groups = tally(dayCards, 'grupo');
-            Object.keys(groups).sort().forEach(function (g) {
-                const span = document.createElement('span');
-                span.textContent = '· ' + g + ': ' + groups[g];
-                row.appendChild(span);
-            });
+            const groupsSpan = document.createElement('span');
+            groupsSpan.className = 'split-summary-groups';
+            groupsSpan.textContent = Object.keys(groups).sort()
+                .map(function (g) { return g + ' ' + groups[g]; })
+                .join(' · ');
+            row.appendChild(name);
+            row.appendChild(groupsSpan);
             days.appendChild(row);
         });
+        if (heading) days.insertBefore(heading, days.firstChild);
     }
 }
 

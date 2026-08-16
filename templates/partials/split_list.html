@@ -13,7 +13,7 @@
             </div>
             <span class="text-xs text-neutral-400">{{ s.series }} series · {{ s.active_days }} días activos · {{ s.groups | join(', ') }}</span>
             <div class="flex gap-1">
-                <button type="button" data-action="split-open" data-split-id="{{ s.id }}" class="btn btn-outline flex-1">Abrir</button>
+                <button type="button" data-action="split-edit-open" data-split-id="{{ s.id }}" class="btn btn-outline flex-1">Editar</button>
                 <button type="button" data-action="split-delete" data-split-id="{{ s.id }}" data-split-nombre="{{ s.nombre }}" class="btn btn-outline btn-outline-danger flex-1">Eliminar</button>
             </div>
         </div>

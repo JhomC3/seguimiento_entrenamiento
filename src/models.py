@@ -139,11 +139,14 @@ class SplitMetrics:
     """Server-authoritative metrics for a split's current items.
 
     `days` cubre SIEMPRE los 7 días canónicos (los vacíos con series 0).
+    `by_group_exercises` agrupa los totales semanales por grupo -> ejercicio
+    (jerarquía del resumen ledger).
     """
 
     total_series: int
     by_group: dict[str, int]
     by_exercise: dict[str, int]
+    by_group_exercises: dict[str, dict[str, int]]
     days: list[SplitDaySummary]
 
 

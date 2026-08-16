@@ -366,6 +366,42 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 /* ---------- Gestor de splits ---------- */
+/* Layout: escritorio = catálogo izquierda (sticky) + editor derecha;
+   móvil = una columna con el editor primero (orden del DOM). */
+.splits-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.splits-editor-col {
+    order: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.splits-catalog-col {
+    order: 2;
+    min-width: 0;
+}
+@media (min-width: 1024px) {
+    .splits-layout {
+        flex-direction: row;
+        align-items: flex-start;
+    }
+    .splits-catalog-col {
+        order: -1;
+        flex: 0 0 300px;
+        position: sticky;
+        top: 16px;
+        max-height: calc(100vh - 32px);
+        overflow-y: auto;
+    }
+    .splits-editor-col {
+        order: 0;
+        flex: 1 1 auto;
+    }
+}
 .split-columns {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
@@ -439,6 +475,7 @@ input[type="number"]::-webkit-outer-spin-button {
    agregar al día seleccionado; sin grupo visible ni botón de eliminar). */
 .split-catalog-chip {
     cursor: grab;
+    padding: 3px 8px;
 }
 .split-catalog-chip:active {
     cursor: grabbing;
@@ -514,6 +551,16 @@ input[type="number"]::-webkit-outer-spin-button {
     box-shadow: 0 0 8px var(--t-overlay-burgundy-025);
 }
 
+/* Modo visualización: sin controles de edición (los habilita "Editar"). */
+#split-board-week[data-editmode="0"] .row-btn,
+#split-board-week[data-editmode="0"] .split-day-copy-handle,
+#split-board-week[data-editmode="0"] .split-day-clear-btn {
+    display: none;
+}
+#split-board-week[data-editmode="0"] .split-item-card {
+    cursor: default;
+}
+
 /* Catálogo desplegable por grupo muscular (details/summary nativos). */
 .split-catalog-group {
     background: var(--t-overlay-white-004);
@@ -522,7 +569,7 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 .split-catalog-summary {
     list-style: none;
-    padding: 6px 10px;
+    padding: 4px 10px;
     font-size: 12px;
     font-weight: 900;
     letter-spacing: 0.08em;
@@ -553,13 +600,67 @@ input[type="number"]::-webkit-outer-spin-button {
 .split-catalog-body {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    padding: 0 10px 10px;
+    gap: 6px;
+    padding: 0 10px 8px;
     animation: split-fade .15s ease;
 }
 @keyframes split-fade {
     from { opacity: 0; }
     to { opacity: 1; }
+}
+
+/* Resumen compacto tipo ledger (semana → grupos → ejercicios). */
+.split-summary-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 2px 0;
+    font-size: 12px;
+}
+.split-summary-row.split-summary-total {
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--t-surfaces-neutral-200);
+    padding-bottom: 6px;
+}
+.split-summary-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--t-surfaces-neutral-200);
+}
+.split-summary-total {
+    flex: none;
+    color: var(--t-surfaces-neutral-400);
+}
+.split-summary-group + .split-summary-group {
+    border-top: 1px solid var(--t-surfaces-neutral-800);
+    margin-top: 4px;
+    padding-top: 4px;
+}
+.split-summary-group > .split-summary-row:first-child .split-summary-name {
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--t-burgundy-400);
+}
+.split-summary-exercise {
+    padding-left: 16px;
+}
+.split-summary-exercise .split-summary-name {
+    color: var(--t-surfaces-neutral-300);
+}
+.split-summary-day {
+    border-top: 1px solid var(--t-surfaces-neutral-800);
+    padding-top: 3px;
+}
+.split-summary-groups {
+    flex: none;
+    color: var(--t-surfaces-neutral-400);
+    text-align: right;
 }
 
 /* Celdas métricas y placeholders de estados vacíos. */

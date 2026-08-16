@@ -72,7 +72,7 @@ def test_splits_page_catalogo_agrupado_y_detalles(tmp_path, monkeypatch):
     assert '<span class="split-item-group">' not in r.text
 
 
-def test_splits_page_resumen_v2(tmp_path, monkeypatch):
+def test_splits_page_resumen_ledger_v3(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     client = _client()
@@ -84,20 +84,47 @@ def test_splits_page_resumen_v2(tmp_path, monkeypatch):
     # Sin conteos auxiliares.
     assert "Días activos" not in r.text
     assert "Ejercicios distintos" not in r.text
-    # Resumen semanal + por ejercicio + por día (7 días, incluso vacíos).
-    assert 'id="split-metrics-week"' in r.text
-    assert 'id="split-metrics-exercises"' in r.text
-    assert 'id="split-metrics-days"' in r.text
-    assert "Semana — <strong>2</strong> series" in r.text
-    assert "HIIT: <strong>1</strong> series" in r.text
+    # Resumen ledger: semanal (una sola vez) + diario (7 días, incluso vacíos).
+    assert 'id="split-summary-week"' in r.text
+    assert 'id="split-summary-days"' in r.text
+    assert r.text.count("Semana — <strong>2</strong> series") == 1
+    assert 'class="split-summary-group"' in r.text
+    assert 'class="split-summary-row split-summary-exercise"' in r.text
+    # Cada grupo aparece una sola vez como fila de grupo del ledger.
+    assert r.text.count('class="split-summary-name">Pectoral</span>') == 1
+    # HIIT: grupo + su ejercicio anidado (2 filas con el mismo nombre).
+    assert r.text.count('class="split-summary-name">HIIT</span>') == 2
+    # Ejercicio anidado bajo su grupo + totales (grupos y ejercicios, 1 serie c/u).
+    assert '<span class="split-summary-name">Press</span>' in r.text
+    assert r.text.count('<span class="split-summary-total">1 series</span>') == 4
+    # Diario: días vacíos con 0 series.
     assert "Domingo — <strong>0</strong> series" in r.text
-    assert r.text.count("— <strong>") >= 7  # los 7 días del resumen
-    # Handle de copia de día con aria-label y title.
+    # Handle de copia de día + botón de borrar día con aria-label.
     assert 'class="split-day-copy-handle"' in r.text
     assert 'aria-label="Copiar todo el día Lunes manteniendo Shift"' in r.text
-    assert 'title="Mantén Shift y arrastra para copiar el día completo"' in r.text
+    assert 'aria-label="Borrar todos los ejercicios del Lunes"' in r.text
     # Límite expuesto para el guard client-side.
     assert 'data-max-items="300"' in r.text
+
+
+def test_splits_page_layout_y_editmode(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    # Sin split: layout de dos columnas y modo edición por defecto.
+    r = client.get("/splits")
+    assert r.status_code == 200
+    assert 'class="splits-layout"' in r.text
+    assert 'class="splits-catalog-col"' in r.text
+    assert 'class="splits-editor-col"' in r.text
+    assert 'data-editmode="1"' in r.text
+    # Split guardado abierto: modo visualización + botón Editar en el header.
+    _guardar(client)
+    r = client.get("/splits?abrir=1")
+    assert r.status_code == 200
+    assert 'data-editmode="0"' in r.text
+    assert 'data-action="split-edit"' in r.text
+    assert 'data-action="split-edit-open"' in r.text
 
 
 def test_splits_page_con_abrir(tmp_path, monkeypatch):
