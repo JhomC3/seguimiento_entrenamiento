@@ -85,8 +85,8 @@ def test_splits_page_loads(page, server):
 
 def test_drag_repetido_cuenta_series(page, server):
     _goto_splits(page, server)
-    _drag_from_catalog(page, "Curl de bíceps", "LUNES")
-    _drag_from_catalog(page, "Curl de bíceps", "LUNES")
+    _drag_from_catalog(page, "Curl", "LUNES")
+    _drag_from_catalog(page, "Curl", "LUNES")
     expect(page.locator('.split-day-zone[data-day="LUNES"] .split-item-card')).to_have_count(2)
     expect(page.locator('[data-day-count="LUNES"]')).to_have_text("2 series")
     expect(page.locator("#split-metrics-preview")).to_contain_text("Series: 2")
@@ -107,13 +107,13 @@ def test_agregar_boton_alternativa_accesible(page, server):
 
 def test_reordenar_y_eliminar(page, server):
     _goto_splits(page, server)
-    _drag_from_catalog(page, "Curl de bíceps", "LUNES")
+    _drag_from_catalog(page, "Curl", "LUNES")
     _drag_from_catalog(page, "Press", "LUNES")
-    assert _card_names(page, "LUNES") == ["Curl de bíceps", "Press"]
+    assert _card_names(page, "LUNES") == ["Curl", "Press"]
 
     # Reordenar: mover Press al primer lugar.
     _reorder_to_index(page, '.split-day-zone[data-day="LUNES"] .split-item-card[data-ejercicio="Press"]', "LUNES", 0)
-    assert _card_names(page, "LUNES") == ["Press", "Curl de bíceps"]
+    assert _card_names(page, "LUNES") == ["Press", "Curl"]
 
     # Eliminar una instancia: solo debe quedar una.
     page.locator('.split-day-zone[data-day="LUNES"] [data-action="split-item-remove"]').first.click()
@@ -124,8 +124,8 @@ def test_reordenar_y_eliminar(page, server):
 
 def test_guardar_recargar_abrir_conserva_estado(page, server):
     _goto_splits(page, server)
-    _drag_from_catalog(page, "Curl de bíceps", "LUNES")
-    _drag_from_catalog(page, "Curl de bíceps", "LUNES")
+    _drag_from_catalog(page, "Curl", "LUNES")
+    _drag_from_catalog(page, "Curl", "LUNES")
     _drag_from_catalog(page, "Press", "LUNES")
     _drag_from_catalog(page, "HIIT", "MARTES")
 
@@ -143,7 +143,7 @@ def test_guardar_recargar_abrir_conserva_estado(page, server):
     page.wait_for_selector('.split-day-zone[data-day="LUNES"] .split-item-card', timeout=3000)
 
     expect(page.locator('.split-day-zone[data-day="LUNES"] .split-item-card')).to_have_count(3)
-    assert _card_names(page, "LUNES") == ["Curl de bíceps", "Curl de bíceps", "Press"]
+    assert _card_names(page, "LUNES") == ["Curl", "Curl", "Press"]
     expect(page.locator('.split-day-zone[data-day="MARTES"] .split-item-card')).to_have_count(1)
     assert _card_names(page, "MARTES") == ["HIIT"]
     expect(page.locator('[data-day-count="LUNES"]')).to_have_text("3 series")

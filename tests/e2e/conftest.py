@@ -42,7 +42,6 @@ def server(tmp_path):
     init_db(str(db_path))
     insert_exercise(str(db_path), "Press", "Pectoral", "EMPUJE")
     insert_exercise(str(db_path), "Curl", "Biceps", "EMPUJE")
-    insert_exercise(str(db_path), "Curl de bíceps", "Biceps", "TIRON")
 
     port = _free_port()
     env = dict(os.environ)
