@@ -7,13 +7,17 @@
             <h1 class="text-xl font-black tracking-[0.2em] text-white uppercase">Gym Tracker</h1>
             <a
                 href="/exportar/csv"
-                class="text-xs font-bold text-neutral-400 hover:text-burgundy-400 border border-neutral-800 hover:border-burgundy-700 rounded px-2 py-1 transition-all uppercase tracking-widest"
+                class="btn btn-outline"
             >Exportar CSV</a>
+            <a
+                href="/splits"
+                class="btn btn-outline"
+            >Splits</a>
         </div>
         <div class="flex items-center gap-3">
             <button
                 data-action="open-editor-popup"
-                class="bg-burgundy-700 hover:bg-burgundy-600 text-white text-xs font-black tracking-widest uppercase rounded-full px-5 h-11 transition-colors"
+                class="btn btn-primary rounded-full px-5 h-11"
             >+ Registrar</button>
         </div>
     </header>
@@ -32,7 +36,7 @@
     <!-- Contenido principal -->
     <main class="flex flex-col gap-6 min-w-0">
         <!-- Gráfica Única -->
-        <div id="unified-chart-container" class="bg-neutral-900 border border-transparent rounded-xl p-5 neon-border metallic-border">
+        <div id="unified-chart-container" class="panel panel-spacious">
             <div id="unified-chart">
                 {{ systemic_chart_html | safe }}
             </div>
@@ -54,7 +58,7 @@
 <dialog id="editor-popup" class="editor-popup-dialog" aria-labelledby="popup-fecha-title">
     <div class="relative z-20 mx-auto my-6 max-w-4xl max-h-[calc(100vh-3rem)] overflow-y-auto bg-neutral-950 border border-neutral-800 rounded-2xl flex flex-col">
         <div class="sticky top-0 z-30 bg-neutral-950 border-b border-neutral-800 px-5 py-3 flex items-center gap-4">
-            <h2 class="text-sm font-black tracking-widest text-burgundy-400 uppercase neon-title" id="popup-fecha-title"></h2>
+            <h2 class="panel-title panel-title-neon" id="popup-fecha-title"></h2>
             <button id="popup-close" data-action="close-editor-popup" class="ml-auto text-neutral-400 hover:text-white text-xl leading-none px-2" aria-label="Cerrar">×</button>
         </div>
         <div id="popup-body" class="flex flex-col gap-4 p-5"></div>

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-8 flex flex-col gap-8">
+    <!-- Header -->
+    <header class="flex items-center justify-between border-b border-neutral-800 pb-4 flex-wrap gap-3">
+        <div class="flex items-center gap-3">
+            <h1 class="text-xl font-black tracking-[0.2em] text-white uppercase">Gestor de splits</h1>
+            <a href="/" class="btn btn-outline">← Dashboard</a>
+        </div>
+        <form id="split-save-form" hx-post="/split/guardar" hx-swap="none" class="flex items-center gap-2">
+            <input type="hidden" name="split_id" value="{{ open_split_id or '' }}">
+            <label for="split-nombre" class="sr-only">Nombre del split</label>
+            <input id="split-nombre" name="nombre" class="field-input field-input-sm w-56" placeholder="Nombre del split (ej. Push Pull Legs)" maxlength="200" autocomplete="off">
+            <button type="button" data-action="split-new" class="btn btn-ghost">Nuevo</button>
+            <button type="button" data-action="split-save" class="btn btn-primary">Guardar</button>
+        </form>
+    </header>
+
+    <!-- Catálogo de ejercicios (filtro persistente; no se re-renderiza en OOB) -->
+    <section class="panel panel-default">
+        <h2 class="panel-title panel-title-neon panel-title-divider">Catálogo de ejercicios</h2>
+        <label for="split-catalog-search" class="sr-only">Buscar ejercicio</label>
+        <input id="split-catalog-search" data-action="split-catalog-search" class="field-input" placeholder="Buscar ejercicio…" autocomplete="off">
+        <div id="splits-catalog" class="flex flex-col gap-4">
+            {% for group, group_items in catalog | groupby('grupo_muscular') %}
+            <div>
+                <h3 class="panel-title mb-1">{{ group }}</h3>
+                <div class="flex flex-wrap gap-2">
+                    {% for ej in group_items %}
+                    <button type="button" class="split-catalog-chip" draggable="true"
+                            data-action="split-add-item"
+                            data-ejercicio="{{ ej.ejercicio }}" data-grupo="{{ ej.grupo_muscular }}"
+                            data-item-type="ejercicio"
+                            title="Arrastra al día o haz clic para agregar {{ ej.ejercicio }} al día seleccionado">
+                        {{ ej.ejercicio }}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+            <div>
+                <h3 class="panel-title mb-1">Cardio</h3>
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" class="split-catalog-chip" draggable="true"
+                            data-action="split-add-item"
+                            data-ejercicio="HIIT" data-grupo="HIIT"
+                            data-item-type="hiit"
+                            title="Arrastra al día o haz clic para agregar HIIT al día seleccionado">
+                        HIIT
+                    </button>
+                </div>
+            </div>
+        </div>
+        <p class="split-empty" id="split-catalog-empty" hidden>Sin resultados para la búsqueda.</p>
+    </section>
+
+    <!-- Board semanal (OOB #split-board) -->
+    <div id="split-board" class="flex flex-col gap-6">
+        {{ board_html | safe }}
+    </div>
+
+    <!-- Lista de splits guardados (OOB #splits-section) -->
+    <section id="splits-section">
+        {{ splits_html | safe }}
+    </section>
+</div>
+
+<noscript>
+    <div class="notice notice-error" role="alert">
+        El gestor de splits requiere JavaScript para arrastrar, editar y guardar.
+    </div>
+</noscript>
+{% endblock %}

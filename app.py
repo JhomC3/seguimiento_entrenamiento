@@ -34,21 +34,31 @@ from src.database import (
     get_plantillas,
     get_plantillas_alimentacion,
     get_sets_by_fecha,
+    get_split_catalog,
+    get_splits_summary,
     init_db,
 )
 from src.db_connection import read_connection
 from src.exercise_service import create_exercise
 from src.health_sync_service import MAX_BODY_BYTES, ingest_health_records, parse_payload
 from src.logging_setup import request_id_var, setup_logging
-from src.models import AlimentoInput, TemplateInput, ValidationError
+from src.models import (
+    SPLIT_DAYS,
+    AlimentoInput,
+    SplitInput,
+    TemplateInput,
+    ValidationError,
+)
 from src.mutation_service import (
     delete_diary_with_undo_snapshot,
     delete_session,
+    delete_split_with_undo_snapshot,
     delete_template_with_undo_snapshot,
     edit_template_with_undo_snapshot,
     reorder_templates_with_undo_snapshot,
     save_diary_with_undo_snapshot,
     save_session_with_undo_snapshot,
+    save_split_with_undo_snapshot,
     save_template_with_undo_snapshot,
     undo_last_action,
 )
@@ -77,6 +87,7 @@ from src.security import (
     get_csrf_secret,
     make_csrf_token,
 )
+from src.split_service import get_split_board, split_items_from_form
 from src.static_assets import is_current_digest, static_url
 from src.template_service import apply_template_rows
 from src.training_service import (
@@ -117,6 +128,7 @@ MAX_FORM_SETS = 100  # series por sesión
 MAX_DIARY_ROWS = 100  # filas del diario
 MAX_REORDER_IDS = 500  # ids de reordenamiento
 MAX_NAME_LEN = 200  # nombres (ejercicio, alimento, plantilla)
+MAX_SPLIT_ITEMS = 300  # items (instancias/series) por split
 
 
 def _check_lote(rows: list, max_rows: int, campo: str) -> None:
@@ -314,6 +326,60 @@ def _plantillas_list_html(
     )
 
 
+def _split_board_html(
+    request: Request,
+    *,
+    split_id: int | None = None,
+    board: dict | None = None,
+) -> str:
+    """Fragmento del board semanal de splits (7 días + métricas)."""
+    if board is None and split_id is not None:
+        board = get_split_board(DB_PATH, split_id)
+    split = board["split"] if board else None
+    metrics = board["metrics"] if board else None
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="partials/split_board.html",
+            context={
+                "days": SPLIT_DAYS,
+                "split": split,
+                "metrics": metrics,
+                "open_split_id": split.id if split else None,
+            },
+        )
+    )
+
+
+def _split_list_html(request: Request) -> str:
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="partials/split_list.html",
+            context={"splits": get_splits_summary(DB_PATH)},
+        )
+    )
+
+
+def _split_page_html(request: Request, abrir_id: int | None = None) -> str:
+    """Página completa del gestor de splits (base.html + fragmentos)."""
+    board = (
+        _split_board_html(request, split_id=abrir_id) if abrir_id else _split_board_html(request)
+    )
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="splits.html",
+            context={
+                "catalog": get_split_catalog(DB_PATH),
+                "board_html": board,
+                "splits_html": _split_list_html(request),
+                "open_split_id": abrir_id,
+            },
+        )
+    )
+
+
 NUTRIENT_FIELD_LABELS: list[dict[str, str]] = [
     {"name": "kcal", "label": "kcal"},
     {"name": "carbohidratos", "label": "Carb (g)"},
@@ -506,6 +572,12 @@ def editor_popup(request: Request, fecha: str = Query(...)):
             },
         )
     )
+
+
+@app.get("/cardio/day", response_class=HTMLResponse)
+def cardio_day(request: Request, fecha: str = Query(...)):
+    """Fragmento del panel de cardio de una fecha (navegación dentro del popup)."""
+    return HTMLResponse(content=_cardio_day_html(request, fecha))
 
 
 @app.post("/cardio/annotation", response_class=HTMLResponse)
@@ -922,6 +994,97 @@ def plantilla_aplicar(request: Request, plantilla_id: int, fecha: str = Query(..
     )
 
 
+@app.get("/splits", response_class=HTMLResponse)
+def splits_view(request: Request, abrir: int | None = Query(None)):
+    try:
+        if abrir is not None:
+            get_split_board(DB_PATH, abrir)
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    return HTMLResponse(content=_split_page_html(request, abrir_id=abrir))
+
+
+@app.get("/split/{split_id}", response_class=HTMLResponse)
+def split_get(request: Request, split_id: int):
+    try:
+        board = get_split_board(DB_PATH, split_id)
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    return HTMLResponse(
+        content=fragment_oob(
+            templates,
+            request,
+            "split-board",
+            _split_board_html(request, board=board),
+            swap="innerHTML",
+        )
+    )
+
+
+@app.post("/split/guardar", response_class=HTMLResponse)
+def split_guardar(
+    request: Request,
+    split_id: int | None = Form(None),
+    nombre: str = Form(..., max_length=MAX_NAME_LEN),
+    dia: list[str] = Form(default=[]),
+    item_type: list[str] = Form(default=[]),
+    ejercicio: list[str] = Form(default=[]),
+):
+    try:
+        _check_lote(dia, MAX_SPLIT_ITEMS, "elementos")
+        items = split_items_from_form(dia, item_type, ejercicio)
+        result = save_split_with_undo_snapshot(
+            DB_PATH, split_id, SplitInput(nombre=nombre, items=items)
+        )
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    msg = "Split actualizado." if result.updated else "Split guardado."
+    return HTMLResponse(
+        content=notice_oob(templates, request, target="notice-container", message=msg)
+        + fragment_oob(
+            templates,
+            request,
+            "splits-section",
+            _split_list_html(request),
+            swap="outerHTML",
+        )
+        + fragment_oob(
+            templates,
+            request,
+            "split-board",
+            _split_board_html(request, split_id=result.id),
+            swap="innerHTML",
+        )
+    )
+
+
+@app.post("/split/eliminar/{split_id}", response_class=HTMLResponse)
+def split_eliminar(request: Request, split_id: int):
+    try:
+        delete_split_with_undo_snapshot(DB_PATH, split_id)
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    return HTMLResponse(
+        content=notice_oob(
+            templates, request, target="notice-container", message="Split eliminado."
+        )
+        + fragment_oob(
+            templates,
+            request,
+            "splits-section",
+            _split_list_html(request),
+            swap="outerHTML",
+        )
+        + fragment_oob(
+            templates,
+            request,
+            "split-board",
+            _split_board_html(request),
+            swap="innerHTML",
+        )
+    )
+
+
 @app.post("/undo", response_class=HTMLResponse)
 def undo(request: Request, fecha: str = Form("")):
     notice_ok = notice_oob(
@@ -967,6 +1130,17 @@ def undo(request: Request, fecha: str = Form("")):
                 + nutrition_editor_wrap_oob(templates, request, editor)
             )
         return HTMLResponse(content=notice_ok + marker)
+    if result["kind"] == "splits":
+        return HTMLResponse(
+            content=notice_ok
+            + fragment_oob(
+                templates,
+                request,
+                "splits-section",
+                _split_list_html(request),
+                swap="outerHTML",
+            )
+        )
     return HTMLResponse(
         content=notice_ok
         + fragment_oob(

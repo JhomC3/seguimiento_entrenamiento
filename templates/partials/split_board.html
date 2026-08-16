@@ -1,0 +1,66 @@
+{# Board semanal de splits: 7 zonas de destino + métricas server-rendered.
+   Cada instancia colocada = 1 serie. Las métricas se recalculan en el
+   servidor (guardar/cargar); la preview client-side nunca se envía. #}
+<div class="panel panel-default">
+    <h2 class="panel-title panel-title-neon panel-title-divider">
+        Semana{% if split %} — {{ split.nombre }}{% endif %}
+    </h2>
+    <div class="split-columns">
+        {% for day in days %}
+        <div class="split-day-zone" data-day="{{ day }}">
+            <div class="split-day-header">
+                <button type="button" data-action="split-day-select" data-day="{{ day }}"
+                        class="split-day-select" aria-pressed="false">{{ day | title }}</button>
+                <span class="split-day-count" data-day-count="{{ day }}">
+                    {% set n = split.items | selectattr('dia', 'equalto', day) | list | length if split else 0 %}
+                    {{ n }} serie{{ 's' if n != 1 }}
+                </span>
+            </div>
+            <div class="split-day-items" data-day-list="{{ day }}" role="list" aria-label="Ejercicios de {{ day | title }}">
+                {% if split %}
+                {% for it in split.items if it.dia == day %}
+                <div class="split-item-card" draggable="true" role="listitem"
+                     data-split-item-id="{{ it.id }}" data-ejercicio="{{ it.ejercicio }}"
+                     data-grupo="{{ it.grupo_muscular }}" data-item-type="{{ it.item_type }}"
+                     data-dia="{{ day }}">
+                    <span class="split-item-name" title="{{ it.ejercicio }}">{{ it.ejercicio }}</span>
+                    <span class="split-item-group">{{ it.grupo_muscular }}</span>
+                    <button type="button" class="row-btn" data-action="split-item-remove"
+                            aria-label="Eliminar {{ it.ejercicio }} del {{ day | title }}" title="Eliminar">−</button>
+                </div>
+                {% endfor %}
+                {% endif %}
+            </div>
+            <p class="split-empty" {% if split and split.items | selectattr('dia', 'equalto', day) | list %}hidden{% endif %}>
+                Suelta ejercicios aquí
+            </p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+{# Métricas semanales (autoritativas del servidor) #}
+<div class="panel panel-default">
+    <h2 class="panel-title panel-title-neon panel-title-divider">Resumen semanal</h2>
+    {% if not metrics %}
+    <p class="split-empty">Aún no hay ejercicios. Arrastra del catálogo o usa Agregar.</p>
+    {% else %}
+    <div id="split-metrics-preview" class="flex flex-wrap gap-x-4 gap-y-2">
+        <span class="split-metric">Series: <strong>{{ metrics.total_series }}</strong></span>
+        <span class="split-metric">Días activos: <strong>{{ metrics.active_days }}</strong></span>
+        <span class="split-metric">Ejercicios distintos: <strong>{{ metrics.distinct_exercises }}</strong></span>
+        {% for grupo, n in metrics.by_group.items() %}
+        <span class="split-metric">{{ grupo }}: <strong>{{ n }}</strong></span>
+        {% endfor %}
+    </div>
+    <div id="split-metrics-detail" class="flex flex-col gap-1.5">
+        {% for d in metrics.days %}
+        <p class="split-metric">
+            {{ d.dia | title }} — {{ d.series }} serie{{ 's' if d.series != 1 }}:
+            {% for ej, n in d.by_exercise.items() %}{{ ej }} ({{ n }}){% if not loop.last %}, {% endif %}{% endfor %}.
+            Grupos: {% for g, n in d.by_group.items() %}{{ g }} ({{ n }}){% if not loop.last %}, {% endif %}{% endfor %}.
+        </p>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>

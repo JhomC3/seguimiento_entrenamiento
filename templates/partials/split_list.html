@@ -1,0 +1,23 @@
+{# Lista de splits guardados con resumen comparativo #}
+<div class="panel panel-default">
+    <h2 class="panel-title panel-title-neon panel-title-divider">Splits guardados</h2>
+    {% if not splits %}
+    <p class="text-xs text-neutral-400 text-center">Aún no hay splits guardados.<br>Arma una semana y pulsa Guardar.</p>
+    {% else %}
+    <div id="splits-list" class="flex flex-col gap-2.5">
+        {% for s in splits %}
+        <div class="card" id="split-card-{{ s.id }}" data-split-id="{{ s.id }}" data-split-nombre="{{ s.nombre }}">
+            <div class="flex items-baseline justify-between gap-2">
+                <span class="text-xs font-bold text-neutral-200 truncate">{{ s.nombre }}</span>
+                <span class="text-xs text-neutral-400 shrink-0">{{ s.updated_at }}</span>
+            </div>
+            <span class="text-xs text-neutral-400">{{ s.series }} series · {{ s.active_days }} días activos · {{ s.groups | join(', ') }}</span>
+            <div class="flex gap-1">
+                <button type="button" data-action="split-open" data-split-id="{{ s.id }}" class="btn btn-outline flex-1">Abrir</button>
+                <button type="button" data-action="split-delete" data-split-id="{{ s.id }}" data-split-nombre="{{ s.nombre }}" class="btn btn-outline btn-outline-danger flex-1">Eliminar</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
