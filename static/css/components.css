@@ -1,36 +1,295 @@
-/* components.css — reusable generic components (notices, buttons, modal). */
+/* components.css — reusable generic components (notices, buttons, modal).
+ *
+ * Vocabulario canónico (sobre tokens): cada patrón repetido en templates
+ * tiene UNA clase aquí. Los alias (row-btn, btn-x, edit-toggle, pt-btn…)
+ * se mantienen por compatibilidad con el JS y los tests e2e.
+ */
 
-/* Botones +/− de filas (overlay glass, visibles al hover) */
-.row-btn {
-    width: 24px;
-    height: 24px;
-    border-radius: 9999px;
+/* ---------- Botones: vocabulario canónico ---------- */
+
+/* Base: todos los botones comparten tipografía y cursor. */
+.btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    color: rgba(255, 255, 255, 0.5);
     font-size: 12px;
-    line-height: 1;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all .15s;
+    border: 1px solid transparent;
+}
+
+/* Primario: acción principal (alta, crear). */
+.btn-primary {
+    color: var(--t-detail-white);
+    background: var(--t-burgundy-700);
+    border-color: transparent;
+}
+.btn-primary:hover {
+    background: var(--t-burgundy-600);
+}
+.btn-primary[disabled] {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Fantasma: acción secundaria en panel (Cancelar/Guardar). */
+.btn-ghost {
+    height: 28px;
+    padding: 0 16px;
+    color: var(--t-surfaces-neutral-300);
+    background: var(--t-overlay-black-050);
+    border: 1px solid var(--t-surfaces-neutral-800);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+.btn-ghost:hover {
+    background: var(--t-overlay-neutral-900-070);
+    color: var(--t-detail-white);
+}
+
+/* Outline: botón pequeño con borde (acciones de tarjetas). */
+.btn-outline {
+    height: 24px;
+    padding: 0 8px;
+    color: var(--t-surfaces-neutral-400);
+    background: transparent;
+    border: 1px solid var(--t-surfaces-neutral-800);
+}
+.btn-outline:hover {
+    color: var(--t-burgundy-400);
+    border-color: var(--t-burgundy-600);
+}
+.btn-outline-danger {
+    color: var(--t-detail-danger-hover);
+}
+.btn-outline-danger:hover {
+    color: var(--t-detail-danger-hover);
+    border-color: var(--t-burgundy-700);
+}
+
+/* Texto: enlace con apariencia de botón (sin fondo). */
+.btn-text {
+    height: 24px;
+    padding: 0 8px;
+    color: var(--t-burgundy-400);
+    background: transparent;
+    border: 1px solid var(--t-burgundy-700);
+}
+.btn-text:hover {
+    background: var(--t-overlay-burgundy-020);
+}
+
+/* ---------- Botones de fila: alias de compatibilidad ---------- */
+.row-btn,
+.btn-check,
+.btn-x {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    background: var(--t-overlay-white-004);
+    border: 1px solid var(--t-overlay-white-008);
+    color: var(--t-overlay-white-035);
     cursor: pointer;
     transition: all .15s;
 }
+.row-btn {
+    width: 24px;
+    height: 24px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    font-size: 12px;
+    line-height: 1;
+}
 .row-btn:hover {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.15);
+    color: var(--t-detail-white);
+    background: var(--t-overlay-white-014);
+}
+.btn-check,
+.btn-x {
+    width: 28px;
+    height: 28px;
+}
+.btn-check:hover:not(:disabled) {
+    background: var(--t-overlay-white-014);
+    border-color: var(--t-overlay-white-035);
+    color: var(--t-detail-success-hover);
+}
+.btn-x:hover {
+    background: var(--t-overlay-white-014);
+    border-color: var(--t-overlay-white-035);
+    color: var(--t-detail-danger-hover);
+}
+.btn-check:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
 }
 
-/* Spinners numéricos: se mantienen nativos, solo baja un poco su color al aparecer */
+/* ---------- Inputs: vocabulario canónico ---------- */
+
+/* Celda de tabla: input/select compacto dentro de una fila. */
+.cell-input,
+.cell-select {
+    width: 100%;
+    background: var(--t-overlay-white-004);
+    border: 0;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 12px;
+    color: var(--t-surfaces-neutral-200);
+    transition: background .15s, color .15s;
+}
+.cell-select {
+    appearance: none;
+    -webkit-appearance: none;
+}
+.cell-input:hover,
+.cell-select:hover {
+    background: var(--t-overlay-white-008);
+}
+.cell-input:focus,
+.cell-select:focus {
+    background: var(--t-overlay-white-014);
+    outline: none;
+}
+.cell-input::placeholder {
+    color: var(--t-surfaces-neutral-400);
+}
+.cell-input:disabled,
+.cell-select:disabled {
+    color: var(--t-surfaces-neutral-300);
+    background: var(--t-overlay-white-004);
+    cursor: default;
+}
+
+/* Variante compacta para campos de parámetros (Peso/Kcal/factores). */
+.cell-input-sm {
+    padding: 4px 6px;
+    color: var(--t-surfaces-neutral-400);
+    background: var(--t-overlay-white-004);
+}
+.cell-input-sm:focus {
+    background: var(--t-overlay-white-008);
+    outline: none;
+}
+
+/* Campo de formulario (alta de ejercicio/alimento). */
+.field-input {
+    width: 100%;
+    background: var(--t-surfaces-matte-950);
+    border: 1px solid var(--t-surfaces-neutral-800);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 14px;
+    color: var(--t-surfaces-neutral-200);
+    transition: border-color .15s;
+}
+.field-input::placeholder {
+    color: var(--t-surfaces-neutral-400);
+}
+.field-input:focus {
+    outline: none;
+    border-color: var(--t-burgundy-700);
+}
+.field-input-sm {
+    padding: 2px 6px;
+    font-size: 12px;
+    border-radius: 4px;
+}
+
+/* ---------- Tarjetas (plantillas, cardio) ---------- */
+.card {
+    background: var(--t-surfaces-matte-950);
+    border: 1px solid var(--t-surfaces-neutral-800);
+    border-radius: 8px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* ---------- Paneles: vocabulario canónico ---------- */
+.panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: var(--t-surfaces-neutral-900);
+    background-clip: padding-box !important;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    box-shadow: var(--t-glow-neon-border);
+}
+/* El marco metálico se pinta en el área del borde (1px), nunca sobre el
+   contenido: el ::before queda detrás del panel (z-index -1, sin stacking
+   context propio) y el fondo opaco + background-clip lo recorta al marco. */
+.panel::before {
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: -1px;
+    right: -1px;
+    bottom: -1px;
+    border-radius: inherit;
+    background: var(--t-glow-metallic-border);
+    z-index: -1;
+    pointer-events: none;
+}
+.panel::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    background: var(--t-glow-metallic-border);
+    z-index: -1;
+    pointer-events: none;
+}
+.panel-tight {
+    padding: 8px;
+    gap: 8px;
+}
+.panel-default {
+    padding: 16px;
+    gap: 10px;
+}
+.panel-form {
+    padding: 16px;
+    gap: 12px;
+}
+.panel-spacious {
+    padding: 20px;
+    gap: 16px;
+}
+
+/* Título de panel: burdeos mayúsculas con tracking. */
+.panel-title {
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--t-burgundy-400);
+}
+.panel-title-neon {
+    text-shadow: var(--t-glow-neon-title);
+}
+.panel-title-divider {
+    text-align: center;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--t-surfaces-neutral-800);
+}
+
+/* ---------- Spinners numéricos ---------- */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
-    background-color: rgba(255, 255, 255, 0.04);
+    background-color: var(--t-overlay-white-004);
     border-radius: 6px;
 }
 
-/* Avisos: flotantes fijos arriba-centro, superpuestos, sin afectar layout */
+/* ---------- Avisos ---------- */
 #notice-container {
     position: fixed;
     top: 16px;
@@ -51,67 +310,20 @@ input[type="number"]::-webkit-outer-spin-button {
     transition: opacity .4s ease;
 }
 .notice-success {
-    background: rgba(16, 185, 129, 0.08);
-    border: 1px solid rgba(16, 185, 129, 0.25);
-    color: rgba(110, 231, 183, 0.9);
+    background: var(--t-semantics-success-bg);
+    border: 1px solid var(--t-semantics-success-border);
+    color: var(--t-semantics-success-text);
 }
 .notice-error {
-    background: rgba(239, 68, 68, 0.08);
-    border: 1px solid rgba(239, 68, 68, 0.25);
-    color: rgba(252, 165, 165, 0.95);
+    background: var(--t-semantics-danger-bg);
+    border: 1px solid var(--t-semantics-danger-border);
+    color: var(--t-semantics-danger-text);
 }
 .notice.hide {
     opacity: 0;
 }
 
-/* Botones de confirmación: ✓ (guardar, derecha) y ✗ (cancelar, izquierda) */
-.btn-check,
-.btn-x {
-    flex: none;
-    width: 28px;
-    height: 28px;
-    border-radius: 9999px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    color: rgba(255, 255, 255, 0.55);
-    cursor: pointer;
-    transition: all .15s;
-}
-.btn-check:hover:not(:disabled) {
-    background: rgba(16, 185, 129, 0.14);
-    border-color: rgba(16, 185, 129, 0.45);
-    color: #6ee7b7;
-}
-.btn-x:hover {
-    background: rgba(239, 68, 68, 0.12);
-    border-color: rgba(239, 68, 68, 0.45);
-    color: #fca5a5;
-}
-.btn-check:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-}
-
-/* Fondo de vidrio esmerilado para overlays (popup de registro).
- * La página se ve a través: difuminada, ligeramente oscurecida y con los
- * colores realzados (refuerza la estética neón del tema). Mismo lenguaje
- * visual que #confirm-modal y los avisos. */
-.glass-backdrop {
-    background: rgba(10, 10, 10, 0.45);
-    backdrop-filter: blur(12px) saturate(1.2);
-    -webkit-backdrop-filter: blur(12px) saturate(1.2);
-}
-/* Plan B: navegadores sin backdrop-filter -> fondo oscuro casi opaco. */
-@supports not (backdrop-filter: blur(1px)) {
-    .glass-backdrop {
-        background: rgba(10, 10, 10, 0.78);
-    }
-}
-
-/* Modal de confirmación de cambios sin guardar */
+/* ---------- Modal de confirmación ---------- */
 #confirm-modal {
     border: 0;
     padding: 0;
@@ -119,20 +331,20 @@ input[type="number"]::-webkit-outer-spin-button {
     max-width: none;
 }
 #confirm-modal::backdrop {
-    background: rgba(0, 0, 0, 0.6);
+    background: var(--t-overlay-black-060);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
 }
 #confirm-modal .confirm-card {
-    background: #121212;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--t-surfaces-matte-900);
+    border: 1px solid var(--t-overlay-white-008);
     border-radius: 14px;
     padding: 18px 20px;
     width: min(380px, calc(100vw - 40px));
-    box-shadow: 0 0 24px rgba(155, 27, 48, 0.25);
+    box-shadow: 0 0 24px var(--t-overlay-burgundy-025);
 }
 
-/* Popup de registro: dialog nativo con el lenguaje visual glass anterior */
+/* ---------- Popup de registro ---------- */
 .editor-popup-dialog {
     border: 0;
     padding: 0;
@@ -143,12 +355,163 @@ input[type="number"]::-webkit-outer-spin-button {
     background: transparent;
 }
 .editor-popup-dialog::backdrop {
-    background: rgba(10, 10, 10, 0.45);
+    background: var(--t-overlay-backdrop-popup);
     backdrop-filter: blur(12px) saturate(1.2);
     -webkit-backdrop-filter: blur(12px) saturate(1.2);
 }
 @supports not (backdrop-filter: blur(1px)) {
     .editor-popup-dialog::backdrop {
-        background: rgba(10, 10, 10, 0.78);
+        background: var(--t-overlay-backdrop-popup-solid);
     }
+}
+
+/* ---------- Gestor de splits ---------- */
+.split-columns {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+}
+@media (max-width: 1024px) {
+    .split-columns {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Zona de destino de un día: resalta durante el arrastre. */
+.split-day-zone {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 140px;
+    padding: 8px;
+    background: var(--t-overlay-white-004);
+    border: 1px solid var(--t-surfaces-neutral-800);
+    border-radius: 8px;
+    transition: border-color .15s, box-shadow .15s;
+}
+.split-day-zone.drop-target {
+    border-color: var(--t-burgundy-600);
+    box-shadow: 0 0 12px var(--t-overlay-burgundy-025);
+}
+
+.split-day-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--t-surfaces-neutral-800);
+}
+.split-day-select {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--t-burgundy-400);
+    cursor: pointer;
+}
+.split-day-select:focus-visible {
+    outline: 2px solid var(--t-burgundy-600);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+.split-day-select[aria-pressed="true"] {
+    color: var(--t-detail-white);
+    text-shadow: var(--t-glow-neon-title);
+}
+.split-day-count {
+    font-size: 12px;
+    font-weight: 900;
+    color: var(--t-surfaces-neutral-400);
+}
+
+.split-day-items {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+}
+
+/* Chip del catálogo (arrastrable o click para agregar al día seleccionado). */
+.split-catalog-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--t-surfaces-neutral-200);
+    background: var(--t-overlay-white-004);
+    border: 1px solid var(--t-surfaces-neutral-800);
+    border-radius: 8px;
+    cursor: grab;
+    transition: border-color .15s, color .15s;
+}
+.split-catalog-chip:hover {
+    color: var(--t-burgundy-400);
+    border-color: var(--t-burgundy-600);
+}
+.split-catalog-chip:active {
+    cursor: grabbing;
+}
+.split-catalog-chip:focus-visible {
+    outline: 2px solid var(--t-burgundy-600);
+    outline-offset: 2px;
+}
+
+/* Instancia colocada en un día (1 instancia = 1 serie). */
+.split-item-card {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    background: var(--t-surfaces-matte-950);
+    border: 1px solid var(--t-surfaces-neutral-800);
+    border-radius: 8px;
+    cursor: grab;
+    transition: border-color .15s;
+}
+.split-item-card:hover {
+    border-color: var(--t-surfaces-neutral-400);
+}
+.split-item-card.dragging {
+    opacity: 0.5;
+}
+.split-item-card:focus-within {
+    outline: 2px solid var(--t-burgundy-600);
+    outline-offset: 1px;
+}
+.split-item-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--t-surfaces-neutral-200);
+}
+.split-item-group {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--t-surfaces-neutral-400);
+}
+
+/* Celdas métricas y placeholders de estados vacíos. */
+.split-metric {
+    font-size: 12px;
+    color: var(--t-surfaces-neutral-400);
+}
+.split-metric strong {
+    color: var(--t-burgundy-400);
+}
+.split-empty {
+    font-size: 12px;
+    color: var(--t-surfaces-neutral-400);
+    text-align: center;
+    padding: 8px 4px;
 }
