@@ -1018,3 +1018,157 @@ def test_restore_entrenos_resecuencia_ids(tmp_path):
     restore_entrenos(db_path, snapshot)
     pid2 = insert_plantilla(db_path, "B", "JALON", ["Remo"])
     assert pid2 > pid
+
+
+# ---------------------------------------------------------------------------
+# Splits de entrenamiento
+# ---------------------------------------------------------------------------
+
+
+def test_insert_get_split_conserva_orden_por_dia(tmp_path):
+    from src.database import get_split, insert_split
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    pid = insert_split(
+        db_path,
+        "Push Pull Legs",
+        [
+            ("LUNES", "ejercicio", "Press", "Pectoral"),
+            ("LUNES", "ejercicio", "Press", "Pectoral"),
+            ("LUNES", "hiit", "HIIT", "HIIT"),
+            ("MARTES", "ejercicio", "Curl", "Biceps"),
+        ],
+    )
+    split = get_split(db_path, pid)
+    assert split["nombre"] == "Push Pull Legs"
+    dias = [i["dia"] for i in split["items"]]
+    assert dias == ["LUNES", "LUNES", "LUNES", "MARTES"]
+    lun_ord = [i["orden"] for i in split["items"] if i["dia"] == "LUNES"]
+    assert lun_ord == [1, 2, 3]
+    assert split["items"][2]["item_type"] == "hiit"
+
+
+def test_update_split_reemplaza_items_y_renumera(tmp_path):
+    from src.database import get_split, insert_split, update_split
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    pid = insert_split(db_path, "A", [("LUNES", "ejercicio", "Press", "Pectoral")])
+    update_split(
+        db_path,
+        pid,
+        "A v2",
+        [("VIERNES", "ejercicio", "Curl", "Biceps"), ("VIERNES", "hiit", "HIIT", "HIIT")],
+    )
+    split = get_split(db_path, pid)
+    assert split["nombre"] == "A v2"
+    assert len(split["items"]) == 2
+    assert [i["orden"] for i in split["items"]] == [1, 2]
+
+
+def test_delete_split_borra_items_en_cascada(tmp_path):
+    from src.database import delete_split, get_split, insert_split
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    pid = insert_split(db_path, "A", [("LUNES", "ejercicio", "Press", "Pectoral")])
+    assert get_split(db_path, pid) is not None
+    delete_split(db_path, pid)
+    assert get_split(db_path, pid) is None
+    conn = sqlite3.connect(db_path)
+    count = conn.execute(
+        "SELECT COUNT(*) FROM training_split_items WHERE split_id = ?", (pid,)
+    ).fetchone()[0]
+    conn.close()
+    assert count == 0
+
+
+def test_find_split_by_nombre_case_insensitive(tmp_path):
+    from src.database import find_split_by_nombre, insert_split
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    pid = insert_split(db_path, "Push Pull Legs", [])
+    assert find_split_by_nombre(db_path, "push pull legs") == pid
+    assert find_split_by_nombre(db_path, "PUSH PULL LEGS") == pid
+    assert find_split_by_nombre(db_path, "otro") is None
+
+
+def test_get_splits_summary_conteos(tmp_path):
+    from src.database import get_splits_summary, insert_split
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    pid_a = insert_split(
+        db_path,
+        "A",
+        [
+            ("LUNES", "ejercicio", "Press", "Pectoral"),
+            ("LUNES", "ejercicio", "Press", "Pectoral"),
+            ("MARTES", "hiit", "HIIT", "HIIT"),
+        ],
+    )
+    insert_split(db_path, "B", [("LUNES", "ejercicio", "Curl", "Biceps")])
+    summary = get_splits_summary(db_path)
+    by_id = {s["id"]: s for s in summary}
+    a = by_id[pid_a]
+    assert a["series"] == 3
+    assert a["active_days"] == 2
+    assert set(a["groups"]) == {"Pectoral", "HIIT"}
+
+
+def test_get_split_catalog_con_grupo(tmp_path):
+    from src.database import get_split_catalog, insert_exercise
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    insert_exercise(db_path, "Press", "Pectoral", "EMPUJE")
+    insert_exercise(db_path, "Curl", "Biceps", "TIRON")
+    catalog = get_split_catalog(db_path)
+    by_name = {c["ejercicio"]: c for c in catalog}
+    assert by_name["Press"]["grupo_muscular"] == "Pectoral"
+    assert by_name["Curl"]["categoria"] == "TIRON"
+
+
+def test_snapshot_restore_splits_idempotente(tmp_path):
+    from src.database import (
+        delete_split,
+        get_split,
+        insert_split,
+        restore_splits,
+        snapshot_splits,
+    )
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    pid = insert_split(
+        db_path,
+        "A",
+        [("LUNES", "ejercicio", "Press", "Pectoral"), ("MARTES", "hiit", "HIIT", "HIIT")],
+    )
+    snapshot = snapshot_splits(db_path)
+    delete_split(db_path, pid)
+    restore_splits(db_path, snapshot)
+    restored = get_split(db_path, pid)
+    assert restored is not None
+    assert len(restored["items"]) == 2
+    assert restored["items"][1]["ejercicio"] == "HIIT"
+
+
+def test_restore_splits_resecuencia_ids(tmp_path):
+    from src.database import (
+        delete_split,
+        insert_split,
+        restore_splits,
+        snapshot_splits,
+    )
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    pid = insert_split(db_path, "A", [])
+    snapshot = snapshot_splits(db_path)
+    delete_split(db_path, pid)
+    restore_splits(db_path, snapshot)
+    pid2 = insert_split(db_path, "B", [])
+    assert pid2 > pid

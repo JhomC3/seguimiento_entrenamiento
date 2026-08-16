@@ -7,6 +7,7 @@ import pandas as pd
 from config import MUSCLE_CATEGORIES
 from src.db_connection import read_connection, transaction
 from src.migrations.runner import run_migrations
+from src.models import SPLIT_DAYS
 
 
 def init_db(db_path: str) -> None:
@@ -611,3 +612,192 @@ def get_prev_diary_date(db_path: str, fecha: str) -> str | None:
             "SELECT MAX(fecha) FROM diario_alimentacion WHERE fecha < ?", (fecha,)
         ).fetchone()
         return row[0] if row and row[0] else None
+
+
+# ---------------------------------------------------------------------------
+# Splits de entrenamiento
+# ---------------------------------------------------------------------------
+
+
+def get_split_catalog(db_path: str) -> list[dict]:
+    """Catálogo completo de ejercicios (grupo muscular + categoría) para el board."""
+    if not os.path.exists(db_path):
+        return []
+    with read_connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT ejercicio, grupo_muscular, categoria FROM ejercicios "
+            "ORDER BY grupo_muscular, ejercicio"
+        ).fetchall()
+    return [
+        {"ejercicio": r[0], "grupo_muscular": r[1], "categoria": r[2] or ""} for r in rows
+    ]
+
+
+def get_splits_summary(db_path: str) -> list[dict]:
+    """Lista de splits con resumen comparativo (series, días activos, grupos)."""
+    if not os.path.exists(db_path):
+        return []
+    with read_connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT s.id, s.nombre, s.updated_at, "
+            "COUNT(i.id) AS series, "
+            "COUNT(DISTINCT i.dia) AS active_days, "
+            "GROUP_CONCAT(DISTINCT i.grupo_muscular) AS groups "
+            "FROM training_splits s "
+            "LEFT JOIN training_split_items i ON i.split_id = s.id "
+            "GROUP BY s.id ORDER BY s.updated_at DESC, s.nombre"
+        ).fetchall()
+    return [
+        {
+            "id": r[0],
+            "nombre": r[1],
+            "updated_at": r[2],
+            "series": int(r[3] or 0),
+            "active_days": int(r[4] or 0),
+            "groups": [g for g in (r[5] or "").split(",") if g],
+        }
+        for r in rows
+    ]
+
+
+def find_split_by_nombre(db_path: str, nombre: str) -> int | None:
+    with read_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT id FROM training_splits WHERE LOWER(nombre) = LOWER(?)", (nombre,)
+        ).fetchone()
+        return row[0] if row else None
+
+
+def get_split(db_path: str, split_id: int) -> dict | None:
+    with read_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT id, nombre, created_at, updated_at FROM training_splits WHERE id = ?",
+            (split_id,),
+        ).fetchone()
+        if not row:
+            return None
+        item_rows = conn.execute(
+            "SELECT id, dia, orden, item_type, ejercicio, grupo_muscular "
+            "FROM training_split_items WHERE split_id = ?",
+            (split_id,),
+        ).fetchall()
+    day_index = {day: idx for idx, day in enumerate(SPLIT_DAYS)}
+    items = [
+        {
+            "id": r[0],
+            "dia": r[1],
+            "orden": r[2],
+            "item_type": r[3],
+            "ejercicio": r[4],
+            "grupo_muscular": r[5],
+        }
+        for r in item_rows
+    ]
+    items.sort(key=lambda it: (day_index.get(it["dia"], 99), it["orden"]))
+    return {
+        "id": row[0],
+        "nombre": row[1],
+        "created_at": row[2],
+        "updated_at": row[3],
+        "items": items,
+    }
+
+
+def _insert_split_items(conn, split_id: int, items: list[tuple[str, str, str, str]]) -> None:
+    """Inserta items renumerando `orden` por día desde 1 (orden visual recibido)."""
+    counters: dict[str, int] = {}
+    for dia, item_type, ejercicio, grupo in items:
+        counters[dia] = counters.get(dia, 0) + 1
+        conn.execute(
+            "INSERT INTO training_split_items "
+            "(split_id, dia, orden, item_type, ejercicio, grupo_muscular) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (split_id, dia, counters[dia], item_type, ejercicio, grupo),
+        )
+
+
+def insert_split(db_path: str, nombre: str, items: list[tuple[str, str, str, str]]) -> int:
+    """Crea un split. `items` son tuplas (dia, item_type, ejercicio, grupo_muscular)."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with transaction(db_path) as conn:
+        cur = conn.execute(
+            "INSERT INTO training_splits (nombre, created_at, updated_at) VALUES (?, ?, ?)",
+            (nombre, now, now),
+        )
+        pid = cur.lastrowid
+        if pid is None:
+            raise RuntimeError("No se pudo crear el split.")
+        _insert_split_items(conn, pid, items)
+        return pid
+
+
+def update_split(db_path: str, split_id: int, nombre: str, items: list[tuple[str, str, str, str]]) -> None:
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with transaction(db_path) as conn:
+        conn.execute(
+            "UPDATE training_splits SET nombre = ?, updated_at = ? WHERE id = ?",
+            (nombre, now, split_id),
+        )
+        conn.execute("DELETE FROM training_split_items WHERE split_id = ?", (split_id,))
+        _insert_split_items(conn, split_id, items)
+
+
+def delete_split(db_path: str, split_id: int) -> None:
+    with transaction(db_path) as conn:
+        conn.execute("DELETE FROM training_splits WHERE id = ?", (split_id,))
+
+
+def snapshot_splits(db_path: str) -> list:
+    with read_connection(db_path) as conn:
+        splits = conn.execute(
+            "SELECT id, nombre, created_at, updated_at FROM training_splits ORDER BY id"
+        ).fetchall()
+        items = conn.execute(
+            "SELECT id, split_id, dia, orden, item_type, ejercicio, grupo_muscular "
+            "FROM training_split_items ORDER BY split_id, dia, orden"
+        ).fetchall()
+    return [splits, items]
+
+
+def restore_splits(db_path: str, snapshot: list) -> None:
+    """Restaura splits e items desde un snapshot del journal (ver mutation_service)."""
+    splits, items = snapshot[0], snapshot[1]
+
+    def val(r, idx: int, key: str):
+        """Fila sqlite3.Row (legado en memoria) o dict (journal persistido)."""
+        return r[key] if isinstance(r, dict) else r[idx]
+
+    with transaction(db_path) as conn:
+        conn.execute("DELETE FROM training_split_items")
+        conn.execute("DELETE FROM training_splits")
+        for r in splits:
+            conn.execute(
+                "INSERT INTO training_splits (id, nombre, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?)",
+                tuple(
+                    val(r, i, k)
+                    for i, k in enumerate(("id", "nombre", "created_at", "updated_at"))
+                ),
+            )
+        for r in items:
+            conn.execute(
+                "INSERT INTO training_split_items "
+                "(id, split_id, dia, orden, item_type, ejercicio, grupo_muscular) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                tuple(
+                    val(r, i, k)
+                    for i, k in enumerate(
+                        (
+                            "id",
+                            "split_id",
+                            "dia",
+                            "orden",
+                            "item_type",
+                            "ejercicio",
+                            "grupo_muscular",
+                        )
+                    )
+                ),
+            )
+        _resync_sequence(conn, "training_splits")
+        _resync_sequence(conn, "training_split_items")
