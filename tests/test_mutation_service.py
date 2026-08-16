@@ -217,3 +217,77 @@ def test_failed_restore_keeps_entry(tmp_path, monkeypatch):
     with pytest.raises(OSError):
         undo_last_action(db, "2025-04-24")
     assert undo_stack_size(db) == 1
+
+
+# ---------------------------------------------------------------------------
+# Splits: backup + journal de undo
+# ---------------------------------------------------------------------------
+
+
+def _split_items():
+    from src.models import SplitItemInput
+
+    return [SplitItemInput(dia="LUNES", ejercicio="Press"), SplitItemInput(dia="LUNES", ejercicio="Press")]
+
+
+def test_save_split_undo_restaura(tmp_path):
+    from src.database import get_split, insert_exercise
+    from src.models import SplitInput
+    from src.mutation_service import save_split_with_undo_snapshot
+
+    db = _setup_db(tmp_path)
+    insert_exercise(db, "Press", "Pectoral", "EMPUJE")
+    result = save_split_with_undo_snapshot(db, None, SplitInput(nombre="A", items=_split_items()))
+    assert get_split(db, result.id) is not None
+    undo = undo_last_action(db, "")
+    assert undo["kind"] == "splits"
+    assert get_split(db, result.id) is None
+
+
+def test_delete_split_undo_restaura(tmp_path):
+    from src.database import get_split, insert_exercise
+    from src.models import SplitInput
+    from src.mutation_service import delete_split_with_undo_snapshot, save_split_with_undo_snapshot
+
+    db = _setup_db(tmp_path)
+    insert_exercise(db, "Press", "Pectoral", "EMPUJE")
+    result = save_split_with_undo_snapshot(db, None, SplitInput(nombre="A", items=_split_items()))
+    delete_split_with_undo_snapshot(db, result.id)
+    assert get_split(db, result.id) is None
+    undo = undo_last_action(db, "")
+    assert undo["kind"] == "splits"
+    assert get_split(db, result.id) is not None
+    assert len(get_split(db, result.id)["items"]) == 2
+
+
+def test_undo_splits_limita_a_10_entradas(tmp_path):
+    from src.database import insert_exercise
+    from src.models import SplitInput
+    from src.mutation_service import save_split_with_undo_snapshot
+
+    db = _setup_db(tmp_path)
+    insert_exercise(db, "Press", "Pectoral", "EMPUJE")
+    for i in range(12):
+        save_split_with_undo_snapshot(db, None, SplitInput(nombre=f"S{i}", items=_split_items()))
+    assert undo_stack_size(db) == 10
+
+
+def test_undo_splits_restore_fallido_conserva_entrada(tmp_path, monkeypatch):
+    from src.database import insert_exercise
+    from src.models import SplitInput
+    from src.mutation_service import save_split_with_undo_snapshot
+
+    db = _setup_db(tmp_path)
+    insert_exercise(db, "Press", "Pectoral", "EMPUJE")
+    save_split_with_undo_snapshot(db, None, SplitInput(nombre="A", items=_split_items()))
+
+    import src.mutation_service as mut
+
+    def boom(db_path, snapshot):
+        raise RuntimeError("restore falló")
+
+    monkeypatch.setattr(mut, "restore_splits", boom)
+    with pytest.raises(RuntimeError):
+        undo_last_action(db, "")
+    monkeypatch.undo()
+    assert undo_stack_size(db) == 1

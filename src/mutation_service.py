@@ -25,12 +25,16 @@ from src.database import (
     reorder_plantillas,
     restore_diario_rows,
     restore_entrenos,
+    restore_splits,
     save_parametros_diarios,
     snapshot_entrenos,
+    snapshot_splits,
 )
 from src.db_connection import read_connection, transaction
-from src.models import Session, Template, TemplateInput
+from src.models import Session, SplitInput, Template, TemplateInput
 from src.nutrition_service import delete_diary, save_diary
+from src.split_service import delete_split as _delete_split
+from src.split_service import save_split
 from src.template_service import edit_template, save_template
 from src.training_service import fecha_to_db, parse_form_date, restore_session_rows, save_session
 
@@ -176,6 +180,23 @@ def reorder_templates_with_undo_snapshot(db_path: str, ordered_ids: list[int]) -
     _push_entrenos(db_path, before)
 
 
+def save_split_with_undo_snapshot(
+    db_path: str, split_id: int | None, split_input: SplitInput
+):
+    before = snapshot_splits(db_path)
+    backup_or_raise(db_path)
+    result = save_split(db_path, split_input, split_id)
+    _journal(db_path, "splits", {"before": _rows_to_dicts(before)})
+    return result
+
+
+def delete_split_with_undo_snapshot(db_path: str, split_id: int) -> None:
+    before = snapshot_splits(db_path)
+    backup_or_raise(db_path)
+    _delete_split(db_path, split_id)
+    _journal(db_path, "splits", {"before": _rows_to_dicts(before)})
+
+
 def save_diary_with_undo_snapshot(
     db_path: str, fecha_iso: str, entries, parametros: dict | None = None
 ) -> None:
@@ -237,6 +258,10 @@ def undo_last_action(db_path: str, fecha: str) -> dict:
         has_data = "1" if restored else "0"
         _pop_top(db_path)
         return {"kind": "alimentacion", "fecha_iso": fecha_iso, "has_data": has_data}
+    if entry["kind"] == "splits":
+        restore_splits(db_path, entry["before"])
+        _pop_top(db_path)
+        return {"kind": "splits"}
     restore_entrenos(db_path, entry["before"])
     _pop_top(db_path)
     return {"kind": "entrenos"}
