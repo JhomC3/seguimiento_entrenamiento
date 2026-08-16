@@ -227,7 +227,10 @@ def test_failed_restore_keeps_entry(tmp_path, monkeypatch):
 def _split_items():
     from src.models import SplitItemInput
 
-    return [SplitItemInput(dia="LUNES", ejercicio="Press"), SplitItemInput(dia="LUNES", ejercicio="Press")]
+    return [
+        SplitItemInput(dia="LUNES", ejercicio="Press"),
+        SplitItemInput(dia="LUNES", ejercicio="Press"),
+    ]
 
 
 def test_save_split_undo_restaura(tmp_path):

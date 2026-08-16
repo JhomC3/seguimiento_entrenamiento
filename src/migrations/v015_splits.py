@@ -13,8 +13,7 @@ def migrate(conn) -> None:
         "updated_at TEXT NOT NULL)"
     )
     conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS ux_splits_nombre "
-        "ON training_splits (LOWER(nombre))"
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_splits_nombre ON training_splits (LOWER(nombre))"
     )
     conn.execute(
         "CREATE TABLE IF NOT EXISTS training_split_items ("

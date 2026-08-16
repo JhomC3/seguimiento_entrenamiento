@@ -112,11 +112,18 @@ def test_reordenar_y_eliminar(page, server):
     assert _card_names(page, "LUNES") == ["Curl", "Press"]
 
     # Reordenar: mover Press al primer lugar.
-    _reorder_to_index(page, '.split-day-zone[data-day="LUNES"] .split-item-card[data-ejercicio="Press"]', "LUNES", 0)
+    _reorder_to_index(
+        page,
+        '.split-day-zone[data-day="LUNES"] .split-item-card[data-ejercicio="Press"]',
+        "LUNES",
+        0,
+    )
     assert _card_names(page, "LUNES") == ["Press", "Curl"]
 
     # Eliminar una instancia: solo debe quedar una.
-    page.locator('.split-day-zone[data-day="LUNES"] [data-action="split-item-remove"]').first.click()
+    page.locator(
+        '.split-day-zone[data-day="LUNES"] [data-action="split-item-remove"]'
+    ).first.click()
     expect(page.locator('.split-day-zone[data-day="LUNES"] .split-item-card')).to_have_count(1)
     expect(page.locator('[data-day-count="LUNES"]')).to_have_text("1 serie")
     expect(page.locator("#split-metrics-preview")).to_contain_text("Series: 1")

@@ -628,9 +628,7 @@ def get_split_catalog(db_path: str) -> list[dict]:
             "SELECT ejercicio, grupo_muscular, categoria FROM ejercicios "
             "ORDER BY grupo_muscular, ejercicio"
         ).fetchall()
-    return [
-        {"ejercicio": r[0], "grupo_muscular": r[1], "categoria": r[2] or ""} for r in rows
-    ]
+    return [{"ejercicio": r[0], "grupo_muscular": r[1], "categoria": r[2] or ""} for r in rows]
 
 
 def get_splits_summary(db_path: str) -> list[dict]:
@@ -731,7 +729,9 @@ def insert_split(db_path: str, nombre: str, items: list[tuple[str, str, str, str
         return pid
 
 
-def update_split(db_path: str, split_id: int, nombre: str, items: list[tuple[str, str, str, str]]) -> None:
+def update_split(
+    db_path: str, split_id: int, nombre: str, items: list[tuple[str, str, str, str]]
+) -> None:
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with transaction(db_path) as conn:
         conn.execute(
@@ -775,8 +775,7 @@ def restore_splits(db_path: str, snapshot: list) -> None:
                 "INSERT INTO training_splits (id, nombre, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?)",
                 tuple(
-                    val(r, i, k)
-                    for i, k in enumerate(("id", "nombre", "created_at", "updated_at"))
+                    val(r, i, k) for i, k in enumerate(("id", "nombre", "created_at", "updated_at"))
                 ),
             )
         for r in items:

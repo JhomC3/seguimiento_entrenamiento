@@ -180,9 +180,7 @@ def reorder_templates_with_undo_snapshot(db_path: str, ordered_ids: list[int]) -
     _push_entrenos(db_path, before)
 
 
-def save_split_with_undo_snapshot(
-    db_path: str, split_id: int | None, split_input: SplitInput
-):
+def save_split_with_undo_snapshot(db_path: str, split_id: int | None, split_input: SplitInput):
     before = snapshot_splits(db_path)
     backup_or_raise(db_path)
     result = save_split(db_path, split_input, split_id)
