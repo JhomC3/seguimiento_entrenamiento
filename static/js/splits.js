@@ -32,10 +32,16 @@ const state = {
     openSplitId: null,
     uidSeq: 0,
     maxItems: 300,
-    // uid del item arrastrado con Shift -> clon preparado en onStart.
+    // uid del item arrastrado con Shift (reservado; el drag por puntero de
+    // onItemShiftDown es el único mecanismo Shift).
     shiftCopies: new Map(),
     boardSortables: [],
     catalogSortables: [],
+    // day-copy: día origen durante el arrastre por puntero del handle.
+    dayDrag: null,
+    // item shift-copy: tarjeta en drag por puntero (Chromium no arranca el
+    // drag de Sortable con Shift).
+    itemShiftDrag: null,
 };
 
 function isSplitsPage() {
@@ -102,7 +108,15 @@ function finalizeCard(card, day) {
     state.uidSeq += 1;
     card.dataset.splitItemId = 'ui-' + state.uidSeq;
     card.dataset.dia = day;
+    // draggable=true: Sortable usa el camino nativo (el mismo de las tarjetas
+    // de plantillas), con inserción exacta por posición del puntero.
     card.draggable = true;
+    // El clon del catálogo hereda clases/atributos del chip: se limpian para
+    // que la instancia colocada sea una tarjeta estándar de día.
+    card.classList.remove('split-catalog-chip');
+    card.removeAttribute('role');
+    card.removeAttribute('tabindex');
+    card.removeAttribute('data-action');
     if (!card.querySelector('[data-action="split-item-remove"]')) {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -135,87 +149,37 @@ function buildBoardSortable(list) {
         animation: 150,
         ghostClass: 'sortable-ghost',
         chosenClass: 'sortable-chosen',
-        draggable: '.split-item-card',
         filter: 'button',
         preventOnFilter: false,
         group: { name: 'split-days', pull: true, put: true },
-        onStart: function (e) {
-            if (e.originalEvent && e.originalEvent.shiftKey) {
-                // Shift: copiar. Se prepara el clon; el original volverá a su
-                // posición y la copia ocupará el punto de suelta (onAdd/onUpdate).
-                state.shiftCopies.set(e.item.dataset.splitItemId, e.item.cloneNode(true));
-                e.item.classList.add('copy-mode');
-            }
-        },
-        onAdd: function (e) {
-            const targetDay = e.item.closest('.split-day-zone').dataset.day;
-            const copy = state.shiftCopies.get(e.item.dataset.splitItemId);
-            if (copy) {
-                state.shiftCopies.delete(e.item.dataset.splitItemId);
-                const original = e.item;
-                original.remove();
-                if (!canAdd(1)) {
-                    showNotice(limitMessage(), 'error');
-                    const source = e.from;
-                    source.insertBefore(
-                        original,
-                        source.children[Math.min(e.oldIndex, source.children.length)] || null
-                    );
-                    clearDragVisuals();
-                    updatePreview();
-                    return;
-                }
-                finalizeCard(copy, targetDay);
-                const target = e.to;
-                target.insertBefore(copy, target.children[Math.min(e.newIndex, target.children.length)] || null);
-                const source = e.from;
-                source.insertBefore(original, source.children[Math.min(e.oldIndex, source.children.length)] || null);
-            } else {
-                if (!canAdd(1)) {
-                    showNotice(limitMessage(), 'error');
-                    e.item.remove();
-                    clearDragVisuals();
-                    updatePreview();
-                    return;
-                }
-                finalizeCard(e.item, targetDay);
-            }
-            updatePreview();
-        },
-        onUpdate: function (e) {
-            const copy = state.shiftCopies.get(e.item.dataset.splitItemId);
-            if (copy) {
-                state.shiftCopies.delete(e.item.dataset.splitItemId);
-                const original = e.item;
-                const list = e.from;
-                const day = list.closest('.split-day-zone').dataset.day;
-                original.remove();
-                if (!canAdd(1)) {
-                    showNotice(limitMessage(), 'error');
-                    list.insertBefore(
-                        original,
-                        list.children[Math.min(e.oldIndex, list.children.length)] || null
-                    );
-                    clearDragVisuals();
-                    updatePreview();
-                    return;
-                }
-                finalizeCard(copy, day);
-                list.insertBefore(copy, list.children[Math.min(e.newIndex, list.children.length)] || null);
-                list.insertBefore(original, list.children[Math.min(e.oldIndex, list.children.length)] || null);
-            }
-            updatePreview();
-        },
-        onRemove: function () {
-            updatePreview();
-        },
         onMove: function (e) {
+            // Shift = duplicación (drag por puntero propio): Sortable no debe
+            // mover la instancia en ese modo (headless y navegadores reales).
+            if (e.originalEvent && e.originalEvent.shiftKey) return false;
             const zone = e.to && e.to.closest('.split-day-zone');
             document.querySelectorAll('.split-day-zone').forEach(function (z) {
                 z.classList.remove('drop-target');
             });
             if (zone) zone.classList.add('drop-target');
             return true;
+        },
+        onAdd: function (e) {
+            const targetDay = e.item.closest('.split-day-zone').dataset.day;
+            if (!canAdd(1)) {
+                showNotice(limitMessage(), 'error');
+                e.item.remove();
+                clearDragVisuals();
+                updatePreview();
+                return;
+            }
+            finalizeCard(e.item, targetDay);
+            updatePreview();
+        },
+        onUpdate: function () {
+            updatePreview();
+        },
+        onRemove: function () {
+            updatePreview();
         },
         onEnd: function () {
             clearDragVisuals();
@@ -256,26 +220,112 @@ function initCatalogSortables() {
     });
 }
 
+/* ---------- Duplicación de instancia con Shift (drag por puntero) ----------
+Chromium no inicia el drag de Sortable con Shift pulsado (ni dragstart
+nativo): el modo Shift de items usa un drag propio por puntero (mousedown+Shift
+→ seguimiento → drop por Y). En navegadores reales Sortable neutraliza su
+propio drag vía onMove(shiftKey)=false, así que no hay doble arrastre. Las
+clases visuales (copy-mode, drop-target) y la inserción por posición son las
+mismas del resto del board. */
+function onItemShiftDown(e) {
+    if (!e.shiftKey) return;
+    const card = e.target.closest('.split-item-card');
+    if (!card || card.closest('#splits-catalog')) return;
+    e.preventDefault();
+    const list = card.parentElement;
+    if (!list || !list.closest('.split-day-zone')) return;
+    state.itemShiftDrag = { card: card };
+    card.classList.add('copy-mode');
+    document.addEventListener('mousemove', onItemShiftMove, true);
+    document.addEventListener('mouseup', onItemShiftUp, true);
+}
+
+function onItemShiftMove(e) {
+    if (!state.itemShiftDrag) return;
+    const zone = e.target.closest('.split-day-zone');
+    document.querySelectorAll('.split-day-zone').forEach(function (z) {
+        z.classList.remove('drop-target');
+    });
+    if (zone) zone.classList.add('drop-target');
+}
+
+function onItemShiftUp(e) {
+    if (!state.itemShiftDrag) return;
+    const card = state.itemShiftDrag.card;
+    state.itemShiftDrag = null;
+    card.classList.remove('copy-mode');
+    document.removeEventListener('mousemove', onItemShiftMove, true);
+    document.removeEventListener('mouseup', onItemShiftUp, true);
+    document.querySelectorAll('.split-day-zone').forEach(function (z) {
+        z.classList.remove('drop-target');
+    });
+    const zone = e.target.closest('.split-day-zone');
+    if (!zone) return;
+    const targetList = zone.querySelector('.split-day-items');
+    if (!targetList) return;
+    if (!canAdd(1)) {
+        showNotice(limitMessage(), 'error');
+        return;
+    }
+    const targetDay = zone.dataset.day;
+    const copy = card.cloneNode(true);
+    finalizeCard(copy, targetDay);
+    // Posición exacta de inserción según el puntero (antes del card cuya
+    // mitad se supera; al final si el puntero cae debajo de todos).
+    let anchor = null;
+    const targetCards = Array.from(targetList.querySelectorAll('.split-item-card'));
+    for (const c of targetCards) {
+        const box = c.getBoundingClientRect();
+        if (e.clientY < box.top + box.height / 2) {
+            anchor = c;
+            break;
+        }
+    }
+    if (anchor) targetList.insertBefore(copy, anchor);
+    else targetList.appendChild(copy);
+    updatePreview();
+}
+
 /* ---------- Copia de día completo (handle con Shift) ---------- */
+// Mismo drag por puntero que la duplicación de instancia (ver arriba).
 function bindDayCopyHandles() {
     document.querySelectorAll('.split-day-copy-handle').forEach(function (handle) {
         if (handle.dataset.copyReady) return;
         handle.dataset.copyReady = '1';
-        handle.addEventListener('dragstart', function (e) {
-            // Sin Shift no se inicia ningún arrastre: el día nunca se mueve.
-            if (!e.shiftKey) {
-                e.preventDefault();
-                return;
-            }
-            e.dataTransfer.setData('text/plain', 'daycopy:' + handle.dataset.day);
-            e.dataTransfer.effectAllowed = 'copy';
+        handle.addEventListener('mousedown', function (e) {
+            if (!e.shiftKey) return;  // sin Shift no se inicia nada
+            e.preventDefault();
+            state.dayDrag = { from: handle.dataset.day };
             handle.classList.add('dragging-day');
         });
-        handle.addEventListener('dragend', function () {
-            handle.classList.remove('dragging-day');
-            clearDragVisuals();
-        });
     });
+}
+
+function onDayCopyMove(e) {
+    if (!state.dayDrag) return;
+    const zone = e.target.closest('.split-day-zone');
+    document.querySelectorAll('.split-day-zone').forEach(function (z) {
+        z.classList.remove('drop-target');
+    });
+    if (zone && zone.dataset.day !== state.dayDrag.from) {
+        zone.classList.add('drop-target');
+    }
+}
+
+function onDayCopyUp(e) {
+    if (!state.dayDrag) return;
+    const from = state.dayDrag.from;
+    state.dayDrag = null;
+    document.querySelectorAll('.split-day-copy-handle.dragging-day').forEach(function (h) {
+        h.classList.remove('dragging-day');
+    });
+    document.querySelectorAll('.split-day-zone').forEach(function (z) {
+        z.classList.remove('drop-target');
+    });
+    const zone = e.target.closest('.split-day-zone');
+    if (zone && zone.dataset.day !== from) {
+        copyDayTo(from, zone.dataset.day, e.clientY);
+    }
 }
 
 function copyDayTo(fromDay, toDay, y) {
@@ -553,27 +603,12 @@ export function initSplits() {
         }
     });
 
-    // Day-copy: el único DnD nativo restante (operación de bloque de día).
-    // Los drags de ITEMS los maneja SortableJS; estos handlers solo actúan
-    // cuando el payload es daycopy:...
-    document.addEventListener('dragover', function (e) {
-        const payload = e.dataTransfer && e.dataTransfer.getData('text/plain');
-        if (!payload || payload.indexOf('daycopy:') !== 0) return;
-        const zone = e.target.closest('.split-day-zone');
-        if (!zone) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'copy';
-        zone.classList.add('drop-target');
-    });
-
-    document.addEventListener('drop', function (e) {
-        const payload = e.dataTransfer && e.dataTransfer.getData('text/plain');
-        if (!payload || payload.indexOf('daycopy:') !== 0) return;
-        const zone = e.target.closest('.split-day-zone');
-        if (!zone) return;
-        e.preventDefault();
-        copyDayTo(payload.slice('daycopy:'.length), zone.dataset.day, e.clientY);
-    });
+    // Day-copy e item shift-copy: drags por puntero (Chromium no dispara el
+    // drag de Sortable ni dragstart nativo con Shift). Los drags SIN Shift de
+    // items los maneja SortableJS.
+    document.addEventListener('mousedown', onItemShiftDown);
+    document.addEventListener('mousemove', onDayCopyMove);
+    document.addEventListener('mouseup', onDayCopyUp);
 
     // Board refrescado por OOB (guardar/abrir/eliminar/undo): re-sincronizar
     // estado, recrear Sortables y re-vincular handles del día.
