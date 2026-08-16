@@ -1,5 +1,6 @@
 """Tests de integración de las rutas del gestor de splits (CSRF, OOB, undo)."""
 
+
 from fastapi.testclient import TestClient
 
 import app as appmod
@@ -52,6 +53,52 @@ def test_splits_page_render(tmp_path, monkeypatch):
         assert f'data-day="{day}"' in r.text
     assert 'id="splits-section"' in r.text
     assert 'id="split-board"' in r.text
+    # Orden visual: board y resumen ANTES que el catálogo y la lista.
+    assert r.text.index('id="split-board"') < r.text.index("Catálogo de ejercicios")
+    assert r.text.index("Catálogo de ejercicios") < r.text.index('id="splits-section"')
+
+
+def test_splits_page_catalogo_agrupado_y_detalles(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path, ("Press", "Pectoral", "EMPUJE"), ("Curl", "Biceps", "TIRON"))
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/splits")
+    assert r.status_code == 200
+    assert r.text.count('<details class="split-catalog-group"') == 3  # Pectoral, Biceps, HIIT
+    assert 'data-group="Pectoral"' in r.text
+    assert 'data-group="Biceps"' in r.text
+    assert 'data-group="HIIT"' in r.text
+    assert '<summary class="split-catalog-summary">HIIT</summary>' in r.text
+    # Los chips del catálogo muestran SOLO el nombre (sin texto de grupo visible).
+    assert '<span class="split-item-name">Press</span>' in r.text
+    assert '<span class="split-item-group">' not in r.text
+
+
+def test_splits_page_resumen_v2(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    _guardar(
+        client, dias=("LUNES", "MARTES"), tipos=("ejercicio", "hiit"), ejercicios=("Press", "HIIT")
+    )
+    r = client.get("/splits?abrir=1")
+    assert r.status_code == 200
+    # Sin conteos auxiliares.
+    assert "Días activos" not in r.text
+    assert "Ejercicios distintos" not in r.text
+    # Resumen semanal + por ejercicio + por día (7 días, incluso vacíos).
+    assert 'id="split-metrics-week"' in r.text
+    assert 'id="split-metrics-exercises"' in r.text
+    assert 'id="split-metrics-days"' in r.text
+    assert "Semana — <strong>2</strong> series" in r.text
+    assert "HIIT: <strong>1</strong> series" in r.text
+    assert "Domingo — <strong>0</strong> series" in r.text
+    assert r.text.count("— <strong>") >= 7  # los 7 días del resumen
+    # Handle de copia de día con aria-label y title.
+    assert 'class="split-day-copy-handle"' in r.text
+    assert 'aria-label="Copiar todo el día Lunes manteniendo Shift"' in r.text
+    assert 'title="Mantén Shift y arrastra para copiar el día completo"' in r.text
+    # Límite expuesto para el guard client-side.
+    assert 'data-max-items="300"' in r.text
 
 
 def test_splits_page_con_abrir(tmp_path, monkeypatch):
@@ -198,3 +245,18 @@ def test_undo_empty_no_rompe(tmp_path, monkeypatch):
     assert r.status_code == 200
     assert "Nada que deshacer." in r.text
     clear_undo_stack()
+
+
+def test_splits_js_sin_dnd_nativo_paralelo():
+    """El DnD de items es SortableJS (no deben quedar listeners nativos a nivel
+    document). El único DnD nativo permitido es el del handle de día, que se
+    vincula POR ELEMENTO (no en document)."""
+    from pathlib import Path
+
+    src = Path("static/js/splits.js").read_text(encoding="utf-8")
+    assert "document.addEventListener('dragstart'" not in src
+    assert "document.addEventListener('dragend'" not in src
+    assert "document.addEventListener('dragover'" not in src or "daycopy:" in src
+    assert "Sortable.create" in src
+    assert "sortable-ghost" in src
+    assert "sortable-chosen" in src
