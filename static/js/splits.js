@@ -94,10 +94,15 @@ function guardLimit(extra) {
     return false;
 }
 
+function limitMessage() {
+    return 'No se puede: superaría el límite de ' + state.maxItems + ' instancias del split.';
+}
+
 function finalizeCard(card, day) {
     state.uidSeq += 1;
     card.dataset.splitItemId = 'ui-' + state.uidSeq;
     card.dataset.dia = day;
+    card.draggable = true;
     if (!card.querySelector('[data-action="split-item-remove"]')) {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -149,12 +154,30 @@ function buildBoardSortable(list) {
                 state.shiftCopies.delete(e.item.dataset.splitItemId);
                 const original = e.item;
                 original.remove();
+                if (!canAdd(1)) {
+                    showNotice(limitMessage(), 'error');
+                    const source = e.from;
+                    source.insertBefore(
+                        original,
+                        source.children[Math.min(e.oldIndex, source.children.length)] || null
+                    );
+                    clearDragVisuals();
+                    updatePreview();
+                    return;
+                }
                 finalizeCard(copy, targetDay);
                 const target = e.to;
                 target.insertBefore(copy, target.children[Math.min(e.newIndex, target.children.length)] || null);
                 const source = e.from;
                 source.insertBefore(original, source.children[Math.min(e.oldIndex, source.children.length)] || null);
             } else {
+                if (!canAdd(1)) {
+                    showNotice(limitMessage(), 'error');
+                    e.item.remove();
+                    clearDragVisuals();
+                    updatePreview();
+                    return;
+                }
                 finalizeCard(e.item, targetDay);
             }
             updatePreview();
@@ -167,6 +190,16 @@ function buildBoardSortable(list) {
                 const list = e.from;
                 const day = list.closest('.split-day-zone').dataset.day;
                 original.remove();
+                if (!canAdd(1)) {
+                    showNotice(limitMessage(), 'error');
+                    list.insertBefore(
+                        original,
+                        list.children[Math.min(e.oldIndex, list.children.length)] || null
+                    );
+                    clearDragVisuals();
+                    updatePreview();
+                    return;
+                }
                 finalizeCard(copy, day);
                 list.insertBefore(copy, list.children[Math.min(e.newIndex, list.children.length)] || null);
                 list.insertBefore(original, list.children[Math.min(e.oldIndex, list.children.length)] || null);
