@@ -30,6 +30,8 @@ OOB_FRAGMENT_TARGETS = (
     "cardio-day",
     "cascade-row",
     "ejercicios-row",
+    "splits-section",
+    "split-board",
 )
 
 STATIC_MARKERS = {
