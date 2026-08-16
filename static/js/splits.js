@@ -270,7 +270,9 @@ function onDrop(e) {
         );
         if (card) {
             const list = zone.querySelector('.split-day-items');
-            if (list) {
+            // Intra-día: el dragover ya fijó la posición; solo re-append si la
+            // tarjeta viene de OTRO día (movimiento entre zonas).
+            if (list && card.parentElement !== list) {
                 list.appendChild(card);
                 card.dataset.dia = zone.dataset.day;
             }

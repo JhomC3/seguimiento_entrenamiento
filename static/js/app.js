@@ -48,23 +48,30 @@ document.body.addEventListener('htmx:afterRequest', function (e) {
 document.addEventListener('DOMContentLoaded', function () {
     loadConfig();
     initLifecycle();
-    initChartInteractions();
-    renderUnifiedChart();
-    initDateNavigation();
-    initEditorPopup();
-    initLevelCascade();
-    initEditorActions();
-    initTemplateActions();
-    initNutritionEditor();
-    initNutritionRowSortable(refreshNutritionRowsOrder, ensureNutritionEditable);
-    initNutritionTemplatesDnD();
-    initPanelCollapse();
-    scheduleNotices();
-    syncEditorFromContent();
-    initEditorRowSortable();
-    initTemplateSortable();
-    initEntrenoDnD();
+    // El bundle del dashboard (cascada, gráfica, editores) solo se inicializa
+    // en la página raíz: los módulos asumen su DOM (p. ej. level-cascade hace
+    // htmx.ajax a #cascade-row, que no existe en otras páginas y caería al
+    // body, reemplazando la página completa).
+    const isDashboard = !!document.getElementById('cascade-row');
+    if (isDashboard) {
+        initChartInteractions();
+        renderUnifiedChart();
+        initDateNavigation();
+        initEditorPopup();
+        initLevelCascade();
+        initEditorActions();
+        initTemplateActions();
+        initNutritionEditor();
+        initNutritionRowSortable(refreshNutritionRowsOrder, ensureNutritionEditable);
+        initNutritionTemplatesDnD();
+        initPanelCollapse();
+        syncEditorFromContent();
+        initEditorRowSortable();
+        initTemplateSortable();
+        initEntrenoDnD();
+        fitRowsToPanel();
+    }
     initSplits();
-    fitRowsToPanel();
+    scheduleNotices();
     document.body.dataset.appReady = '1';
 });

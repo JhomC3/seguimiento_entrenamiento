@@ -375,6 +375,7 @@ def _split_page_html(request: Request, abrir_id: int | None = None) -> str:
                 "board_html": board,
                 "splits_html": _split_list_html(request),
                 "open_split_id": abrir_id,
+                "app_config_json": {"csrf_token": make_csrf_token(get_csrf_secret())},
             },
         )
     )
