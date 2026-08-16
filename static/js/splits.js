@@ -30,6 +30,8 @@ function dayLabel(day) {
 const state = {
     selectedDay: 'LUNES',
     openSplitId: null,
+    editmode: '1',
+    dirty: false,
     uidSeq: 0,
     maxItems: 300,
     // uid del item arrastrado con Shift (reservado; el drag por puntero de
@@ -42,6 +44,8 @@ const state = {
     // item shift-copy: tarjeta en drag por puntero (Chromium no arranca el
     // drag de Sortable con Shift).
     itemShiftDrag: null,
+    // "Editar" desde la lista: tras el OOB del board, entrar en modo edición.
+    pendingEdit: false,
 };
 
 function isSplitsPage() {
@@ -58,6 +62,7 @@ function readStateMarker() {
     return {
         splitId: marker.dataset.splitId || null,
         maxItems: parseInt(marker.dataset.maxItems, 10) || 300,
+        editmode: marker.dataset.editmode === '0' ? '0' : '1',
     };
 }
 
@@ -143,6 +148,10 @@ function createCardFromChip(chip) {
     return card;
 }
 
+function sortableAvailable() {
+    return typeof Sortable !== 'undefined';
+}
+
 /* ---------- SortableJS: board (días) ---------- */
 function buildBoardSortable(list) {
     return Sortable.create(list, {
@@ -151,6 +160,7 @@ function buildBoardSortable(list) {
         chosenClass: 'sortable-chosen',
         filter: 'button',
         preventOnFilter: false,
+        disabled: state.editmode !== '1',
         group: { name: 'split-days', pull: true, put: true },
         onMove: function (e) {
             // Shift = duplicación (drag por puntero propio): Sortable no debe
@@ -174,12 +184,15 @@ function buildBoardSortable(list) {
             }
             finalizeCard(e.item, targetDay);
             updatePreview();
+            markDirty();
         },
         onUpdate: function () {
             updatePreview();
+            markDirty();
         },
         onRemove: function () {
             updatePreview();
+            markDirty();
         },
         onEnd: function () {
             clearDragVisuals();
@@ -191,6 +204,12 @@ function buildBoardSortable(list) {
 function initBoardSortables() {
     state.boardSortables.forEach(function (s) { s.destroy(); });
     state.boardSortables = [];
+    if (!sortableAvailable()) {
+        // CDN caído/lento (p. ej. LAN sin internet): los días no son
+        // arrastrables pero el click-add y el resto siguen funcionando.
+        console.warn('splits: SortableJS no disponible; drag de días desactivado.');
+        return;
+    }
     document.querySelectorAll('.split-day-items').forEach(function (list) {
         state.boardSortables.push(buildBoardSortable(list));
     });
@@ -201,6 +220,7 @@ function buildCatalogSortable(list) {
     return Sortable.create(list, {
         animation: 150,
         sort: false,
+        disabled: state.editmode !== '1',
         group: { name: 'split-days', pull: 'clone', put: false },
         onStart: function (e) {
             // El catálogo SIEMPRE copia (pull:'clone'): indicador visual.
@@ -215,6 +235,10 @@ function buildCatalogSortable(list) {
 function initCatalogSortables() {
     state.catalogSortables.forEach(function (s) { s.destroy(); });
     state.catalogSortables = [];
+    if (!sortableAvailable()) {
+        console.warn('splits: SortableJS no disponible; catálogo sin arrastre.');
+        return;
+    }
     document.querySelectorAll('[data-catalog-list]').forEach(function (list) {
         state.catalogSortables.push(buildCatalogSortable(list));
     });
@@ -228,7 +252,7 @@ propio drag vía onMove(shiftKey)=false, así que no hay doble arrastre. Las
 clases visuales (copy-mode, drop-target) y la inserción por posición son las
 mismas del resto del board. */
 function onItemShiftDown(e) {
-    if (!e.shiftKey) return;
+    if (!e.shiftKey || !canEdit()) return;
     const card = e.target.closest('.split-item-card');
     if (!card || card.closest('#splits-catalog')) return;
     e.preventDefault();
@@ -284,6 +308,7 @@ function onItemShiftUp(e) {
     if (anchor) targetList.insertBefore(copy, anchor);
     else targetList.appendChild(copy);
     updatePreview();
+    markDirty();
 }
 
 /* ---------- Copia de día completo (handle con Shift) ---------- */
@@ -329,6 +354,7 @@ function onDayCopyUp(e) {
 }
 
 function copyDayTo(fromDay, toDay, y) {
+    if (!canEdit()) return;
     if (fromDay === toDay) {
         showNotice('El día destino es el mismo.', 'error');
         return;
@@ -362,6 +388,7 @@ function copyDayTo(fromDay, toDay, y) {
         else targetList.appendChild(copy);
     });
     updatePreview();
+    markDirty();
     showNotice('Día ' + dayLabel(fromDay) + ' copiado a ' + dayLabel(toDay) + '.', 'success', 2500);
 }
 
@@ -480,7 +507,10 @@ function splitNew() {
     const nombre = f.querySelector('input[name="nombre"]');
     if (nombre) nombre.value = '';
     document.querySelectorAll('#split-board .split-item-card').forEach(function (c) { c.remove(); });
+    state.editmode = '1';
+    state.dirty = false;
     selectDay('LUNES');
+    applyEditMode();
     updatePreview();
     if (nombre) nombre.focus();
     showNotice('Nuevo split: arma la semana desde el catálogo.', 'success', 3000);
@@ -492,6 +522,16 @@ function splitOpen(id) {
     htmx.ajax('GET', '/split/' + id, { target: 'body', swap: 'none' });
 }
 
+function splitEditOpen(id) {
+    state.pendingEdit = true;
+    splitOpen(id);
+}
+
+function splitEdit() {
+    if (!state.openSplitId) return;
+    setEditMode(true);
+}
+
 function splitDelete(id, nombre) {
     document.getElementById('confirm-msg').textContent =
         '¿Eliminar el split "' + nombre + '"?';
@@ -500,13 +540,31 @@ function splitDelete(id, nombre) {
     }, null);
 }
 
+/* ---------- Borrar día completo (solo el tablero; el servidor lo aplica al guardar) ---------- */
+function splitDayClear(day) {
+    if (!canEdit()) return;
+    const list = dayList(day);
+    if (!list) return;
+    const cards = list.querySelectorAll('.split-item-card');
+    if (!cards.length) return;
+    document.getElementById('confirm-msg').textContent =
+        '¿Borrar todos los ejercicios del ' + dayLabel(day) + '?';
+    showConfirmDialog(function () {
+        cards.forEach(function (c) { c.remove(); });
+        updatePreview();
+        markDirty();
+    }, null);
+}
+
 function addItemToDay(day, chip) {
+    if (!canEdit()) return;
     if (!guardLimit(1)) return;
     const list = dayList(day);
     if (!list) return;
     const card = finalizeCard(createCardFromChip(chip), day);
     list.appendChild(card);
     updatePreview();
+    markDirty();
 }
 
 function clearDragVisuals() {
@@ -519,6 +577,46 @@ function clearDragVisuals() {
     state.shiftCopies.clear();
 }
 
+/* ---------- Modo edición (view/edit) y dirty tracking ---------- */
+function applyEditMode() {
+    const board = document.getElementById('split-board');
+    if (board) board.dataset.editmode = state.editmode;
+    state.boardSortables.forEach(function (s) { s.option('disabled', state.editmode !== '1'); });
+    state.catalogSortables.forEach(function (s) { s.option('disabled', state.editmode !== '1'); });
+    const editBtn = document.querySelector('[data-action="split-edit"]');
+    if (editBtn) {
+        editBtn.hidden = !state.openSplitId;
+        editBtn.setAttribute('aria-pressed', String(state.editmode === '1'));
+    }
+    const hint = document.getElementById('split-dirty-hint');
+    if (hint) hint.hidden = !state.dirty;
+}
+
+function setEditMode(on) {
+    state.editmode = on ? '1' : '0';
+    applyEditMode();
+    if (on) {
+        const board = document.getElementById('split-board');
+        if (board) board.scrollIntoView({ block: 'nearest' });
+        showNotice('Modo edición activado.', 'success', 2000);
+    }
+}
+
+function markDirty() {
+    if (state.editmode !== '1') return;
+    state.dirty = true;
+    applyEditMode();
+}
+
+function clearDirty() {
+    state.dirty = false;
+    applyEditMode();
+}
+
+function canEdit() {
+    return state.editmode === '1';
+}
+
 /* ---------- Init (idempotente, contrato v3: listeners delegados) ---------- */
 export function initSplits() {
     if (!isSplitsPage()) return;
@@ -528,6 +626,7 @@ export function initSplits() {
     const marker = readStateMarker();
     state.openSplitId = marker ? marker.splitId : null;
     state.maxItems = marker ? marker.maxItems : 300;
+    state.editmode = marker ? marker.editmode : '1';
     if (!state.openSplitId) setFormSplitId(null);
 
     document.addEventListener('click', function (e) {
@@ -542,10 +641,14 @@ export function initSplits() {
                 break;
             case 'split-item-remove':
                 // Defensivo: solo instancias del board (nunca chips del catálogo).
-                if (!el.closest('#splits-catalog')) {
+                if (!el.closest('#splits-catalog') && canEdit()) {
                     el.closest('.split-item-card').remove();
                     updatePreview();
+                    markDirty();
                 }
+                break;
+            case 'split-day-clear':
+                splitDayClear(el.dataset.day);
                 break;
             case 'split-day-copy':
                 // Alternativa accesible: Shift+click copia al día seleccionado.
@@ -554,6 +657,12 @@ export function initSplits() {
                 break;
             case 'split-open':
                 splitOpen(el.dataset.splitId);
+                break;
+            case 'split-edit-open':
+                splitEditOpen(el.dataset.splitId);
+                break;
+            case 'split-edit':
+                splitEdit();
                 break;
             case 'split-delete':
                 splitDelete(el.dataset.splitId, el.dataset.splitNombre);
@@ -617,10 +726,16 @@ export function initSplits() {
             const marker = readStateMarker();
             state.openSplitId = marker ? marker.splitId : null;
             state.maxItems = marker ? marker.maxItems : 300;
+            state.editmode = marker ? marker.editmode : '1';
             if (!state.openSplitId) setFormSplitId(null);
+            if (state.pendingEdit) {
+                state.pendingEdit = false;
+                state.editmode = '1';
+            }
+            state.dirty = false;
             selectDay(state.selectedDay);
-            initBoardSortables();
-            bindDayCopyHandles();
+            safeInitBoard();
+            applyEditMode();
         }
     });
 
@@ -633,9 +748,45 @@ export function initSplits() {
         }
     });
 
-    initCatalogSortables();
-    initBoardSortables();
-    bindDayCopyHandles();
+    // Sub-inits a prueba de fallos: una excepción no debe abortar el resto de
+    // la inicialización (ni impedir que app.js fije appReady).
+    safeInitCatalog();
+    safeInitBoard();
+    try {
+        bindDayCopyHandles();
+    } catch (err) {
+        console.error('splits: bind de handles de día falló', err);
+    }
+    // CDN lento: Sortable puede llegar tras DOMContentLoaded; reintentar en load.
+    if (!sortableAvailable()) {
+        window.addEventListener('load', function () {
+            safeInitCatalog();
+            safeInitBoard();
+            try {
+                bindDayCopyHandles();
+            } catch (err) {
+                console.error('splits: bind de handles de día falló (retry)', err);
+            }
+            applyEditMode();
+        });
+    }
     selectDay('LUNES');
+    applyEditMode();
     updatePreview();
+}
+
+function safeInitCatalog() {
+    try {
+        initCatalogSortables();
+    } catch (err) {
+        console.error('splits: init del catálogo falló', err);
+    }
+}
+
+function safeInitBoard() {
+    try {
+        initBoardSortables();
+    } catch (err) {
+        console.error('splits: init del board falló', err);
+    }
 }
