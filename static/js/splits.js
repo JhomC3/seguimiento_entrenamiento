@@ -63,7 +63,19 @@ function readStateMarker() {
         splitId: marker.dataset.splitId || null,
         maxItems: parseInt(marker.dataset.maxItems, 10) || 300,
         editmode: marker.dataset.editmode === '0' ? '0' : '1',
+        nombre: marker.dataset.nombre || '',
     };
+}
+
+function syncFormFromMarker() {
+    const marker = readStateMarker();
+    if (!marker) return;
+    state.openSplitId = marker.splitId;
+    state.maxItems = marker.maxItems;
+    state.editmode = marker.editmode;
+    setFormSplitId(marker.splitId);
+    const nombre = form() && form().querySelector('input[name="nombre"]');
+    if (nombre && marker.nombre) nombre.value = marker.nombre;
 }
 
 function setFormSplitId(id) {
@@ -592,8 +604,12 @@ function clearDragVisuals() {
 }
 
 /* ---------- Modo edición (view/edit) y dirty tracking ---------- */
+function boardEl() {
+    return document.getElementById('split-board-week') || document.getElementById('split-board');
+}
+
 function applyEditMode() {
-    const board = document.getElementById('split-board');
+    const board = boardEl();
     if (board) board.dataset.editmode = state.editmode;
     state.boardSortables.forEach(function (s) { s.option('disabled', state.editmode !== '1'); });
     state.catalogSortables.forEach(function (s) { s.option('disabled', state.editmode !== '1'); });
@@ -610,7 +626,7 @@ function setEditMode(on) {
     state.editmode = on ? '1' : '0';
     applyEditMode();
     if (on) {
-        const board = document.getElementById('split-board');
+        const board = boardEl();
         if (board) board.scrollIntoView({ block: 'nearest' });
         showNotice('Modo edición activado.', 'success', 2000);
     }
@@ -642,6 +658,11 @@ export function initSplits() {
     state.maxItems = marker ? marker.maxItems : 300;
     state.editmode = marker ? marker.editmode : '1';
     if (!state.openSplitId) setFormSplitId(null);
+    // Página cargada con ?abrir=: precargar el nombre del split.
+    if (marker && marker.nombre) {
+        const nombre = form() && form().querySelector('input[name="nombre"]');
+        if (nombre) nombre.value = marker.nombre;
+    }
 
     document.addEventListener('click', function (e) {
         const el = e.target.closest('[data-action]');
@@ -734,8 +755,10 @@ export function initSplits() {
     document.addEventListener('mouseup', onDayCopyUp);
 
     // Board refrescado por OOB (guardar/abrir/eliminar/undo): re-sincronizar
-    // estado, recrear Sortables y re-vincular handles del día.
-    document.body.addEventListener('htmx:afterSwap', function (e) {
+    // estado, recrear Sortables y re-vincular handles del día. Los swaps OOB
+    // disparan `htmx:oobAfterSwap` (target = elemento OOB); el `afterSwap`
+    // normal solo cubre el target principal (body con swap:none).
+    function onBoardSwapped(e) {
         if (e.detail && e.detail.target && e.detail.target.id === 'split-board') {
             const marker = readStateMarker();
             state.openSplitId = marker ? marker.splitId : null;
@@ -746,12 +769,17 @@ export function initSplits() {
                 state.pendingEdit = false;
                 state.editmode = '1';
             }
+            // Al abrir un split, precargar su nombre (el Guardar lo requiere).
+            const nombre = form() && form().querySelector('input[name="nombre"]');
+            if (nombre && marker && marker.nombre) nombre.value = marker.nombre;
             state.dirty = false;
             selectDay(state.selectedDay);
             safeInitBoard();
             applyEditMode();
         }
-    });
+    }
+    document.body.addEventListener('htmx:afterSwap', onBoardSwapped);
+    document.body.addEventListener('htmx:oobAfterSwap', onBoardSwapped);
 
     document.body.addEventListener('htmx:afterRequest', function (e) {
         const path = (e.detail && e.detail.requestConfig && e.detail.requestConfig.path) || '';
