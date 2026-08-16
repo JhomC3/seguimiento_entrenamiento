@@ -4,6 +4,7 @@ import pytest
 
 from src.database import get_split, init_db, insert_exercise
 from src.models import (
+    SPLIT_DAYS,
     ConflictError,
     NotFoundError,
     SplitInput,
@@ -170,14 +171,15 @@ def test_metricas_por_dia(db):
         _item(dia="MARTES", ejercicio="Curl"),
     ]
     metrics = compute_split_metrics(_persisted(items))
-    assert metrics.total_instances == 4
     assert metrics.total_series == 4
-    assert metrics.active_days == 2
-    assert metrics.distinct_exercises == 3
+    assert len(metrics.days) == 7
     lunes = next(d for d in metrics.days if d.dia == "LUNES")
     assert lunes.series == 3
     assert lunes.by_exercise == {"Press": 2, "HIIT": 1}
     assert lunes.by_group == {"Pectoral": 2, "HIIT": 1}
+    domingo = next(d for d in metrics.days if d.dia == "DOMINGO")
+    assert domingo.series == 0
+    assert domingo.by_group == {}
 
 
 def test_metricas_por_grupo_y_ejercicio(db):
@@ -191,12 +193,19 @@ def test_metricas_por_grupo_y_ejercicio(db):
     assert metrics.by_group == {"Pectoral": 2, "Biceps": 1}
 
 
+def test_metricas_incluye_dias_vacios(db):
+    metrics = compute_split_metrics(_persisted([_item(dia="VIERNES", ejercicio="Press")]))
+    assert [d.dia for d in metrics.days] == list(SPLIT_DAYS)
+    assert sum(d.series for d in metrics.days) == 1
+
+
 def test_metricas_vacias(db):
     metrics = compute_split_metrics([])
     assert metrics.total_series == 0
-    assert metrics.active_days == 0
-    assert metrics.distinct_exercises == 0
-    assert metrics.days == []
+    assert metrics.by_exercise == {}
+    assert metrics.by_group == {}
+    assert len(metrics.days) == 7
+    assert all(d.series == 0 for d in metrics.days)
 
 
 def test_eliminar_split(db):

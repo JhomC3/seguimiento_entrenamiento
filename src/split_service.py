@@ -143,7 +143,11 @@ def _items_from_rows(split: dict) -> list[SplitItem]:
 
 
 def compute_split_metrics(items: list[SplitItem]) -> SplitMetrics:
-    """1 item = 1 serie. Métricas por día, ejercicio, grupo y totales semanales."""
+    """1 item = 1 serie. Métricas por día, ejercicio, grupo y totales semanales.
+
+    `days` incluye SIEMPRE los 7 días canónicos (los vacíos con series 0) para
+    que el resumen muestre la semana completa.
+    """
     total = len(items)
     by_exercise: dict[str, int] = {}
     by_group: dict[str, int] = {}
@@ -156,8 +160,6 @@ def compute_split_metrics(items: list[SplitItem]) -> SplitMetrics:
     days: list[SplitDaySummary] = []
     for dia in SPLIT_DAYS:
         day_items = per_day.get(dia, [])
-        if not day_items:
-            continue
         d_ex: dict[str, int] = {}
         d_g: dict[str, int] = {}
         for it in day_items:
@@ -166,10 +168,7 @@ def compute_split_metrics(items: list[SplitItem]) -> SplitMetrics:
         days.append(SplitDaySummary(dia=dia, series=len(day_items), by_exercise=d_ex, by_group=d_g))
 
     return SplitMetrics(
-        total_instances=total,
         total_series=total,
-        active_days=len(days),
-        distinct_exercises=len(by_exercise),
         by_group=by_group,
         by_exercise=by_exercise,
         days=days,

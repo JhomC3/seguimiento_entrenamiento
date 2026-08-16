@@ -136,12 +136,12 @@ class SplitDaySummary:
 
 @dataclass(frozen=True)
 class SplitMetrics:
-    """Server-authoritative metrics for a split's current items."""
+    """Server-authoritative metrics for a split's current items.
 
-    total_instances: int
+    `days` cubre SIEMPRE los 7 días canónicos (los vacíos con series 0).
+    """
+
     total_series: int
-    active_days: int
-    distinct_exercises: int
     by_group: dict[str, int]
     by_exercise: dict[str, int]
     days: list[SplitDaySummary]
