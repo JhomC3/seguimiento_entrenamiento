@@ -18,6 +18,7 @@ from src.migrations import (
     v012_cardio_annotations,
     v013_persistent_undo,
     v014_training_fecha_index,
+    v015_splits,
 )
 
 MIGRATIONS = [
@@ -34,6 +35,7 @@ MIGRATIONS = [
     v012_cardio_annotations,
     v013_persistent_undo,
     v014_training_fecha_index,
+    v015_splits,
 ]
 
 _CURRENT_VERSION = max(m.VERSION for m in MIGRATIONS)
@@ -51,6 +53,8 @@ _DOMAIN_TABLES = {
     "plantilla_alimentos",
     "health_records",
     "cardio_annotations",
+    "training_splits",
+    "training_split_items",
 }
 
 
