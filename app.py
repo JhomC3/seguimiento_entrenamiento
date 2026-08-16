@@ -87,7 +87,7 @@ from src.security import (
     get_csrf_secret,
     make_csrf_token,
 )
-from src.split_service import get_split_board, split_items_from_form
+from src.split_service import compute_split_metrics, get_split_board, split_items_from_form
 from src.static_assets import is_current_digest, static_url
 from src.template_service import apply_template_rows
 from src.training_service import (
@@ -332,11 +332,11 @@ def _split_board_html(
     split_id: int | None = None,
     board: dict | None = None,
 ) -> str:
-    """Fragmento del board semanal de splits (7 días + métricas)."""
+    """Fragmento del board semanal de splits (7 días + resumen de series)."""
     if board is None and split_id is not None:
         board = get_split_board(DB_PATH, split_id)
     split = board["split"] if board else None
-    metrics = board["metrics"] if board else None
+    metrics = board["metrics"] if board else compute_split_metrics([])
     return _render_body(
         templates.TemplateResponse(
             request=request,
@@ -346,6 +346,7 @@ def _split_board_html(
                 "split": split,
                 "metrics": metrics,
                 "open_split_id": split.id if split else None,
+                "max_items": MAX_SPLIT_ITEMS,
             },
         )
     )

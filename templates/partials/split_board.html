@@ -1,7 +1,7 @@
-{# Board semanal de splits: 7 zonas de destino + métricas server-rendered.
+{# Board semanal de splits: 7 zonas de destino + resumen de series server-rendered.
    Cada instancia colocada = 1 serie. Las métricas se recalculan en el
    servidor (guardar/cargar); la preview client-side nunca se envía. #}
-<div id="split-open-state" data-split-id="{{ open_split_id or '' }}" hidden></div>
+<div id="split-open-state" data-split-id="{{ open_split_id or '' }}" data-max-items="{{ max_items }}" hidden></div>
 <div class="panel panel-default">
     <h2 class="panel-title panel-title-neon panel-title-divider">
         Semana{% if split %} — {{ split.nombre }}{% endif %}
@@ -16,6 +16,12 @@
                     {% set n = split.items | selectattr('dia', 'equalto', day) | list | length if split else 0 %}
                     {{ n }} serie{{ 's' if n != 1 }}
                 </span>
+                <button type="button" class="split-day-copy-handle" data-action="split-day-copy"
+                        data-day="{{ day }}" draggable="true"
+                        aria-label="Copiar todo el día {{ day | title }} manteniendo Shift"
+                        title="Mantén Shift y arrastra para copiar el día completo">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                </button>
             </div>
             <div class="split-day-items" data-day-list="{{ day }}" role="list" aria-label="Ejercicios de {{ day | title }}">
                 {% if split %}
@@ -25,7 +31,6 @@
                      data-grupo="{{ it.grupo_muscular }}" data-item-type="{{ it.item_type }}"
                      data-dia="{{ day }}">
                     <span class="split-item-name" title="{{ it.ejercicio }}">{{ it.ejercicio }}</span>
-                    <span class="split-item-group">{{ it.grupo_muscular }}</span>
                     <button type="button" class="row-btn" data-action="split-item-remove"
                             aria-label="Eliminar {{ it.ejercicio }} del {{ day | title }}" title="Eliminar">−</button>
                 </div>
@@ -40,28 +45,30 @@
     </div>
 </div>
 
-{# Métricas semanales (autoritativas del servidor; preview client-side nunca viaja) #}
+{# Resumen de series (autoritativo del servidor; preview client-side nunca viaja) #}
 <div class="panel panel-default" id="split-metrics-panel">
-    <h2 class="panel-title panel-title-neon panel-title-divider">Resumen semanal</h2>
-    <div id="split-metrics-preview" class="flex flex-wrap gap-x-4 gap-y-2">
-        <span class="split-metric">Series: <strong>{% if metrics %}{{ metrics.total_series }}{% else %}0{% endif %}</strong></span>
-        <span class="split-metric">Días activos: <strong>{% if metrics %}{{ metrics.active_days }}{% else %}0{% endif %}</strong></span>
-        <span class="split-metric">Ejercicios distintos: <strong>{% if metrics %}{{ metrics.distinct_exercises }}{% else %}0{% endif %}</strong></span>
-        {% if metrics %}
+    <h2 class="panel-title panel-title-neon panel-title-divider">Resumen de series</h2>
+    <div id="split-metrics-week" class="flex flex-col gap-1">
+        <p class="split-metric">Semana — <strong>{{ metrics.total_series }}</strong> series</p>
         {% for grupo, n in metrics.by_group.items() %}
-        <span class="split-metric" data-preview-group="{{ grupo }}">{{ grupo }}: <strong>{{ n }}</strong></span>
+        <p class="split-metric">· {{ grupo }}: <strong>{{ n }}</strong> series</p>
         {% endfor %}
-        {% endif %}
     </div>
-    {% if metrics %}
-    <div id="split-metrics-detail" class="flex flex-col gap-1.5">
+    <div id="split-metrics-exercises" class="flex flex-col gap-1">
+        <h3 class="panel-title">Por ejercicio</h3>
+        {% for ej, n in metrics.by_exercise.items() %}
+        <p class="split-metric">{{ ej }}: <strong>{{ n }}</strong> series</p>
+        {% endfor %}
+    </div>
+    <div id="split-metrics-days" class="flex flex-col gap-1">
+        <h3 class="panel-title">Por día</h3>
         {% for d in metrics.days %}
         <p class="split-metric">
-            {{ d.dia | title }} — {{ d.series }} serie{{ 's' if d.series != 1 }}:
-            {% for ej, n in d.by_exercise.items() %}{{ ej }} ({{ n }}){% if not loop.last %}, {% endif %}{% endfor %}.
-            Grupos: {% for g, n in d.by_group.items() %}{{ g }} ({{ n }}){% if not loop.last %}, {% endif %}{% endfor %}.
+            {{ d.dia | title }} — <strong>{{ d.series }}</strong> series
+            {% for g, n in d.by_group.items() %}
+            <span>· {{ g }}: {{ n }}</span>
+            {% endfor %}
         </p>
         {% endfor %}
     </div>
-    {% endif %}
 </div>

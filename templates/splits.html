@@ -16,48 +16,48 @@
         </form>
     </header>
 
-    <!-- Catálogo de ejercicios (filtro persistente; no se re-renderiza en OOB) -->
+    <!-- Board semanal + resumen (OOB #split-board) -->
+    <div id="split-board" class="flex flex-col gap-6">
+        {{ board_html | safe }}
+    </div>
+
+    <!-- Catálogo de ejercicios (desplegable por grupo; no se re-renderiza en OOB) -->
     <section class="panel panel-default">
         <h2 class="panel-title panel-title-neon panel-title-divider">Catálogo de ejercicios</h2>
         <label for="split-catalog-search" class="sr-only">Buscar ejercicio</label>
         <input id="split-catalog-search" data-action="split-catalog-search" class="field-input" placeholder="Buscar ejercicio…" autocomplete="off">
-        <div id="splits-catalog" class="flex flex-col gap-4">
+        <div id="splits-catalog" class="flex flex-col gap-2">
             {% for group, group_items in catalog | groupby('grupo_muscular') %}
-            <div>
-                <h3 class="panel-title mb-1">{{ group }}</h3>
-                <div class="flex flex-wrap gap-2">
+            <details class="split-catalog-group" data-group="{{ group }}">
+                <summary class="split-catalog-summary">{{ group }}</summary>
+                <div class="split-catalog-body" data-catalog-list="{{ group }}">
                     {% for ej in group_items %}
-                    <button type="button" class="split-catalog-chip" draggable="true"
-                            data-action="split-add-item"
-                            data-ejercicio="{{ ej.ejercicio }}" data-grupo="{{ ej.grupo_muscular }}"
-                            data-item-type="ejercicio"
-                            title="Arrastra al día o haz clic para agregar {{ ej.ejercicio }} al día seleccionado">
-                        {{ ej.ejercicio }}
-                    </button>
+                    <div class="split-item-card split-catalog-chip" role="button" tabindex="0"
+                         data-action="split-add-item" draggable="true"
+                         data-ejercicio="{{ ej.ejercicio }}" data-grupo="{{ ej.grupo_muscular }}"
+                         data-item-type="ejercicio"
+                         title="Arrastra al día o haz clic para agregar {{ ej.ejercicio }} al día seleccionado">
+                        <span class="split-item-name">{{ ej.ejercicio }}</span>
+                    </div>
                     {% endfor %}
                 </div>
-            </div>
+            </details>
             {% endfor %}
-            <div>
-                <h3 class="panel-title mb-1">Cardio</h3>
-                <div class="flex flex-wrap gap-2">
-                    <button type="button" class="split-catalog-chip" draggable="true"
-                            data-action="split-add-item"
-                            data-ejercicio="HIIT" data-grupo="HIIT"
-                            data-item-type="hiit"
-                            title="Arrastra al día o haz clic para agregar HIIT al día seleccionado">
-                        HIIT
-                    </button>
+            <details class="split-catalog-group" data-group="HIIT">
+                <summary class="split-catalog-summary">HIIT</summary>
+                <div class="split-catalog-body" data-catalog-list="HIIT">
+                    <div class="split-item-card split-catalog-chip" role="button" tabindex="0"
+                         data-action="split-add-item" draggable="true"
+                         data-ejercicio="HIIT" data-grupo="HIIT"
+                         data-item-type="hiit"
+                         title="Arrastra al día o haz clic para agregar HIIT al día seleccionado">
+                        <span class="split-item-name">HIIT</span>
+                    </div>
                 </div>
-            </div>
+            </details>
         </div>
         <p class="split-empty" id="split-catalog-empty" hidden>Sin resultados para la búsqueda.</p>
     </section>
-
-    <!-- Board semanal (OOB #split-board) -->
-    <div id="split-board" class="flex flex-col gap-6">
-        {{ board_html | safe }}
-    </div>
 
     <!-- Lista de splits guardados (OOB #splits-section) -->
     <section id="splits-section">
