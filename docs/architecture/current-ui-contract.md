@@ -1,250 +1,388 @@
 # Current Dashboard UI Contract
 
-> **Purpose:** Frozen behavioural contract captured before the frontend atomization programme (2026-08-06). Any intentional change to IDs, `data-*` attributes, form field names, htmx targets or `hx-swap-oob` markers documented here requires its own browser test and a contract-change commit.
-
-**Baseline suite:** `uv run pytest -q` → **93 passed, 1 warning** (StarletteDeprecationWarning: `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead).
+> **Purpose:** Behavioural contract of the live application (contract v3, cascada de
+> niveles). Any intentional change to IDs, `data-*` attributes, form field names, htmx
+> targets or `hx-swap-oob` markers documented here requires its own browser test and a
+> contract-change commit.
+>
+> **Baseline suite:** `uv run pytest -q` (unidad + integración + e2e Playwright, cobertura
+> ≥ 90 %) y gates `ruff` + `mypy`. El conteo exacto de tests no es parte del contrato.
 
 ---
 
-## 1. Routes and their contract
+## 1. Rutas y su contrato
 
-### `GET /` (index, full HTML)
+### `GET /` (index, HTML completo)
 
-- Renders `index.html` extending `base.html`.
-- Serves: category navigation, exercise list, date navigator, session editor, unified chart (systemic PFR), exercise-create form, plantillas (templates) list.
-- Injects `categoria_map_json` (JSON string of exercise → category map) via `const CATEGORIA_MAP = {{ categoria_map_json | safe }};` into `base.html` (block after `{% block content %}`).
-- Injects `app_config_json` (`categoria_map` + `csrf_token`) via `<script id="app-config" type="application/json">` (data, never executed).
-- Page-level `<style>` blocks remain in `index.html` (htmx-indicator, chart fade-in). All page JS was moved to `static/js/dashboard-filters.js`.
+- Renderiza `index.html` (extends `base.html`).
+- Sirve server-side: header (título, export CSV, botón Registrar),
+  **fila inicial de músculos** (`#cascade-row`, chips `data-action="select-muscle"`),
+  gráfica sistémica (`#unified-chart` con `#unified-chart-data` JSON + `#unified-chart-plot`),
+  `#history-section` vacío, `<noscript>` con enlace a `/exportar/csv` y los partials
+  globales (`#notice-container` role=status, `#confirm-modal` dialog, `#app-config`).
+- `#app-config` (script `type="application/json"`, inerte): `categoria_map`,
+  `alimento_map`, `ciclo_start`, `csrf_token` (firmado con `GYM_CSRF_SECRET`).
+- El popup de registro es un `<dialog id="editor-popup" aria-labelledby="popup-fecha-title">`.
+- Assets versionados con `static_url(...)` (`?v=<sha256[:12]>`; `Cache-Control: immutable`
+  solo con digest vigente).
 
 ### `GET /fecha/editor?fecha=<YYYY-MM-DD>`
 
-- Returns `session_editor.html` fragment (no full document) via `HTMLResponse`.
-- Used by htmx with `target: '#session-editor-wrap'`, `swap: 'innerHTML'` (from `doNav` in `base.html` and the Cancelar button in `session_editor.html`).
-- Editor state markers: `#editor-state[data-readonly][data-has-data]` (hidden).
+- Fragmento `session_editor.html` (sin documento completo).
+- Usado con `target: '#session-editor-wrap'`, `swap: 'innerHTML'`.
+- Marcadores de estado: `#editor-state[data-readonly][data-has-data]` (hidden).
+
+### `GET /editor/popup?fecha=<YYYY-MM-DD>`
+
+- Cuerpo del popup de registro: `editor_popup.html` (navegador de fechas + título +
+  alimentación + editor de sesión + cardio + plantillas).
+- Incluye `#editor-notice` (role=status, aria-live) y `#save-outcome[data-ok]` (hidden).
+- Cargado por `editor-popup.js` con `htmx.ajax(target: '#popup-body')`; el popup se abre
+  con `showModal()` y la fecha viaja en `?registro=<iso>` (historial).
+
+### `GET /cardio/day?fecha=<YYYY-MM-DD>`
+
+- Fragmento del panel de cardio de la fecha (`cardio_day.html`), usado por
+  `date-navigation.js` (`doNav`) para refrescar `#cardio-day` al navegar fechas dentro
+  del popup (sin esto, el panel queda con el día de apertura).
+- Mismo contenido que el bloque `#cardio-day` del popup; `POST /cardio/annotation`
+  responde OOB `#cardio-day` (outerHTML) tras guardar.
 
 ### `POST /entrenamiento/session/save`
 
-- Form fields: `fecha` (ISO), `ejercicio[]`, `kg[]`, `reps[]`, `rir[]` (parallel arrays; submit from `#session-form` with `hx-swap="none"`).
-- OOB markers on success: `#editor-notice` (innerHTML, success notice, `data-dismiss="3000"`), `#save-outcome` (outerHTML, `data-ok="1"`, hidden), and either `#editor-state` (outerHTML, `data-readonly="1" data-has-data="1"`, hidden) when rows remain, or `#session-editor-wrap` (innerHTML, fresh editor) when empty.
-- OOB markers on validation failure (`ValueError`): `#editor-notice` (innerHTML, error notice, `data-dismiss="4500"`), `#save-outcome` (outerHTML, `data-ok="0"`, hidden).
-- Client-side gating: submit intercepted; if `#session-editor[data-editmode] !== '1'` the submit is prevented.
-- Side effects: DB backup, undo-stack push (`sesion` kind, before/after rows).
+- Campos: `fecha` (ISO), `ejercicio[]`, `kg[]`, `reps[]`, `rir[]`, `descanso[]`
+  (arrays paralelos; form `#session-form`, `hx-swap="none"`).
+- OOB éxito: `#editor-notice` (success, `data-dismiss="3000"`), `#save-outcome`
+  (outerHTML, `data-ok="1"`), y `#editor-state` o `#session-editor-wrap` según filas.
+- OOB error de dominio (400): `#editor-notice` (error, `data-dismiss="4500"`),
+  `#save-outcome` (`data-ok="0"`).
+- Gating cliente: submit interceptado si `#session-editor[data-editmode] !== '1'`.
+- Efectos: backup pre-mutación, journal `undo_entries` (kind `sesion`, solo `before`).
 
 ### `POST /entrenamiento/session/eliminar`
 
-- Form field: `fecha` (ISO). Triggered by `eliminarSesion()` after confirm dialog.
-- OOB markers: `#editor-notice` (success "Entreno eliminado."), `#save-outcome` (`data-ok="1"`), `#session-editor-wrap` (innerHTML, fresh readonly editor).
-- Side effects: DB backup, undo-stack push with empty `after`.
+- Campo: `fecha` (ISO). Disparado por `eliminarSesion()` tras confirmación.
+- OOB: `#editor-notice` ("Entreno eliminado."), `#save-outcome` (`data-ok="1"`),
+  `#session-editor-wrap` (editor readonly fresco).
+- Efectos: backup + journal (`sesion`).
+
+### `GET /nivel?tipo=<global|musculo|ejercicio>[&foco=]`
+
+- Cascada de niveles:
+  - `tipo=musculo` sin foco → fila de músculos (`cascade_row.html`, chips
+    `data-action="select-muscle"`).
+  - `tipo=musculo` con foco → `ejercicios_row.html` (chips `data-action="toggle-exercise"`,
+    `aria-pressed`) + OOB `#unified-chart` (compilado del músculo).
+  - `tipo=ejercicio` con foco → `exercise_detail.html` en `#history-section`.
+  - `tipo=global` → fila de músculos + OOB gráfica sistémica.
+- Selección múltiple con Shift+click; `Escape` deselecciona (salvo popup abierto);
+  historial `?musculos=A,B&ejercicios=a,b` con popstate.
+
+### `GET /grafica?musculo[]=&ejercicios[]=`
+
+- OOB `#unified-chart` (innerHTML) con el compilado de la selección: 1 músculo →
+  compilado + ejercicios; 2+ → global + músculos. Con 1 músculo también OOB
+  `#ejercicios-row` (outerHTML).
+- El fragmento usa el mismo shell que `chart_html` (header h2 + `chart-empty`/plot 450px).
+
+### `GET /semana/primer-entreno?semana=<n>`
+
+- JSON `{"fecha": "<iso>"|null}`: primera fecha de entrenamiento de la semana del ciclo.
+- Consumido por `chart-interaction.js` al hacer clic en un punto: abre el popup en esa
+  fecha. `response.ok` exigido; un reintento para fallos transitorios; aviso de error
+  si persiste.
+
+### `POST /cardio/annotation`
+
+- Campos: `hc_id`, `velocidad_kmh`, `inclinacion_pct`, `notas`, `fecha`.
+- Upsert de anotación sobre una sesión `EXERCISE_SESSION` espejada; anotación vacía se
+  elimina. OOB de aviso vía `#notice-container`.
+- El submit del popup convierte `FormData` a objeto plano (htmx no serializa FormData
+  como `values`) y omite los campos vacíos (`float | None = Form(None)`).
 
 ### `POST /ejercicio/nuevo`
 
-- Form fields: `ejercicio`, `grupo_muscular`, `categoria` (from `#exercise-create-form`, `hx-swap="none"`).
-- OOB markers: `#notice-container` (innerHTML success/error notice), and on success `#exercise-create` (outerHTML, refreshed form).
-- Error messages: missing name / missing group / invalid category / duplicate exercise (case-insensitive).
+- Campos: `ejercicio`, `grupo_muscular`, `categoria` (form `#exercise-create-form`,
+  `hx-swap="none"`).
+- OOB: `#notice-container` (success/error), y en éxito `#exercise-create` (outerHTML)
+  + `#app-config` (outerHTML, `alimento_map` no afecta pero `categoria_map` sí).
+- Errores: nombre vacío / grupo faltante / categoría inválida / ejercicio duplicado.
 
-### `GET /plantillas?editar=<id>` (also `/plantillas` bare)
+### Plantillas de entrenamiento
 
-- Returns `plantillas_list.html` fragment; used with `target: '#plantillas-section'`, `swap: 'innerHTML'`.
-- `editar` activates the inline edit form for that plantilla card.
+- `GET /plantillas[?editar=<id>]` → fragmento `plantillas_list.html`
+  (`target: '#plantillas-section'`). Tarjetas `#plantillas-list .pt-card[data-pt-id]`
+  con acciones Aplicar/Editar/Eliminar; se reordenan arrastrando el cuerpo de la tarjeta.
+- `POST /plantilla/guardar` — `nombre`, `ejercicio[]` (hidden sync). OOB
+  `#notice-container` + `#plantillas-section` (outerHTML). Journal (`entrenos`).
+- `POST /plantilla/editar/{id}` — mismo patrón; error conserva `editing_id`.
+- `POST /plantilla/eliminar/{id}` — confirmación nativa (`#confirm-modal`).
+- `POST /plantilla/reordenar` — `id[]` (orden completo). Enviado vía
+  `persistOrderWithHtmx` (htmx + CSRF); fallo → restaura el DOM y avisa.
+- `GET /plantilla/aplicar/{id}?fecha=` — exige modo edición; confirmación de reemplazo
+  si el día tiene datos; OOB `#editor-notice` + `#session-editor-wrap`
+  (con marcador `#plantilla-applied` para el dirty-baseline).
+- Reordenamiento **solo con ratón** (decisión explícita del usuario; desviación de WCAG
+  2.1.1 documentada en `web-standards.md`): tarjetas y filas de editor se arrastran desde
+  cualquier parte no-control de la fila (el `dragstart` de las tarjetas excluye
+  `input/select/button`; Sortable de filas filtra esos mismos controles). El Sortable de
+  filas está **siempre activo**: si el editor está en solo lectura (día con datos), el
+  `onStart` entra solo en modo edición para que el reorden persista al guardar. En las
+  tarjetas, el `dragend` persiste el orden completo vía `persistOrderWithHtmx` y, ante
+  fallo, restaura el DOM y avisa.
 
-### `POST /plantilla/guardar`
+### Plantillas de alimentación
 
-- Form fields: `nombre`, `ejercicio[]` (hidden inputs synced by `syncTemplateEjercicios`). Form is `#save-template-form` with `hx-swap="none"`.
-- OOB markers: `#notice-container` (success "Entreno guardado." / "Entreno actualizado." or error), `#plantillas-section` (outerHTML, refreshed list) via `_plantillas_oob`.
-- Side effects: snapshot/undo-stack push (`entrenos` kind).
+- `POST /alimentacion/plantilla/guardar` — `nombre`, `alimento[]`, `cantidad[]`.
+- `POST /alimentacion/plantilla/eliminar/{id}`, `POST /alimentacion/plantilla/reordenar`
+  (`id[]`), `GET /alimentacion/plantilla/aplicar/{id}?fecha=` (OOB
+  `#nutrition-editor-wrap` + aviso).
+- Aplicar es un `<button data-action="apply-meal-template">`; confirmación de reemplazo
+  si el día tiene filas (el editor de nutrición es siempre editable).
 
-### `POST /plantilla/editar/{id}`
+### Alimentación
 
-- Form fields: `nombre`, `ejercicio[]` (same sync pattern). Target `#plantillas-section` through `_plantillas_oob`.
-- On `ValueError`: returns OOB list with `editing_id` kept and error text shown; success returns notice + refreshed list.
-- Side effects: undo-stack push (`entrenos` kind).
-
-### `POST /plantilla/eliminar/{id}`
-
-- No form fields. Triggered by `eliminarPlantilla(id, nombre)` (JS `confirm()` first) with `target: 'body'`, `swap: 'none'`.
-- OOB markers: `#notice-container` (success), `#plantillas-section` (outerHTML).
-- Side effects: undo-stack push (`entrenos` kind).
-
-### `POST /plantilla/reordenar`
-
-- Form fields: `id[]` (order of plantilla ids). Sent via `fetch` with `Content-Type: application/x-www-form-urlencoded` from `persistDragOrder()`.
-- Returns empty `HTMLResponse` (200). Side effects: reorders rows, undo-stack push.
-
-### `GET /plantilla/aplicar/{id}?fecha=<YYYY-MM-DD>`
-
-- No form fields; triggered by `aplicarPlantilla(id)` (button or drop on editor panel) with `target: '#session-editor-wrap'`, `swap: 'none'`.
-- On success: OOB `#editor-notice` (success "Entreno aplicado."), `#session-editor-wrap` (innerHTML, editor in force-editable mode) which includes a hidden `<div id="plantilla-applied">` marker consumed by client to reset dirty baseline.
-- On `ValueError`: OOB `#editor-notice` error only.
-- Client gate: requires edit mode; if `#editor-state[data-has-data] == '1'`, shows confirm dialog "¿Reemplazar el entrenamiento del día?" before applying.
+- `GET /alimentacion/editor?fecha=` → fragmento `nutrition_editor.html`.
+- `POST /alimentacion/save` — `fecha`, `alimento[]`, `cantidad[]`, `peso_kg`,
+  `factor_proteina`, `factor_grasa`, `kcal_objetivo`. El servidor recalcula nutrientes
+  contra el catálogo (`ROUND_HALF_UP(catálogo_100g × g / 100)`); nunca confía en el
+  cliente. OOB `#nutrition-editor-wrap` + `#nutrition-date-navigator`.
+- `POST /alimentacion/eliminar` — `fecha`.
+- `POST /alimento/nuevo` — alta de alimento; OOB `#alimento-create` + `#app-config`.
+- Tabla: `<caption>`, `scope="col"` en las cabeceras; filas `Objetivo`/`Consumido`
+  en el `<thead>` (arriba de las filas, decisión visual del usuario) con `scope="row"`
+  en sus celdas de etiqueta.
 
 ### `POST /undo`
 
-- Form field: `fecha` (ISO, current editor date; may be empty).
-- Success OOB: `#notice-container` ("Acción deshecha."), and for `sesion` entries also `#undo-result` (outerHTML, `data-fecha`, `data-has-data`, hidden) plus `#save-outcome` (`data-ok="1"`) and `#session-editor-wrap` (innerHTML) when undoing the current date.
-- Empty-stack OOB: `#notice-container` error "Nada que deshacer.".
-- `entrenos` entries: OOB `#plantillas-section` (outerHTML) refreshed.
-- Side effects: DB backup; pops from in-memory `UNDO_STACK` (deque, maxlen 10).
+- Campo: `fecha` (fecha actual del editor; puede ser vacía).
+- OOB éxito: `#notice-container` ("Acción deshecha."); para `sesion` además
+  `#undo-result` (outerHTML, `data-fecha`, `data-has-data`, hidden), `#save-outcome`
+  (`data-ok="1"`) y `#session-editor-wrap` cuando se deshace la fecha actual; para
+  `entrenos`: `#plantillas-section` (outerHTML); para `splits`: `#splits-section`
+  (outerHTML).
+- Pila vacía: `#notice-container` error "Nada que deshacer.".
+- Efectos: backup pre-mutación; pop del journal `undo_entries` **solo tras un restore
+  exitoso** (la entrada persiste si el restore falla).
+- Accesible por Ctrl/Cmd+Z (nunca en campos de texto).
 
-### `GET /exportar/csv`
+### Gestor de splits
 
-- Returns `text/csv` download of `training_sets` (`Content-Disposition: attachment; filename="entrenamientos.csv"`), ordered by `fecha, set_orden`.
+- `GET /splits` → página completa (`splits.html`, extiende `base.html`; la
+  página usa TODO el ancho disponible — sin `max-w-7xl`). **Layout de dos
+  columnas** (`.splits-layout`): catálogo a la izquierda
+  (`.splits-catalog-col`, `var(--split-catalog-w)` 280px, `position: sticky`
+  con scroll propio; **sin título de panel**, solo buscador + grupos) y
+  `#splits-section` a la derecha (`.splits-editor-col`). Móvil: una columna
+  con el editor primero (CSS `order`) y el catálogo debajo. Header de página:
+  título + `← Dashboard` + botón `data-action="split-new"` **Nuevo split**.
+  `?abrir=<id>` valida el id y renderiza ese item ya expandido (modo vista).
+- **`#splits-section`** contiene el **estado vacío** ("Todavía no hay splits
+  guardados" + `data-action="split-new"` "Crear nuevo split") o
+  `#splits-list` con **un item por split** (`partials/split_accordion.html` +
+  `split_accordion_item.html`; `split_list.html` fue retirado). Cada item es
+  un **acordeón** (`<details class="split-accordion">` nativo):
+  - `<summary>`: chevron + nombre + **resumen semanal**
+    `.split-summary-strip` (`role="region"` + `tabindex="0"`, `overflow-x:
+    auto` con scrollbar fina; `N series · Grupo n · …` con totales en `strong`
+    burdeos, orden por series desc). **La fecha de modificación NO se muestra**
+    (`updated_at` se conserva en BD solo para ordenar; `_split_updated_short`
+    fue retirado). Los controles viven FUERA del summary (evita que su
+    activación alterne el `<details>`);
+  - `.split-item-toolbar` (altura fija `--split-toolbar-h: 40px`): formulario
+    por split (`hx-post="/split/guardar"`, hidden `split_id`, input `nombre`
+    oculto en vista) + badges "Editando"/"Modificado" + **acciones como iconos
+    agrupadas** `.split-item-actions` (`.split-action-btn` 28×28 con
+    `aria-label`/`title`, focus-visible, `[disabled]` con el MISMO tamaño):
+    lápiz (`split-edit`, toggle `aria-pressed` + clase **`.is-active`** cuando el
+    modo edición está activo — se ilumina con acento + glow, sin texto ni badge
+    "Editando"), guardar (`split-save`,
+    **deshabilitado sin cambios locales o en item guardado**; `markDirty` lo
+    habilita al mutar el board o teclear el nombre), papelera (`split-delete`,
+    conserva `data-split-id`/`data-split-nombre` para el confirm);
+  - `.split-accordion-content` (min-height `--split-expanded-height`) →
+    `.split-board-scroll` (flex:1, `overflow-x: auto` SOLO aquí, fondo
+    `matte-950` + `border-top`: bloque visualmente independiente) →
+    `.split-columns`: grid **`repeat(7, minmax(var(--split-day-min-width),
+    1fr))` con `width: 100%`** (estira a todo el ancho; sin hueco tras
+    Domingo; scroll solo si el viewport no da) → **7 tarjetas de día**
+    `.split-day-zone` de **dimensiones invariantes** (`--split-day-min-width:
+    146px`, `--split-day-height: 620/580/560px` por breakpoint,
+    `--split-summary-h: 260/240/220px`): header fijo (day-select
+    `aria-pressed` + count), `.split-day-section-label` **"Resumen"**,
+    `.split-day-summary` (altura fija, scroll interno) — **sin fila de total**
+    (el total vive en el header de la tarjeta) —, `.split-day-section-label`
+    **"Ejercicios"** con `.split-day-section-actions` (**copy-btn accesible**
+    `.split-day-copy-btn` — click copia al día seleccionado — y clear-btn) y
+    `.split-day-items` (flex:1, `min-height:0`, scroll interno). **Instancias:
+    tamaño fijo** `--split-item-height: 28px` (`.split-item-card` y
+    `.split-catalog-chip`) con botón `.split-item-remove` de
+    `--split-item-action-size: 18px` **visual + hit area >= 24px** (WCAG 2.5.8
+    vía `::before`) que se oculta con `visibility: hidden` en vista (reserva su
+    espacio: la tarjeta nunca cambia de tamaño). **Scrollbars internas
+    delgadas**: `--split-scrollbar-size: 3px` (summary/items/board/strip/
+    catálogo; thumb `overlay-white-014` redondeado; best-effort en Firefox y
+    overlay de macOS). Tamaños SOLO vía variables canónicas en `:root`.
+- **Resumen jerárquico por tarjeta** (server-rendered, recalculado al
+  guardar): por grupo un
+  `button.split-summary-group-toggle[data-action="split-summary-toggle"]`
+  con `aria-expanded`/`aria-controls` (ids únicos por item×día×grupo) y
+  chevron; el body `.split-summary-group-body[hidden]` anida los ejercicios
+  con sus series (`SplitDaySummary.by_group_exercises` por día). Grupos
+  inician colapsados; la expansión NO cambia el tamaño de la tarjeta (scroll
+  interno). **No hay fila de total** (redundante con el header de la
+  tarjeta). El resumen semanal de la cabecera se actualiza en la preview
+  client-side (`rebuildStrip`: total + grupos desc).
+- `GET /split/nuevo` → fragmento del **item de un split nuevo** (vacío, sin
+  persistir, `data-editmode="1"`, 7 tarjetas). GET puro sin efectos; el JS lo
+  inserta al tope de `#splits-list` (creándola si había estado vacío) y solo
+  persiste al Guardar. `split_list.html` retirado; **la ruta
+  `GET /split/{split_id}` fue retirada** (los boards viven dentro de la
+  sección; 404).
+- `POST /split/guardar` — igual que v3 (arrays alineados `dia[]`/`item_type[]`/
+  `ejercicio[]`, servidor autoritativo, upsert por nombre, límite 300,
+  mínimo 1 ejercicio, renumera `orden`). OOB: `#notice-container` +
+  `#splits-section` (outerHTML). `POST /split/eliminar/{split_id}`: idem
+  (confirmación `#confirm-modal`).
+- **Modo visualización / edición por item**: un split guardado renderiza
+  `data-editmode="0"` (sin `.row-btn`/copy-handle/clear-btn/input/Guardar,
+  tarjetas `draggable=false`, sortables deshabilitados, **`pointer-events:
+  none` en `.split-day-items`** — el board en vista no es destino de drop
+  ni siquiera para el DnD nativo HTML5). "Editar" togglea a
+  `data-editmode="1"` (+ badge "Editando", borde burdeos en las tarjetas,
+  `aria-pressed` en el botón). Toda mutación marca `dirty` ("Modificado").
+- **Borrar día**: `data-action="split-day-clear"` por día (visible solo en
+  edición) con confirmación; vacía solo ese día, recalcula preview + total
+  semanal y marca modificado; el servidor lo aplica al Guardar.
+- Regla de negocio: **1 instancia = 1 serie**. `SplitMetrics` cubre los 7
+  días (vacíos con 0) y expone `total_series`, `by_group`, `by_exercise`,
+  `by_group_exercises` (semanal y por día vía `SplitDaySummary`) y `days`.
+  Sin "Días activos" ni "Ejercicios distintos"; el panel ledger semanal
+  (`#split-summary-panel`) fue retirado (cabecera + resúmenes por tarjeta).
+- **REGLA CENTRAL DEL DnD**: **arrastre normal = MOVER; Shift + arrastre =
+  COPIAR; solo el catálogo clona automáticamente** (`pull:'clone'` SOLO en
+  `buildCatalogSortable`; los días usan `pull:true` = movimiento real, sin
+  `cloneNode` en movimientos normales — criterio: 10 instancias antes de mover
+  = 10 después, solo cambia día/posición).
+- **SortableJS con `forceFallback: true` + `fallbackOnBody: true` +
+  `fallbackClass: 'split-fallback'`** (días y catálogo; el catálogo añade
+  `removeCloneOnHide: true` y `revertClone: true`). Las tarjetas/chips **no
+  llevan `draggable`** (con forceFallback, `draggable=true` hace que el drag
+  nativo HTML5 secuestre el arrastre y el fallback quede en `chosen` sin
+  arrancar). El ghost está estilizado (`.split-day-items .sortable-ghost`:
+  opacidad .35 + borde punteado) para que nunca se vea una segunda tarjeta
+  opaca tras el cursor. **Shift se excluye con `filter` FUNCIÓN**
+  (`e.shiftKey || target.tagName === 'BUTTON'`) → jamás coexisten mover y
+  copiar; la tecla decide el modo desde el inicio.
+- **Item**: arrastre normal mueve; Shift duplica vía drag por puntero propio
+  (mousedown captura + seguimiento + inserción por Y en la posición exacta).
+- **Día completo (header)**: todo el `.split-day-header` (nombre + series +
+  área libre, `cursor: grab`) es el área de arrastre con **umbral de
+  movimiento** (5px: el clic en el day-select sigue seleccionando; derivar el
+  día NO inicia el drag accidental). Sin Shift **MUEVE** el bloque (re-parenta
+  las tarjetas sin `cloneNode`, `dia` destino, orden conservado, destino
+  intacto: inserción por mitad de tarjeta si cae sobre la lista, **append si
+  cae sobre el header**); con Shift **COPIA** (`cloneNode` + `finalizeCard`,
+  `+N`, notice). Guardas de límite ANTES de tocar el DOM (rechazo → origen
+  intacto); día origen vacío → notice breve y no arranca. Alternativa
+  accesible: `.split-day-copy-btn` (click → copia al día seleccionado).
+- **Listeners delegados + snapshot/restore (A1/B1)**: `splits.js` re-sincroniza
+  `split_id`/`max_items`/`editmode`/`nombre` tras cada OOB de `#splits-section`
+  (snapshot en `htmx:beforeRequest`, restore en `htmx:oobAfterSwap`; los items
+  con cambios no guardados conservan su DOM; los nuevos sin persistir se
+  re-insertan al tope). Sin listeners duplicados tras swaps htmx.
 
-### `GET /select?grupo=<name>` (and `/select` bare)
+### Exports
 
-- Returns `exercise_list.html` fragment + OOB `#unified-chart` (innerHTML) + OOB `#date-navigator` (outerHTML).
-- `grupo` empty/None → global exercise list + systemic chart; otherwise filtered by muscle group + muscle-group chart.
-- Optional `fecha` param: the navigator OOB keeps the selected date at `fecha` (fallback: today) — filters never move the editor.
-- Used with `target: '#exercise-section'` (htmx.ajax from `toggleCategory`/`resetToGlobal`).
+- `GET /exportar/csv` → `text/csv` de `training_sets` ordenado por `fecha, set_orden`
+  (`filename="entrenamientos.csv"`), con BOM UTF-8.
+- `GET /alimentacion/exportar/csv` → `diario_alimentacion` (`alimentacion.csv`, BOM).
+- `GET /exportar/health-connect.csv[?incluir_borrados=1]` → `health_records` activos
+  (o con borrados para auditoría) ordenados `record_type, start_epoch_ms`, BOM.
 
-### `GET /grupo/reset?grupo=<name>`
+### Sincronización LAN
 
-- Returns `<div></div>` + OOB `#unified-chart` (innerHTML, muscle-group chart) + OOB `#date-navigator` (outerHTML, filtered dots).
-- Used with `target: '#history-section'` when an exercise is deselected.
+- `POST /sync/health-connect` (API JSON, no htmx): autenticada con `X-Sync-Token`;
+  exenta del CSRF de formularios por igualdad exacta de ruta; lotes ≤ 500 ops / 1 MiB;
+  upsert por revisión + baja lógica; acuse individual. Contrato completo en
+  `docs/architecture/health-sync-contract.md`.
+- Gate LAN (`GYM_LAN_SYNC_ONLY=1`): remoto solo este POST; el resto de la UI remota es
+  403/429 (ver `docs/architecture/security-model.md` §2.6).
 
-### `GET /ejercicio?ejercicio=<name>`
+### Rutas retiradas
 
-- Returns `exercise_detail.html` (raw sets table + per-session summary table) + OOB `#unified-chart` (innerHTML, exercise chart) + OOB `#date-navigator` (outerHTML, filtered dots).
-- Used with `target: '#history-section'`.
+- `GET /select`, `GET /grupo/reset`, `GET /ejercicio` **no existen** (404 desde la
+  retirada de 2026-08-15). El cliente actual solo usa `/nivel` y `/grafica`.
+- `GET /docs`, `/redoc`, `/openapi.json` deshabilitados (sin inventario público).
 
-### `GET /semana/primer-entreno?semana=<n>[&grupo=][&ejercicio=]`
+## 6. Vocabulario de componentes (2026-08-15)
 
-- JSON `{"fecha": "<iso>"|null}`: first training date (ISO) of a cycle week, optionally filtered by the active muscle group/exercise.
-- Consumed by `chart-interaction.js` when a chart marker is clicked: the editor navigates to that week's first session (`requestNavigate`).
+Todo el styling vive en `static/css/components.css` sobre los design tokens; los
+templates usan solo estas clases canónicas (las clases que el JS/tests usan como
+hook se conservan como alias):
 
-### Nutrition dashboard (panel integrado en `/`)
-
-- El panel vive en `index.html` **debajo del navegador de fechas y arriba del editor de sesión** (`#nutrition-panel`); no existe página standalone (`GET /alimentacion` → 404). El **navegador de fechas es compartido**: seleccionar una fecha refresca ambos editores (`/fecha/editor` + `/alimentacion/editor`); los atajos de teclado y el input de fecha afectan a ambos. Navegar con cambios sin guardar confirma primero el editor de sesión y luego el de alimentación (mismo modal).
-- El editor de alimentación es una **copia fiel del editor de sesión**: comparte `session-editor.css` (selectores `#session-editor, #nutrition-panel`), el mecanismo de edición con lápiz (`nutrition-pencil-btn`), altura fija (`--table-h` fijado en `#nutrition-panel`), filas +/− solo en edición, `#nutrition-edit-actions` (Cancelar/Guardar) y dirty-check. `exit` re-renderiza del servidor (`doNav(fecha, true)`).
-- **Colapso**: chevron `.collapse-chevron` en el header de ambos paneles (`data-action="toggle-panel-collapse"` con `data-target="session-editor"`/`"nutrition-panel"`); el cuerpo se oculta y el header permanece; estado persistido en `localStorage` (`gym.panel.session|nutrition`).
-- Selectores estables: `#nutrition-form`, `#nutrition-rows .nutrition-row`, `.food-select`, `.cantidad-input`, `.nutrition-preview.kcal-cell/.carb-cell/.prot-cell/.fat-cell/.fibra-cell/.hierro-cell/.calcio-cell/.vitc-cell/.vita-cell`, filas `Objetivo`/`Consumido` (`.target-*`, `.consumed-*`), `#target-params` (`#param-peso`, `#param-kcal`, `#param-factor-prot`, `#param-factor-grasa`), `#nutrition-editor-state[data-readonly][data-has-data]`.
+- **Botones:** `.btn` + `.btn-primary` (acción principal), `.btn-ghost`
+  (Cancelar/Guardar de paneles), `.btn-outline` (+`.btn-outline-danger`) (acciones
+  de tarjetas), `.btn-text` (enlace con borde). Alias compatibles: `.row-btn`,
+  `.btn-x`, `.btn-check`, `.edit-toggle`, `.pt-btn`, `.today-btn`, `.nav-arrow`,
+  `.rir-step`, `.collapse-chevron`.
+- **Inputs:** `.cell-input`/`.cell-select` (celdas de tabla; +`.cell-input-sm` para
+  parámetros), `.field-input` (+`.field-input-sm`) (formularios de alta).
+- **Contenedores:** `.panel` (+`.panel-tight`/`.panel-default`/`.panel-spacious`),
+  `.panel-title` (+`.panel-title-neon`, `.panel-title-divider`), `.card`.
+- **Splits:** `.splits-page`, `.splits-page-header`, `.splits-layout`,
+  `.splits-editor-col`, `.splits-catalog-col`, `.split-columns`,
+  `.split-board-scroll`, `.split-day-zone` (+`.drop-target` durante el
+  arrastre), `.split-day-header`, `.split-day-select`, `.split-day-count`,
+  `.split-day-section-label`, `.split-day-section-actions`,
+  `.split-day-summary`, `.split-day-items`, `.split-day-copy-btn`,
+  `.split-day-clear-btn`, `.split-catalog-group`, `.split-catalog-summary`,
+  `.split-catalog-body`, `.split-catalog-chip`, `.split-item-card`
+  (+`.dragging`, `.copy-mode`), `.split-item-name`, `.split-item-remove`,
+  `.split-fallback`, `.split-accordion-item`, `.split-accordion`,
+  `.split-accordion-summary`, `.split-accordion-name`,
+  `.split-accordion-chevron`, `.split-accordion-content`,
+  `.split-summary-strip`, `.split-summary-strip-sep`, `.split-item-toolbar`,
+  `.split-item-form`, `.split-item-actions`, `.split-name-input`,
+  `.split-action-btn`, `.split-dirty-hint`,
+  `.split-summary-row`, `.split-summary-total`, `.split-summary-name`,
+  `.split-summary-group`, `.split-summary-group-toggle`,
+  `.split-summary-group-body`, `.split-summary-exercise`,
+  `.split-summary-chevron`, `.split-empty-state`, `.split-empty-state-title`,
+  `.split-metric`, `.split-empty`.
+- El gate `scripts/audit_consistency.py` (CI, `tests/test_ui_consistency.py`) prohíbe
+  reintroducir utilidades de color inline, micro-tipografía y hex literales.
 
 ---
 
-## 2. Frontend invariants (stable selectors)
+## 2. Contrato htmx / OOB
 
-| Selector | Owner / purpose |
-|---|---|
-| `#session-editor` | Editor card root; carries `data-editmode` (`0`/`1`) and `data-baseline` (serialized rows JSON for dirty tracking) |
-| `#session-editor-wrap` | Inner editor container; htmx swap target for editor replacements |
-| `#session-form` | Editor form; `hx-post="/entrenamiento/session/save"`, `hx-swap="none"`; fields `fecha`, `ejercicio[]`, `kg[]`, `reps[]`, `rir[]` |
-| `#set-rows` / `.set-row` | Rows table body / row; `#set-rows` is the Sortable container |
-| `.ej-select`, `.rm-cell`, `.set-num`, `.row-actions`, `.row-btn` | Per-row exercise select, RM cell, row number, action cell/buttons |
-| `#edit-actions` | Save/Cancel row; `.invisible` toggling |
-| `#editor-state` | Hidden state carrier: `data-readonly`, `data-has-data` |
-| `#editor-notice` | OOB notice target inside editor card |
-| `#save-outcome` | OOB save result marker: `data-ok` (`0`/`1`), hidden |
-| `#undo-result` | OOB undo marker: `data-fecha`, `data-has-data`, hidden |
-| `#notice-container` | Global notice OOB target (top of body) |
-| `#plantillas-section` | Plantillas list OOB/swap target (outerHTML) |
-| `#plantillas-list`, `.pt-card` | List container / card (`data-pt-id`, `data-pt-nombre`); native HTML5 drag & drop reorder |
-| `#plantilla-edit-rows`, `.pt-row`, `.pt-select` | Template edit rows (Sortable container) |
-| `#save-template-form-wrap`, `#save-template-form`, `input[name="nombre"]` | Template save form wrapper/flow |
-| `#confirm-modal`, `#confirm-cancel`, `#confirm-save`, `#confirm-msg` | Shared confirm dialog (unsaved changes, replace, delete) |
-| `#exercise-create`, `#exercise-create-form` | New-exercise form container (OOB outerHTML target) |
-| `#exercise-section`, `#history-section` | htmx.ajax targets for category/exercise navigation |
-| `#unified-chart` | Single chart OOB target (innerHTML); contains the figure JSON and the render div |
-| `#unified-chart-data` | Inert `<script type="application/json">` carrying the Plotly figure (escaped with `_json_for_inline`); never executed |
-| `#unified-chart-plot` | Plotly render div (`plotly-graph-div`); client renders with `Plotly.newPlot` and binds `plotly_click` via `plotEl.on` |
-| `#date-navigator`, `#date-strip`, `.date-num`, `.date-dot`, `.nav-arrow`, `.today-btn` | Date navigator; `.date-num` buttons carry `data-iso` and `.selected` |
-| `#app-config` | `type="application/json"` block with `categoria_map` + `csrf_token`, parsed by `app.js` |
-| `#plantilla-applied` | Hidden marker inside editor OOB response after applying a plantilla; removed client-side to trigger baseline reset |
-| `body[data-app-ready]` | Set to `1` by `app.js` after bootstrap; e2e waits on it (no `window.*` bridge exists) |
+- Los markers OOB se generan con `src/response_fragments.py` (targets allow-listed);
+  los avisos usan `partials/oob_notice.html` con `role="alert"` en errores.
+- `htmx:beforeSwap` permite el swap en 4xx (respuestas propias de dominio); los 500 se
+  mantienen sin renderizar.
+- CSRF: `htmx:configRequest` inyecta `X-CSRF-Token` desde `#app-config`; el middleware
+  valida token + Origin (`Host` header).
 
-## 3. Client event contract (data-action delegation)
+## 3. Diálogos y foco
 
-There are **no inline event handlers** in templates. Every interactive element
-carries inert `data-action` attributes; one delegated `click` listener per owning
-module reads `event.target.closest('[data-action]')`, validates the action name,
-and ignores anything else. No mutable state is exposed on `window`.
+- `#editor-popup` y `#confirm-modal` son `<dialog>` nativos (`modal-dialog.js`):
+  `showModal`/`close`, foco inicial en el primer control, restauración de foco al
+  origen, Escape cerrando solo el diálogo superior. Sin focus-trap manual.
+- El popup conserva `?registro` en el historial; el popstate no reabre recursivamente
+  (flag `suppressPopstate`).
 
-| `data-action` | Element | Owning module | Values |
-|---|---|---|---|
-| `select-category` | `.category-btn` | `dashboard-filters.js` | `data-category` |
-| `select-exercise` | `.filter-btn` | `dashboard-filters.js` | `data-exercise` |
-| `select-date` | `.date-num` | `date-navigation.js` | `data-iso` |
-| `jump-date` | `.today-btn` | `date-navigation.js` | `data-iso` |
-| `goto-session` | `.session-history` button | `date-navigation.js` | `data-iso` |
-| `jump-date-input` | `#date-jump` (input `type=date`) | `date-navigation.js` (evento `change`) | — |
-| `scroll-dates` | `.nav-arrow` | `date-navigation.js` | `data-dir` |
-| `toggle-edit` | `.pencil-btn` | `editor.js` | — |
-| `toggle-template-form` | `.save-template-btn` | `editor.js` | — |
-| `cancel-template-form` | `.btn-x` (form wrap) | `editor.js` | — |
-| `confirm-template-save` | `.btn-check` (form wrap) | `editor.js` | — |
-| `delete-session` | `.delete-session-btn` | `editor.js` | — |
-| `row-add` / `row-remove` | `.row-btn` | `editor.js` | — |
-| `apply-template` | `.pt-btn-burgundy` | `templates.js` | `data-template-id` |
-| `edit-template` | `.pt-btn` | `templates.js` | `data-template-id` |
-| `delete-template` | `.pt-btn` | `templates.js` | `data-template-id`, `data-template-name` |
-| `template-row-add` / `template-row-remove` | `.row-btn` (edit form) | `templates.js` | — |
-| `refresh-templates` | `.btn-x` (edit form) | `templates.js` | — |
+## 4. Navegador de fechas
 
-Delegated listeners are bound once at `document` (stable root) inside the module
-`init*` functions called from `app.js` bootstrap; htmx fragment swaps never
-re-register them. The `#confirm-modal` buttons keep direct listeners wired once
-in `htmx-lifecycle.js`.
+- Ventana de 31 días centrada en la selección, recortada a
+  `[ciclo_start, fin del mes siguiente]`. Input date = salto preciso; flechas = ±15 días
+  (ventana); HOY = salto al día actual. Flechas de teclado solo con foco dentro de
+  `#date-navigator`. Puntos `.date-dot` = días con datos.
 
-## 4. Client behaviour summary (ES modules)
+## 5. Estados de UI (siempre diseñados)
 
-- **State (`state.js`):** module-scoped shared state via getters/setters only:
-  `pendingNav`, `confirmCbs`, `saveRequested`, `sortableRows`,
-  `plantillaAppliedPending`, drag state, `csrfToken`, `categoriaMap`,
-  `currentIso` (falls back to the selected `.date-num`). Plus pure helpers:
-  `serializeForm`/`captureBaseline`/`isDirty`, `fmtNum`, `editorEditmode`,
-  `currentFecha`, confirm-dialog helpers.
-- **Notices (`notices.js`):** `scheduleNotices()` (auto-dismiss + fade),
-  `flashEditorNotice(msg, type)`.
-- **Editor (`editor.js`):** edit-mode machine (`syncEditorFromContent`,
-  `setPanelReadonly`, `enterEditMode`, `exitEditMode`, `toggleEdit`,
-  `updateEditActions`, `syncEditButtons`), rows (`addRowAfter`, `removeRow`,
-  `renumberRows`, `fitRowsToPanel`), `recalcRM`, `submitSave`,
-  `eliminarSesion`, `initEditorActions` (delegated listener).
-- **Row sortable (`row-sortable.js`):** `initRowSortable(onEnd)` /
-  `syncSortableState` on `#set-rows`; editor passes the renumber/dirty callback.
-- **Templates (`templates.js`):** plantilla flow (`aplicarPlantilla` debounce,
-  `eliminarPlantilla`, `editarPlantilla`, `refreshPlantillas`,
-  `suggestedTemplateName` via `getCategoriaMap()`, `syncTemplateEjercicios`,
-  `guardarPlantillaToggle`, `confirmEntrenoSave`, `ptAddRow`/`ptRemoveRow`,
-  `initTemplateSortable`, `initEntrenoDnD`, `persistDragOrder` (fetch with
-  `X-CSRF-Token`)), `initTemplateActions` (delegated listener).
-- **Date navigation (`date-navigation.js`):** `doNav(iso, force)`
-  (deduplica peticiones en vuelo al mismo iso), `requestNavigate(iso)`,
-  `updateDateDot(fecha, has)`, `shiftDay(days)`, `initDateNavigation`
-  (delegated listener + `change` del input de fecha + `keydown` global:
-  ←/→ = día, ⌘/Ctrl+←/→ = semana, ignorado si el foco está en un campo).
-- **Dashboard filters (`dashboard-filters.js`):** category/exercise selection,
-  highlighting, `resetToGlobal`, Esc handler, exercise-create refresh,
-  `currentFechaQuery()` (filter requests carry the current date so the
-  navigator OOB keeps the editor on its date), `getActiveFilter()`,
-  `initDashboardFilters` (delegated listener).
-- **Chart interaction (`chart-interaction.js`):** `renderUnifiedChart()`
-  (JSON → `Plotly.newPlot` into `#unified-chart-plot`, re-binds `plotly_click`
-  on the plot div; Plotly events do not bubble to `document`),
-  `initChartInteractions` listens to `htmx:load` and re-renders when the
-  inserted node is `#unified-chart-plot` (covers main and OOB swaps). Clicking
-  a marker fetches `/semana/primer-entreno` (with the active filter) and
-  `requestNavigate`s to that week's first session.
-- **htmx lifecycle (`htmx-lifecycle.js`):** `initLifecycle()` wires the
-  confirm-modal buttons and the delegated `htmx:afterSwap`/`afterSettle`/
-  `afterRequest`, `submit` (capture, `#session-form`), `input`/`change`,
-  `keydown` (Ctrl/Cmd+Z undo, Enter in template-name input → `confirmEntrenoSave`).
-  After a successful save, `updateDateDot` runs synchronously in
-  `afterRequest` (OOB swaps are already applied); `recalcRM`/`syncEditorFromContent`/
-  `fitRowsToPanel` stay deferred in a `setTimeout`.
-- **Bootstrap (`app.js`):** reads `#app-config` (`categoria_map`,
-  `csrf_token`), injects `X-CSRF-Token` on every htmx request via
-  `htmx:configRequest`, then runs the module initializers once on
-  `DOMContentLoaded`; sets `body[data-app-ready]`.
-
-## 5. Server-side orchestration notes
-
-- `app.py` is thin: request parsing, one mutation-service call, fragment
-  rendering. `src/dashboard_service.py` builds view models and translates
-  errors; `src/mutation_service.py` owns backup/snapshot/undo-stack sequences;
-  `src/response_fragments.py` renders OOB fragments through Jinja partials
-  (autoescaping is the only HTML boundary; chart fragments are data-only JSON
-  with a static CSP — no nonce).
-- The in-memory `UNDO_STACK` (deque, maxlen 10) lives in `src/mutation_service.py`.
-- RM formula client + server: `kg * (1 + 0.0333 * (reps + 1 + rir))`, rounded to 1 decimal.
-- OOB responses: notices and editor markers/wrappers render via
-  `templates/partials/oob_*.html`; no request-derived value is concatenated
-  into HTML.
+- Vacío: "Sin datos" / "Aún no hay entrenos" / placeholder del día.
+- Carga: `htmx-indicator` en filas de la cascada; Plotly se carga bajo demanda
+  (un único script SRI tras JSON de gráfica no vacío; fallo → aviso `role="alert"`).
+- Error: notices `role="alert"`; éxito: regiones `role="status" aria-live="polite"`.
+- El shell de la gráfica (header + 450px) no cambia entre vacío y cargado (CLS 0).

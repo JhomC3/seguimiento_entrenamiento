@@ -3,7 +3,7 @@
 // Public API: initEditorActions, syncEditButtons, updateEditActions,
 // syncEditorFromContent, setPanelReadonly, handleEditorState, enterEditMode,
 // exitEditMode, toggleEdit, addRowAfter, removeRow, renumberRows, fitRowsToPanel,
-// recalcRM, submitSave, eliminarSesion.
+// recalcRM, submitSave, eliminarSesion, stepRir.
 
 import { flashEditorNotice } from './notices.js';
 import { initRowSortable, syncSortableState } from './row-sortable.js';
@@ -121,6 +121,8 @@ export function addRowAfter(btn) {
     const clone = row.cloneNode(true);
     clone.querySelector('.ej-select').value = '';
     clone.querySelectorAll('input').forEach(input => { input.value = ''; });
+    const badge = clone.querySelector('.rir-badge');
+    if (badge) badge.classList.add('hidden');
     row.after(clone);
     renumberRows();
     updateEditActions();
@@ -169,12 +171,33 @@ export function fitRowsToPanel() {
     editor.style.setProperty('--table-h', full + 'px');
 }
 
-/* Sortable de filas con el re-numbering y dirty-state del editor */
+/* Sortable de filas con el re-numbering y dirty-state del editor.
+   El arrastre está siempre activo: si el editor está en solo lectura, el
+   onStart entra en modo edición para que el reorden persista al guardar. */
 export function initEditorRowSortable() {
-    initRowSortable(function () {
-        renumberRows();
-        updateEditActions();
-    });
+    initRowSortable(
+        function () {
+            renumberRows();
+            updateEditActions();
+        },
+        function () {
+            if (editorEditmode() !== '1') enterEditMode();
+        }
+    );
+}
+
+function updateRirBadge(row) {
+    const input = row.querySelector('input[name="rir"]');
+    const badge = row.querySelector('.rir-badge');
+    if (!input || !badge) return;
+    const raw = input.value.trim();
+    const num = raw !== '' ? parseFloat(raw) : NaN;
+    if (!isNaN(num) && num <= 0) {
+        badge.textContent = num < 0 ? 'FORZADA' : 'FALLO';
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
 }
 
 export function recalcRM() {
@@ -193,6 +216,7 @@ export function recalcRM() {
         } else {
             cell.textContent = '—';
         }
+        updateRirBadge(row);
     });
 }
 
@@ -215,6 +239,24 @@ export function eliminarSesion() {
         setSaveRequested(true);
         htmx.ajax('POST', '/entrenamiento/session/eliminar', { values: { fecha: fecha }, target: 'body', swap: 'none' });
     }, null);
+}
+
+/* ---------- RIR: cualquier decimal, flechas ±0,1 ---------- */
+const RIR_STEP = 0.1;
+const RIR_MIN = -5;
+
+function cleanStepVal(v) {
+    return parseFloat(v.toFixed(10));
+}
+
+export function stepRir(input, delta) {
+    if (input.disabled || input.readOnly) return;
+    const raw = input.value.trim();
+    const current = raw === '' ? 0 : parseFloat(raw);
+    if (isNaN(current)) return;
+    const next = Math.max(RIR_MIN, cleanStepVal(current + delta));
+    input.value = String(next);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 /* ---------- Acciones delegadas del editor ---------- */
@@ -244,6 +286,21 @@ export function initEditorActions() {
             case 'row-remove':
                 removeRow(el);
                 break;
+            case 'rir-step': {
+                const row = el.closest('.set-row');
+                const input = row && row.querySelector('input[name="rir"]');
+                if (input) stepRir(input, parseFloat(el.dataset.delta) || RIR_STEP);
+                break;
+            }
         }
+    });
+
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+        const input = e.target.closest && e.target.closest('#session-form input[name="rir"]');
+        if (!input) return;
+        e.preventDefault();
+        stepRir(input, e.key === 'ArrowUp' ? RIR_STEP : -RIR_STEP);
     });
 }

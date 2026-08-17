@@ -85,11 +85,16 @@ def test_index_uses_stable_card(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/")
-    assert 'id="session-editor" data-editmode="0"' in r.text
-    assert 'id="session-editor-wrap"' in r.text
-    assert "rm-cell" in r.text
-    assert 'id="save-outcome" data-ok="0" hidden' in r.text
-    assert '<div id="editor-notice"></div>' in r.text
+    assert 'data-action="open-editor-popup"' in r.text
+    assert 'id="editor-popup"' in r.text
+    assert 'id="cascade-row"' in r.text
+    # El editor vive en la ventana emergente de registro.
+    r2 = _client().get("/editor/popup?fecha=2099-01-01")
+    assert 'id="session-editor" data-editmode="0"' in r2.text
+    assert 'id="session-editor-wrap"' in r2.text
+    assert "rm-cell" in r2.text
+    assert 'id="save-outcome" data-ok="0" hidden' in r2.text
+    assert 'id="editor-notice" role="status" aria-live="polite" aria-atomic="true"' in r2.text
 
 
 def test_save_valid_returns_ok_marker(tmp_path, monkeypatch):
@@ -103,11 +108,16 @@ def test_save_valid_returns_ok_marker(tmp_path, monkeypatch):
             "kg": ["80"],
             "reps": ["8"],
             "rir": ["1"],
+            "descanso": ["90"],
         },
     )
     assert 'id="save-outcome" hx-swap-oob="outerHTML" data-ok="1"' in r.text
     assert 'id="editor-notice" hx-swap-oob="innerHTML"' in r.text
     assert "Entrenamiento guardado" in r.text
+    from src.database import get_sets_by_fecha
+
+    rows = get_sets_by_fecha(db, _fecha())
+    assert rows[0]["descanso_seg"] == 90.0
 
 
 def test_save_invalid_returns_fail_marker(tmp_path, monkeypatch):
@@ -162,12 +172,14 @@ def test_save_zero_rir_succeeds(tmp_path, monkeypatch):
     assert 'data-ok="1"' in r.text
 
 
-def test_index_renders_plantillas_section(tmp_path, monkeypatch):
+def test_plantillas_section_lives_in_popup(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    r = _client().get("/")
+    r = _client().get("/editor/popup?fecha=2026-08-12")
     assert 'id="plantillas-section"' in r.text
     assert "Aún no hay entrenos" in r.text
+    home = _client().get("/").text
+    assert 'id="plantillas-section"' not in home
 
 
 def test_plantilla_guardar_crea_y_oob(tmp_path, monkeypatch):
@@ -405,7 +417,7 @@ def test_undo_pila_limitada_a_10(tmp_path, monkeypatch):
     client = _client()
     for i in range(12):
         client.post("/plantilla/guardar", data={"nombre": f"E{i}", "ejercicio": ["Press"]})
-    assert undo_stack_size() == 10
+    assert undo_stack_size(db) == 10
 
 
 def test_entreno_guardado_con_papelera_cuando_hay_datos(tmp_path, monkeypatch):
@@ -427,8 +439,8 @@ def test_index_references_static_assets(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/")
-    assert 'href="/static/css/app.css"' in r.text
-    assert 'src="/static/js/app.js"' in r.text
+    assert 'href="/static/css/app.css?v=' in r.text
+    assert 'src="/static/js/app.js?v=' in r.text
 
 
 def test_static_css_served(tmp_path, monkeypatch):
@@ -453,11 +465,13 @@ def test_app_css_imports_ordered(tmp_path, monkeypatch):
     r = _client().get("/static/css/app.css")
     assert r.status_code == 200
     ordered = [
+        "tokens.css",
         "theme.css",
         "components.css",
         "date-navigator.css",
         "session-editor.css",
         "templates.css",
+        "cascade.css",
     ]
     positions = [r.text.find(f'"{name}"') for name in ordered]
     assert all(p >= 0 for p in positions), f"missing import: {r.text}"
@@ -477,7 +491,7 @@ def test_base_template_has_no_inline_style_block(tmp_path, monkeypatch):
         source = f.read()
     assert "<style>" not in source
     assert ".date-num {" not in source
-    assert 'href="/static/css/app.css"' in source
+    assert "static_url('css/app.css')" in source
 
 
 def test_base_template_loads_only_module_js(tmp_path, monkeypatch):
@@ -485,7 +499,7 @@ def test_base_template_loads_only_module_js(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "DB_PATH", db)
     with open(os.path.join(os.path.dirname(__file__), "..", "templates", "base.html")) as f:
         source = f.read()
-    assert '<script type="module" src="/static/js/app.js"></script>' in source
+    assert "static_url('js/app.js')" in source
     for banned in (
         "function submitSave",
         "function doNav",
@@ -496,16 +510,28 @@ def test_base_template_loads_only_module_js(tmp_path, monkeypatch):
 
 
 def test_base_template_cdn_scripts_pin_sri(tmp_path, monkeypatch):
-    """Tripwire: every third-party <script src> must carry integrity= and crossorigin=."""
+    """Tripwire: every third-party <script src> must carry integrity= and crossorigin=.
+
+    Plotly se carga bajo demanda (static/js/chart-interaction.js) y debe
+    mantener el mismo contrato SRI en sus constantes.
+    """
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     with open(os.path.join(os.path.dirname(__file__), "..", "templates", "base.html")) as f:
         source = f.read()
     scripts = re.findall(r'<script\s+src="https://[^"]+"[^>]*>', source)
-    assert len(scripts) == 3, f"CDNs esperados: htmx, sortablejs, plotly; hay {len(scripts)}"
+    assert len(scripts) == 2, f"CDNs eager esperados: htmx, sortablejs; hay {len(scripts)}"
     for tag in scripts:
         assert "integrity=" in tag, f"script sin SRI: {tag}"
         assert "crossorigin=" in tag, f"script sin crossorigin: {tag}"
+    loader_path = os.path.join(
+        os.path.dirname(__file__), "..", "static", "js", "chart-interaction.js"
+    )
+    with open(loader_path) as f:
+        loader = f.read()
+    assert "plotly.js-basic-dist" in loader
+    assert "integrity = PLOTLY_INTEGRITY" in loader or "PLOTLY_INTEGRITY" in loader
+    assert "crossOrigin = 'anonymous'" in loader
 
 
 def test_base_template_sin_cdn_tailwind(tmp_path, monkeypatch):
@@ -514,7 +540,7 @@ def test_base_template_sin_cdn_tailwind(tmp_path, monkeypatch):
     with open(os.path.join(os.path.dirname(__file__), "..", "templates", "base.html")) as f:
         source = f.read()
     assert "cdn.tailwindcss.com" not in source
-    assert '<link rel="stylesheet" href="/static/css/tailwind.css">' in source
+    assert "static_url('css/tailwind.css')" in source
 
 
 def test_static_tailwind_css_served(tmp_path, monkeypatch):
@@ -611,30 +637,6 @@ def test_mutating_routes_return_200(tmp_path, monkeypatch):
     assert r.status_code == 200
 
 
-def test_select_and_grupo_reset_oob_chart(tmp_path, monkeypatch):
-    db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    client = _client()
-    r = client.get("/select")
-    assert r.status_code == 200
-    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
-    r = client.get("/select", params={"grupo": "Pectoral"})
-    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
-    r = client.get("/grupo/reset", params={"grupo": "Pectoral"})
-    assert r.status_code == 200
-    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
-
-
-def test_ejercicio_history_oob_chart(tmp_path, monkeypatch):
-    db = _setup_db(tmp_path)
-    save_session(db, _fecha(), [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    r = _client().get("/ejercicio", params={"ejercicio": "Press"})
-    assert r.status_code == 200
-    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
-    assert "Resumen por Sesión" in r.text
-
-
 def test_ejercicio_nuevo_oob_markers(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
@@ -728,7 +730,7 @@ def test_delete_session_failure_returns_500_and_keeps_state(tmp_path, monkeypatc
     assert "Ocurrió un error inesperado" in r.text
     assert "Entreno eliminado" not in r.text
     assert 'data-ok="0"' in r.text
-    assert undo_stack_size() == 0
+    assert undo_stack_size(db) == 0
     assert len(get_sets_by_fecha(db, fecha_to_db(datetime.date.today()))) == 1
 
 
@@ -743,7 +745,7 @@ def test_delete_template_failure_returns_500_and_keeps_state(tmp_path, monkeypat
     assert r.status_code == 500
     assert "Ocurrió un error inesperado" in r.text
     assert "Entreno eliminado" not in r.text
-    assert undo_stack_size() == 1  # solo el guardar previo
+    assert undo_stack_size(db) == 1  # solo el guardar previo
     assert len(get_plantillas(db)) == 1
 
 
@@ -759,7 +761,7 @@ def test_reorder_failure_returns_500_and_keeps_order(tmp_path, monkeypatch):
     r = client.post("/plantilla/reordenar", data={"id": ["2", "1"]})
     assert r.status_code == 500
     assert "Ocurrió un error inesperado" in r.text
-    assert undo_stack_size() == 2  # solo los guardar previos
+    assert undo_stack_size(db) == 2  # solo los guardar previos
     assert [p["nombre"] for p in get_plantillas(db)] == ["A", "B"]
 
 
@@ -773,7 +775,7 @@ def test_undo_failure_returns_500_and_keeps_stack(tmp_path, monkeypatch):
     r = _client().post("/undo", data={"fecha": _fecha()})
     assert r.status_code == 500
     assert "Ocurrió un error inesperado" in r.text
-    assert undo_stack_size() == 1  # la entrada no se pierde
+    assert undo_stack_size(db) == 1  # la entrada no se pierde
     assert len(get_plantillas(db)) == 1
 
 
@@ -801,48 +803,6 @@ def test_semana_primer_entreno_sin_datos(tmp_path, monkeypatch):
     assert r.json() == {"fecha": None}
 
 
-def test_select_grupo_filtra_navegador_sin_saltar_editor(tmp_path, monkeypatch):
-    from src.models import TrainingSetInput
-
-    db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    save_session(db, "2026-05-04", [TrainingSetInput("Press", 80, 8, 1)])
-    save_session(db, "2026-05-06", [TrainingSetInput("Press", 82, 8, 1)])
-    save_session(db, "2026-05-08", [TrainingSetInput("Press", 84, 8, 1)])
-    r = _client().get("/select?grupo=Pectoral&fecha=2026-06-01")
-    assert 'id="date-navigator" hx-swap-oob="outerHTML"' in r.text
-    assert "filter-jump" not in r.text
-    assert r.text.count("date-dot") == 3
-    # El navegador mantiene seleccionada la fecha actual, no la del primer entreno.
-    assert re.search(r'data-iso="2026-06-01"\s+class="date-num selected"', r.text)
-
-
-def test_select_global_restaura_dots_y_mantiene_fecha(tmp_path, monkeypatch):
-    from src.models import TrainingSetInput
-
-    db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    save_session(db, "2026-05-04", [TrainingSetInput("Press", 80, 8, 1)])
-    r = _client().get("/select?fecha=2026-05-06")
-    assert "filter-jump" not in r.text
-    assert re.search(r'data-iso="2026-05-06"\s+class="date-num selected"', r.text)
-    assert r.text.count("date-dot") >= 1
-
-
-def test_ejercicio_filtra_navegador_sin_saltar_editor(tmp_path, monkeypatch):
-    from src.models import TrainingSetInput
-
-    db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    save_session(db, "2026-05-04", [TrainingSetInput("Press", 80, 8, 1)])
-    save_session(db, "2026-05-05", [TrainingSetInput("Press", 82, 8, 1)])
-    r = _client().get("/ejercicio?ejercicio=Press&fecha=2026-06-01")
-    assert "filter-jump" not in r.text
-    assert 'id="date-navigator" hx-swap-oob="outerHTML"' in r.text
-    assert r.text.count("date-dot") == 2
-    assert re.search(r'data-iso="2026-06-01"\s+class="date-num selected"', r.text)
-
-
 def test_export_csv_orden_cronologico(tmp_path, monkeypatch):
     from src.models import TrainingSetInput
 
@@ -862,6 +822,36 @@ def test_export_csv_orden_cronologico(tmp_path, monkeypatch):
     fecha_idx = lines[0].split(",").index("fecha")
     fechas = [ln.split(",")[fecha_idx] for ln in lines[1:]]
     assert fechas == ["2026-01-09", "2026-01-15", "2026-02-03"]
+
+
+def test_export_csv_con_bom(tmp_path, monkeypatch):
+    import codecs
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    resp = _client().get("/exportar/csv")
+    assert resp.status_code == 200
+    assert resp.content.startswith(codecs.BOM_UTF8)
+
+
+def test_export_nutrition_csv_con_bom(tmp_path, monkeypatch):
+    import codecs
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    resp = _client().get("/alimentacion/exportar/csv")
+    assert resp.status_code == 200
+    assert resp.content.startswith(codecs.BOM_UTF8)
+
+
+def test_export_health_connect_csv_con_bom(tmp_path, monkeypatch):
+    import codecs
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    resp = _client().get("/exportar/health-connect.csv")
+    assert resp.status_code == 200
+    assert resp.content.startswith(codecs.BOM_UTF8)
 
 
 def test_undo_restaura_origen_google(tmp_path, monkeypatch):
@@ -885,26 +875,20 @@ def test_undo_restaura_origen_google(tmp_path, monkeypatch):
     assert rows[0]["kg"] == 90 and rows[0]["origen"] == "google"
 
 
-def test_sesiones_view_renders_ultimas(tmp_path, monkeypatch):
-    from src.models import TrainingSetInput
-
+def test_sesiones_view_retirada(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    save_session(db, "2026-08-06", [TrainingSetInput("Press", 90, 7, 1)])
-    resp = _client().get("/sesiones")
-    assert resp.status_code == 200
-    assert "2026-08-06" in resp.text and "series" in resp.text
+    assert _client().get("/sesiones").status_code == 404
 
 
-def test_index_incluye_historial_sesiones(tmp_path, monkeypatch):
+def test_index_sin_historial_de_sesiones(tmp_path, monkeypatch):
     from src.models import TrainingSetInput
 
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     save_session(db, "2026-08-06", [TrainingSetInput("Press", 90, 7, 1)])
     resp = _client().get("/")
-    assert 'id="session-history"' in resp.text
-    assert "6/8/26" in resp.text
+    assert 'id="session-history"' not in resp.text
 
 
 def test_save_incluye_oob_history(tmp_path, monkeypatch):
@@ -920,7 +904,8 @@ def test_save_incluye_oob_history(tmp_path, monkeypatch):
             "rir": ["1"],
         },
     )
-    assert 'id="session-history" hx-swap-oob="innerHTML"' in resp.text
+    assert 'id="editor-state" hx-swap-oob="outerHTML"' in resp.text
+    assert "Entrenamiento guardado" in resp.text
 
 
 def test_undo_incluye_oob_history(tmp_path, monkeypatch):
@@ -938,7 +923,8 @@ def test_undo_incluye_oob_history(tmp_path, monkeypatch):
         },
     )
     resp = client.post("/undo", data={"fecha": "2026-08-06"})
-    assert 'id="session-history" hx-swap-oob="innerHTML"' in resp.text
+    assert resp.status_code == 200
+    assert 'id="session-history"' not in resp.text
 
 
 def test_lifespan_warns_sin_csrf_secret(tmp_path, monkeypatch, caplog):
@@ -1014,29 +1000,24 @@ def test_index_app_config_tiene_alimento_map(tmp_path, monkeypatch):
 
 
 def test_index_renders_global_date_title_below_navigator(tmp_path, monkeypatch):
-    from datetime import date
-
-    from src.training_service import DIA_MAP
-
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/")
     assert r.status_code == 200
-    # La fecha viva va entre el navegador y el panel de alimentación
-    assert r.text.index('id="session-date-title"') > r.text.index('id="date-navigator"')
-    assert r.text.index('id="session-date-title"') < r.text.index('id="nutrition-panel"')
-    assert "Semana" in r.text
-    # El día se renderiza en español con el nombre real de hoy (locale-independiente)
-    assert DIA_MAP[date.today().weekday()] in r.text
+    # La home ya no tiene navegador fijo: vive en el popup de registro.
+    assert 'id="date-navigator"' not in r.text
+    r2 = _client().get("/editor/popup?fecha=2099-01-01")
+    assert r2.text.index('id="session-date-title"') > r2.text.index('id="date-navigator"')
+    assert "Semana" in r2.text
 
 
 def test_panels_layout_title_left_controls_right(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    r = _client().get("/")
+    r = _client().get("/editor/popup?fecha=2025-04-24")
     assert r.status_code == 200
-    # Título en caja (izquierda) + colapso (derecha) en ambos paneles
-    assert r.text.count('class="panel-title-box"') == 2
+    # Título en caja (izquierda) + colapso (derecha) en los paneles (2 + cardio)
+    assert r.text.count('class="panel-title-box"') >= 2
     assert r.text.count('data-action="toggle-panel-collapse"') == 2
     # Botones (guardar plantilla, editar, eliminar) en el header actions
     session_part = r.text[r.text.index('id="session-editor"') :]
@@ -1055,7 +1036,7 @@ def test_panels_layout_title_left_controls_right(tmp_path, monkeypatch):
 def test_panel_titles_are_static(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    r = _client().get("/")
+    r = _client().get("/editor/popup?fecha=2025-04-24")
     assert r.status_code == 200
     # El editor de sesión tiene título estático "Entrenamiento" sin fecha
     editor_html = r.text[r.text.index('id="session-editor"') :]
@@ -1069,13 +1050,12 @@ def test_panel_titles_are_static(tmp_path, monkeypatch):
 def test_index_renders_nutrition_panel_above_session_editor(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
-    r = _client().get("/")
+    r = _client().get("/editor/popup?fecha=2025-04-24")
     assert r.status_code == 200
     # Navegador arriba de todo, panel de nutrición antes del editor de sesión
     assert r.text.index('id="date-navigator"') < r.text.index('id="nutrition-panel"')
     assert r.text.index('id="nutrition-panel"') < r.text.index('id="session-editor"')
     assert 'id="target-params"' in r.text
-    assert 'id="alimento-create"' in r.text
     # Chevrons de colapso dentro de cada panel (header), sin barras externas
     assert r.text.count('data-action="toggle-panel-collapse"') == 2
     assert 'id="session-editor" data-editmode="0" data-target' not in r.text
@@ -1118,8 +1098,8 @@ def test_nutrition_templates_routes(tmp_path, monkeypatch):
     assert 'id="nutrition-templates-section" hx-swap-oob' in r.text
     assert "Desayuno" in r.text
 
-    # Lista en el sidebar del index
-    r = _client().get("/")
+    # La lista vive dentro del popup de registro (junto al editor)
+    r = _client().get("/editor/popup?fecha=2025-04-26")
     assert 'id="nutrition-templates-section"' in r.text
     assert "Desayuno" in r.text
 
@@ -1503,3 +1483,403 @@ def test_health_connect_csv_export_excludes_deleted(tmp_path, monkeypatch):
     assert "hc-1" not in r.text
     r_all = _client().get("/exportar/health-connect.csv?incluir_borrados=1")
     assert "hc-1" in r_all.text
+
+
+def test_editor_popup_renders_navegador_editores_cardio(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/editor/popup?fecha=2026-08-12")
+    assert r.status_code == 200
+    assert 'id="date-navigator"' in r.text
+    assert 'id="session-date-title"' in r.text
+    assert 'id="nutrition-editor-wrap"' in r.text
+    assert 'id="session-editor-wrap"' in r.text
+    assert 'id="cardio-day"' in r.text
+    assert "Semana" in r.text
+
+
+def test_cardio_annotation_oob_refresca_bloque(tmp_path, monkeypatch):
+    import sqlite3
+    from datetime import datetime
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    conn = sqlite3.connect(db)
+    ts = int(
+        datetime(2026, 8, 12, 8, 0, tzinfo=__import__("datetime").timezone.utc).timestamp() * 1000
+    )
+    conn.execute(
+        "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
+        "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at) "
+        "VALUES ('c1', 'EXERCISE_SESSION', ?, ?, ?, 1, "
+        "'{\"value\": {\"title\": \"Cinta\"}}', 'x', 'x')",
+        (ts, ts + 30 * 60000, ts),
+    )
+    conn.commit()
+    conn.close()
+    r = _client().post(
+        "/cardio/annotation",
+        data={
+            "hc_id": "c1",
+            "velocidad_kmh": "5.5",
+            "inclinacion_pct": "2",
+            "notas": "",
+            "fecha": "2026-08-12",
+        },
+    )
+    assert r.status_code == 200
+    assert 'id="cardio-day" hx-swap-oob="outerHTML"' in r.text
+    assert "5.5" in r.text
+    assert "Anotación de cardio guardada" in r.text
+
+
+def test_nivel_cascada_grupo_musculo_ejercicio(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    # Fila de músculos (persistente)
+    r = client.get("/nivel", params={"tipo": "musculo"})
+    assert r.status_code == 200
+    assert 'id="cascade-row"' in r.text
+    assert "Pectoral" in r.text
+    # Fila de ejercicios del músculo + gráfica del compilado (OOB)
+    r = client.get("/nivel", params={"tipo": "musculo", "foco": "Pectoral"})
+    assert r.status_code == 200
+    assert 'id="ejercicios-row"' in r.text
+    assert "Press" in r.text
+    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
+    # Detalle del ejercicio (con datos) -> #history-section, sin tocar filas
+    from src.models import TrainingSetInput
+    from src.training_service import save_session
+
+    save_session(db, _fecha(), [TrainingSetInput("Press", 80, 8, 1)])
+    r = client.get("/nivel", params={"tipo": "ejercicio", "foco": "Press"})
+    assert r.status_code == 200
+    assert "Resumen por Sesión" in r.text or "Datos Crudos" in r.text
+    assert 'id="ejercicios-row"' not in r.text
+
+
+def test_grafica_multi_traza_oob(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    from src.models import TrainingSetInput
+    from src.training_service import save_session
+
+    save_session(db, _fecha(), [TrainingSetInput("Press", 80, 8, 1)])
+    # Solo compilado
+    r = _client().get("/grafica", params={"musculo": "Pectoral"})
+    assert r.status_code == 200
+    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
+    assert 'id="ejercicios-row" hx-swap-oob="outerHTML"' in r.text
+    assert "Compilado" in r.text
+    # Con un ejercicio seleccionado: su nombre en el fragmento
+    r = _client().get("/grafica", params={"musculo": "Pectoral", "ejercicios": "Press"})
+    assert r.status_code == 200
+    assert "Press" in r.text
+    # Ejercicio de otro músculo se descarta (solo compilado)
+    r = _client().get("/grafica", params={"musculo": "Pectoral", "ejercicios": "Otro"})
+    assert r.status_code == 200
+
+
+def test_nivel_foco_desconocido_no_rompe(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/nivel", params={"tipo": "grupo", "foco": "NoExiste"})
+    assert r.status_code == 200
+    assert 'id="cascade-row"' in r.text
+
+
+def test_grafica_multimusculo_global_y_sin_fila_ejercicios(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    from src.models import TrainingSetInput
+    from src.training_service import save_session
+
+    save_session(db, _fecha(), [TrainingSetInput("Press", 80, 8, 1)])
+    # Dos músculos: OOB con Global, sin refresco de la fila de ejercicios.
+    r = _client().get("/grafica", params={"musculo": ["Pectoral", "Espalda"]})
+    assert r.status_code == 200
+    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
+    assert "Global" in r.text
+    assert 'id="ejercicios-row" hx-swap-oob' not in r.text
+    # Un solo músculo: sí refresca la fila de ejercicios.
+    r2 = _client().get("/grafica", params={"musculo": "Pectoral", "ejercicios": "Press"})
+    assert r2.status_code == 200
+    assert 'id="ejercicios-row" hx-swap-oob="outerHTML"' in r2.text
+
+
+def test_cdn_scripts_are_deferred_and_no_eager_plotly(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    html = _client().get("/").text
+    for src in ("htmx.org", "sortablejs"):
+        import re as _re
+
+        m = _re.search(r"<script[^>]*src=\"[^\"]*" + src.split(".")[0] + r"[^\"]*\"[^>]*>", html)
+        assert m, f"script de {src} no encontrado"
+        assert "defer" in m.group(0), f"{src} sin defer"
+    assert "cdn.plot.ly" not in html, "Plotly no debe cargarse eager en el documento"
+
+
+def test_index_has_favicon_link_and_file(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    html = client.get("/").text
+    assert 'rel="icon"' in html
+    assert client.get("/static/favicon.svg").status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Web plan Task 6: status announcements, labels, table semantics, dialogs
+# ---------------------------------------------------------------------------
+
+
+def test_status_regions_are_live_regions(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    home = client.get("/").text
+    assert 'role="status" aria-live="polite" aria-atomic="true"' in home
+    editor = client.get("/editor/popup?fecha=2026-08-14").text
+    assert 'role="status" aria-live="polite" aria-atomic="true"' in editor
+
+
+def test_error_notices_are_alerts(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    from starlette.requests import Request
+
+    from app import templates
+    from src.response_fragments import notice_oob
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "raw_path": b"/",
+            "query_string": b"",
+            "headers": [],
+            "server": ("testserver", 80),
+            "scheme": "http",
+            "client": ("127.0.0.1", 1234),
+        }
+    )
+    ok = notice_oob(
+        templates, request, target="editor-notice", message="bien", kind="notice-success"
+    )
+    err = notice_oob(templates, request, target="editor-notice", message="mal", kind="notice-error")
+    assert 'role="alert"' not in ok
+    assert 'role="alert"' in err
+
+
+def test_data_tables_have_caption_and_scope(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    editor = _client().get("/fecha/editor?fecha=2026-08-14").text
+    assert "<caption" in editor
+    assert 'scope="col"' in editor
+
+
+def test_session_inputs_have_accessible_names(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    editor = _client().get("/fecha/editor?fecha=2026-08-14").text
+    for label in (
+        "Peso, serie 1",
+        "Reps, serie 1",
+        "RIR, serie 1",
+        "Descanso, serie 1",
+        "Ejercicio, serie 1",
+    ):
+        assert label in editor, label
+
+
+def test_rir_help_uses_aria_describedby(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    editor = _client().get("/fecha/editor?fecha=2026-08-14").text
+    assert 'aria-describedby="rir-help-1"' in editor
+    assert 'id="rir-help-1"' in editor
+
+
+def test_nutrition_objetivo_consumido_above_data_rows_with_scope(tmp_path, monkeypatch):
+    """Objetivo/Consumido se renderizan ARRIBA de las filas (en el thead), con
+    scope='row' en sus celdas de etiqueta y scope='col' en las cabeceras."""
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    frag = _client().get("/alimentacion/editor?fecha=2026-08-14").text
+    objetivo = frag.index(">Objetivo<")
+    consumido = frag.index(">Consumido<")
+    thead_end = frag.index("</thead>")
+    tbody_start = frag.index("<tbody")
+    # Ambos totales quedan dentro del thead, antes del tbody (debajo de las filas NO).
+    assert objetivo < consumido < thead_end < tbody_start
+    assert "<tfoot" not in frag
+    assert 'scope="row"' in frag
+    assert 'scope="col"' in frag
+
+
+def test_heading_outline_h1_to_h2(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    home = _client().get("/").text
+    h1 = home.index("<h1")
+    chart_h2 = home.index('<h2 class="text-sm font-black tracking-[0.2em]')
+    assert h1 < chart_h2
+    assert "<h2" in home
+
+
+def test_popup_and_confirm_are_native_dialogs(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    home = _client().get("/").text
+    assert '<dialog id="editor-popup"' in home
+    assert '<dialog id="confirm-modal"' in home
+    assert 'role="dialog"' not in home
+    assert 'aria-labelledby="popup-fecha-title"' in home
+
+
+# ---------------------------------------------------------------------------
+# Web plan Task 9: dead routes removed, no-JS fallback and SEO claims true
+# ---------------------------------------------------------------------------
+
+
+def test_legacy_routes_removed_return_404(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    for path in ("/select", "/grupo/reset?grupo=Pectoral", "/ejercicio?ejercicio=Press"):
+        assert client.get(path).status_code == 404, path
+    # El alta de ejercicio NO es legacy: se conserva.
+    r = client.post(
+        "/ejercicio/nuevo",
+        data={"ejercicio": "Press Pausado", "grupo_muscular": "Pectoral", "categoria": "EMPUJE"},
+    )
+    assert r.status_code == 200
+
+
+def test_nivel_and_grafica_still_live(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    assert client.get("/nivel?tipo=global").status_code == 200
+    assert client.get("/nivel?tipo=musculo&foco=Pectoral").status_code == 200
+    assert client.get("/grafica").status_code == 200
+
+
+def test_index_serves_initial_muscles_noscript_and_seo(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    home = _client().get("/").text
+    # Fila inicial de músculos renderizada server-side.
+    assert 'id="cascade-row"' in home
+    assert 'data-action="select-muscle"' in home
+    # Fallback no-JS honesto con enlace de exportación.
+    noscript = home[home.index("<noscript>") : home.index("</noscript>")]
+    assert "JavaScript" in noscript
+    assert "/exportar/csv" in noscript
+    # SEO descriptivo.
+    assert "<title>Gym Tracker — Progreso de entrenamiento</title>" in home
+    assert 'name="description"' in home
+
+
+# ---------------------------------------------------------------------------
+# Backend plan Task 3: healthz liveness endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_healthz_ok(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    resp = _client().get("/healthz")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["db"] == "ok"
+
+
+def test_healthz_db_caida_devuelve_503(tmp_path, monkeypatch):
+    import src.db_connection as dbc
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+
+    def broken(_):
+        raise OSError("db caída")
+
+    monkeypatch.setattr(dbc, "connect_db", broken)
+    resp = _client().get("/healthz")
+    assert resp.status_code == 503
+    assert resp.json()["db"] == "error"
+
+
+# ---------------------------------------------------------------------------
+# Backend plan Task 12: límites de lotes y longitudes en formularios
+# ---------------------------------------------------------------------------
+
+
+def test_session_save_lote_excesivo_devuelve_400(tmp_path, monkeypatch):
+    from src.security import get_csrf_secret, make_csrf_token
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    client.headers.update({"X-CSRF-Token": make_csrf_token(get_csrf_secret())})
+    ejercicios = ["Press"] * 150
+    resp = client.post(
+        "/entrenamiento/session/save",
+        data={
+            "fecha": "2026-08-14",
+            "ejercicio": ejercicios,
+            "kg": ["80"] * 150,
+            "reps": ["10"] * 150,
+            "rir": ["2"] * 150,
+        },
+    )
+    assert resp.status_code == 400
+
+
+def test_alimentacion_save_lote_excesivo_devuelve_400(tmp_path, monkeypatch):
+    from src.security import get_csrf_secret, make_csrf_token
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    client.headers.update({"X-CSRF-Token": make_csrf_token(get_csrf_secret())})
+    resp = client.post(
+        "/alimentacion/save",
+        data={
+            "fecha": "2026-08-14",
+            "alimento": ["Pollo"] * 150,
+            "cantidad": ["150"] * 150,
+        },
+    )
+    assert resp.status_code == 400
+
+
+def test_nombre_demasiado_largo_devuelve_400(tmp_path, monkeypatch):
+    from src.security import get_csrf_secret, make_csrf_token
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    client.headers.update({"X-CSRF-Token": make_csrf_token(get_csrf_secret())})
+    resp = client.post(
+        "/plantilla/guardar",
+        data={"nombre": "X" * 300, "ejercicio": ["Press"]},
+    )
+    # 422 es la validación estándar de FastAPI para max_length (límite aplicado).
+    assert resp.status_code == 422
+
+
+def test_reordenar_lote_excesivo_devuelve_400(tmp_path, monkeypatch):
+    from src.security import get_csrf_secret, make_csrf_token
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    client.headers.update({"X-CSRF-Token": make_csrf_token(get_csrf_secret())})
+    resp = client.post("/plantilla/reordenar", data={"id": [str(i) for i in range(600)]})
+    assert resp.status_code == 400

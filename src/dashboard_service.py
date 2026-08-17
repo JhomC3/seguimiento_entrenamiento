@@ -43,19 +43,6 @@ logger = logging.getLogger("dashboard")
 DOMAIN_ERRORS = (ValidationError, NotFoundError, ConflictError)
 
 
-def get_recent_sessions(db_path: str, limit: int = 10) -> list[dict]:
-    """Latest sessions (ISO sorted by SQL), each with a display date."""
-    from src.database import get_training_sessions
-
-    sessions = get_training_sessions(db_path)[:limit]
-    for s in sessions:
-        try:
-            s["fecha_display"] = fecha_display(s["fecha"])
-        except ValueError:
-            s["fecha_display"] = s["fecha"]
-    return sessions
-
-
 def get_filters(db_path: str) -> tuple[list[str], list[str]]:
     """All distinct exercises and muscle groups. Safe empty result on error."""
     try:
@@ -153,6 +140,17 @@ def _json_for_inline(serialized: str) -> str:
     )
 
 
+def _chart_header_html(title: str) -> str:
+    """Header del panel de gráfica (título + ciclo). Compartido por chart_html
+    y la selección de cascada para que ambos estados ocupen el mismo shell."""
+    return (
+        '<div class="flex items-baseline gap-2 min-w-0 pl-3 mb-3">'
+        f'<h2 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title truncate">{html.escape(title)}</h2>'
+        f'<span class="text-xs text-neutral-400 flex-none">Ciclo {CICLO_NUMERO}</span>'
+        "</div>"
+    )
+
+
 def chart_html(
     db_path: str,
     filter_type: str,
@@ -167,12 +165,7 @@ def chart_html(
     scripts ejecutables inline: la CSP no necesita nonce y los swaps de htmx
     no dependen del manejo de scripts.
     """
-    header = (
-        '<div class="flex items-baseline gap-2 min-w-0 pl-3 mb-3">'
-        f'<h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title truncate">{html.escape(title)}</h3>'
-        f'<span class="text-[11px] text-neutral-500 flex-none">Ciclo {CICLO_NUMERO}</span>'
-        "</div>"
-    )
+    header = _chart_header_html(title)
     fig = chart_pfr_timeline(db_path, filter_type, filter_value, "")
     if fig.data:
         data = _json_for_inline(fig.to_json())
@@ -183,7 +176,7 @@ def chart_html(
         )
     return (
         header
-        + "<div class='flex items-center justify-center h-[300px] text-neutral-500 text-xs'>Sin datos</div>"
+        + "<div class='flex items-center justify-center chart-empty text-neutral-400 text-xs'>Sin datos</div>"
     )
 
 
@@ -201,12 +194,19 @@ def build_date_navigator(
     grupo: str | None = None,
     ejercicio: str | None = None,
 ) -> DateNavigatorViewModel:
+    """Navigator with a bounded 31-day window centered on the selection.
+
+    La ventana se recorta a [ciclo_start, fin del mes siguiente a hoy]; el
+    salto preciso (input date) y las flechas navegan el centro de la ventana.
+    """
     selected = parse_form_date(fecha_iso)
     data_dates = fechas_con_datos(db_path, grupo, ejercicio)
-    dates = []
-    d = ciclo_start
     end = _end_of_next_month(today)
-    while d <= end:
+    start = max(ciclo_start, selected - timedelta(days=15))
+    limit_end = min(end, selected + timedelta(days=15))
+    dates = []
+    d = start
+    while d <= limit_end:
         iso = d.strftime("%Y-%m-%d")
         dates.append(
             DateDay(
@@ -246,6 +246,7 @@ def _editor_rows(rows: list[dict]) -> list[EditorRow]:
         kg = _as_float(r.get("kg"))
         reps = _as_float(r.get("reps"))
         rir = _as_float(r.get("rir"))
+        descanso = _as_float(r.get("descanso_seg"))
         rm = None
         try:
             if kg is not None and reps is not None:
@@ -258,6 +259,7 @@ def _editor_rows(rows: list[dict]) -> list[EditorRow]:
                 kg=kg,
                 reps=reps,
                 rir=rir,
+                descanso_seg=descanso,
                 rm=rm,
             )
         )

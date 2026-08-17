@@ -113,3 +113,76 @@ def test_failed_session_save_leaves_no_partial_rows(db):
     rows = get_sets_by_fecha(db, fecha_to_db(fecha))
     assert len(rows) == 1
     assert rows[0]["kg"] == 80
+
+
+# ---------------------------------------------------------------------------
+# Backend plan Task 6: WAL + online backups via engine API
+# ---------------------------------------------------------------------------
+
+
+def test_connect_activa_wal(tmp_path):
+    db = tmp_path / "wal.db"
+    conn = connect_db(str(db))
+    try:
+        row = conn.execute("PRAGMA journal_mode").fetchone()
+    finally:
+        conn.close()
+    assert row[0] == "wal"
+
+
+def test_copy_db_via_api_conserva_datos(tmp_path):
+    from src.backup_utils import copy_db
+
+    db = tmp_path / "orig.db"
+    conn = connect_db(str(db))
+    try:
+        conn.execute("CREATE TABLE t (v INTEGER)")
+        conn.execute("INSERT INTO t VALUES (42)")
+        conn.commit()
+    finally:
+        conn.close()
+    dest = tmp_path / "dest.db"
+    copy_db(str(db), str(dest))
+    check = connect_db(str(dest))
+    try:
+        assert check.execute("SELECT v FROM t").fetchone()[0] == 42
+    finally:
+        check.close()
+
+
+def test_backup_db_via_api_conserva_datos(tmp_path):
+    from src.database import backup_db
+
+    db = tmp_path / "orig.db"
+    conn = connect_db(str(db))
+    try:
+        conn.execute("CREATE TABLE t (v INTEGER)")
+        conn.execute("INSERT INTO t VALUES (42)")
+        conn.commit()
+    finally:
+        conn.close()
+    dest = backup_db(str(db), keep=1)
+    check = connect_db(dest)
+    try:
+        assert check.execute("SELECT v FROM t").fetchone()[0] == 42
+    finally:
+        check.close()
+
+
+# ---------------------------------------------------------------------------
+# Backend plan Task 7: v014 índice training_sets(fecha, set_orden)
+# ---------------------------------------------------------------------------
+
+
+def test_v014_index_training_fecha(tmp_path):
+    from src.database import init_db
+    from src.db_connection import read_connection
+
+    db_path = str(tmp_path / "mig.db")
+    init_db(db_path)
+    with read_connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name=?",
+            ("idx_training_fecha_set_orden",),
+        ).fetchall()
+    assert len(rows) == 1

@@ -23,6 +23,7 @@ class TrainingSetInput:
     kg: float | str
     reps: float | str
     rir: float | str
+    descanso_seg: float | str | None = None
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ class TrainingSet:
     reps: float | None = None
     kg: float | None = None
     rir: float | None = None
+    descanso_seg: float | None = None
     origen: str = "google"
 
 
@@ -65,6 +67,88 @@ class Template:
     updated_at: str
     ejercicios: list[str] = field(default_factory=list)
     updated: bool = False
+
+
+SPLIT_DAYS: tuple[str, ...] = (
+    "LUNES",
+    "MARTES",
+    "MIERCOLES",
+    "JUEVES",
+    "VIERNES",
+    "SABADO",
+    "DOMINGO",
+)
+
+
+@dataclass(frozen=True)
+class SplitItemInput:
+    """A split item submitted from the form, before persistence.
+
+    `grupo_muscular` nunca se acepta del cliente: el servidor lo deriva del
+    catálogo (o del tipo especial HIIT).
+    """
+
+    dia: str
+    item_type: str = "ejercicio"
+    ejercicio: str = ""
+
+
+@dataclass(frozen=True)
+class SplitInput:
+    """A weekly split submitted from the form."""
+
+    nombre: str
+    items: list[SplitItemInput] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class SplitItem:
+    """A persisted split item. Each item counts as one set/series."""
+
+    id: int
+    dia: str
+    orden: int
+    item_type: str
+    ejercicio: str
+    grupo_muscular: str
+
+
+@dataclass(frozen=True)
+class Split:
+    """A stored weekly split."""
+
+    id: int
+    nombre: str
+    updated_at: str
+    items: list[SplitItem] = field(default_factory=list)
+    updated: bool = False
+
+
+@dataclass(frozen=True)
+class SplitDaySummary:
+    """Per-day metrics of a split: one item == one series."""
+
+    dia: str
+    series: int
+    by_exercise: dict[str, int]
+    by_group: dict[str, int]
+    by_group_exercises: dict[str, dict[str, int]]
+
+
+@dataclass(frozen=True)
+class SplitMetrics:
+    """Server-authoritative metrics for a split's current items.
+
+    `days` cubre SIEMPRE los 7 días canónicos (los vacíos con series 0).
+    `by_group_exercises` agrupa los totales semanales por grupo -> ejercicio
+    (jerarquía del resumen ledger).
+    """
+
+    total_series: int
+    by_group: dict[str, int]
+    by_exercise: dict[str, int]
+    by_group_exercises: dict[str, dict[str, int]]
+    days: list[SplitDaySummary]
 
 
 @dataclass(frozen=True)

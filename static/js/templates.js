@@ -6,7 +6,8 @@
 // setEntrenoBtnVisible, openEntrenoForm, guardarPlantillaToggle, confirmEntrenoSave,
 // ptAddRow, ptRemoveRow, initTemplateSortable, entrenosOrder, initEntrenoDnD.
 
-import { flashEditorNotice } from './notices.js';
+import { flashEditorNotice, showNotice } from './notices.js';
+import { persistOrderWithHtmx } from './reorder-controls.js';
 import {
     currentFecha,
     editorEditmode,
@@ -241,17 +242,18 @@ export function restoreDragOrder() {
     cards.forEach(function (c) { list.appendChild(c); });
 }
 
-export function persistDragOrder() {
-    const params = new URLSearchParams();
-    entrenosOrder().forEach(id => params.append('id', id));
-    const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
-    const token = getCsrfToken();
-    if (token) headers['X-CSRF-Token'] = token;
-    fetch('/plantilla/reordenar', {
-        method: 'POST',
-        headers: headers,
-        body: params.toString(),
-    });
+export function persistDragOrder(beforeOrder) {
+    const list = document.getElementById('plantillas-list');
+    if (!list) return;
+    persistOrderWithHtmx(
+        '/plantilla/reordenar',
+        entrenosOrder(),
+        list,
+        beforeOrder || '',
+        function () {
+            showNotice('No se pudo guardar el orden. Reintenta.', 'error');
+        }
+    );
 }
 
 export function initEntrenoDnD() {
@@ -340,7 +342,7 @@ export function initEntrenoDnD() {
         if (dragCard) dragCard.classList.remove('dragging');
         if (getDroppedOnList()) {
             if (getDragOrderStart() && getDragOrderStart().join() !== entrenosOrder().join()) {
-                persistDragOrder();
+                persistDragOrder(getDragOrderStart().join(','));
             }
         } else {
             restoreDragOrder();

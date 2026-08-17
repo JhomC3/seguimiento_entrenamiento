@@ -65,6 +65,18 @@ def test_frame_options_header(client):
     assert r.headers["x-frame-options"] == "DENY"
 
 
+def test_permissions_policy_header(client):
+    r = client.get("/")
+    assert r.headers["permissions-policy"] == (
+        "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    )
+
+
+def test_cross_origin_opener_policy_header(client):
+    r = client.get("/")
+    assert r.headers["cross-origin-opener-policy"] == "same-origin"
+
+
 def _csp_of(response) -> str:
     return response.headers["content-security-policy"]
 
@@ -409,6 +421,15 @@ def test_csrf_token_fuera_de_ventana(monkeypatch):
     assert not valid_csrf_token(token, get_csrf_secret())
 
 
+def test_missing_csrf_env_uses_nonpublic_random_secret(monkeypatch):
+    from src.security import get_csrf_secret
+
+    monkeypatch.delenv("GYM_CSRF_SECRET", raising=False)
+    secret = get_csrf_secret()
+    assert secret != "dev-only-secret-do-not-use-in-production"
+    assert len(secret) >= 32
+
+
 # ---------------------------------------------------------------------------
 # XSS rendering regressions (Task 1)
 # ---------------------------------------------------------------------------
@@ -438,7 +459,10 @@ class _InertChecker(HTMLParser):
 def _assert_inert_fragment(text: str):
     """Hostile names must be inert text: no handlers, no raw payload markup."""
     assert "<img" not in text, "payload <img> must not be raw HTML"
-    assert "&lt;img" in text, "payload must be present in escaped text form"
+    # El payload aparece escapado: como HTML (&lt;img) o como JSON inerte (\u003cimg).
+    assert ("&lt;img" in text) or ("\\u003cimg" in text), (
+        "payload must be present in escaped text form"
+    )
     assert "alert(1)//" in text, "payload must be visible as escaped text"
     parser = _InertChecker()
     parser.feed(text)
@@ -451,7 +475,10 @@ def _assert_inert_fragment(text: str):
             continue  # data block, never executed
         assert "alert(" not in m.group(2), "payload must not live inside a script element"
     joined = "".join(parser.text_nodes)
-    assert PAYLOAD in joined, "payload must be recoverable from the escaped text"
+    escaped_json = PAYLOAD.replace("<", "\\u003c").replace(">", "\\u003e").replace("'", "\\u0027")
+    assert (PAYLOAD in joined) or (escaped_json in text), (
+        "payload must be recoverable in escaped form"
+    )
 
 
 def test_hostile_exercise_notice_is_escaped(authed_client):
@@ -488,7 +515,7 @@ def test_hostile_exercise_in_lists_renders_inert(authed_client):
         },
     )
     assert r.status_code == 200
-    r = authed_client.get("/select")
+    r = authed_client.get("/nivel?tipo=musculo&foco=Pectoral")
     assert r.status_code == 200
     _assert_inert_fragment(r.text)
     r = authed_client.get("/")
@@ -614,7 +641,7 @@ def test_chart_fragment_never_contains_raw_script_terminator():
         insert_exercise(db, hostile, "Pectoral", "EMPUJE")
         save_session(db, "2026-02-10", [TrainingSetInput(ejercicio=hostile, kg=80, reps=8, rir=1)])
         html = chart_html(db, "exercise", hostile, f"Rendimiento – {hostile}")
-        assert 'class="text-[11px] text-neutral-500 flex-none">Ciclo 1<' in html
+        assert 'class="text-xs text-neutral-400 flex-none">Ciclo 1<' in html
         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html  # título escapado en el h3
         assert "<script>alert(1)</script>" not in html  # nunca crudo en el documento
         # El único <script> es el de datos; su contenido no cierra el elemento.
@@ -659,3 +686,162 @@ def test_other_mutations_still_require_csrf(client):
     """El resto de rutas mutantes del dashboard conservan el CSRF intacto."""
     r = client.post("/entrenamiento/session/save", data={})
     assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# LAN sync-only isolation (web plan Task 1)
+# ---------------------------------------------------------------------------
+
+
+def _lan_scope(*, method="GET", path="/", client=("192.168.1.25", 50000), headers=None):
+    return {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "scheme": "http",
+        "server": ("0.0.0.0", 8000),
+        "client": client,
+        "headers": headers or [],
+    }
+
+
+async def _lan_inner(scope, receive, send):
+    await send({"type": "http.response.start", "status": 200, "headers": []})
+    await send({"type": "http.response.body", "body": b"ok"})
+
+
+def _run_lan(scope, middleware=None):
+    """Ejecuta un scope contra LanSyncOnlyMiddleware; devuelve (status, headers)."""
+    from src.network_access import LanSyncOnlyMiddleware
+
+    mw = middleware or LanSyncOnlyMiddleware(_lan_inner)
+    outcome = {}
+
+    async def send(message):
+        if message["type"] == "http.response.start":
+            outcome["status"] = message["status"]
+            outcome["headers"] = message["headers"]
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    _run(mw(scope, receive, send))
+    return outcome.get("status", 0), outcome.get("headers", [])
+
+
+def _lan_headers(headers) -> dict:
+    return {k.decode(): v.decode() for k, v in headers}
+
+
+def test_lan_sync_only_blocks_remote_dashboard(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    status, _ = _run_lan(_lan_scope(path="/"))
+    assert status == 403
+
+
+def test_lan_sync_only_allows_only_sync_post(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    allowed, _ = _run_lan(_lan_scope(method="POST", path="/sync/health-connect"))
+    denied, _ = _run_lan(_lan_scope(path="/exportar/csv"))
+    assert allowed == 200
+    assert denied == 403
+
+
+def test_lan_sync_only_allows_loopback_everything(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    for addr in ("127.0.0.1", "::1"):
+        status, _ = _run_lan(_lan_scope(path="/", client=(addr, 55555)))
+        assert status == 200
+        status, _ = _run_lan(
+            _lan_scope(method="POST", path="/alimentacion/save", client=(addr, 55555))
+        )
+        assert status == 200
+
+
+def test_lan_sync_only_ignores_x_forwarded_for(monkeypatch):
+    """Solo se confía en scope['client']; X-Forwarded-For jamás se lee."""
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    spoofed = [(b"x-forwarded-for", b"127.0.0.1")]
+    status, _ = _run_lan(_lan_scope(path="/", headers=spoofed))
+    assert status == 403
+
+
+def test_lan_sync_only_exact_route_enforcement(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    for path in ("/sync/health-connect/extra", "/sync/other", "/sync/health-connect", "/"):
+        status, _ = _run_lan(_lan_scope(method="POST", path=path))
+        if path == "/sync/health-connect":
+            assert status == 200
+        else:
+            assert status == 403
+
+
+def test_lan_sync_only_get_sync_rejected(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    status, _ = _run_lan(_lan_scope(method="GET", path="/sync/health-connect"))
+    assert status == 403
+
+
+def test_lan_sync_only_rejects_without_html(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    status, headers = _run_lan(_lan_scope(path="/"))
+    assert status == 403
+    h = _lan_headers(headers)
+    assert "text/html" not in h.get("content-type", "")
+
+
+def test_lan_sync_rate_limit_429_with_retry_after(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    monkeypatch.setenv("GYM_SYNC_RATE_LIMIT_PER_MINUTE", "2")
+    mw = None
+    from src.network_access import LanSyncOnlyMiddleware
+
+    mw = LanSyncOnlyMiddleware(_lan_inner)
+    scope = _lan_scope(method="POST", path="/sync/health-connect")
+    assert _run_lan(scope, mw)[0] == 200
+    assert _run_lan(scope, mw)[0] == 200
+    status, headers = _run_lan(scope, mw)
+    assert status == 429
+    h = _lan_headers(headers)
+    assert int(h["retry-after"]) >= 1
+
+
+def test_lan_sync_rate_limit_exempts_loopback(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    monkeypatch.setenv("GYM_SYNC_RATE_LIMIT_PER_MINUTE", "2")
+    from src.network_access import LanSyncOnlyMiddleware
+
+    mw = LanSyncOnlyMiddleware(_lan_inner)
+    for _ in range(5):
+        status, _ = _run_lan(
+            _lan_scope(method="POST", path="/sync/health-connect", client=("127.0.0.1", 50000)), mw
+        )
+        assert status == 200
+
+
+def test_lan_sync_only_inert_without_flag():
+    """Sin GYM_LAN_SYNC_ONLY el middleware no bloquea nada (modo loopback dev)."""
+    status, _ = _run_lan(_lan_scope(path="/"))
+    assert status == 200
+
+
+def test_lan_sync_only_rate_limit_uses_env_bounded(monkeypatch):
+    monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
+    monkeypatch.setenv("GYM_SYNC_RATE_LIMIT_PER_MINUTE", "0")
+    from src.network_access import sync_rate_limit_per_minute
+
+    assert sync_rate_limit_per_minute() == 1
+    monkeypatch.setenv("GYM_SYNC_RATE_LIMIT_PER_MINUTE", "abc")
+    assert sync_rate_limit_per_minute() == 30
+
+
+# ---------------------------------------------------------------------------
+# Backend plan Task 4: docs/OpenAPI inventory disabled
+# ---------------------------------------------------------------------------
+
+
+def test_docs_y_openapi_deshabilitados(client):
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert client.get(path).status_code == 404, path

@@ -13,7 +13,15 @@ import {
     updateEditActions,
 } from './editor.js';
 import { scheduleNotices } from './notices.js';
-import { refreshNutritionEditor } from './nutrition-editor.js';
+import {
+    initNutritionRowSortable,
+    syncNutritionSortableState,
+} from './row-sortable.js';
+import {
+    ensureNutritionEditable,
+    refreshNutritionEditor,
+    refreshNutritionRowsOrder,
+} from './nutrition-editor.js';
 import { refreshNutritionTemplatesDnD } from './nutrition-templates.js';
 import {
     confirmEntrenoSave,
@@ -71,6 +79,16 @@ export function initLifecycle() {
                 }
                 initEditorRowSortable();
                 fitRowsToPanel();
+            } else if (e.detail.target.id === 'popup-body') {
+                // Apertura del popup: el editor llega por swap al cuerpo del popup.
+                syncEditorFromContent();
+                initEditorRowSortable();
+                initNutritionRowSortable(refreshNutritionRowsOrder, ensureNutritionEditable);
+                fitRowsToPanel();
+                // Las plantillas (entrenamiento y alimentación) viven en el popup:
+                // re-vincular su DnD tras el swap.
+                initTemplateSortable();
+                refreshNutritionTemplatesDnD();
             } else if (e.detail.target === document.body && document.getElementById('plantilla-applied')) {
                 syncEditorFromContent();
                 document.getElementById('plantilla-applied').remove();
@@ -111,6 +129,8 @@ export function initLifecycle() {
         // re-baseline para el dirty-check y totales tras cada intercambio.
         if (e.detail.successful && document.getElementById('nutrition-form')) {
             refreshNutritionEditor();
+            initNutritionRowSortable(refreshNutritionRowsOrder, ensureNutritionEditable);
+            syncNutritionSortableState();
         }
         refreshNutritionTemplatesDnD();
         if (getSaveRequested() && document.getElementById('session-form')) {
@@ -165,12 +185,14 @@ export function initLifecycle() {
         if (e.target.closest('#session-form')) {
             updateEditActions();
             syncTemplateEjercicios();
+            recalcRM();
         }
     });
     document.addEventListener('change', function (e) {
         if (e.target.closest('#session-form')) {
             updateEditActions();
             syncTemplateEjercicios();
+            recalcRM();
         }
     });
 
@@ -189,7 +211,7 @@ export function initLifecycle() {
     }, true);
 }
 
-/* ---------- Deshacer (Ctrl+Z / botón ↶) ---------- */
+/* ---------- Deshacer (Ctrl+Z) ---------- */
 function undoAction() {
     setSaveRequested(true);
     const fecha = currentFecha();

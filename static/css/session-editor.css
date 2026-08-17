@@ -19,14 +19,14 @@
     border-radius: 10px;
 }
 #editor-notice .notice-success {
-    background: rgba(16, 185, 129, 0.05);
-    border: 1px solid rgba(16, 185, 129, 0.12);
-    color: rgba(110, 231, 183, 0.6);
+    background: var(--t-semantics-success-bg);
+    border: 1px solid var(--t-semantics-success-border);
+    color: var(--t-semantics-success-text);
 }
 #editor-notice .notice-error {
-    background: rgba(239, 68, 68, 0.05);
-    border: 1px solid rgba(239, 68, 68, 0.12);
-    color: rgba(252, 165, 165, 0.6);
+    background: var(--t-semantics-danger-bg);
+    border: 1px solid var(--t-semantics-danger-border);
+    color: var(--t-semantics-danger-text);
 }
 
 /* Lápiz de edición: encendido = editable, apagado = solo lectura */
@@ -180,7 +180,7 @@
 #nutrition-panel .row-actions .row-btn {
     width: 14px;
     height: 14px;
-    font-size: 10px;
+    font-size: 12px;
 }
 
 /* Colapso de panel: se oculta todo salvo la primera fila del header
@@ -215,4 +215,36 @@
 }
 #nutrition-panel .nutrient-col {
     width: 7.5%;
+}
+
+/* RIR: cualquier decimal es válido (step="any"); las flechas propias avanzan 0,1.
+   Se ocultan los spinners nativos del input number, cuyo salto seguiría al step. */
+#session-form input[name="rir"]::-webkit-outer-spin-button,
+#session-form input[name="rir"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+#session-form input[name="rir"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+.rir-step {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--t-surfaces-neutral-400);
+    font-size: 12px;
+    line-height: 1.1;
+    cursor: pointer;
+    transition: color .15s, background .15s;
+}
+.rir-step:hover:not(:disabled) {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.06);
+}
+.rir-step:disabled {
+    cursor: default;
+    opacity: 0.15;
 }

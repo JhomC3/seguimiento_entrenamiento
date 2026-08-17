@@ -3,44 +3,60 @@
     color-scheme: dark;
 }
 body {
-    background-color: #0a0a0a;
+    background-color: var(--t-surfaces-matte-950);
 }
 ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
 }
 ::-webkit-scrollbar-track {
-    background: #0a0a0a;
+    background: var(--t-surfaces-matte-950);
 }
 ::-webkit-scrollbar-thumb {
-    background: #222;
+    background: var(--t-surfaces-scrollbar-thumb);
     border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: #333;
+    background: var(--t-surfaces-scrollbar-hover);
 }
 
-/* Remove default browser focus/active outlines */
+/* Foco visible: fallback siempre visible; se suprime solo cuando el navegador
+   soporta :focus-visible (el anillo se muestra solo para navegación por teclado). */
 button {
     -webkit-tap-highlight-color: transparent;
 }
 button:focus {
-    outline: none;
-}
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-    outline: 2px solid #e56d88 !important;
+    outline: 2px solid var(--t-focus-ring);
     outline-offset: 2px;
 }
+@supports (selector(:focus-visible)) {
+    button:focus {
+        outline: none;
+    }
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible {
+        outline: 2px solid var(--t-focus-ring) !important;
+        outline-offset: 2px;
+    }
+}
 
-/* Neon glow effects */
+/* Movimiento reducido: sin animaciones ni transiciones (WCAG 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Neon glow effects (tokens: glow.*) */
 .neon-border {
-    box-shadow:
-        0 0 20px rgba(255, 30, 70, 0.10),
-        0 0 40px rgba(255, 30, 70, 0.06),
-        0 0 80px rgba(255, 30, 70, 0.03);
+    box-shadow: var(--t-glow-neon-border);
 }
 .metallic-border {
     position: relative;

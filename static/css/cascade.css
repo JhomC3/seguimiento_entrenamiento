@@ -1,0 +1,90 @@
+/* cascade.css — analysis levels, chart fade and detail links.
+   Colors come from the canonical tokens (static/design-tokens.json). */
+
+.htmx-indicator {
+    display: none;
+}
+.htmx-request .htmx-indicator {
+    display: inline;
+}
+.htmx-request.htmx-indicator {
+    display: inline;
+}
+
+#unified-chart .plotly-graph-div,
+#unified-chart .js-plotly-plot {
+    animation: chartFadeIn 0.3s ease-out;
+}
+@keyframes chartFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+/* El shell de la gráfica tiene altura final: estados vacío y cargado ocupan
+   el mismo espacio (CLS 0). La altura vive aquí (CSS commitado), no en
+   clases arbitrarias de Tailwind que no se escanean desde Python. */
+#unified-chart-plot,
+#unified-chart .chart-empty {
+    height: 450px;
+}
+
+/* Niveles de análisis y cascada */
+.level-btn {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: var(--t-surfaces-neutral-400);
+    border: 1px solid var(--t-surfaces-neutral-800);
+    border-radius: 9999px;
+    padding: .3rem .8rem;
+    transition: all 150ms ease-out;
+    cursor: pointer;
+}
+.level-btn:hover {
+    color: var(--t-surfaces-neutral-200);
+    border-color: var(--t-surfaces-neutral-700);
+}
+.level-btn.active {
+    color: var(--t-burgundy-400);
+    border-color: var(--t-burgundy-600);
+    background: rgba(155, 27, 48, 0.15);
+}
+.level-chip {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--t-surfaces-neutral-400);
+    border: 1px solid var(--t-surfaces-neutral-800);
+    border-radius: 9999px;
+    padding: .25rem .7rem;
+    transition: all 150ms ease-out;
+    cursor: pointer;
+    background: transparent;
+}
+.level-chip:hover {
+    color: var(--t-surfaces-neutral-200);
+    border-color: var(--t-surfaces-neutral-700);
+}
+.level-chip.selected {
+    color: var(--t-burgundy-400);
+    border-color: var(--t-burgundy-600);
+    background: rgba(155, 27, 48, 0.15);
+}
+.exercise-chip[aria-pressed="true"] {
+    color: var(--t-burgundy-400);
+    border-color: var(--t-burgundy-600);
+    background: rgba(155, 27, 48, 0.15);
+}
+.detail-link {
+    font-size: 12px;
+    color: var(--t-surfaces-neutral-500);
+    cursor: pointer;
+    background: transparent;
+    border: 0;
+    padding: 0 2px;
+    line-height: 1;
+}
+.detail-link:hover {
+    color: var(--t-burgundy-400);
+}

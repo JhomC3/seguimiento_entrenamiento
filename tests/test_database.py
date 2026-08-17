@@ -2,7 +2,13 @@ import sqlite3
 
 import pandas as pd
 
-from src.database import init_db, load_ejercicios, load_training_data
+from src.database import (
+    init_db,
+    insert_plantilla,
+    insert_plantilla_alimentacion,
+    load_ejercicios,
+    load_training_data,
+)
 
 
 def test_init_db_creates_tables(tmp_path):
@@ -103,7 +109,7 @@ def test_migrations_recorded_in_schema_migrations(tmp_path):
         r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()
     )
     conn.close()
-    assert versions == [1, 2, 3, 5, 6, 7, 8, 9, 10]
+    assert versions == [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
 
 
 def test_migrates_intermediate_state_without_orden(tmp_path):
@@ -384,7 +390,7 @@ def test_v009_creates_meal_templates(tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM plantilla_alimentos").fetchone()[0] == 0
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 10
+    assert max_version == 15
 
 
 def test_v009_is_latest_schema_version(tmp_path):
@@ -393,7 +399,7 @@ def test_v009_is_latest_schema_version(tmp_path):
     conn = sqlite3.connect(db_path)
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 10
+    assert max_version == 15
 
 
 def test_v007_migration_idempotent(tmp_path):
@@ -628,23 +634,6 @@ def test_v006_convierte_fechas_a_iso(tmp_path):
     assert fechas == ["2026-08-06", "2026-02-10", None]
 
 
-def test_get_training_sessions_ordena_por_fecha_iso(tmp_path):
-    from src.db_connection import transaction
-    from src.training_service import get_training_sessions
-
-    db = str(tmp_path / "g.db")
-    init_db(db)
-    for iso in ("2026-03-01", "2026-01-15", "2026-02-10"):
-        with transaction(db) as conn:
-            conn.execute(
-                "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) "
-                "VALUES (?, 'LUNES', ?, 1, 'Press', 90, 7, 1.2)",
-                (1, iso),
-            )
-    sessions = get_training_sessions(db)
-    assert [s["fecha"] for s in sessions] == ["2026-03-01", "2026-02-10", "2026-01-15"]
-
-
 def test_v008_creates_parametros_diarios_and_nullable_qty(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
@@ -670,7 +659,7 @@ def test_v008_creates_parametros_diarios_and_nullable_qty(tmp_path):
         assert col in params
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 10
+    assert max_version == 15
 
 
 def test_v008_preserves_diario_rows(tmp_path):
@@ -862,7 +851,7 @@ def test_v010_health_records_schema(tmp_path):
         "deleted_at",
     } <= cols
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
-    assert max_version == 10
+    assert max_version == 15
     pk_cols = {
         r[1] for r in conn.execute("PRAGMA table_info(health_records)").fetchall() if r[5] == 1
     }
@@ -874,3 +863,312 @@ def test_v010_health_records_schema(tmp_path):
     assert ("record_type", 1) in index_cols
     assert ("start_epoch_ms", 2) in index_cols
     conn.close()
+
+
+def test_v011_descanso_seg_column(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(training_sets)").fetchall()]
+    assert "descanso_seg" in cols
+    conn.close()
+
+
+def test_v012_cardio_annotations_schema(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    tables = {
+        t[0] for t in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    }
+    assert "cardio_annotations" in tables
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(cardio_annotations)").fetchall()}
+    assert {
+        "id",
+        "hc_id",
+        "velocidad_kmh",
+        "inclinacion_pct",
+        "notas",
+        "created_at",
+        "updated_at",
+    } <= cols
+    fk = conn.execute("PRAGMA foreign_key_list(cardio_annotations)").fetchall()
+    assert any(f[2] == "health_records" and f[3] == "hc_id" for f in fk)
+    conn.close()
+
+
+def test_save_parametros_preserva_rowid(tmp_path):
+    from src.database import save_parametros_diarios
+    from src.db_connection import read_connection
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    save_parametros_diarios(db_path, "2026-08-14", {"peso_kg": 80.0})
+    with read_connection(db_path) as conn:
+        rowid_1 = conn.execute(
+            "SELECT rowid FROM parametros_diarios WHERE fecha = ?", ("2026-08-14",)
+        ).fetchone()[0]
+    save_parametros_diarios(db_path, "2026-08-14", {"kcal_objetivo": 2400.0})
+    with read_connection(db_path) as conn:
+        rowid_2 = conn.execute(
+            "SELECT rowid FROM parametros_diarios WHERE fecha = ?", ("2026-08-14",)
+        ).fetchone()[0]
+        peso = conn.execute(
+            "SELECT peso_kg FROM parametros_diarios WHERE fecha = ?", ("2026-08-14",)
+        ).fetchone()[0]
+    assert rowid_1 == rowid_2
+    assert peso == 80.0
+
+
+def test_get_plantillas_una_sola_consulta(tmp_path, monkeypatch):
+    """Sin N+1: 1 query de plantillas + 1 de sets (≤2 ejecuciones)."""
+    import src.database as dbmod
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    insert_plantilla(db_path, "A", "EMPUJE", ["Press", "Press Militar"])
+    insert_plantilla(db_path, "B", "JALON", ["Remo"])
+
+    executions = []
+
+    class CountingConn:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+        def execute(self, *args, **kwargs):
+            executions.append(args[0] if args else "")
+            return self._inner.execute(*args, **kwargs)
+
+    class CountingCM:
+        def __init__(self, cm):
+            self._cm = cm
+
+        def __enter__(self):
+            return CountingConn(self._cm.__enter__())
+
+        def __exit__(self, *exc):
+            return self._cm.__exit__(*exc)
+
+    original = dbmod.read_connection
+    monkeypatch.setattr(
+        dbmod,
+        "read_connection",
+        lambda path: CountingCM(original(path)),
+    )
+    result = dbmod.get_plantillas(db_path)
+    assert len(result) == 2
+    assert [p["nombre"] for p in result] == ["A", "B"]
+    assert executions and len(executions) <= 2, executions
+
+
+def test_get_plantillas_alimentacion_una_sola_consulta(tmp_path, monkeypatch):
+    """Sin N+1: 1 query de plantillas + 1 de alimentos (≤2 ejecuciones)."""
+    import src.database as dbmod
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    insert_plantilla_alimentacion(db_path, "Comida A", [{"alimento": "Avena", "cantidad_g": 100}])
+    insert_plantilla_alimentacion(db_path, "Comida B", [{"alimento": "Pollo", "cantidad_g": 150}])
+
+    executions = []
+
+    class CountingConn:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+        def execute(self, *args, **kwargs):
+            executions.append(args[0] if args else "")
+            return self._inner.execute(*args, **kwargs)
+
+    class CountingCM:
+        def __init__(self, cm):
+            self._cm = cm
+
+        def __enter__(self):
+            return CountingConn(self._cm.__enter__())
+
+        def __exit__(self, *exc):
+            return self._cm.__exit__(*exc)
+
+    original = dbmod.read_connection
+    monkeypatch.setattr(
+        dbmod,
+        "read_connection",
+        lambda path: CountingCM(original(path)),
+    )
+    result = dbmod.get_plantillas_alimentacion(db_path)
+    assert len(result) == 2
+    assert executions and len(executions) <= 2, executions
+
+
+def test_restore_entrenos_resecuencia_ids(tmp_path):
+    from src.database import delete_plantilla, restore_entrenos, snapshot_entrenos
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    pid = insert_plantilla(db_path, "A", "EMPUJE", ["Press"])
+    snapshot = snapshot_entrenos(db_path)
+    delete_plantilla(db_path, pid)
+    restore_entrenos(db_path, snapshot)
+    pid2 = insert_plantilla(db_path, "B", "JALON", ["Remo"])
+    assert pid2 > pid
+
+
+# ---------------------------------------------------------------------------
+# Splits de entrenamiento
+# ---------------------------------------------------------------------------
+
+
+def test_insert_get_split_conserva_orden_por_dia(tmp_path):
+    from src.database import get_split, insert_split
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    pid = insert_split(
+        db_path,
+        "Push Pull Legs",
+        [
+            ("LUNES", "ejercicio", "Press", "Pectoral"),
+            ("LUNES", "ejercicio", "Press", "Pectoral"),
+            ("LUNES", "hiit", "HIIT", "HIIT"),
+            ("MARTES", "ejercicio", "Curl", "Biceps"),
+        ],
+    )
+    split = get_split(db_path, pid)
+    assert split["nombre"] == "Push Pull Legs"
+    dias = [i["dia"] for i in split["items"]]
+    assert dias == ["LUNES", "LUNES", "LUNES", "MARTES"]
+    lun_ord = [i["orden"] for i in split["items"] if i["dia"] == "LUNES"]
+    assert lun_ord == [1, 2, 3]
+    assert split["items"][2]["item_type"] == "hiit"
+
+
+def test_update_split_reemplaza_items_y_renumera(tmp_path):
+    from src.database import get_split, insert_split, update_split
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    pid = insert_split(db_path, "A", [("LUNES", "ejercicio", "Press", "Pectoral")])
+    update_split(
+        db_path,
+        pid,
+        "A v2",
+        [("VIERNES", "ejercicio", "Curl", "Biceps"), ("VIERNES", "hiit", "HIIT", "HIIT")],
+    )
+    split = get_split(db_path, pid)
+    assert split["nombre"] == "A v2"
+    assert len(split["items"]) == 2
+    assert [i["orden"] for i in split["items"]] == [1, 2]
+
+
+def test_delete_split_borra_items_en_cascada(tmp_path):
+    from src.database import delete_split, get_split, insert_split
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    pid = insert_split(db_path, "A", [("LUNES", "ejercicio", "Press", "Pectoral")])
+    assert get_split(db_path, pid) is not None
+    delete_split(db_path, pid)
+    assert get_split(db_path, pid) is None
+    conn = sqlite3.connect(db_path)
+    count = conn.execute(
+        "SELECT COUNT(*) FROM training_split_items WHERE split_id = ?", (pid,)
+    ).fetchone()[0]
+    conn.close()
+    assert count == 0
+
+
+def test_find_split_by_nombre_case_insensitive(tmp_path):
+    from src.database import find_split_by_nombre, insert_split
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    pid = insert_split(db_path, "Push Pull Legs", [])
+    assert find_split_by_nombre(db_path, "push pull legs") == pid
+    assert find_split_by_nombre(db_path, "PUSH PULL LEGS") == pid
+    assert find_split_by_nombre(db_path, "otro") is None
+
+
+def test_get_splits_summary_conteos(tmp_path):
+    from src.database import get_splits_summary, insert_split
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    pid_a = insert_split(
+        db_path,
+        "A",
+        [
+            ("LUNES", "ejercicio", "Press", "Pectoral"),
+            ("LUNES", "ejercicio", "Press", "Pectoral"),
+            ("MARTES", "hiit", "HIIT", "HIIT"),
+        ],
+    )
+    insert_split(db_path, "B", [("LUNES", "ejercicio", "Curl", "Biceps")])
+    summary = get_splits_summary(db_path)
+    by_id = {s["id"]: s for s in summary}
+    a = by_id[pid_a]
+    assert a["series"] == 3
+    assert a["active_days"] == 2
+    assert set(a["groups"]) == {"Pectoral", "HIIT"}
+
+
+def test_get_split_catalog_con_grupo(tmp_path):
+    from src.database import get_split_catalog, insert_exercise
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    insert_exercise(db_path, "Press", "Pectoral", "EMPUJE")
+    insert_exercise(db_path, "Curl", "Biceps", "TIRON")
+    catalog = get_split_catalog(db_path)
+    by_name = {c["ejercicio"]: c for c in catalog}
+    assert by_name["Press"]["grupo_muscular"] == "Pectoral"
+    assert by_name["Curl"]["categoria"] == "TIRON"
+
+
+def test_snapshot_restore_splits_idempotente(tmp_path):
+    from src.database import (
+        delete_split,
+        get_split,
+        insert_split,
+        restore_splits,
+        snapshot_splits,
+    )
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    pid = insert_split(
+        db_path,
+        "A",
+        [("LUNES", "ejercicio", "Press", "Pectoral"), ("MARTES", "hiit", "HIIT", "HIIT")],
+    )
+    snapshot = snapshot_splits(db_path)
+    delete_split(db_path, pid)
+    restore_splits(db_path, snapshot)
+    restored = get_split(db_path, pid)
+    assert restored is not None
+    assert len(restored["items"]) == 2
+    assert restored["items"][1]["ejercicio"] == "HIIT"
+
+
+def test_restore_splits_resecuencia_ids(tmp_path):
+    from src.database import (
+        delete_split,
+        insert_split,
+        restore_splits,
+        snapshot_splits,
+    )
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    pid = insert_split(db_path, "A", [])
+    snapshot = snapshot_splits(db_path)
+    delete_split(db_path, pid)
+    restore_splits(db_path, snapshot)
+    pid2 = insert_split(db_path, "B", [])
+    assert pid2 > pid

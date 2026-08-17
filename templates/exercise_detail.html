@@ -52,6 +52,7 @@
                         <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Peso (kg)</th>
                         <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Reps</th>
                         <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">RIR</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Desc</th>
                         <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">RM</th>
                         <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">RMₐ</th>
                     </tr>
@@ -66,7 +67,11 @@
                         <td class="py-2.5 px-3 text-neutral-400 whitespace-nowrap">{{ r.dia[:3] }}</td>
                         <td class="py-2.5 px-3 font-bold text-white whitespace-nowrap">{{ "%g"|format(r.kg) }}</td>
                         <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ "%g"|format(r.reps) }}</td>
-                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ "%g"|format(r.rir) if r.rir is not none else "—" }}</td>
+                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">
+                            {{ "%g"|format(r.rir) if r.rir is not none else "—" }}
+                            {% if r.rir is not none and r.rir <= 0 %}<span class="text-xs font-black text-burgundy-400 ml-1">{{ 'FORZADA' if r.rir < 0 else 'FALLO' }}</span>{% endif %}
+                        </td>
+                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ "%g"|format(r.descanso_seg) if r.descanso_seg is not none else "—" }}</td>
                         <td class="py-2.5 px-3 font-bold text-burgundy-400 whitespace-nowrap">{{ "%g"|format(r.rm) }}</td>
                         <td class="py-2.5 px-3 font-bold text-burgundy-300 whitespace-nowrap">{{ "%g"|format(r.rm_ajustado) }}</td>
                     </tr>

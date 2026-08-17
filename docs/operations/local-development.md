@@ -20,11 +20,14 @@ uv run uvicorn app:app --host 127.0.0.1 --port 8000
 - **Default binding is loopback-only** (`127.0.0.1`). Do not expose the dashboard
   on a network without the security review in
   `docs/architecture/security-model.md` (no authentication exists).
-- Binding `--host 0.0.0.0` (LAN access, e.g. phone browser) works too: the CSRF
-  Origin check validates against the request's `Host` header, so any hostname
-  (`127.0.0.1`, `localhost`, the machine's LAN IP) is accepted. Outside loopback
-  you **must** set `GYM_CSRF_SECRET`; see `security-model.md` §3 before any
-  non-loopback use.
+- Binding `--host 0.0.0.0` is **only** sanctioned through
+  `scripts/start_server.sh`, which activates the LAN sync-only gate: on the LAN
+  the server serves **only** `POST /sync/health-connect` (HealthSync, autenticado
+  con `X-Sync-Token`); the dashboard UI, static assets, exports and mutations
+  return bare 403/429 to non-loopback peers. `GYM_LAN_SYNC_ONLY=1` requires
+  `GYM_CSRF_SECRET` (persisted in `data/csrf_secret`) and vice versa: the app
+  refuses to start with an inconsistent pair (manual `uvicorn --host 0.0.0.0`
+  without the gate is an **accepted risk** — do not use it).
 - The app initializes the DB on startup: creates the file if missing and applies
   pending migrations (`src/migrations/`). Before any pending migration runs on a
   pre-existing database, a timestamped backup is written to `data/backups/`.
@@ -34,7 +37,9 @@ uv run uvicorn app:app --host 127.0.0.1 --port 8000
 | Variable | Purpose | Default |
 |---|---|---|
 | `LIFESTYLE_DB_PATH` | SQLite database path | `data/lifestyle.db` (`GYM_DB_PATH` es alias) |
-| `GYM_CSRF_SECRET` | HMAC secret for CSRF tokens. **Must be set outside localhost.** | dev-only fallback |
+| `GYM_CSRF_SECRET` | HMAC secret for CSRF tokens (persisted in `data/csrf_secret` by `start_server.sh`) | random per-process fallback (loopback only; tokens invalidan al reiniciar) |
+| `GYM_LAN_SYNC_ONLY` | `1` = LAN gate activo: remoto solo `POST /sync/health-connect` | desactivado |
+| `GYM_SYNC_RATE_LIMIT_PER_MINUTE` | Rate limit del sync por peer remoto (429 + `Retry-After`) | 30 |
 | `SHEET_ID` / `GIDS` | Google Sheets source (config.py) | project defaults |
 
 ## Database: backup and recovery

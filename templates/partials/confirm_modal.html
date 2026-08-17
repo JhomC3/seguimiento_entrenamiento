@@ -1,4 +1,5 @@
-<div id="confirm-modal" class="hidden" role="dialog" aria-modal="true" aria-label="Cambios sin guardar">
+<dialog id="confirm-modal" aria-labelledby="confirm-title" aria-describedby="confirm-msg">
+    <h2 id="confirm-title" class="sr-only">Cambios sin guardar</h2>
     <div class="confirm-card flex flex-col gap-4">
         <p id="confirm-msg" class="text-sm text-neutral-200">¿Guardar los cambios?</p>
         <div class="flex justify-end gap-2">
@@ -10,4 +11,4 @@
             </button>
         </div>
     </div>
-</div>
+</dialog>

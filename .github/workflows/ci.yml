@@ -21,6 +21,13 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      - name: Setup Node (tooling bloqueado)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: npm ci
+        run: npm ci
       - name: Locked sync (fails if uv.lock is stale)
         run: uv sync --locked
       - name: Format check
@@ -40,6 +47,15 @@ jobs:
           enable-cache: true
       - name: Locked sync
         run: uv sync --locked
+      - name: npm ci
+        run: npm ci
+      - name: Generated assets up to date
+        run: |
+          uv run python scripts/build_design_tokens.py --check
+          ./scripts/build_css.sh
+          git diff --exit-code -- static/css/tokens.css static/css/tailwind.css
+      - name: Frontend budget gates
+        run: uv run pytest tests/test_frontend_budget.py -q --no-cov
       - name: Run tests with coverage floor
         run: uv run pytest -q --ignore=tests/e2e
       - name: Per-module coverage floors (charts, metrics)
@@ -56,10 +72,42 @@ jobs:
           enable-cache: true
       - name: Locked sync
         run: uv sync --locked
+      - name: npm ci
+        run: npm ci
       - name: Install Playwright chromium
         run: uv run playwright install --with-deps chromium
       # --no-cov: la puerta de cobertura (90%) vive en el job `unit`; el proceso
       # pytest del job browser no instrumenta el subproceso uvicorn y mediría
       # solo ~10%, fallando el gate en un runner limpio sin aportar valor.
       - name: Browser tests
-        run: uv run pytest tests/e2e -q --no-cov
+        run: uv run pytest tests/e2e -q --no-cov --ignore=tests/e2e/test_accessibility.py
+      - name: Axe accessibility gates
+        run: uv run pytest tests/e2e/test_accessibility.py -q --no-cov
+
+  lighthouse:
+    name: Lighthouse (P90, A90, BP90, SEO90)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: npm ci
+        run: npm ci
+      - name: Locked sync
+        run: uv sync --locked
+      - name: Install Playwright chromium (chromePath de Lighthouse)
+        run: uv run playwright install chromium
+      - name: Lighthouse CI
+        run: ./scripts/run_lighthouse.sh
+      - name: Upload Lighthouse reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-reports
+          path: .tmp/lighthouse/reports

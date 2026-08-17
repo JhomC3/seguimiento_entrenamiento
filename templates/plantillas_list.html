@@ -1,7 +1,7 @@
 <div class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-2.5 neon-border metallic-border">
     <h3 class="text-xs font-black tracking-[0.2em] text-burgundy-400 uppercase text-center pb-2 border-b border-neutral-800 neon-title">Entrenamientos</h3>
     {% if not plantillas %}
-    <p class="text-[11px] text-neutral-500 text-center">Aún no hay entrenos.<br>Guarda uno desde el editor.</p>
+    <p class="text-xs text-neutral-400 text-center">Aún no hay entrenos.<br>Guarda uno desde el editor.</p>
     {% else %}
     <div id="plantillas-list" class="flex flex-col gap-2.5">
         {% for p in plantillas %}
@@ -14,8 +14,8 @@
             </div>
             {% if editing_id == p.id %}
             <form hx-post="/plantilla/editar/{{ p.id }}" hx-swap="none" class="flex flex-col gap-1.5 mt-1.5 pt-1.5 border-t border-neutral-800">
-                {% if error %}<p class="text-[10px] text-red-400">{{ error }}</p>{% endif %}
-                <input name="nombre" value="{{ p.nombre }}" class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 focus:outline-none transition-colors" placeholder="Nombre del entreno">
+                {% if error %}<p class="text-xs text-red-400">{{ error }}</p>{% endif %}
+                <input name="nombre" aria-label="Nombre del entreno" value="{{ p.nombre }}" class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 focus:outline-none transition-colors" placeholder="Nombre del entreno">
                 <div id="plantilla-edit-rows" class="flex flex-col gap-1">
                     {% for ej in p.ejercicios %}
                     <div class="pt-row flex gap-1 items-center">
@@ -23,7 +23,8 @@
                             <option value="{{ ej }}" selected>{{ ej }}</option>
                             {% for c in catalog %}{% if c != ej %}<option value="{{ c }}">{{ c }}</option>{% endif %}{% endfor %}
                         </select>
-                        <button type="button" data-action="template-row-remove" class="row-btn" title="Quitar ejercicio">−</button>
+                        
+                        <button type="button" data-action="template-row-remove" class="row-btn" title="Quitar ejercicio" aria-label="Quitar ejercicio">−</button>
                     </div>
                     {% endfor %}
                 </div>

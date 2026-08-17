@@ -44,8 +44,11 @@ def test_validate_negative_raises_domain_error(db):
         validate_sets(db, [TrainingSetInput(ejercicio="Press", kg="-5", reps="8", rir="1")])
     with pytest.raises(ValidationError):
         validate_sets(db, [TrainingSetInput(ejercicio="Press", kg="80", reps="-1", rir="1")])
+    # RIR negativo es válido desde RIR_MIN (-5): representa series forzadas.
+    cleaned = validate_sets(db, [TrainingSetInput(ejercicio="Press", kg="80", reps="8", rir="-1")])
+    assert cleaned[0].rir == -1.0
     with pytest.raises(ValidationError):
-        validate_sets(db, [TrainingSetInput(ejercicio="Press", kg="80", reps="8", rir="-1")])
+        validate_sets(db, [TrainingSetInput(ejercicio="Press", kg="80", reps="8", rir="-6")])
 
 
 def test_validate_zero_rir_is_valid(db):
@@ -81,4 +84,6 @@ def test_apply_missing_template_raises_not_found(db):
 
 def test_sets_from_form_adapter(db):
     sets = sets_from_form(["Press"], ["80"], ["8"], ["1"])
-    assert sets == [TrainingSetInput(ejercicio="Press", kg="80", reps="8", rir="1")]
+    assert sets == [
+        TrainingSetInput(ejercicio="Press", kg="80", reps="8", rir="1", descanso_seg="")
+    ]

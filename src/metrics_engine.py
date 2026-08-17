@@ -10,6 +10,11 @@ def rm_ajustado(kg: float, reps: float, rir: float = 0.0) -> float:
     return kg * (1 + RM_FACTOR * (reps + 1 + rir))
 
 
+def is_failure_set(reps: float, rir: float | None) -> bool:
+    """True si la serie llegó al fallo (RIR <= 0) o tuvo rep parcial (reps decimal)."""
+    return (rir is not None and rir <= 0) or (reps % 1 != 0)
+
+
 # Palabras clave para identificar ejercicios compuestos (multiarticulares)
 COMPOUND_KEYWORDS = {
     "hack",
@@ -73,7 +78,7 @@ def calculate_pfr_timeline(
     with read_connection(db_path) as conn:
         # 1. Obtener todos los sets de entrenamiento con el grupo muscular correspondiente
         query = """
-            SELECT t.semana, t.dia, t.fecha, t.set_orden, t.ejercicio, t.kg, t.reps, t.rir, e.grupo_muscular
+            SELECT t.semana, t.dia, t.fecha, t.set_orden, t.ejercicio, t.kg, t.reps, t.rir, e.grupo_muscular, e.categoria
             FROM training_sets t
             JOIN ejercicios e ON LOWER(t.ejercicio) = LOWER(e.ejercicio)
             WHERE t.kg IS NOT NULL AND t.reps IS NOT NULL
@@ -106,10 +111,13 @@ def calculate_pfr_timeline(
         ),
         axis=1,
     )
+    df["es_fallo"] = df.apply(lambda r: int(is_failure_set(float(r["reps"]), r["rir"])), axis=1)
 
     # --- FILTRADO DE DATOS SEGÚN NIVEL ---
     if filter_type == "muscle_group" and filter_value:
         df_filtered = df[df["grupo_muscular"].str.lower() == filter_value.lower()].copy()
+    elif filter_type == "category" and filter_value:
+        df_filtered = df[df["categoria"].str.lower() == filter_value.lower()].copy()
     elif filter_type == "exercise" and filter_value:
         df_filtered = df[df["ejercicio"].str.lower() == filter_value.lower()].copy()
     else:
@@ -127,6 +135,7 @@ def calculate_pfr_timeline(
             dia=("dia", "first"),
             sets_totales=("set_orden", "count"),
             avg_rir=("rir", "mean"),
+            sets_fallo=("es_fallo", "sum"),
             # Rendimiento promedio del día (fuerza relativa en %)
             rendimiento=("perf_rel", "mean"),
         )
@@ -143,6 +152,7 @@ def calculate_pfr_timeline(
 
     # Completar días de descanso (donde no se entrenó)
     timeline["sets_totales"] = timeline["sets_totales"].fillna(0)
+    timeline["sets_fallo"] = timeline["sets_fallo"].fillna(0)
     timeline["dia"] = timeline["fecha_dt"].dt.strftime("%A")
 
     # Traducir días de la semana a español

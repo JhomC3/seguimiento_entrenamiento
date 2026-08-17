@@ -67,14 +67,21 @@ export function fmtNum(v) {
     return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
-/* ---------- Modal de confirmación ---------- */
+/* ---------- Modal de confirmación (dialog nativo) ---------- */
 export function showConfirmDialog(onSave, onDiscard) {
     confirmCbs = { onSave, onDiscard };
-    document.getElementById('confirm-modal').classList.remove('hidden');
+    const dialog = document.getElementById('confirm-modal');
+    if (dialog && typeof dialog.showModal === 'function') {
+        dialog.showModal();
+        // Foco inicial en la acción primaria.
+        const primary = dialog.querySelector('#confirm-save');
+        if (primary) primary.focus();
+    }
 }
 
 export function hideConfirmDialog() {
-    document.getElementById('confirm-modal').classList.add('hidden');
+    const dialog = document.getElementById('confirm-modal');
+    if (dialog && dialog.open) dialog.close();
     confirmCbs = null;
 }
 

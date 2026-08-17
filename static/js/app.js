@@ -4,16 +4,19 @@
 // section multiple times: initializers are idempotent and delegated listeners
 // are bound once on stable roots.
 
-import { initDashboardFilters } from './dashboard-filters.js';
 import { initChartInteractions, renderUnifiedChart } from './chart-interaction.js';
 import { initDateNavigation } from './date-navigation.js';
+import { initEditorPopup } from './editor-popup.js';
+import { initLevelCascade } from './level-cascade.js';
 import { fitRowsToPanel, initEditorActions, initEditorRowSortable, syncEditorFromContent } from './editor.js';
 import { initLifecycle } from './htmx-lifecycle.js';
-import { initNutritionEditor } from './nutrition-editor.js';
+import { ensureNutritionEditable, initNutritionEditor, refreshNutritionRowsOrder } from './nutrition-editor.js';
 import { initNutritionTemplatesDnD } from './nutrition-templates.js';
 import { scheduleNotices } from './notices.js';
 import { initPanelCollapse } from './panel-collapse.js';
+import { initNutritionRowSortable } from './row-sortable.js';
 import { getCsrfToken, setAlimentoMap, setCategoriaMap, setCicloStart, setCsrfToken } from './state.js';
+import { initSplits } from './splits.js';
 import { initEntrenoDnD, initTemplateActions, initTemplateSortable } from './templates.js';
 
 function loadConfig() {
@@ -45,20 +48,30 @@ document.body.addEventListener('htmx:afterRequest', function (e) {
 document.addEventListener('DOMContentLoaded', function () {
     loadConfig();
     initLifecycle();
-    initDashboardFilters();
-    initChartInteractions();
-    renderUnifiedChart();
-    initDateNavigation();
-    initEditorActions();
-    initTemplateActions();
-    initNutritionEditor();
-    initNutritionTemplatesDnD();
-    initPanelCollapse();
+    // El bundle del dashboard (cascada, gráfica, editores) solo se inicializa
+    // en la página raíz: los módulos asumen su DOM (p. ej. level-cascade hace
+    // htmx.ajax a #cascade-row, que no existe en otras páginas y caería al
+    // body, reemplazando la página completa).
+    const isDashboard = !!document.getElementById('cascade-row');
+    if (isDashboard) {
+        initChartInteractions();
+        renderUnifiedChart();
+        initDateNavigation();
+        initEditorPopup();
+        initLevelCascade();
+        initEditorActions();
+        initTemplateActions();
+        initNutritionEditor();
+        initNutritionRowSortable(refreshNutritionRowsOrder, ensureNutritionEditable);
+        initNutritionTemplatesDnD();
+        initPanelCollapse();
+        syncEditorFromContent();
+        initEditorRowSortable();
+        initTemplateSortable();
+        initEntrenoDnD();
+        fitRowsToPanel();
+    }
+    initSplits();
     scheduleNotices();
-    syncEditorFromContent();
-    initEditorRowSortable();
-    initTemplateSortable();
-    initEntrenoDnD();
-    fitRowsToPanel();
     document.body.dataset.appReady = '1';
 });

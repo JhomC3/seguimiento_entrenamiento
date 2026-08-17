@@ -84,8 +84,20 @@ export function requestNavigate(iso) {
 }
 
 function scrollDates(dir) {
-    const strip = document.getElementById('date-strip');
-    if (strip) strip.scrollBy({ left: dir * strip.clientWidth * 0.8, behavior: 'smooth' });
+    // Las flechas navegan la VENTANA (15 días por salto): el servidor
+    // re-renderiza el navigator centrado en la nueva selección.
+    const iso = getCurrentIso();
+    if (!iso) return;
+    const d = new Date(iso + 'T00:00:00');
+    d.setDate(d.getDate() + dir * 15);
+    const next = d.toISOString().slice(0, 10);
+    if (document.getElementById('session-form') && isDirty()) {
+        setPendingNav(next);
+    } else if (document.getElementById('nutrition-form') && nutritionIsDirty()) {
+        requestNutritionNav(next);
+    } else {
+        doNav(next);
+    }
 }
 
 function jumpDate(iso) {
@@ -122,7 +134,10 @@ export function initDateNavigation() {
     });
 
     document.addEventListener('keydown', function (e) {
-        const inField = e.target.closest && e.target.closest('input, textarea, select');
+        // Las flechas solo actúan cuando el foco está dentro del navigator.
+        const inNav = e.target.closest && e.target.closest('#date-navigator');
+        if (!inNav) return;
+        const inField = e.target.closest('input, textarea, select');
         if (inField) return;
         if (e.key === 'ArrowLeft') {
             e.preventDefault();

@@ -3,16 +3,16 @@ from datetime import date, timedelta
 
 import pytest
 
-from src.database import delete_session, get_sets_by_fecha, init_db
+from src.database import get_sets_by_fecha, init_db
 from src.models import TrainingSetInput
 from src.training_service import (
     calculate_cycle_week,
     day_from_date,
     fecha_display,
     fecha_to_db,
-    get_sessions_page,
     parse_cycle_start,
     save_session,
+    sets_from_form,
     validate_sets,
 )
 
@@ -117,9 +117,10 @@ def test_insert_unknown_exercise_rejected(db):
         )
 
 
-def test_insert_negative_rir_rejected(db):
-    with pytest.raises(ValueError):
-        save_session(db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=-1)])
+def test_insert_negative_rir_accepted_hasta_minimo(db):
+    save_session(db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=-1)])
+    rows = get_sets_by_fecha(db, "2026-02-10")
+    assert rows[0]["rir"] == -1.0
 
 
 def test_save_zero_rir_accepted(db):
@@ -179,70 +180,68 @@ def test_validate_sets_empty(db):
         validate_sets(db, [])
 
 
-def test_get_sessions_page(db):
-    save_session(
+def test_validate_sets_accepts_negative_rir_hasta_minimo(db):
+    sets = validate_sets(
         db,
-        "2026-05-13",
-        [
-            TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=2),
-            TrainingSetInput(ejercicio="Press", kg=75, reps=10, rir=0),
-        ],
+        [TrainingSetInput(ejercicio="Press", kg=80, reps=5, rir=-2)],
     )
-    sessions, total, page = get_sessions_page(db, 1, 20)
-    assert total == 1
-    assert page == 1
-    s = sessions[0]
-    assert s["semana"] == 2
-    assert s["n_series"] == 2
-    assert s["n_ejercicios"] == 1
-    assert s["manual_sets"] == 2
-    assert s["google_sets"] == 0
-    from src.database import get_sets_by_fecha
-
-    rows = get_sets_by_fecha(db, "2026-05-13")
-    assert len(rows) == 2
-    assert rows[0]["kg"] == 80.0
+    assert sets[0].rir == -2.0
 
 
-def test_save_session_replaces_por_fecha(db):
-    save_session(
+def test_validate_sets_accepts_decimal_reps(db):
+    sets = validate_sets(
         db,
-        "2026-02-10",
-        [
-            TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
-        ],
+        [TrainingSetInput(ejercicio="Press", kg=80, reps=4.5, rir=0)],
     )
-    save_session(
-        db,
-        "2026-02-11",
-        [
-            TrainingSetInput(ejercicio="Press", kg=85, reps=6, rir=2),
-        ],
-    )
-    conn = sqlite3.connect(db)
-    rows = conn.execute(
-        "SELECT semana, dia, fecha, kg FROM training_sets ORDER BY fecha"
-    ).fetchall()
-    conn.close()
-    assert len(rows) == 2
-    assert rows[0] == (1, "MARTES", "2026-02-10", 80.0)
-    assert rows[1] == (1, "MIERCOLES", "2026-02-11", 85.0)
+    assert sets[0].reps == 4.5
 
 
-def test_delete_session(db):
+def test_validate_sets_rejects_rir_below_minimo(db):
+    with pytest.raises(ValueError):
+        validate_sets(
+            db,
+            [TrainingSetInput(ejercicio="Press", kg=80, reps=5, rir=-6)],
+        )
+
+
+def test_sets_from_form_parses_negative_rir():
+    sets = sets_from_form(["Press"], ["80"], ["5"], ["-1"])
+    assert sets[0].rir == "-1"
+
+
+def test_sets_from_form_parses_descanso():
+    sets = sets_from_form(["Press"], ["80"], ["5"], ["0"], descansos=["90"])
+    assert sets[0].descanso_seg == "90"
+
+
+def test_save_session_persists_descanso(db):
     save_session(
         db,
         "2026-02-10",
         [
-            TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
+            TrainingSetInput(ejercicio="Press", kg=80, reps=5, rir=0, descanso_seg=90),
+            TrainingSetInput(ejercicio="Press", kg=80, reps=5, rir=2),
         ],
     )
-    deleted = delete_session(db, 1, "MARTES", "2026-02-10")
-    assert deleted == 1
-    conn = sqlite3.connect(db)
-    count = conn.execute("SELECT COUNT(*) FROM training_sets").fetchone()[0]
-    conn.close()
-    assert count == 0
+    rows = get_sets_by_fecha(db, "2026-02-10")
+    assert rows[0]["descanso_seg"] == 90.0
+    assert rows[1]["descanso_seg"] is None
+
+
+def test_validate_sets_cleans_descanso(db):
+    sets = validate_sets(
+        db,
+        [TrainingSetInput(ejercicio="Press", kg=80, reps=5, rir=0, descanso_seg="75")],
+    )
+    assert sets[0].descanso_seg == 75.0
+
+
+def test_validate_sets_accepts_empty_descanso(db):
+    sets = validate_sets(
+        db,
+        [TrainingSetInput(ejercicio="Press", kg=80, reps=5, rir=0, descanso_seg="")],
+    )
+    assert sets[0].descanso_seg is None
 
 
 def test_get_sets_by_fecha(db):

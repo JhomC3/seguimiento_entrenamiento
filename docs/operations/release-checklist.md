@@ -13,16 +13,21 @@ the release.
 ## 2. Automated gates
 
 ```bash
+npm ci
 uv sync --locked
 uv run ruff format --check .
 uv run ruff check .
 uv run mypy app.py src tests
 uv run pytest -q --ignore=tests/e2e        # coverage floor 90% enforced
 uv run python scripts/check_module_coverage.py src/charts.py src/metrics_engine.py --min 90
-uv run pytest tests/e2e -q --no-cov         # browser tests (coverage gate lives in unit runs)
+uv run pytest tests/test_frontend_budget.py -q --no-cov
+uv run pytest tests/e2e -q --no-cov --ignore=tests/e2e/test_accessibility.py
+uv run pytest tests/e2e/test_accessibility.py -q --no-cov
+./scripts/run_lighthouse.sh                # P/A/BP/SEO >= 90
 ```
 
-- [ ] All green on a clean checkout (CI `quality`, `unit`, `browser` jobs pass).
+- [ ] Generated assets up to date: `uv run python scripts/build_design_tokens.py --check && ./scripts/build_css.sh && git diff --exit-code -- static/css/tokens.css static/css/tailwind.css`
+- [ ] All green on a clean checkout (CI `quality`, `unit`, `browser`, `lighthouse` jobs pass).
 
 ## 3. Database
 
@@ -37,6 +42,9 @@ uv run pytest tests/e2e -q --no-cov         # browser tests (coverage gate lives
 - [ ] `uv run pytest tests/test_security.py -v` passes.
 - [ ] Deployment stays loopback-only (`--host 127.0.0.1`) unless the auth design in
       `docs/architecture/security-model.md` is implemented.
+- [ ] Smoke con la app levantada: `curl -i http://127.0.0.1:8000/healthz` → 200
+      `{"status":"ok","db":"ok"}`; `curl -i http://127.0.0.1:8000/docs` → 404.
+- [ ] Surface assertions: `rg -n 'get_sessions_page|get_training_sessions' src app.py` → 0.
 
 ## 4b. Android app (HealthSync) — si el release toca `android/`
 

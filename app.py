@@ -2,6 +2,8 @@ import hmac
 import json
 import logging
 import os
+import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import date
 
@@ -10,18 +12,18 @@ from fastapi import FastAPI, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.gzip import GZipMiddleware
 
 from config import CICLO_START, DB_PATH, HC_SYNC_TOKEN, MUSCLE_CATEGORIES
 from src.charts import get_exercise_raw_data, get_exercise_session_summary
 from src.dashboard_service import (
+    _chart_header_html,
     build_date_navigator,
     build_nutrition_editor,
     build_session_editor,
     chart_html,
-    get_ejercicios_por_grupo,
     get_filters,
     get_first_session_date,
-    get_recent_sessions,
     translate_error,
 )
 from src.database import (
@@ -32,23 +34,37 @@ from src.database import (
     get_plantillas,
     get_plantillas_alimentacion,
     get_sets_by_fecha,
+    get_split_catalog,
+    get_splits_summary,
     init_db,
 )
 from src.db_connection import read_connection
 from src.exercise_service import create_exercise
 from src.health_sync_service import MAX_BODY_BYTES, ingest_health_records, parse_payload
-from src.models import AlimentoInput, TemplateInput, ValidationError
+from src.logging_setup import request_id_var, setup_logging
+from src.models import (
+    SPLIT_DAYS,
+    AlimentoInput,
+    Split,
+    SplitInput,
+    SplitMetrics,
+    TemplateInput,
+    ValidationError,
+)
 from src.mutation_service import (
     delete_diary_with_undo_snapshot,
     delete_session,
+    delete_split_with_undo_snapshot,
     delete_template_with_undo_snapshot,
     edit_template_with_undo_snapshot,
     reorder_templates_with_undo_snapshot,
     save_diary_with_undo_snapshot,
     save_session_with_undo_snapshot,
+    save_split_with_undo_snapshot,
     save_template_with_undo_snapshot,
     undo_last_action,
 )
+from src.network_access import LanSyncOnlyMiddleware, lan_sync_only_enabled
 from src.nutrition_service import (
     NUTRIENT_FIELDS,
     apply_meal_template,
@@ -73,6 +89,8 @@ from src.security import (
     get_csrf_secret,
     make_csrf_token,
 )
+from src.split_service import compute_split_metrics, get_split_board, split_items_from_form
+from src.static_assets import is_current_digest, static_url
 from src.template_service import apply_template_rows
 from src.training_service import (
     calculate_cycle_week,
@@ -87,27 +105,110 @@ from src.training_service import (
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    init_db(DB_PATH)
-    if os.environ.get("GYM_CSRF_SECRET") is None:
+    setup_logging()
+    lan_mode = lan_sync_only_enabled()
+    has_secret = bool(os.environ.get("GYM_CSRF_SECRET"))
+    if lan_mode and not has_secret:
+        raise RuntimeError(
+            "GYM_LAN_SYNC_ONLY=1 requires GYM_CSRF_SECRET "
+            "(data/csrf_secret, generado por scripts/start_server.sh)"
+        )
+    if has_secret and not lan_mode:
+        raise RuntimeError(
+            "GYM_CSRF_SECRET is set without GYM_LAN_SYNC_ONLY=1: the dashboard "
+            "would be reachable from the LAN; use scripts/start_server.sh"
+        )
+    if not has_secret:
         logging.getLogger("security").warning(
             "GYM_CSRF_SECRET no configurado: usando secreto de desarrollo."
         )
+    init_db(DB_PATH)
     yield
 
 
-app = FastAPI(title="Gym Tracker", lifespan=lifespan)
+MAX_FORM_SETS = 100  # series por sesión
+MAX_DIARY_ROWS = 100  # filas del diario
+MAX_REORDER_IDS = 500  # ids de reordenamiento
+MAX_NAME_LEN = 200  # nombres (ejercicio, alimento, plantilla)
+MAX_SPLIT_ITEMS = 300  # items (instancias/series) por split
+
+
+def _check_lote(rows: list, max_rows: int, campo: str) -> None:
+    if len(rows) > max_rows:
+        raise ValidationError(f"Demasiadas filas de {campo} (máx. {max_rows}).")
+
+
+class RequestIdMiddleware:
+    """Asigna request_id por petición, lo propaga a los logs y emite un
+    access log propio (método, path, status, duración).
+
+    Registrado como ÚLTIMO add_middleware: queda el más externo de la pila y
+    su header x-request-id llega a toda respuesta, incluidas las de 403/429
+    de los middlewares internos.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        request_id = uuid.uuid4().hex[:12]
+        token = request_id_var.set(request_id)
+        start = time.perf_counter()
+        status_holder = {"status": 500}
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                status_holder["status"] = message["status"]
+                headers = dict(message.get("headers", []))
+                headers[b"x-request-id"] = request_id.encode()
+                message["headers"] = list(headers.items())
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            duration_ms = (time.perf_counter() - start) * 1000
+            logging.getLogger("access").info(
+                "%s %s status=%s duration_ms=%.1f",
+                scope["method"],
+                scope.get("path", ""),
+                status_holder["status"],
+                duration_ms,
+            )
+            request_id_var.reset(token)
+
+
+app = FastAPI(
+    title="Gym Tracker", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan
+)
 app.add_middleware(CSRFProtectionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(LanSyncOnlyMiddleware)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(RequestIdMiddleware)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+templates.env.globals["static_url"] = static_url
 
 
 @app.middleware("http")
-async def no_cache_static(request: Request, call_next):
-    """Revalidación de assets en desarrollo: el navegador nunca usa JS/CSS viejos."""
+async def static_cache_policy(request: Request, call_next):
+    """Assets con digest vigente → immutable (1 año); el resto → no-cache.
+
+    Evita copias de assets y deploys con caché vieja: el navegador solo
+    revalida cuando el ?v= no coincide con el digest actual del archivo.
+    """
     response = await call_next(request)
     if request.url.path.startswith("/static"):
-        response.headers["Cache-Control"] = "no-cache"
+        rel = request.url.path[len("/static/") :]
+        version = request.query_params.get("v")
+        if is_current_digest(rel, version):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
     return response
 
 
@@ -227,12 +328,67 @@ def _plantillas_list_html(
     )
 
 
-def _sesiones_list_html(request: Request) -> str:
+def _split_accordion_item_html(
+    request: Request,
+    split_id: int | None,
+    *,
+    open_: bool = False,
+    max_items: int = MAX_SPLIT_ITEMS,
+) -> str:
+    """Fragmento de un item del acordeón de splits (cabecera + board semanal).
+
+    `split_id=None` renderiza un split nuevo vacío (sin persistir) en modo
+    edición, para el flujo "Crear nuevo split" (GET /split/nuevo).
+    """
+    split: Split | None = None
+    metrics: SplitMetrics = compute_split_metrics([])
+    if split_id is not None:
+        board = get_split_board(DB_PATH, split_id)
+        split = board["split"]
+        metrics = board["metrics"]
     return _render_body(
         templates.TemplateResponse(
             request=request,
-            name="session_history.html",
-            context={"sessions": get_recent_sessions(DB_PATH)},
+            name="partials/split_accordion_item.html",
+            context={
+                "days": SPLIT_DAYS,
+                "split": split,
+                "metrics": metrics,
+                "editmode": "0" if split else "1",
+                "max_items": max_items,
+                "open": open_,
+            },
+        )
+    )
+
+
+def _split_section_html(request: Request, abrir_id: int | None = None) -> str:
+    """Contenido de #splits-section: estado vacío o items del acordeón."""
+    items_html = ""
+    for s in get_splits_summary(DB_PATH):
+        items_html += _split_accordion_item_html(
+            request, s["id"], open_=(abrir_id is not None and abrir_id == s["id"])
+        )
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="partials/split_accordion.html",
+            context={"splits_html": items_html},
+        )
+    )
+
+
+def _split_page_html(request: Request, abrir_id: int | None = None) -> str:
+    """Página completa del gestor de splits (base.html + fragmentos)."""
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="splits.html",
+            context={
+                "catalog": get_split_catalog(DB_PATH),
+                "splits_html": _split_section_html(request, abrir_id=abrir_id),
+                "app_config_json": {"csrf_token": make_csrf_token(get_csrf_secret())},
+            },
         )
     )
 
@@ -361,6 +517,7 @@ def read_index(request: Request):
             "ejercicios_list": ejercicios_list,
             "ejercicios_grupo": ejercicios_list,
             "muscle_categories": categories,
+            "cascade_row_html": _cascade_row_html(request, "musculo", ""),
             "systemic_chart_html": chart_html(
                 DB_PATH,
                 "systemic",
@@ -373,7 +530,6 @@ def read_index(request: Request):
             "semana": calculate_cycle_week(_fecha_date, CICLO_START_DATE),
             "exercise_form_html": _exercise_form_html(request),
             "plantillas_html": _plantillas_list_html(request),
-            "session_history_html": _sesiones_list_html(request),
             "nutrition_editor_html": _nutrition_editor_html(request, fecha),
             "nutrition_templates_html": _plantillas_alimentacion_list_html(request, fecha),
             "alimento_form_html": _alimento_form_html(request),
@@ -392,6 +548,96 @@ def fecha_editor(request: Request, fecha: str = Query(...)):
     return HTMLResponse(content=_editor_html(request, fecha))
 
 
+def _cardio_day_html(request: Request, fecha: str) -> str:
+    from src.cardio_service import get_day_cardio
+
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="cardio_day.html",
+            context={"cardio": get_day_cardio(DB_PATH, fecha), "fecha_iso": fecha},
+        )
+    )
+
+
+@app.get("/editor/popup", response_class=HTMLResponse)
+def editor_popup(request: Request, fecha: str = Query(...)):
+    """Cuerpo de la ventana emergente de registro: navegador + editores + cardio."""
+    from datetime import date as _date
+
+    fecha_date = _date.fromisoformat(fecha)
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="editor_popup.html",
+            context={
+                "navigator_html": _navigator_html(request, fecha),
+                "nutrition_templates_html": _plantillas_alimentacion_list_html(request, fecha),
+                "nutrition_editor_html": _nutrition_editor_html(request, fecha),
+                "editor_html": _editor_html(request, fecha),
+                "cardio_html": _cardio_day_html(request, fecha),
+                "exercise_form_html": _exercise_form_html(request),
+                "alimento_form_html": _alimento_form_html(request),
+                "plantillas_html": _plantillas_list_html(request),
+                "dia": day_from_date(fecha_date),
+                "fecha_display": fecha_display(fecha),
+                "semana": calculate_cycle_week(fecha_date, CICLO_START_DATE),
+            },
+        )
+    )
+
+
+@app.get("/cardio/day", response_class=HTMLResponse)
+def cardio_day(request: Request, fecha: str = Query(...)):
+    """Fragmento del panel de cardio de una fecha (navegación dentro del popup)."""
+    return HTMLResponse(content=_cardio_day_html(request, fecha))
+
+
+@app.post("/cardio/annotation", response_class=HTMLResponse)
+def cardio_annotation_save(
+    request: Request,
+    hc_id: str = Form(...),
+    velocidad_kmh: float | None = Form(None),
+    inclinacion_pct: float | None = Form(None),
+    notas: str = Form(""),
+    fecha: str = Form(""),
+):
+    """Upsert de velocidad/inclinación sobre una sesión EXERCISE_SESSION."""
+    from src.cardio_service import CardioAnnotationInput, upsert_cardio_annotation
+
+    try:
+        upsert_cardio_annotation(
+            DB_PATH,
+            CardioAnnotationInput(
+                hc_id=hc_id,
+                velocidad_kmh=velocidad_kmh,
+                inclinacion_pct=inclinacion_pct,
+                notas=notas,
+            ),
+        )
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    notice = notice_oob(
+        templates,
+        request,
+        target="notice-container",
+        message="Anotación de cardio guardada.",
+        dismiss=2500,
+    )
+    if fecha:
+        return HTMLResponse(
+            content=notice
+            + fragment_oob(
+                templates,
+                request,
+                "cardio-day",
+                _cardio_day_html(request, fecha),
+                swap="outerHTML",
+            )
+        )
+    return HTMLResponse(content=notice)
+
+
 @app.post("/entrenamiento/session/save", response_class=HTMLResponse)
 def entrenamiento_session_save(
     request: Request,
@@ -400,8 +646,10 @@ def entrenamiento_session_save(
     kg: list[str] = Form(default=[]),
     reps: list[str] = Form(default=[]),
     rir: list[str] = Form(default=[]),
+    descanso: list[str] = Form(default=[]),
 ):
-    sets = sets_from_form(ejercicio, kg, reps, rir)
+    _check_lote(ejercicio, MAX_FORM_SETS, "series")
+    sets = sets_from_form(ejercicio, kg, reps, rir, descansos=descanso)
     notice_success = notice_oob(
         templates, request, target="editor-notice", message="Entrenamiento guardado."
     )
@@ -412,17 +660,11 @@ def entrenamiento_session_save(
         saved_rows = get_sets_by_fecha(DB_PATH, fecha_to_db(parse_form_date(fecha)))
         if saved_rows:
             return HTMLResponse(
-                content=notice_success
-                + outcome_ok
-                + editor_state_oob(templates, request)
-                + fragment_oob(templates, request, "session-history", _sesiones_list_html(request))
+                content=notice_success + outcome_ok + editor_state_oob(templates, request)
             )
         editor = _editor_html(request, fecha)
         return HTMLResponse(
-            content=notice_success
-            + outcome_ok
-            + editor_wrap_oob(templates, request, editor)
-            + fragment_oob(templates, request, "session-history", _sesiones_list_html(request))
+            content=notice_success + outcome_ok + editor_wrap_oob(templates, request, editor)
         )
     except Exception as e:
         return _domain_error_response(request, e, "editor-notice", extra=outcome_fail)
@@ -438,20 +680,15 @@ def entrenamiento_session_eliminar(request: Request, fecha: str = Form(...)):
     except Exception as e:
         return _domain_error_response(request, e, "editor-notice", extra=outcome_fail)
     editor = _editor_html(request, fecha)
-    return HTMLResponse(
-        content=notice
-        + outcome_ok
-        + editor_wrap_oob(templates, request, editor)
-        + fragment_oob(templates, request, "session-history", _sesiones_list_html(request))
-    )
+    return HTMLResponse(content=notice + outcome_ok + editor_wrap_oob(templates, request, editor))
 
 
 @app.post("/ejercicio/nuevo", response_class=HTMLResponse)
 def ejercicio_nuevo(
     request: Request,
-    ejercicio: str = Form(...),
-    grupo_muscular: str = Form(...),
-    categoria: str = Form(...),
+    ejercicio: str = Form(..., max_length=MAX_NAME_LEN),
+    grupo_muscular: str = Form(..., max_length=MAX_NAME_LEN),
+    categoria: str = Form(..., max_length=MAX_NAME_LEN),
 ):
     try:
         create_exercise(DB_PATH, ejercicio, grupo_muscular, categoria)
@@ -468,11 +705,6 @@ def ejercicio_nuevo(
         content=notice_success
         + fragment_oob(templates, request, "exercise-create", form_html, swap="outerHTML")
     )
-
-
-@app.get("/sesiones", response_class=HTMLResponse)
-def sesiones_view(request: Request):
-    return HTMLResponse(content=_sesiones_list_html(request))
 
 
 @app.get("/alimentacion/editor", response_class=HTMLResponse)
@@ -534,8 +766,8 @@ def alimentacion_eliminar(request: Request, fecha: str = Form(...)):
 @app.post("/alimento/nuevo", response_class=HTMLResponse)
 def alimento_nuevo(
     request: Request,
-    nombre: str = Form(...),
-    categoria: str = Form(""),
+    nombre: str = Form(..., max_length=MAX_NAME_LEN),
+    categoria: str = Form("", max_length=MAX_NAME_LEN),
     kcal: float = Form(0),
     carbohidratos: float = Form(0),
     fibra: float = Form(0),
@@ -582,7 +814,7 @@ def alimento_nuevo(
 @app.post("/alimentacion/plantilla/guardar", response_class=HTMLResponse)
 def plantilla_alimentacion_guardar(
     request: Request,
-    nombre: str = Form(...),
+    nombre: str = Form(..., max_length=MAX_NAME_LEN),
     alimento: list[str] = Form(default=[]),
     cantidad: list[str] = Form(default=[]),
 ):
@@ -631,6 +863,7 @@ def plantilla_alimentacion_reordenar(request: Request, id: list[int] = Form(defa
     from src.database import reorder_plantillas_alimentacion
 
     try:
+        _check_lote(id, MAX_REORDER_IDS, "orden")
         reorder_plantillas_alimentacion(DB_PATH, id)
     except Exception as e:
         return _domain_error_response(request, e, "notice-container")
@@ -659,7 +892,7 @@ def export_nutrition_csv():
             "FROM diario_alimentacion ORDER BY fecha, orden",
             conn,
         )
-    csv = df.to_csv(index=False)
+    csv = "\ufeff" + df.to_csv(index=False)
     return Response(
         content=csv,
         media_type="text/csv",
@@ -675,7 +908,7 @@ def plantillas_view(request: Request, editar: int | None = Query(None)):
 @app.post("/plantilla/guardar", response_class=HTMLResponse)
 def plantilla_guardar(
     request: Request,
-    nombre: str = Form(...),
+    nombre: str = Form(..., max_length=MAX_NAME_LEN),
     ejercicio: list[str] = Form(default=[]),
 ):
     try:
@@ -753,6 +986,7 @@ def plantilla_eliminar(request: Request, plantilla_id: int):
 @app.post("/plantilla/reordenar", response_class=HTMLResponse)
 def plantilla_reordenar(request: Request, id: list[int] = Form(default=[])):
     try:
+        _check_lote(id, MAX_REORDER_IDS, "orden")
         reorder_templates_with_undo_snapshot(DB_PATH, id)
     except Exception as e:
         return _domain_error_response(request, e, "notice-container")
@@ -770,6 +1004,76 @@ def plantilla_aplicar(request: Request, plantilla_id: int, fecha: str = Query(..
     return HTMLResponse(
         content=notice
         + editor_wrap_oob(templates, request, editor + STATIC_MARKERS["plantilla_applied"])
+    )
+
+
+@app.get("/splits", response_class=HTMLResponse)
+def splits_view(request: Request, abrir: int | None = Query(None)):
+    try:
+        if abrir is not None:
+            get_split_board(DB_PATH, abrir)
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    return HTMLResponse(content=_split_page_html(request, abrir_id=abrir))
+
+
+@app.get("/split/nuevo", response_class=HTMLResponse)
+def split_nuevo(request: Request):
+    """Fragmento del item de un split nuevo (vacío, en modo edición).
+
+    GET puro sin efectos colaterales: el JS lo inserta al tope de la sección
+    y lo persiste solo al pulsar Guardar.
+    """
+    return HTMLResponse(content=_split_accordion_item_html(request, None))
+
+
+@app.post("/split/guardar", response_class=HTMLResponse)
+def split_guardar(
+    request: Request,
+    split_id: int | None = Form(None),
+    nombre: str = Form(..., max_length=MAX_NAME_LEN),
+    dia: list[str] = Form(default=[]),
+    item_type: list[str] = Form(default=[]),
+    ejercicio: list[str] = Form(default=[]),
+):
+    try:
+        _check_lote(dia, MAX_SPLIT_ITEMS, "elementos")
+        items = split_items_from_form(dia, item_type, ejercicio)
+        result = save_split_with_undo_snapshot(
+            DB_PATH, split_id, SplitInput(nombre=nombre, items=items)
+        )
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    msg = "Split actualizado." if result.updated else "Split guardado."
+    return HTMLResponse(
+        content=notice_oob(templates, request, target="notice-container", message=msg)
+        + fragment_oob(
+            templates,
+            request,
+            "splits-section",
+            _split_section_html(request),
+            swap="outerHTML",
+        )
+    )
+
+
+@app.post("/split/eliminar/{split_id}", response_class=HTMLResponse)
+def split_eliminar(request: Request, split_id: int):
+    try:
+        delete_split_with_undo_snapshot(DB_PATH, split_id)
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    return HTMLResponse(
+        content=notice_oob(
+            templates, request, target="notice-container", message="Split eliminado."
+        )
+        + fragment_oob(
+            templates,
+            request,
+            "splits-section",
+            _split_section_html(request),
+            swap="outerHTML",
+        )
     )
 
 
@@ -795,9 +1099,6 @@ def undo(request: Request, fecha: str = Form("")):
     if result["kind"] == "sesion":
         fecha_iso = result["fecha_iso"]
         marker = undo_result_oob(templates, request, fecha_iso, result["has_data"])
-        history_oob = fragment_oob(
-            templates, request, "session-history", _sesiones_list_html(request)
-        )
         if fecha == fecha_iso:
             outcome_ok = STATIC_MARKERS["outcome_ok"]
             editor = _editor_html(request, fecha_iso)
@@ -806,9 +1107,8 @@ def undo(request: Request, fecha: str = Form("")):
                 + outcome_ok
                 + marker
                 + editor_wrap_oob(templates, request, editor)
-                + history_oob
             )
-        return HTMLResponse(content=notice_ok + marker + history_oob)
+        return HTMLResponse(content=notice_ok + marker)
     if result["kind"] == "alimentacion":
         fecha_iso = result["fecha_iso"]
         marker = undo_result_oob(templates, request, fecha_iso, result["has_data"])
@@ -822,6 +1122,17 @@ def undo(request: Request, fecha: str = Form("")):
                 + nutrition_editor_wrap_oob(templates, request, editor)
             )
         return HTMLResponse(content=notice_ok + marker)
+    if result["kind"] == "splits":
+        return HTMLResponse(
+            content=notice_ok
+            + fragment_oob(
+                templates,
+                request,
+                "splits-section",
+                _split_section_html(request),
+                swap="outerHTML",
+            )
+        )
     return HTMLResponse(
         content=notice_ok
         + fragment_oob(
@@ -832,6 +1143,34 @@ def undo(request: Request, fecha: str = Form("")):
             swap="outerHTML",
         )
     )
+
+
+@app.exception_handler(ValidationError)
+async def validation_error_handler(request: Request, exc: ValidationError):
+    """Errores de dominio no capturados por el handler → 400 con aviso seguro."""
+    return HTMLResponse(
+        content=notice_oob(
+            templates,
+            request,
+            target="notice-container",
+            message=str(exc),
+            kind="notice-error",
+            dismiss=4500,
+        ),
+        status_code=400,
+    )
+
+
+@app.get("/healthz", response_class=JSONResponse)
+def healthz():
+    """Liveness: la app responde y la DB es consultable."""
+    try:
+        with read_connection(DB_PATH) as conn:
+            conn.execute("SELECT 1").fetchone()
+    except Exception:
+        logging.getLogger("dashboard").exception("healthz: la DB no responde")
+        return JSONResponse({"status": "error", "db": "error"}, status_code=503)
+    return JSONResponse({"status": "ok", "db": "ok"})
 
 
 @app.get("/semana/primer-entreno", response_class=JSONResponse)
@@ -848,7 +1187,7 @@ def semana_primer_entreno(
 def export_csv():
     with read_connection(DB_PATH) as conn:
         df = pd.read_sql_query("SELECT * FROM training_sets ORDER BY fecha, set_orden", conn)
-    csv = df.to_csv(index=False)
+    csv = "\ufeff" + df.to_csv(index=False)
     return Response(
         content=csv,
         media_type="text/csv",
@@ -856,120 +1195,164 @@ def export_csv():
     )
 
 
-@app.get("/select", response_class=HTMLResponse)
-def select_view(request: Request, grupo: str = Query(None), fecha: str = Query(None)):
-    if not grupo:
-        ejercicios_list, _ = get_filters(DB_PATH)
-        chart_html_frag = chart_html(
-            DB_PATH,
-            "systemic",
-            title=_chart_title(),
+def _cascade_items(nivel: str, foco: str) -> list[str]:
+    """Siguiente fila de la cascada: categorías → músculos → ejercicios."""
+    from src.db_connection import read_connection
+
+    if nivel == "grupo" and not foco:
+        return [str(c["name"]) for c in get_categories(DB_PATH) or MUSCLE_CATEGORIES]
+    if nivel == "grupo":
+        with read_connection(DB_PATH) as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT grupo_muscular FROM ejercicios "
+                "WHERE LOWER(categoria) = LOWER(?) AND grupo_muscular IS NOT NULL "
+                "ORDER BY grupo_muscular",
+                (foco,),
+            ).fetchall()
+        return [str(r[0]) for r in rows]
+    if nivel == "musculo":
+        with read_connection(DB_PATH) as conn:
+            if foco:
+                rows = conn.execute(
+                    "SELECT ejercicio FROM ejercicios "
+                    "WHERE LOWER(grupo_muscular) = LOWER(?) ORDER BY ejercicio",
+                    (foco,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT DISTINCT grupo_muscular FROM ejercicios "
+                    "WHERE grupo_muscular IS NOT NULL ORDER BY grupo_muscular"
+                ).fetchall()
+        return [str(r[0]) for r in rows]
+    if nivel == "ejercicio":
+        with read_connection(DB_PATH) as conn:
+            rows = conn.execute("SELECT ejercicio FROM ejercicios ORDER BY ejercicio").fetchall()
+        return [str(r[0]) for r in rows]
+    return []
+
+
+def _cascade_chip_tipo(nivel: str, foco: str) -> str:
+    """Tipo de la fila desplegada: mismo nivel si es selección directa, o el
+    siguiente nivel cuando un foco avanza la cascada (grupo→músculo→ejercicio)."""
+    if foco:
+        return {"grupo": "musculo", "musculo": "ejercicio"}.get(nivel, "")
+    return nivel
+
+
+def _cascade_row_html(request: Request, nivel: str, foco: str) -> str:
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="cascade_row.html",
+            context={
+                "items": _cascade_items(nivel, foco),
+                "tipo": _cascade_chip_tipo(nivel, foco),
+            },
         )
-        exercise_list_html = _render_body(
+    )
+
+
+def _ejercicios_row_html(request: Request, musculo: str, seleccionados: list[str]) -> str:
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="ejercicios_row.html",
+            context={
+                "items": _cascade_items("musculo", musculo),
+                "padre": musculo,
+                "seleccionados": seleccionados,
+            },
+        )
+    )
+
+
+def _chart_selection_html(musculos: list[str], ejercicios: list[str]) -> str:
+    """Fragmento de la gráfica de la selección (1 músculo: compilado + ejercicios;
+    2+: global + músculos). Mismo shell (header + altura) que chart_html para
+    que el swap no mueva layout."""
+    from src.charts import chart_selection
+
+    fig = chart_selection(DB_PATH, musculos, ejercicios)
+    header = _chart_header_html("Rendimiento – " + ", ".join(musculos))
+    if not fig.data:
+        return (
+            header
+            + "<div class='flex items-center justify-center chart-empty text-neutral-400 text-xs'>"
+            "Sin datos para esta selección</div>"
+        )
+    from src.dashboard_service import _json_for_inline
+
+    return (
+        header + f'<script id="unified-chart-data" type="application/json">'
+        f"{_json_for_inline(fig.to_json())}</script>"
+        '<div id="unified-chart-plot" class="plotly-graph-div"></div>'
+    )
+
+
+@app.get("/nivel", response_class=HTMLResponse)
+def nivel_view(
+    request: Request,
+    tipo: str = Query(...),
+    foco: str = Query(default=""),
+):
+    """Cascada: músculos (fila persistente) → ejercicios del músculo → detalle.
+
+    - tipo=musculo sin foco: fila de músculos (no toca la gráfica).
+    - tipo=musculo con foco: fila de ejercicios del músculo + gráfica del
+      compilado (OOB unified-chart).
+    - tipo=ejercicio con foco: detalle tabular en #history-section.
+    """
+    if tipo == "ejercicio" and foco:
+        raw_df = get_exercise_raw_data(DB_PATH, foco)
+        session_df = get_exercise_session_summary(DB_PATH, foco)
+        body = _render_body(
             templates.TemplateResponse(
                 request=request,
-                name="exercise_list.html",
+                name="exercise_detail.html",
                 context={
-                    "ejercicios_grupo": ejercicios_list,
-                    "grupo": "",
+                    "raw_data": raw_df.to_dict(orient="records") if not raw_df.empty else [],
+                    "session_summary": (
+                        session_df.to_dict(orient="records") if not session_df.empty else []
+                    ),
+                    "ejercicio": foco,
                 },
             )
         )
-        oob_chart = chart_oob_wrapper(chart_html_frag)
-        selected = fecha or _today_iso()
-        navigator_oob = fragment_oob(
+        return HTMLResponse(content=body)
+    if tipo == "musculo" and foco:
+        return HTMLResponse(
+            content=_ejercicios_row_html(request, foco, [])
+            + chart_oob_wrapper(_chart_selection_html([foco], []))
+        )
+    if tipo == "global":
+        # Estado base: fila de músculos + gráfica sistémica.
+        return HTMLResponse(
+            content=_cascade_row_html(request, "musculo", "")
+            + chart_oob_wrapper(chart_html(DB_PATH, "systemic", title=_chart_title()))
+        )
+    return HTMLResponse(content=_cascade_row_html(request, tipo, foco))
+
+
+@app.get("/grafica", response_class=HTMLResponse)
+def grafica_view(
+    request: Request,
+    musculo: list[str] = Query(default=[]),
+    ejercicios: list[str] = Query(default=[]),
+):
+    """Gráfica de la selección: 1 músculo → compilado + ejercicios marcados;
+    2+ músculos → global + músculos marcados. La fila de ejercicios solo se
+    refresca cuando hay exactamente 1 músculo."""
+    chart = _chart_selection_html(musculo, ejercicios)
+    content = chart_oob_wrapper(chart)
+    if len(musculo) == 1:
+        content += fragment_oob(
             templates,
             request,
-            "date-navigator",
-            _navigator_html(request, selected),
+            "ejercicios-row",
+            _ejercicios_row_html(request, musculo[0], ejercicios),
             swap="outerHTML",
         )
-        return HTMLResponse(content=exercise_list_html + oob_chart + navigator_oob)
-
-    ejercicios_grupo = get_ejercicios_por_grupo(DB_PATH, grupo)
-    chart_html_frag = chart_html(
-        DB_PATH,
-        "muscle_group",
-        grupo,
-        _chart_title(grupo),
-    )
-    exercise_list_html = _render_body(
-        templates.TemplateResponse(
-            request=request,
-            name="exercise_list.html",
-            context={
-                "ejercicios_grupo": ejercicios_grupo,
-                "grupo": grupo,
-            },
-        )
-    )
-    oob_chart = chart_oob_wrapper(chart_html_frag)
-    selected = fecha or _today_iso()
-    navigator_oob = fragment_oob(
-        templates,
-        request,
-        "date-navigator",
-        _navigator_html(request, selected, grupo=grupo),
-        swap="outerHTML",
-    )
-    return HTMLResponse(content=exercise_list_html + oob_chart + navigator_oob)
-
-
-@app.get("/grupo/reset", response_class=HTMLResponse)
-def reset_grupo(request: Request, grupo: str = Query(...), fecha: str = Query(None)):
-    chart_html_frag = chart_html(
-        DB_PATH,
-        "muscle_group",
-        grupo,
-        _chart_title(grupo),
-    )
-    oob_chart = chart_oob_wrapper(chart_html_frag)
-    selected = fecha or _today_iso()
-    navigator_oob = fragment_oob(
-        templates,
-        request,
-        "date-navigator",
-        _navigator_html(request, selected, grupo=grupo),
-        swap="outerHTML",
-    )
-    return HTMLResponse(content="<div></div>" + oob_chart + navigator_oob)
-
-
-@app.get("/ejercicio", response_class=HTMLResponse)
-def get_exercise_history(request: Request, ejercicio: str = Query(...), fecha: str = Query(None)):
-    raw_df = get_exercise_raw_data(DB_PATH, ejercicio)
-    raw_data = raw_df.to_dict(orient="records") if not raw_df.empty else []
-
-    session_df = get_exercise_session_summary(DB_PATH, ejercicio)
-    session_summary = session_df.to_dict(orient="records") if not session_df.empty else []
-
-    chart_html_frag = chart_html(
-        DB_PATH,
-        "exercise",
-        ejercicio,
-        _chart_title(ejercicio),
-    )
-    tables_html = _render_body(
-        templates.TemplateResponse(
-            request=request,
-            name="exercise_detail.html",
-            context={
-                "raw_data": raw_data,
-                "session_summary": session_summary,
-                "ejercicio": ejercicio,
-            },
-        )
-    )
-    oob_chart = chart_oob_wrapper(chart_html_frag)
-    selected = fecha or _today_iso()
-    navigator_oob = fragment_oob(
-        templates,
-        request,
-        "date-navigator",
-        _navigator_html(request, selected, ejercicio=ejercicio),
-        swap="outerHTML",
-    )
-    return HTMLResponse(content=tables_html + oob_chart + navigator_oob)
+    return HTMLResponse(content=content)
 
 
 @app.post("/sync/health-connect")
@@ -1023,7 +1406,7 @@ def export_health_connect_csv(incluir_borrados: bool = Query(default=False)):
             f"ORDER BY record_type, start_epoch_ms",
             conn,
         )
-    csv = df.to_csv(index=False)
+    csv = "\ufeff" + df.to_csv(index=False)
     return Response(
         content=csv,
         media_type="text/csv",

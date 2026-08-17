@@ -7,124 +7,61 @@
             <h1 class="text-xl font-black tracking-[0.2em] text-white uppercase">Gym Tracker</h1>
             <a
                 href="/exportar/csv"
-                class="text-[10px] font-bold text-neutral-500 hover:text-burgundy-400 border border-neutral-800 hover:border-burgundy-700 rounded px-2 py-1 transition-all uppercase tracking-widest"
+                class="btn btn-outline"
             >Exportar CSV</a>
+            <a
+                href="/splits"
+                class="btn btn-outline"
+            >Splits</a>
+        </div>
+        <div class="flex items-center gap-3">
+            <button
+                data-action="open-editor-popup"
+                class="btn btn-primary rounded-full px-5 h-11"
+            >+ Registrar</button>
         </div>
     </header>
 
-    <div class="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6 items-start">
-        <!-- Panel lateral izquierdo -->
-        <aside class="flex flex-col gap-4 lg:sticky lg:top-6 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto lg:pr-1 lg:scrollbar-thin">
-            <!-- Nuevo ejercicio -->
-            <div id="exercise-create">
-                {{ exercise_form_html | safe }}
-            </div>
-
-            <!-- Nuevo alimento -->
-            <div id="alimento-create">
-                {{ alimento_form_html | safe }}
-            </div>
-
-            <!-- Plantillas de alimentación -->
-            <div id="nutrition-templates-section">
-                {{ nutrition_templates_html | safe }}
-            </div>
-
-            <!-- Plantillas -->
-            <div id="plantillas-section">
-                {{ plantillas_html | safe }}
-            </div>
-
-            <!-- Historial de sesiones -->
-            <div id="session-history">{{ session_history_html | safe }}</div>
-
-            <!-- Categorías de Músculos: Empuje / Tirón / Pierna / Core -->
-            <div class="flex flex-col gap-4">
-                {% for cat in muscle_categories %}
-                <div class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-2.5 neon-border metallic-border">
-                    <h3 class="text-xs font-black tracking-[0.2em] text-burgundy-400 uppercase text-center pb-2 border-b border-neutral-800 neon-title">{{ cat.name }}</h3>
-                    {% for muscle in cat.muscles %}
-                        {% if muscle in grupos_list %}
-                        <button
-                            id="cat-btn-{{ muscle }}"
-                            data-action="select-category" data-category="{{ muscle }}"
-                            class="category-btn w-full bg-matte-950 border border-neutral-800 hover:border-neutral-700 text-neutral-300 text-sm font-bold py-2 px-3 rounded-lg transition-all text-left tracking-wide focus:outline-none focus-visible:outline-none focus:ring-0 active:outline-none"
-                        >
-                            {{ muscle }}
-                        </button>
-                        {% endif %}
-                    {% endfor %}
-                </div>
-                {% endfor %}
-            </div>
-
-            <!-- Ejercicios (loaded dynamically) -->
-            <section id="exercise-section" class="flex flex-col gap-4">
-                {% include "exercise_list.html" %}
-            </section>
-        </aside>
-
-        <!-- Contenido principal -->
-        <main class="flex flex-col gap-6 min-w-0">
-            <!-- Navegador de fechas (arriba de todo; afecta a ambos paneles) -->
-            <section id="date-navigator">
-                {{ navigator_html | safe }}
-            </section>
-
-            <!-- Fecha viva (día + semana) entre el navegador y el panel de alimentación -->
-            <section id="session-date-title" class="flex items-baseline gap-1.5">
-                <h3 class="text-[11px] font-black tracking-widest text-burgundy-400 uppercase neon-title truncate">{{ dia }} {{ fecha_display }}</h3>
-                <span class="text-[10px] text-neutral-500 flex-none">Semana {{ semana }}</span>
-            </section>
-
-            <!-- Panel de alimentación (colapsable desde su header) -->
-            <section id="nutrition-panel" data-editmode="0" class="bg-neutral-900 border border-transparent rounded-xl px-2 pt-2 pb-2 flex flex-col gap-2 neon-border metallic-border relative">
-                <div id="nutrition-editor-wrap">
-                    {{ nutrition_editor_html | safe }}
-                </div>
-            </section>
-
-            <!-- Editor de sesión (tarjeta estable; colapsable desde su header) -->
-            <div id="session-editor" data-editmode="0" class="bg-neutral-900 border border-transparent rounded-xl px-2 pt-2 pb-2 flex flex-col gap-2 neon-border metallic-border relative">
-                <div id="editor-notice"></div>
-                <div id="save-outcome" data-ok="0" hidden></div>
-                <section id="session-editor-wrap">
-                    {{ editor_html | safe }}
-                </section>
-            </div>
-
-            <!-- Gráfica Única -->
-            <div id="unified-chart-container" class="bg-neutral-900 border border-transparent rounded-xl p-5 neon-border metallic-border">
-                <div id="unified-chart">
-                    {{ systemic_chart_html | safe }}
-                </div>
-            </div>
-
-            <!-- Detalle y Tabla (loaded dynamically abajo de la gráfica) -->
-            <section id="history-section" class="flex flex-col gap-4"></section>
-        </main>
+    <!-- Músculos (fila persistente) + ejercicios del músculo seleccionado -->
+    <div class="flex flex-col gap-2 border-b border-neutral-800 pb-4">
+        <div id="cascade-row">
+            {{ cascade_row_html | safe }}
+            <span class="htmx-indicator text-xs text-neutral-400">Cargando niveles…</span>
+        </div>
+        <div id="ejercicios-row">
+            <span class="htmx-indicator text-xs text-neutral-400">Cargando ejercicios…</span>
+        </div>
     </div>
+
+    <!-- Contenido principal -->
+    <main class="flex flex-col gap-6 min-w-0">
+        <!-- Gráfica Única -->
+        <div id="unified-chart-container" class="panel panel-spacious">
+            <div id="unified-chart">
+                {{ systemic_chart_html | safe }}
+            </div>
+        </div>
+
+        <!-- Detalle y Tabla (loaded dynamically abajo de la gráfica) -->
+        <section id="history-section" class="flex flex-col gap-4"></section>
+    </main>
 </div>
 
+<noscript>
+    <div class="notice notice-error" role="alert">
+        El dashboard requiere JavaScript para editar, navegar y ver las gráficas.
+        Sin JS puedes ver la vista inicial y <a href="/exportar/csv" class="underline">exportar los datos en CSV</a>.
+    </div>
+</noscript>
 
-<style>
-    .htmx-indicator {
-        display: none;
-    }
-    .htmx-request .htmx-indicator {
-        display: inline;
-    }
-    .htmx-request.htmx-indicator {
-        display: inline;
-    }
-
-    #unified-chart .plotly-graph-div,
-    #unified-chart .js-plotly-plot {
-        animation: chartFadeIn 0.3s ease-out;
-    }
-    @keyframes chartFadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-    }
-</style>
+<!-- Ventana emergente de registro (alimentación + sesión + cardio) -->
+<dialog id="editor-popup" class="editor-popup-dialog" aria-labelledby="popup-fecha-title">
+    <div class="relative z-20 mx-auto my-6 max-w-4xl max-h-[calc(100vh-3rem)] overflow-y-auto bg-neutral-950 border border-neutral-800 rounded-2xl flex flex-col">
+        <div class="sticky top-0 z-30 bg-neutral-950 border-b border-neutral-800 px-5 py-3 flex items-center gap-4">
+            <h2 class="panel-title panel-title-neon" id="popup-fecha-title"></h2>
+            <button id="popup-close" data-action="close-editor-popup" class="ml-auto text-neutral-400 hover:text-white text-xl leading-none px-2" aria-label="Cerrar">×</button>
+        </div>
+        <div id="popup-body" class="flex flex-col gap-4 p-5"></div>
+    </div>
+</dialog>
 {% endblock %}

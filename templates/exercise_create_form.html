@@ -3,18 +3,18 @@
 
     <form id="exercise-create-form" hx-post="/ejercicio/nuevo" hx-swap="none" class="flex flex-col gap-2">
         <input
-            name="ejercicio" required placeholder="Nombre del ejercicio"
-            class="bg-matte-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600 focus:border-burgundy-700 focus:outline-none"
+            name="ejercicio" required placeholder="Nombre del ejercicio" aria-label="Nombre del ejercicio"
+            class="bg-matte-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-200 placeholder-neutral-400 focus:border-burgundy-700 focus:outline-none"
         >
         <input
-            name="grupo_muscular" required placeholder="Grupo muscular (ej: Pectoral)" list="muscle-list"
-            class="bg-matte-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600 focus:border-burgundy-700 focus:outline-none"
+            name="grupo_muscular" required placeholder="Grupo muscular (ej: Pectoral)" list="muscle-list" aria-label="Grupo muscular"
+            class="bg-matte-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-200 placeholder-neutral-400 focus:border-burgundy-700 focus:outline-none"
         >
         <datalist id="muscle-list">
             {% for m in muscle_names %}<option value="{{ m }}">{% endfor %}
         </datalist>
         <select
-            name="categoria" required
+            name="categoria" required aria-label="Categoría"
             class="bg-matte-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-200 focus:border-burgundy-700 focus:outline-none"
         >
             <option value="">— Categoría —</option>
