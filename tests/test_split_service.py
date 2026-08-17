@@ -259,3 +259,21 @@ def test_metricas_by_group_exercises(db):
 def test_metricas_by_group_exercises_vacio(db):
     metrics = compute_split_metrics([])
     assert metrics.by_group_exercises == {}
+
+
+def test_metricas_by_group_exercises_por_dia(db):
+    """El resumen jerárquico de cada tarjeta necesita la jerarquía grupo →
+    ejercicio DENTRO de cada día (no solo global)."""
+    items = [
+        _item(dia="LUNES", ejercicio="Press"),
+        _item(dia="LUNES", ejercicio="Press"),
+        _item(dia="LUNES", ejercicio="Curl"),
+        _item(dia="MARTES", ejercicio="Press"),
+        _item(dia="MARTES", item_type="hiit", ejercicio="HIIT"),
+    ]
+    metrics = compute_split_metrics(_persisted(items))
+    by_day = {d.dia: d.by_group_exercises for d in metrics.days}
+    assert by_day["LUNES"] == {"Pectoral": {"Press": 2}, "Biceps": {"Curl": 1}}
+    assert by_day["MARTES"] == {"Pectoral": {"Press": 1}, "HIIT": {"HIIT": 1}}
+    # Días sin entrenos: jerarquía vacía.
+    assert by_day["MIERCOLES"] == {}

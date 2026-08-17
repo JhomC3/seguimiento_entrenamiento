@@ -45,7 +45,9 @@ from src.logging_setup import request_id_var, setup_logging
 from src.models import (
     SPLIT_DAYS,
     AlimentoInput,
+    Split,
     SplitInput,
+    SplitMetrics,
     TemplateInput,
     ValidationError,
 )
@@ -326,59 +328,65 @@ def _plantillas_list_html(
     )
 
 
-def _split_board_html(
+def _split_accordion_item_html(
     request: Request,
+    split_id: int | None,
     *,
-    split_id: int | None = None,
-    board: dict | None = None,
+    open_: bool = False,
+    max_items: int = MAX_SPLIT_ITEMS,
 ) -> str:
-    """Fragmento del board semanal de splits (7 días + resumen de series)."""
-    if board is None and split_id is not None:
+    """Fragmento de un item del acordeón de splits (cabecera + board semanal).
+
+    `split_id=None` renderiza un split nuevo vacío (sin persistir) en modo
+    edición, para el flujo "Crear nuevo split" (GET /split/nuevo).
+    """
+    split: Split | None = None
+    metrics: SplitMetrics = compute_split_metrics([])
+    if split_id is not None:
         board = get_split_board(DB_PATH, split_id)
-    split = board["split"] if board else None
-    metrics = board["metrics"] if board else compute_split_metrics([])
+        split = board["split"]
+        metrics = board["metrics"]
     return _render_body(
         templates.TemplateResponse(
             request=request,
-            name="partials/split_board.html",
+            name="partials/split_accordion_item.html",
             context={
                 "days": SPLIT_DAYS,
                 "split": split,
                 "metrics": metrics,
-                "open_split_id": split.id if split else None,
-                "max_items": MAX_SPLIT_ITEMS,
-                # Un split guardado se abre en modo visualización; "Editar" lo
-                # habilita client-side (patrón del editor de sesión).
                 "editmode": "0" if split else "1",
+                "max_items": max_items,
+                "open": open_,
             },
         )
     )
 
 
-def _split_list_html(request: Request) -> str:
+def _split_section_html(request: Request, abrir_id: int | None = None) -> str:
+    """Contenido de #splits-section: estado vacío o items del acordeón."""
+    items_html = ""
+    for s in get_splits_summary(DB_PATH):
+        items_html += _split_accordion_item_html(
+            request, s["id"], open_=(abrir_id is not None and abrir_id == s["id"])
+        )
     return _render_body(
         templates.TemplateResponse(
             request=request,
-            name="partials/split_list.html",
-            context={"splits": get_splits_summary(DB_PATH)},
+            name="partials/split_accordion.html",
+            context={"splits_html": items_html},
         )
     )
 
 
 def _split_page_html(request: Request, abrir_id: int | None = None) -> str:
     """Página completa del gestor de splits (base.html + fragmentos)."""
-    board = (
-        _split_board_html(request, split_id=abrir_id) if abrir_id else _split_board_html(request)
-    )
     return _render_body(
         templates.TemplateResponse(
             request=request,
             name="splits.html",
             context={
                 "catalog": get_split_catalog(DB_PATH),
-                "board_html": board,
-                "splits_html": _split_list_html(request),
-                "open_split_id": abrir_id,
+                "splits_html": _split_section_html(request, abrir_id=abrir_id),
                 "app_config_json": {"csrf_token": make_csrf_token(get_csrf_secret())},
             },
         )
@@ -1009,21 +1017,14 @@ def splits_view(request: Request, abrir: int | None = Query(None)):
     return HTMLResponse(content=_split_page_html(request, abrir_id=abrir))
 
 
-@app.get("/split/{split_id}", response_class=HTMLResponse)
-def split_get(request: Request, split_id: int):
-    try:
-        board = get_split_board(DB_PATH, split_id)
-    except Exception as e:
-        return _domain_error_response(request, e, "notice-container")
-    return HTMLResponse(
-        content=fragment_oob(
-            templates,
-            request,
-            "split-board",
-            _split_board_html(request, board=board),
-            swap="innerHTML",
-        )
-    )
+@app.get("/split/nuevo", response_class=HTMLResponse)
+def split_nuevo(request: Request):
+    """Fragmento del item de un split nuevo (vacío, en modo edición).
+
+    GET puro sin efectos colaterales: el JS lo inserta al tope de la sección
+    y lo persiste solo al pulsar Guardar.
+    """
+    return HTMLResponse(content=_split_accordion_item_html(request, None))
 
 
 @app.post("/split/guardar", response_class=HTMLResponse)
@@ -1050,15 +1051,8 @@ def split_guardar(
             templates,
             request,
             "splits-section",
-            _split_list_html(request),
+            _split_section_html(request),
             swap="outerHTML",
-        )
-        + fragment_oob(
-            templates,
-            request,
-            "split-board",
-            _split_board_html(request, split_id=result.id),
-            swap="innerHTML",
         )
     )
 
@@ -1077,15 +1071,8 @@ def split_eliminar(request: Request, split_id: int):
             templates,
             request,
             "splits-section",
-            _split_list_html(request),
+            _split_section_html(request),
             swap="outerHTML",
-        )
-        + fragment_oob(
-            templates,
-            request,
-            "split-board",
-            _split_board_html(request),
-            swap="innerHTML",
         )
     )
 
@@ -1142,7 +1129,7 @@ def undo(request: Request, fecha: str = Form("")):
                 templates,
                 request,
                 "splits-section",
-                _split_list_html(request),
+                _split_section_html(request),
                 swap="outerHTML",
             )
         )

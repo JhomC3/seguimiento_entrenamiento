@@ -239,15 +239,6 @@
     z-index: -1;
     pointer-events: none;
 }
-.panel::before {
-    content: '';
-    position: absolute;
-    inset: -1px;
-    border-radius: inherit;
-    background: var(--t-glow-metallic-border);
-    z-index: -1;
-    pointer-events: none;
-}
 .panel-tight {
     padding: 8px;
     gap: 8px;
@@ -366,8 +357,58 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 /* ---------- Gestor de splits ---------- */
-/* Layout: escritorio = catálogo izquierda (sticky) + editor derecha;
-   móvil = una columna con el editor primero (orden del DOM). */
+/* Dimensiones canónicas de las tarjetas de día (variables CSS como fuente de
+   verdad; el JSON de design tokens valida solo colores). La invariante clave:
+   estas variables NO cambian entre modo vista y edición, ni al expandir
+   resúmenes, ni al agregar/eliminar ejercicios, ni al abrir/cerrar el split. */
+:root {
+    --split-catalog-w: 280px;
+    --split-day-min-width: 146px;
+    --split-day-height: 620px;
+    --split-summary-h: 260px;
+    --split-toolbar-h: 40px;
+    --split-board-pad-y: 10px;
+    --split-item-gap: 8px;
+    --split-item-height: 28px;
+    --split-item-action-size: 18px;
+    --split-scrollbar-size: 3px;
+    --split-expanded-height: calc(
+        var(--split-day-height) + var(--split-toolbar-h) + 2 * var(--split-board-pad-y) + 3px
+    );
+}
+/* Alturas fijas por breakpoint (invariantes dentro de cada uno). */
+@media (min-width: 640px) and (max-width: 1023px) {
+    :root {
+        --split-day-height: 580px;
+        --split-summary-h: 240px;
+    }
+}
+@media (max-width: 639px) {
+    :root {
+        --split-day-height: 560px;
+        --split-summary-h: 220px;
+    }
+}
+
+/* Página a ancho completo (sin contenedor estrecho) con márgenes fijos. */
+.splits-page {
+    width: 100%;
+    max-width: none;
+    padding: 24px 24px 48px;
+}
+.splits-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--t-surfaces-neutral-800);
+    padding-bottom: 16px;
+    margin-bottom: 16px;
+}
+
+/* Layout: escritorio = catálogo izquierda (sticky) + splits derecha;
+   móvil = el contenido del split primero (orden del DOM vía CSS). */
 .splits-layout {
     display: flex;
     flex-direction: column;
@@ -391,7 +432,7 @@ input[type="number"]::-webkit-outer-spin-button {
     }
     .splits-catalog-col {
         order: -1;
-        flex: 0 0 300px;
+        flex: 0 0 var(--split-catalog-w);
         position: sticky;
         top: 16px;
         max-height: calc(100vh - 32px);
@@ -402,28 +443,98 @@ input[type="number"]::-webkit-outer-spin-button {
         flex: 1 1 auto;
     }
 }
-.split-columns {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 8px;
-}
-@media (max-width: 1024px) {
-    .split-columns {
-        grid-template-columns: 1fr;
-    }
+
+/* Scroll horizontal CONFINADO al board del split: nunca mueve toda la página. */
+.split-board-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: var(--split-board-pad-y) 12px;
+    background: var(--t-surfaces-matte-950);
+    border-top: 1px solid var(--t-surfaces-neutral-800);
+    scrollbar-width: thin;
+    scrollbar-color: var(--t-surfaces-scrollbar-thumb) transparent;
 }
 
-/* Zona de destino de un día: resalta durante el arrastre. */
+/* Barras de desplazamiento internas delgadas (3px): track transparente,
+   thumb neutro de baja intensidad, redondeado. Donde el navegador no permita
+   el ancho custom (Firefox thin, macOS overlay) se degrada con elegancia. */
+.split-day-summary,
+.split-day-items,
+.split-board-scroll,
+.split-summary-strip,
+.splits-catalog-col {
+    scrollbar-width: thin;
+    scrollbar-color: var(--t-overlay-white-014) transparent;
+}
+.split-day-summary::-webkit-scrollbar,
+.split-day-items::-webkit-scrollbar,
+.split-board-scroll::-webkit-scrollbar,
+.split-summary-strip::-webkit-scrollbar,
+.splits-catalog-col::-webkit-scrollbar {
+    width: var(--split-scrollbar-size);
+    height: var(--split-scrollbar-size);
+}
+.split-day-summary::-webkit-scrollbar-thumb,
+.split-day-items::-webkit-scrollbar-thumb,
+.split-board-scroll::-webkit-scrollbar-thumb,
+.split-summary-strip::-webkit-scrollbar-thumb,
+.splits-catalog-col::-webkit-scrollbar-thumb {
+    background: var(--t-overlay-white-014);
+    border-radius: 999px;
+}
+.split-day-summary::-webkit-scrollbar-thumb:hover,
+.split-day-items::-webkit-scrollbar-thumb:hover,
+.split-board-scroll::-webkit-scrollbar-thumb:hover,
+.split-summary-strip::-webkit-scrollbar-thumb:hover,
+.splits-catalog-col::-webkit-scrollbar-thumb:hover {
+    background: var(--t-overlay-white-035);
+}
+.split-day-summary::-webkit-scrollbar-track,
+.split-day-items::-webkit-scrollbar-track,
+.split-board-scroll::-webkit-scrollbar-track,
+.split-summary-strip::-webkit-scrollbar-track,
+.splits-catalog-col::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* Board: grid de 7 tarjetas que estiran a todo el ancho del contenedor
+   (minmax: nunca quedan huecos tras Domingo; si el viewport no da, el scroll
+   horizontal queda confinado al wrapper .split-board-scroll). */
+.split-columns {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(var(--split-day-min-width), 1fr));
+    gap: var(--split-item-gap);
+    width: 100%;
+}
+
+/* Contenido expandido del acordeón: altura mínima determinística (suma de
+   toolbar + board + paddings) — coincide con la altura natural de los
+   componentes fijos; crece solo si el contenido excede (p. ej. zoom). */
+.split-accordion-content {
+    display: flex;
+    flex-direction: column;
+    min-height: var(--split-expanded-height);
+}
+
+/* Tarjeta de día: dimensiones invariantes, dos zonas de scroll interno. */
 .split-day-zone {
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 6px;
-    min-height: 140px;
+    height: var(--split-day-height);
+    min-width: 0;
     padding: 8px;
     background: var(--t-overlay-white-004);
     border: 1px solid var(--t-surfaces-neutral-800);
     border-radius: 8px;
     transition: border-color .15s, box-shadow .15s;
+}
+/* Modo edición visible: las tarjetas del split en edición marcan el borde. */
+.split-accordion-item[data-editmode="1"] .split-day-zone {
+    border-color: var(--t-burgundy-700);
 }
 .split-day-zone.drop-target {
     border-color: var(--t-burgundy-600);
@@ -433,12 +544,27 @@ input[type="number"]::-webkit-outer-spin-button {
 .split-day-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 4px;
+    flex: none;
+    min-height: 28px;
     padding-bottom: 4px;
     border-bottom: 1px solid var(--t-surfaces-neutral-800);
 }
+/* Todo el header del día es el área de arrastre del día (mover/copiar el
+   bloque completo); los botones internos (day-select) quedan clicables. */
+.split-accordion-item[data-editmode="1"] .split-day-header {
+    cursor: grab;
+}
+.split-day-header.dragging-day {
+    cursor: grabbing;
+    border-color: var(--t-burgundy-600);
+}
 .split-day-select {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     background: transparent;
     border: 0;
     padding: 0;
@@ -447,6 +573,7 @@ input[type="number"]::-webkit-outer-spin-button {
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--t-burgundy-400);
+    text-align: left;
     cursor: pointer;
 }
 .split-day-select:focus-visible {
@@ -459,23 +586,84 @@ input[type="number"]::-webkit-outer-spin-button {
     text-shadow: var(--t-glow-neon-title);
 }
 .split-day-count {
+    flex: none;
+    margin-left: auto;
     font-size: 12px;
     font-weight: 900;
     color: var(--t-surfaces-neutral-400);
 }
 
+/* Ghost/placeholder estándar de SortableJS: translúcido y punteado, nunca una
+   tarjeta completa opaca (causa del duplicado visual con DnD nativo). */
+.split-day-items .sortable-ghost {
+    opacity: 0.35;
+    background: var(--t-overlay-burgundy-020);
+    border: 1px dashed var(--t-burgundy-600);
+}
+.split-day-items .sortable-chosen {
+    border-color: var(--t-burgundy-600);
+}
+.split-fallback {
+    cursor: grabbing;
+}
+
+/* Mini-encabezados de sección dentro de cada tarjeta: "Resumen" / "Ejercicios".
+   El label de Ejercicios lleva las acciones de día (copia/borrar). */
+.split-day-section-label {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    min-height: 22px;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--t-burgundy-400);
+}
+.split-day-section-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Resumen jerárquico del día: altura fija + scroll interno delgado. */
+.split-day-summary {
+    flex: 0 0 var(--split-summary-h);
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0 -4px;
+    padding: 0 4px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--t-surfaces-scrollbar-thumb) transparent;
+}
+
+/* Lista editable de ejercicios: ocupa el resto con scroll interno propio. */
 .split-day-items {
     display: flex;
     flex-direction: column;
     gap: 4px;
     flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0 -4px;
+    padding: 0 4px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--t-surfaces-scrollbar-thumb) transparent;
+}
+.split-day-items > .split-empty {
+    margin: auto;
 }
 
 /* Chip del catálogo (variante de .split-item-card: arrastrable o click para
    agregar al día seleccionado; sin grupo visible ni botón de eliminar). */
 .split-catalog-chip {
+    box-sizing: border-box;
+    height: var(--split-item-height);
+    min-height: var(--split-item-height);
     cursor: grab;
-    padding: 3px 8px;
+    padding: 0 8px;
 }
 .split-catalog-chip:active {
     cursor: grabbing;
@@ -485,12 +673,17 @@ input[type="number"]::-webkit-outer-spin-button {
     outline-offset: 2px;
 }
 
-/* Instancia colocada en un día (1 instancia = 1 serie). */
+/* Instancia colocada en un día (1 instancia = 1 serie): tamaño FIJO en todos
+   los estados (vista/edición/agregar/eliminar/mover/duplicar). */
 .split-item-card {
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 4px 8px;
+    height: var(--split-item-height);
+    min-height: var(--split-item-height);
+    max-height: var(--split-item-height);
+    padding: 0 8px;
     background: var(--t-surfaces-matte-950);
     border: 1px solid var(--t-surfaces-neutral-800);
     border-radius: 8px;
@@ -523,8 +716,44 @@ input[type="number"]::-webkit-outer-spin-button {
     color: var(--t-surfaces-neutral-200);
 }
 
-/* Handle de copia de día completo (Shift + arrastrar). */
-.split-day-copy-handle {
+/* Botón de eliminar instancia: 18px VISUAL con hit area >= 24px (WCAG 2.5.8)
+   vía ::before; nunca aumenta la altura de la tarjeta. */
+.split-item-remove {
+    position: relative;
+    flex: 0 0 var(--split-item-action-size);
+    width: var(--split-item-action-size);
+    height: var(--split-item-action-size);
+    min-width: var(--split-item-action-size);
+    min-height: var(--split-item-action-size);
+    padding: 0;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    line-height: 1;
+    border-radius: 9999px;
+    background: var(--t-overlay-white-004);
+    border: 1px solid var(--t-overlay-white-008);
+    color: var(--t-overlay-white-035);
+    cursor: pointer;
+    transition: all .15s;
+}
+.split-item-remove::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+}
+.split-item-remove:hover {
+    color: var(--t-detail-danger-hover);
+    background: var(--t-overlay-white-014);
+}
+.split-item-remove:focus-visible {
+    outline: 2px solid var(--t-burgundy-600);
+    outline-offset: 1px;
+}
+
+/* Copia de día accesible (click → copia al día seleccionado; alternativa de
+   teclado al header-drag). */
+.split-day-copy-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -535,30 +764,288 @@ input[type="number"]::-webkit-outer-spin-button {
     background: var(--t-overlay-white-004);
     border: 1px solid var(--t-surfaces-neutral-800);
     color: var(--t-surfaces-neutral-400);
-    cursor: grab;
+    cursor: pointer;
     transition: border-color .15s, color .15s;
 }
-.split-day-copy-handle:hover {
+.split-day-copy-btn:hover {
     color: var(--t-burgundy-400);
     border-color: var(--t-burgundy-600);
 }
-.split-day-copy-handle:focus-visible {
+.split-day-copy-btn:focus-visible {
     outline: 2px solid var(--t-burgundy-600);
     outline-offset: 1px;
 }
-.split-day-copy-handle.dragging-day {
-    border-color: var(--t-burgundy-600);
-    box-shadow: 0 0 8px var(--t-overlay-burgundy-025);
-}
 
-/* Modo visualización: sin controles de edición (los habilita "Editar"). */
-#split-board-week[data-editmode="0"] .row-btn,
-#split-board-week[data-editmode="0"] .split-day-copy-handle,
-#split-board-week[data-editmode="0"] .split-day-clear-btn {
+/* Modo visualización: sin controles de edición (los habilita "Editar").
+   Guardar permanece visible pero deshabilitado (mismo box, sin salto). El
+   botón de eliminar instancia se oculta con visibility (reserva su espacio:
+   la tarjeta no cambia de tamaño). */
+.split-accordion-item[data-editmode="0"] .row-btn,
+.split-accordion-item[data-editmode="0"] .split-day-copy-btn,
+.split-accordion-item[data-editmode="0"] .split-day-clear-btn,
+.split-accordion-item[data-editmode="0"] .split-name-input {
     display: none;
 }
-#split-board-week[data-editmode="0"] .split-item-card {
+.split-accordion-item[data-editmode="0"] .split-item-remove {
+    visibility: hidden;
+}
+.split-accordion-item[data-editmode="0"] .split-item-card {
     cursor: default;
+}
+/* En modo vista la lista de ejercicios NO es un destino de drop (ni siquiera
+   para el DnD nativo HTML5): pointer-events la excluye del hit-testing del
+   drag. En vista no contiene controles interactivos, así que nada se pierde. */
+.split-accordion-item[data-editmode="0"] .split-day-items {
+    pointer-events: none;
+}
+
+/* Acordeón: cada split es un <details>; los controles viven FUERA del
+   <summary> para que su activación no alterne el toggle del acordeón.
+   Cabecera = summary (chevron + nombre + resumen semanal) + toolbar
+   (input + acciones): forman UNA zona visual (sin borde entre ambas;
+   el borde cierra tras el toolbar). */
+.split-accordion-item {
+    padding: 0;
+}
+.split-accordion-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    list-style: none;
+    padding: 12px 14px;
+    cursor: pointer;
+}
+.split-accordion-summary::-webkit-details-marker {
+    display: none;
+}
+.split-accordion-summary:focus-visible {
+    outline: 2px solid var(--t-burgundy-600);
+    outline-offset: -2px;
+    border-radius: 8px;
+}
+.split-accordion-chevron {
+    flex: none;
+    color: var(--t-surfaces-neutral-400);
+    transition: transform .15s;
+}
+.split-accordion[open] > .split-accordion-summary .split-accordion-chevron {
+    transform: rotate(90deg);
+}
+.split-accordion-name {
+    flex: none;
+    max-width: 30%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 14px;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    color: var(--t-detail-white);
+}
+
+/* Resumen semanal en la cabecera (junto al nombre): scroll horizontal propio,
+   nunca empuja el nombre ni cambia la altura de la fila. */
+.split-summary-strip {
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    white-space: nowrap;
+    padding: 2px 8px;
+    font-size: 12px;
+    color: var(--t-surfaces-neutral-300);
+    background: var(--t-overlay-white-004);
+    border-left: 1px solid var(--t-surfaces-neutral-800);
+    scrollbar-width: thin;
+    scrollbar-color: var(--t-surfaces-scrollbar-thumb) transparent;
+}
+.split-summary-strip strong {
+    font-weight: 900;
+    color: var(--t-burgundy-400);
+}
+.split-summary-strip:focus-visible {
+    outline: 2px solid var(--t-burgundy-600);
+    outline-offset: -2px;
+    border-radius: 4px;
+}
+.split-summary-strip-sep {
+    color: var(--t-surfaces-neutral-600);
+    margin: 0 5px;
+}
+
+/* Toolbar por split: input + badges + acciones en iconos agrupadas a la
+   derecha (margin-left auto; sin space-between para huecos artificiales). */
+.split-item-toolbar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: var(--split-toolbar-h);
+    padding: 0 14px;
+    border-bottom: 1px solid var(--t-surfaces-neutral-800);
+}
+.split-item-form {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+.split-name-input {
+    width: 200px;
+}
+.split-item-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+}
+.split-action-btn {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: var(--t-overlay-white-004);
+    border: 1px solid var(--t-surfaces-neutral-800);
+    color: var(--t-surfaces-neutral-400);
+    cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s;
+}
+.split-action-btn:hover:not(:disabled) {
+    color: var(--t-burgundy-400);
+    border-color: var(--t-burgundy-600);
+    background: var(--t-overlay-burgundy-020);
+}
+.split-action-btn:focus-visible {
+    outline: 2px solid var(--t-burgundy-600);
+    outline-offset: 1px;
+}
+.split-action-btn[disabled] {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+/* Modo edición activo: el lápiz se ilumina (acento + glow) sin cambiar su
+   tamaño; selector compuesto para no crear una clase suelta en el vocabulario. */
+.split-action-btn.is-active {
+    color: var(--t-burgundy-400);
+    border-color: var(--t-burgundy-600);
+    filter: drop-shadow(0 0 3px var(--t-burgundy-600));
+}
+.split-action-btn svg {
+    width: 14px;
+    height: 14px;
+}
+.split-dirty-hint {
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--t-burgundy-400);
+}
+.split-dirty-hint:not([hidden]) {
+    display: inline;
+}
+
+/* Estado vacío de #splits-section. */
+.split-empty-state {
+    align-items: center;
+    text-align: center;
+    padding: 40px 16px;
+}
+.split-empty-state-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--t-surfaces-neutral-300);
+}
+
+/* Resumen jerárquico dentro de cada tarjeta (grupo colapsable). */
+.split-summary-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 2px 0;
+    font-size: 12px;
+}
+.split-summary-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--t-surfaces-neutral-200);
+}
+.split-summary-total {
+    flex: none;
+    color: var(--t-surfaces-neutral-400);
+}
+.split-summary-group + .split-summary-group {
+    border-top: 1px solid var(--t-surfaces-neutral-800);
+    margin-top: 4px;
+    padding-top: 4px;
+}
+.split-summary-group-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    background: transparent;
+    border: 0;
+    padding: 2px 0;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+}
+.split-summary-group-toggle:hover .split-summary-name {
+    color: var(--t-burgundy-400);
+}
+.split-summary-group-toggle:focus-visible {
+    outline: 2px solid var(--t-burgundy-600);
+    outline-offset: -2px;
+    border-radius: 4px;
+}
+.split-summary-group-toggle .split-summary-name {
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--t-burgundy-400);
+}
+.split-summary-chevron {
+    flex: none;
+    color: var(--t-surfaces-neutral-400);
+    transition: transform .15s;
+}
+.split-summary-group-toggle[aria-expanded="true"] .split-summary-chevron {
+    transform: rotate(90deg);
+}
+.split-summary-group-body {
+    animation: split-fade .15s ease;
+}
+.split-summary-exercise {
+    padding-left: 18px;
+}
+.split-summary-exercise .split-summary-name {
+    color: var(--t-surfaces-neutral-300);
+}
+
+/* Celdas métricas y placeholders de estados vacíos. */
+.split-metric {
+    font-size: 12px;
+    color: var(--t-surfaces-neutral-400);
+}
+.split-metric strong {
+    color: var(--t-burgundy-400);
+}
+.split-metric span {
+    color: var(--t-surfaces-neutral-400);
+}
+.split-empty {
+    font-size: 12px;
+    color: var(--t-surfaces-neutral-400);
+    text-align: center;
+    padding: 8px 4px;
 }
 
 /* Catálogo desplegable por grupo muscular (details/summary nativos). */
@@ -607,76 +1094,4 @@ input[type="number"]::-webkit-outer-spin-button {
 @keyframes split-fade {
     from { opacity: 0; }
     to { opacity: 1; }
-}
-
-/* Resumen compacto tipo ledger (semana → grupos → ejercicios). */
-.split-summary-row {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 2px 0;
-    font-size: 12px;
-}
-.split-summary-row.split-summary-total {
-    font-weight: 900;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--t-surfaces-neutral-200);
-    padding-bottom: 6px;
-}
-.split-summary-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--t-surfaces-neutral-200);
-}
-.split-summary-total {
-    flex: none;
-    color: var(--t-surfaces-neutral-400);
-}
-.split-summary-group + .split-summary-group {
-    border-top: 1px solid var(--t-surfaces-neutral-800);
-    margin-top: 4px;
-    padding-top: 4px;
-}
-.split-summary-group > .split-summary-row:first-child .split-summary-name {
-    font-weight: 900;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--t-burgundy-400);
-}
-.split-summary-exercise {
-    padding-left: 16px;
-}
-.split-summary-exercise .split-summary-name {
-    color: var(--t-surfaces-neutral-300);
-}
-.split-summary-day {
-    border-top: 1px solid var(--t-surfaces-neutral-800);
-    padding-top: 3px;
-}
-.split-summary-groups {
-    flex: none;
-    color: var(--t-surfaces-neutral-400);
-    text-align: right;
-}
-
-/* Celdas métricas y placeholders de estados vacíos. */
-.split-metric {
-    font-size: 12px;
-    color: var(--t-surfaces-neutral-400);
-}
-.split-metric strong {
-    color: var(--t-burgundy-400);
-}
-.split-metric span {
-    color: var(--t-surfaces-neutral-400);
-}
-.split-empty {
-    font-size: 12px;
-    color: var(--t-surfaces-neutral-400);
-    text-align: center;
-    padding: 8px 4px;
 }

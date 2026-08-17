@@ -165,10 +165,21 @@ def compute_split_metrics(items: list[SplitItem]) -> SplitMetrics:
         day_items = per_day.get(dia, [])
         d_ex: dict[str, int] = {}
         d_g: dict[str, int] = {}
+        d_g_ex: dict[str, dict[str, int]] = {}
         for it in day_items:
             d_ex[it.ejercicio] = d_ex.get(it.ejercicio, 0) + 1
             d_g[it.grupo_muscular] = d_g.get(it.grupo_muscular, 0) + 1
-        days.append(SplitDaySummary(dia=dia, series=len(day_items), by_exercise=d_ex, by_group=d_g))
+            group_ex = d_g_ex.setdefault(it.grupo_muscular, {})
+            group_ex[it.ejercicio] = group_ex.get(it.ejercicio, 0) + 1
+        days.append(
+            SplitDaySummary(
+                dia=dia,
+                series=len(day_items),
+                by_exercise=d_ex,
+                by_group=d_g,
+                by_group_exercises=d_g_ex,
+            )
+        )
 
     return SplitMetrics(
         total_series=total,

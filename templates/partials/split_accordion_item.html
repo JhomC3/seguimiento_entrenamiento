@@ -1,0 +1,58 @@
+{# Item del acordeón de splits (un split guardado o un split nuevo sin persistir
+   cuando `split` es None). El <summary> contiene SOLO texto estático (chevron,
+   nombre, resumen semanal); los controles viven en el toolbar del contenido
+   para que su activación no alterne el <details>. #}
+{% set item_uid = split.id if split else 'nuevo' %}
+<section class="split-accordion-item panel panel-default"
+         id="split-item-{{ item_uid }}"
+         data-split-id="{{ split.id if split else '' }}"
+         data-editmode="{{ editmode }}"
+         data-max-items="{{ max_items }}"
+         data-nombre="{{ split.nombre if split else '' }}">
+    <details class="split-accordion" {% if open %}open{% endif %}>
+        <summary class="split-accordion-summary">
+            <svg class="split-accordion-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            <span class="split-accordion-name">{{ split.nombre if split else 'Nuevo split' }}</span>
+            <span class="split-summary-strip" role="region" aria-label="Resumen semanal del split" tabindex="0">
+                <strong>{{ metrics.total_series }}</strong> series
+                {% for grupo, n in metrics.by_group.items() | sort(attribute='1', reverse=true) %}
+                <span class="split-summary-strip-sep">·</span> {{ grupo }} <strong>{{ n }}</strong>
+                {% endfor %}
+            </span>
+        </summary>
+
+        <div class="split-accordion-content">
+            <div class="split-item-toolbar">
+                <form class="split-item-form" hx-post="/split/guardar" hx-swap="none">
+                    <input type="hidden" name="split_id" value="{{ split.id if split else '' }}">
+                    <label class="sr-only" for="split-nombre-{{ item_uid }}">Nombre del split</label>
+                    <input id="split-nombre-{{ item_uid }}" name="nombre" class="field-input field-input-sm split-name-input"
+                           value="{{ split.nombre if split else '' }}" maxlength="200" autocomplete="off"
+                           placeholder="Nombre del split">
+                </form>
+                <span class="split-dirty-hint" data-split-dirty-hint hidden>Modificado</span>
+                <div class="split-item-actions">
+                    <button type="button" data-action="split-edit" class="split-action-btn"
+                            aria-label="Editar el split" aria-pressed="false" title="Editar el split">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+                    </button>
+                    <button type="button" data-action="split-save" class="split-action-btn"
+                            {% if split %}disabled{% endif %}
+                            aria-label="Guardar el split" title="Guardar el split">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                    </button>
+                    <button type="button" data-action="split-delete" class="split-action-btn"
+                            data-split-id="{{ split.id if split else '' }}"
+                            data-split-nombre="{{ split.nombre if split else '' }}"
+                            aria-label="Eliminar el split" title="Eliminar el split">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="split-board-scroll">
+                {% include "partials/split_board.html" %}
+            </div>
+        </div>
+    </details>
+</section>

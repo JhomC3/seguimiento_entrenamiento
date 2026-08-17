@@ -132,6 +132,7 @@ class SplitDaySummary:
     series: int
     by_exercise: dict[str, int]
     by_group: dict[str, int]
+    by_group_exercises: dict[str, dict[str, int]]
 
 
 @dataclass(frozen=True)
