@@ -1,6 +1,6 @@
 # Rediseño del Gestor de Splits (v2) — Plan de Implementación
 
-> **Estado: ACTIVO.** Este es el único plan pendiente dentro de `docs/plans`; se conserva como referencia para el siguiente trabajo del gestor de splits.
+> **Estado: COMPLETADO (2026-08-17).** Sus objetivos quedaron implementados en las iteraciones v3–v6 del gestor de splits y documentados en `docs/architecture/current-ui-contract.md`.
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
