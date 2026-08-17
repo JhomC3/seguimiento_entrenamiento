@@ -1498,6 +1498,35 @@ def test_editor_popup_renders_navegador_editores_cardio(tmp_path, monkeypatch):
     assert "Semana" in r.text
 
 
+def test_cardio_day_fragment_refresca_por_fecha(tmp_path, monkeypatch):
+    """GET /cardio/day sirve el fragmento del panel para la fecha indicada
+    (navegación dentro del popup: doNav refresca #cardio-day)."""
+    import sqlite3
+    from datetime import UTC, datetime
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    conn = sqlite3.connect(db)
+    ts = int(datetime(2026, 8, 12, 8, 0, tzinfo=UTC).timestamp() * 1000)
+    conn.execute(
+        "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
+        "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at) "
+        "VALUES ('c1', 'EXERCISE_SESSION', ?, ?, ?, 1, "
+        "'{\"value\": {\"title\": \"Cinta\"}}', 'x', 'x')",
+        (ts, ts + 30 * 60000, ts),
+    )
+    conn.commit()
+    conn.close()
+
+    r = _client().get("/cardio/day", params={"fecha": "2026-08-12"})
+    assert r.status_code == 200
+    assert "Cinta" in r.text
+    assert 'data-action="cardio-annotation-save"' in r.text
+    r_vacio = _client().get("/cardio/day", params={"fecha": "2026-08-13"})
+    assert r_vacio.status_code == 200
+    assert "Sin sesiones de ejercicio" in r_vacio.text
+
+
 def test_cardio_annotation_oob_refresca_bloque(tmp_path, monkeypatch):
     import sqlite3
     from datetime import datetime

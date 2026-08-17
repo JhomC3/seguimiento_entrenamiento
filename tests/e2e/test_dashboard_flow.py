@@ -1006,6 +1006,51 @@ def test_nutrition_apply_confirms_replacement(page, server):
     assert page.locator("#nutrition-rows .nutrition-row").count() >= 1
 
 
+def test_cardio_annotation_saves_from_popup(page, server, tmp_path):
+    """Regresión: el submit de anotación de cardio desde el popup debe llegar al
+    servidor (htmx no serializa FormData como values; se convierte a objeto)."""
+    import sqlite3
+    from datetime import datetime, timedelta
+
+    iso_cardio = _iso(1)
+    db_path = tmp_path / "lifestyle.db"
+    conn = sqlite3.connect(db_path)
+    target = datetime.now() + timedelta(days=1)
+    start = (
+        datetime(
+            target.year, target.month, target.day, 8, 0, tzinfo=datetime.now().astimezone().tzinfo
+        ).timestamp()
+        * 1000
+    )
+    conn.execute(
+        "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
+        "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at) "
+        "VALUES ('c1', 'EXERCISE_SESSION', ?, ?, ?, 1, "
+        "'{\"value\": {\"title\": \"Cinta\"}}', 'x', 'x')",
+        (int(start), int(start) + 30 * 60000, int(start)),
+    )
+    conn.commit()
+    conn.close()
+
+    _open_popup(page, server)
+    page.locator(f'#popup-body .date-num[data-iso="{iso_cardio}"]').click()
+    expect(
+        page.locator("#popup-body #cardio-day form[data-action='cardio-annotation-save']")
+    ).to_have_count(1, timeout=5000)
+    form = page.locator("#popup-body #cardio-day form[data-action='cardio-annotation-save']").first
+    form.locator('input[name="velocidad_kmh"]').fill("9.5")
+    form.get_by_role("button", name="Guardar").click()
+    expect(page.locator("#notice-container .notice-success")).to_contain_text(
+        "Anotación de cardio guardada", timeout=5000
+    )
+    conn = sqlite3.connect(db_path)
+    row = conn.execute(
+        "SELECT velocidad_kmh, inclinacion_pct FROM cardio_annotations WHERE hc_id='c1'"
+    ).fetchone()
+    conn.close()
+    assert row == (9.5, None), row
+
+
 def test_date_arrows_ignored_outside_navigator(page, server):
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
@@ -1039,3 +1084,45 @@ def test_nutrition_rows_reorder_by_drag(page, server):
     page.wait_for_timeout(250)
     expect(rows.nth(0).locator('input[name="alimento"]')).to_have_value("Pollo")
     expect(rows.nth(1).locator('input[name="alimento"]')).to_have_value("Avena")
+
+
+def test_cardio_refreshes_when_navigating_in_popup(page, server, tmp_path):
+    """Regresión: el panel de cardio debe refrescarse al navegar fechas dentro del
+    popup (doNav pide /cardio/day), no quedarse con el día de apertura."""
+    import sqlite3
+    from datetime import datetime, timedelta
+
+    iso_cardio = _iso(1)
+    # Sembrar una EXERCISE_SESSION en la DB del servidor para mañana.
+    db_path = tmp_path / "lifestyle.db"
+    conn = sqlite3.connect(db_path)
+    target = datetime.now() + timedelta(days=1)
+    start = (
+        datetime(
+            target.year, target.month, target.day, 8, 0, tzinfo=datetime.now().astimezone().tzinfo
+        ).timestamp()
+        * 1000
+    )
+    conn.execute(
+        "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
+        "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at) "
+        "VALUES ('c1', 'EXERCISE_SESSION', ?, ?, ?, 1, "
+        "'{\"value\": {\"title\": \"Cinta\"}}', 'x', 'x')",
+        (int(start), int(start) + 30 * 60000, int(start)),
+    )
+    conn.commit()
+    conn.close()
+
+    # Abrir el popup hoy (sin cardio) y navegar a mañana: debe aparecer el form.
+    _open_popup(page, server)
+    expect(page.locator("#popup-body #cardio-day")).to_contain_text(
+        "Sin sesiones de ejercicio", timeout=5000
+    )
+    page.locator(f'#popup-body .date-num[data-iso="{iso_cardio}"]').click()
+    expect(page.locator("#popup-body #session-form input[name='fecha']")).to_have_value(
+        iso_cardio, timeout=5000
+    )
+    expect(
+        page.locator("#popup-body #cardio-day form[data-action='cardio-annotation-save']")
+    ).to_have_count(1, timeout=5000)
+    expect(page.locator("#popup-body #cardio-day")).to_contain_text("Cinta")

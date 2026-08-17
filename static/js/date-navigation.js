@@ -64,7 +64,15 @@ export function doNav(iso, force) {
         );
     }
     Promise.all(jobs)
-        .then(function () { inFlightIso = null; })
+        .then(function () {
+            inFlightIso = null;
+            // El refresh de cardio va DESPUÉS de los editores: htmx serializa los
+            // requests del mismo elemento fuente (body) en una cola "last", y un
+            // tercer ajax simultáneo habría reemplazado al de alimentación en cola.
+            if (document.getElementById('cardio-day')) {
+                htmx.ajax('GET', `/cardio/day?fecha=${iso}`, { target: '#cardio-day', swap: 'innerHTML' });
+            }
+        })
         .catch(function () { inFlightIso = null; });
     if (btn) btn.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
 }
@@ -118,8 +126,6 @@ export function initDateNavigation() {
         const el = e.target.closest('[data-action]');
         if (!el) return;
         if (el.dataset.action === 'select-date') {
-            requestNavigate(el.dataset.iso);
-        } else if (el.dataset.action === 'goto-session') {
             requestNavigate(el.dataset.iso);
         } else if (el.dataset.action === 'jump-date') {
             jumpDate(el.dataset.iso);

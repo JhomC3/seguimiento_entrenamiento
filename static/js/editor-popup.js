@@ -106,8 +106,15 @@ export function initEditorPopup() {
         const form = e.target.closest && e.target.closest('[data-action="cardio-annotation-save"]');
         if (!form) return;
         e.preventDefault();
+        // htmx no serializa FormData como `values` (hace merge de objetos planos):
+        // se convierte a objeto y se omiten los campos vacíos para que el servidor
+        // los reciba como None (float | None = Form(None)).
+        const values = {};
+        new FormData(form).forEach(function (v, k) {
+            if (v !== '') values[k] = v;
+        });
         htmx.ajax('POST', '/cardio/annotation', {
-            values: new FormData(form),
+            values: values,
             target: document.body,
             swap: 'none',
         });
