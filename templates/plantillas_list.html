@@ -1,11 +1,11 @@
-<div class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-2.5 neon-border metallic-border">
-    <h3 class="text-xs font-black tracking-[0.2em] text-burgundy-400 uppercase text-center pb-2 border-b border-neutral-800 neon-title">Entrenamientos</h3>
+<div class="panel panel-default">
+    <h3 class="panel-title panel-title-neon panel-title-divider">Entrenamientos</h3>
     {% if not plantillas %}
     <p class="text-xs text-neutral-400 text-center">Aún no hay entrenos.<br>Guarda uno desde el editor.</p>
     {% else %}
     <div id="plantillas-list" class="flex flex-col gap-2.5">
         {% for p in plantillas %}
-        <div class="pt-card bg-matte-950 border border-neutral-800 rounded-lg p-2 flex flex-col gap-1.5" id="pt-card-{{ p.id }}" data-pt-id="{{ p.id }}" data-pt-nombre="{{ p.nombre }}">
+        <div class="pt-card card" id="pt-card-{{ p.id }}" data-pt-id="{{ p.id }}" data-pt-nombre="{{ p.nombre }}">
             <span class="text-xs font-bold text-neutral-200 truncate">{{ p.nombre }}</span>
             <div class="flex gap-1">
                 <button type="button" data-action="apply-template" data-template-id="{{ p.id }}" class="pt-btn pt-btn-burgundy flex-1">Aplicar</button>
@@ -15,11 +15,11 @@
             {% if editing_id == p.id %}
             <form hx-post="/plantilla/editar/{{ p.id }}" hx-swap="none" class="flex flex-col gap-1.5 mt-1.5 pt-1.5 border-t border-neutral-800">
                 {% if error %}<p class="text-xs text-red-400">{{ error }}</p>{% endif %}
-                <input name="nombre" aria-label="Nombre del entreno" value="{{ p.nombre }}" class="w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 focus:outline-none transition-colors" placeholder="Nombre del entreno">
+                <input name="nombre" aria-label="Nombre del entreno" value="{{ p.nombre }}" class="w-full cell-input" placeholder="Nombre del entreno">
                 <div id="plantilla-edit-rows" class="flex flex-col gap-1">
                     {% for ej in p.ejercicios %}
                     <div class="pt-row flex gap-1 items-center">
-                        <select name="ejercicio" class="pt-select w-full appearance-none bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-xs text-neutral-200 focus:outline-none transition-colors">
+                        <select name="ejercicio" class="pt-select cell-select">
                             <option value="{{ ej }}" selected>{{ ej }}</option>
                             {% for c in catalog %}{% if c != ej %}<option value="{{ c }}">{{ c }}</option>{% endif %}{% endfor %}
                         </select>

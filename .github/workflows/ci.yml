@@ -55,7 +55,7 @@ jobs:
           ./scripts/build_css.sh
           git diff --exit-code -- static/css/tokens.css static/css/tailwind.css
       - name: Frontend budget gates
-        run: uv run pytest tests/test_frontend_budget.py -q --no-cov
+        run: uv run pytest tests/test_frontend_budget.py tests/test_ui_consistency.py -q --no-cov
       - name: Run tests with coverage floor
         run: uv run pytest -q --ignore=tests/e2e
       - name: Per-module coverage floors (charts, metrics)

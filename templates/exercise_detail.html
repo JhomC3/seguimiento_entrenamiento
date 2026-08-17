@@ -1,7 +1,7 @@
 <div class="animate-fade-in flex flex-col gap-6">
     {% if session_summary %}
-    <div class="bg-neutral-900 border border-transparent rounded-xl p-5 flex flex-col gap-4 neon-border metallic-border">
-        <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase text-center pb-3 border-b border-neutral-800 neon-title">Resumen por Sesión</h3>
+    <div class="panel panel-spacious">
+        <h3 class="panel-title panel-title-neon panel-title-divider">Resumen por Sesión</h3>
         <div class="overflow-x-auto rounded-lg border border-neutral-800 bg-matte-950 shadow-sm">
             <table class="w-full text-left border-collapse text-xs">
                 <thead>
@@ -38,8 +38,8 @@
     {% endif %}
 
     {% if raw_data %}
-    <div class="bg-neutral-900 border border-transparent rounded-xl p-5 flex flex-col gap-4 neon-border metallic-border">
-        <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase text-center pb-3 border-b border-neutral-800 neon-title">Datos Crudos</h3>
+    <div class="panel panel-spacious">
+        <h3 class="panel-title panel-title-neon panel-title-divider">Datos Crudos</h3>
         <div class="overflow-x-auto rounded-lg border border-neutral-800 bg-matte-950 shadow-sm">
             <table class="w-full text-left border-collapse text-xs">
                 <thead>

@@ -1,8 +1,8 @@
-<div class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-2.5 neon-border metallic-border">
-    <h4 class="text-xs font-black tracking-widest text-burgundy-400 uppercase">Plantillas alimentación</h4>
+<div class="panel panel-default">
+    <h4 class="panel-title">Plantillas alimentación</h4>
     <div id="nutrition-templates" class="flex flex-col gap-2">
         {% for pt in plantillas %}
-        <div class="pt-card bg-matte-950 border border-neutral-800 rounded-lg px-3 py-2 flex flex-col gap-1.5" draggable="true" data-pt-id="{{ pt.id }}">
+        <div class="pt-card card" draggable="true" data-pt-id="{{ pt.id }}">
             <div class="flex items-center justify-between gap-2">
                 <span class="text-xs font-bold text-neutral-200 truncate">{{ pt.nombre }}</span>
                 <span class="text-xs text-neutral-400">{{ pt.alimentos|length }} alimentos</span>
@@ -12,14 +12,14 @@
                     type="button"
                     data-action="apply-meal-template"
                     data-pt-id="{{ pt.id }}"
-                    class="text-xs font-bold text-neutral-400 hover:text-burgundy-400 border border-neutral-800 hover:border-burgundy-700 rounded px-2 py-0.5 transition-all uppercase tracking-widest"
+                    class="btn btn-outline"
                 >Aplicar</button>
                 
                 <button
                     type="button"
                     data-action="delete-meal-template"
                     data-pt-id="{{ pt.id }}"
-                    class="text-xs font-bold text-neutral-400 hover:text-red-400 border border-neutral-800 hover:border-red-700 rounded px-2 py-0.5 transition-all uppercase tracking-widest"
+                    class="btn btn-outline btn-outline-danger"
                 >Eliminar</button>
             </div>
         </div>

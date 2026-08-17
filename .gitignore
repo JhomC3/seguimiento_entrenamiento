@@ -45,5 +45,10 @@ android/sdk/
 # Tooling npm (build-time, no runtime)
 node_modules/
 
+# Skills y tooling local del agente (no forman parte de la aplicación)
+.agents/
+.claude/
+skills-lock.json
+
 # Artefactos locales de Lighthouse CI
 .lighthouseci/

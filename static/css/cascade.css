@@ -28,27 +28,6 @@
 }
 
 /* Niveles de análisis y cascada */
-.level-btn {
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: .15em;
-    text-transform: uppercase;
-    color: var(--t-surfaces-neutral-400);
-    border: 1px solid var(--t-surfaces-neutral-800);
-    border-radius: 9999px;
-    padding: .3rem .8rem;
-    transition: all 150ms ease-out;
-    cursor: pointer;
-}
-.level-btn:hover {
-    color: var(--t-surfaces-neutral-200);
-    border-color: var(--t-surfaces-neutral-700);
-}
-.level-btn.active {
-    color: var(--t-burgundy-400);
-    border-color: var(--t-burgundy-600);
-    background: rgba(155, 27, 48, 0.15);
-}
 .level-chip {
     font-size: 12px;
     font-weight: 700;
@@ -69,12 +48,12 @@
 .level-chip.selected {
     color: var(--t-burgundy-400);
     border-color: var(--t-burgundy-600);
-    background: rgba(155, 27, 48, 0.15);
+    background: var(--t-overlay-burgundy-015);
 }
 .exercise-chip[aria-pressed="true"] {
     color: var(--t-burgundy-400);
     border-color: var(--t-burgundy-600);
-    background: rgba(155, 27, 48, 0.15);
+    background: var(--t-overlay-burgundy-015);
 }
 .detail-link {
     font-size: 12px;

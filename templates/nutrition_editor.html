@@ -2,10 +2,10 @@
     <div class="panel-content">
     <div class="flex items-center justify-between gap-2 px-1 pt-1">
         <div class="panel-title-box">
-            <h3 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title truncate">Alimentación</h3>
+            <h3 class="panel-title panel-title-neon truncate">Alimentación</h3>
         </div>
         <div class="flex items-center gap-2 flex-none">
-            <span id="nutrition-date-label" class="text-xs font-black tracking-widest text-burgundy-400 uppercase">{{ fecha_display }}</span>
+            <span id="nutrition-date-label" class="panel-title">{{ fecha_display }}</span>
             {% if prefilled and prefill_source %}
             <span class="text-xs text-neutral-400 flex-none">Datos del {{ prefill_source }}</span>
             {% endif %}
@@ -38,7 +38,7 @@
                         name="nombre"
                         placeholder="Nombre de la plantilla"
                         title="Enter para guardar"
-                        class="w-36 sm:w-44 bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1.5 text-xs text-neutral-200 placeholder-neutral-400 focus:outline-none transition-colors"
+                        class="w-36 sm:w-44 cell-input"
                     >
                     <button type="button" data-action="cancel-meal-template-form" class="btn-x" aria-label="Cancelar" title="Cancelar">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
@@ -81,25 +81,25 @@
                 Peso (kg)
                 <input id="param-peso" type="number" step="0.1" min="0" value="{{ '%g'|format(parametros.peso_kg) }}"
                        {% if readonly %}disabled{% endif %}
-                       class="w-20 bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-sm text-white font-black focus:outline-none transition-colors">
+                       class="w-20 cell-input-sm text-sm text-white font-black">
             </label>
             <label class="flex items-center gap-2 font-bold text-neutral-300 uppercase tracking-widest">
                 Kcal
                 <input id="param-kcal" type="number" step="10" min="0" value="{{ '%g'|format(parametros.kcal_objetivo) }}"
                        {% if readonly %}disabled{% endif %}
-                       class="w-24 bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-1 text-sm text-white font-black focus:outline-none transition-colors">
+                       class="w-24 cell-input-sm text-sm text-white font-black">
             </label>
             <label class="flex items-center gap-1.5 text-xs text-neutral-400 uppercase tracking-wider">
                 Proteína ×
                 <input id="param-factor-prot" type="number" step="0.1" min="0" value="{{ '%g'|format(parametros.factor_proteina) }}"
                        {% if readonly %}disabled{% endif %}
-                       class="w-14 bg-white/[0.04] rounded px-1.5 py-1 text-xs text-neutral-400 focus:outline-none transition-colors">
+                       class="w-14 cell-input-sm">
             </label>
             <label class="flex items-center gap-1.5 text-xs text-neutral-400 uppercase tracking-wider">
                 Grasa ×
                 <input id="param-factor-grasa" type="number" step="0.1" min="0" value="{{ '%g'|format(parametros.factor_grasa) }}"
                        {% if readonly %}disabled{% endif %}
-                       class="w-14 bg-white/[0.04] rounded px-1.5 py-1 text-xs text-neutral-400 focus:outline-none transition-colors">
+                       class="w-14 cell-input-sm">
             </label>
         </div>
 
@@ -172,7 +172,7 @@
                         <td class="py-0.5 px-1.5">
                             <input
                                 name="alimento" list="food-list" aria-label="Alimento, fila {{ loop.index }}" value="{{ r.alimento }}"
-                                class="food-select w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
+                                class="food-select w-full cell-input"
                                 {% if readonly %}disabled{% endif %}
                             >
                         </td>
@@ -180,7 +180,7 @@
                             {% if r.cantidad_g is not none %}
                             <input
                                 name="cantidad" type="number" step="1" min="1" aria-label="Cantidad, fila {{ loop.index }}" value="{{ '%g'|format(r.cantidad_g) }}"
-                                class="cantidad-input w-full text-right bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
+                                class="cantidad-input w-full text-right cell-input"
                                 {% if readonly %}disabled{% endif %}
                             >
                             {% else %}
@@ -208,14 +208,14 @@
                         <td class="py-0.5 px-1.5">
                             <input
                                 name="alimento" list="food-list" aria-label="Alimento, fila 1"
-                                class="food-select w-full bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
+                                class="food-select w-full cell-input"
                                 {% if readonly %}disabled{% endif %}
                             >
                         </td>
                         <td class="py-0.5 px-1.5 text-right">
                             <input
                                 name="cantidad" type="number" step="1" min="1" aria-label="Cantidad, fila 1"
-                                class="cantidad-input w-full text-right bg-white/[0.04] hover:bg-white/[0.08] focus:bg-white/[0.1] rounded px-2 py-0.5 text-xs text-neutral-200 disabled:text-neutral-300 disabled:bg-white/[0.02] focus:outline-none transition-colors"
+                                class="cantidad-input w-full text-right cell-input"
                                 {% if readonly %}disabled{% endif %}
                             >
                         </td>
@@ -250,11 +250,11 @@
                 hx-get="/alimentacion/editor?fecha={{ fecha_iso }}"
                 hx-target="#nutrition-editor-wrap"
                 hx-swap="innerHTML"
-                class="h-7 px-4 bg-black/50 hover:bg-neutral-900/70 backdrop-blur-sm text-neutral-300 border border-neutral-800 text-xs rounded-lg transition-colors uppercase tracking-widest font-black"
+                class="btn btn-ghost px-4"
             >Cancelar</button>
             <button
                 type="submit"
-                class="h-7 px-5 bg-black/50 hover:bg-neutral-900/70 backdrop-blur-sm text-white border border-neutral-800 text-xs rounded-lg transition-colors uppercase tracking-widest font-black"
+                class="btn btn-ghost px-5"
             >Guardar</button>
         </div>
     </form>

@@ -5,19 +5,19 @@
 <section id="date-navigator">{{ navigator_html | safe }}</section>
 
 <section id="session-date-title" class="flex items-baseline gap-1.5">
-    <h3 class="text-xs font-black tracking-widest text-burgundy-400 uppercase neon-title truncate">{{ dia }} {{ fecha_display }}</h3>
+    <h3 class="panel-title panel-title-neon truncate">{{ dia }} {{ fecha_display }}</h3>
     <span class="text-xs text-neutral-400 flex-none">Semana {{ semana }}</span>
 </section>
 
 <div id="nutrition-templates-section">{{ nutrition_templates_html | safe }}</div>
 
-<section id="nutrition-panel" data-editmode="0" class="bg-neutral-900 border border-transparent rounded-xl px-2 pt-2 pb-2 flex flex-col gap-2 neon-border metallic-border relative">
+<section id="nutrition-panel" data-editmode="0" class="panel panel-tight relative">
     <div id="nutrition-editor-wrap">
         {{ nutrition_editor_html | safe }}
     </div>
 </section>
 
-<div id="session-editor" data-editmode="0" class="bg-neutral-900 border border-transparent rounded-xl px-2 pt-2 pb-2 flex flex-col gap-2 neon-border metallic-border relative">
+<div id="session-editor" data-editmode="0" class="panel panel-tight relative">
     <div id="editor-notice" role="status" aria-live="polite" aria-atomic="true"></div>
     <div id="save-outcome" data-ok="0" hidden></div>
     <section id="session-editor-wrap">

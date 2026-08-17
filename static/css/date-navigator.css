@@ -9,7 +9,7 @@
     border-radius: 6px;
     border: 1px solid transparent;
     background: transparent;
-    color: #a3a3a3;
+    color: var(--t-surfaces-neutral-400);
     font-size: 12px;
     font-weight: 700;
     line-height: 1;
@@ -17,11 +17,11 @@
     cursor: pointer;
 }
 .date-num:hover {
-    color: #fff;
+    color: var(--t-detail-white);
 }
 .date-num.selected {
-    color: #e56d88;
-    background: rgba(155, 27, 48, 0.25);
+    color: var(--t-burgundy-400);
+    background: var(--t-overlay-burgundy-025);
 }
 .date-dot {
     position: absolute;
@@ -31,38 +31,24 @@
     width: 3px;
     height: 3px;
     border-radius: 9999px;
-    background: #e56d88;
+    background: var(--t-burgundy-400);
 }
 .nav-arrow {
     flex: none;
     width: 30px;
     height: 30px;
     border-radius: 8px;
-    border: 1px solid #262626;
-    background: #0a0a0a;
-    color: #a3a3a3;
+    border: 1px solid var(--t-surfaces-neutral-800);
+    background: var(--t-surfaces-matte-950);
+    color: var(--t-surfaces-neutral-400);
     font-size: 12px;
     font-weight: 900;
     cursor: pointer;
     transition: all .15s;
 }
 .nav-arrow:hover {
-    border-color: #9b1b30;
-    color: #e56d88;
-}
-.date-input {
-    flex: none;
-    width: 118px;
-    background: #0a0a0a;
-    border: 1px solid #262626;
-    border-radius: 8px;
-    padding: 6px 8px;
-    font-size: 12px;
-    color: #e5e5e5;
-}
-.date-input:focus {
-    border-color: #9b1b30;
-    outline: none;
+    border-color: var(--t-burgundy-600);
+    color: var(--t-burgundy-400);
 }
 .today-btn {
     flex: none;
@@ -79,7 +65,7 @@
     transition: color .15s;
 }
 .today-btn:hover {
-    color: #e56d88;
+    color: var(--t-burgundy-400);
 }
 .no-scrollbar {
     scrollbar-width: none;

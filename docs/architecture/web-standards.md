@@ -113,11 +113,18 @@ Heurísticas de Nielsen aplicadas al dashboard:
 - **Visibilidad del estado del sistema:** toda mutación responde con feedback inmediato
   (notices OOB con auto-dismiss).
 - **Control y libertad del usuario:** la pila de undo (máx. 10) es un pilar de esta guía —
-  cualquier nueva mutación debe registrarse en ella para ser deshacible.
+  cualquier nueva mutación debe registrarse en ella para ser deshacible. **Decisión de
+  producto (2026-08-15):** la vía de undo es únicamente el atajo `Ctrl/Cmd+Z` (nunca en
+  campos de texto) — no hay botón visible en la UI. Se documenta para evitar que un pase
+  futuro de remediación lo reintroduzca sin una decisión explícita de producto.
 - **Prevención y recuperación de errores:** validación en servidor + gating client-side
   (`#editor-state[data-readonly]`), backup automático antes de mutaciones/migraciones.
-- **Consistencia:** mismos patrones de formulario, botonera y notificación en todas las
-  features (entrenamiento, alimentación, plantillas).
+- **Consistencia:** toda la UI usa el vocabulario canónico de componentes definido en
+  `static/css/components.css` (`.btn*`, `.cell-input*`, `.field-input*`, `.panel*`,
+  `.panel-title*`, `.card`) sobre los design tokens. Queda prohibido repetir utilidades
+  de color inline (`bg-white/[0.04]`, `bg-burgundy-700 hover:…`, `bg-matte-950 border…`)
+  o micro-tipografía (`text-[9-11px]`) en templates — el gate
+  `scripts/audit_consistency.py` (CI) lo verifica.
 - **Reconocimiento sobre recuerdo:** fecha visible en el navigator, ejercicios con
   autocomplete/lista, selección por categoría muscular.
 

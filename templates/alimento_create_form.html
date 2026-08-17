@@ -1,14 +1,14 @@
-<div class="bg-neutral-900 border border-transparent rounded-xl p-4 flex flex-col gap-3 neon-border metallic-border">
-    <h4 class="text-xs font-black tracking-widest text-burgundy-400 uppercase">Nuevo alimento</h4>
+<div class="panel panel-form">
+    <h4 class="panel-title">Nuevo alimento</h4>
 
     <form id="alimento-create-form" hx-post="/alimento/nuevo" hx-swap="none" class="flex flex-col gap-2">
         <input
             name="nombre" required placeholder="Nombre del alimento" aria-label="Nombre del alimento"
-            class="bg-matte-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-200 placeholder-neutral-400 focus:border-burgundy-700 focus:outline-none"
+            class="field-input"
         >
         <input
             name="categoria" placeholder="Categoría (ej: Fruta)" aria-label="Categoría"
-            class="bg-matte-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-neutral-200 placeholder-neutral-400 focus:border-burgundy-700 focus:outline-none"
+            class="field-input"
         >
         <div class="grid grid-cols-3 gap-1.5">
             {% for field in nutrient_fields %}
@@ -16,14 +16,14 @@
                 {{ field.label }}
                 <input
                     name="{{ field.name }}" type="number" step="0.1" min="0" value="0"
-                    class="bg-matte-950 border border-neutral-800 rounded px-2 py-1.5 text-xs text-neutral-200 focus:border-burgundy-700 focus:outline-none"
+                    class="field-input field-input-sm"
                 >
             </label>
             {% endfor %}
         </div>
         <button
             type="submit"
-            class="h-9 bg-burgundy-700 hover:bg-burgundy-600 text-white text-xs rounded-lg transition-all uppercase tracking-widest font-black"
+            class="btn btn-primary h-9"
         >Crear alimento</button>
     </form>
 </div>
