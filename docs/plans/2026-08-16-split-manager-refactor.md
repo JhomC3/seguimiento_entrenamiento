@@ -1,5 +1,7 @@
 # Rediseño del Gestor de Splits (v2) — Plan de Implementación
 
+> **Estado: ACTIVO.** Este es el único plan pendiente dentro de `docs/plans`; se conserva como referencia para el siguiente trabajo del gestor de splits.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Reordenar la página (tablero → resumen → catálogo → lista), catálogo desplegable por grupo muscular, resumen de series rediseñado (Semana / Por ejercicio / Por día, sin "Días activos" ni "Ejercicios distintos"), DnD estandarizado con SortableJS con inserción en posición exacta, y duplicación mediante Shift (instancia y día completo).

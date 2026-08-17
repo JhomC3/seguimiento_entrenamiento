@@ -1,5 +1,7 @@
 # Revertir el rediseño — Plan de Implementación
 
+> **Estado: COMPLETADO (2026-08-12).** Restauración, re-aplicación de mejoras y verificación final ejecutadas.
+
 > **Para Claude:** REQUIRED SUB-SKILL: Usar superpowers:executing-plans para implementar este plan tarea por tarea.
 
 **Goal:** Volver a la UI anterior (colores, gráfica unificada, sidebar de plantillas/alta) conservando las mejoras de datos aprobadas (RIR negativo, reps decimales, descanso_seg, sets al fallo, cardio annotations) y añadiendo: editores como ventana emergente, cascada grupo→músculo→ejercicios en barra superior, resumen en el hover de la gráfica.

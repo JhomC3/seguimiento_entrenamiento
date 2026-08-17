@@ -1,5 +1,7 @@
 # Web Standards Remediation Implementation Plan
 
+> **Estado: COMPLETADO (2026-08-15).** Remediación web, contratos y gates ejecutados; el estado final quedó documentado en los informes de auditoría.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Resolve the confirmed web-standards failures of the 2026-08-14 forensic audit without abandoning FastAPI, Jinja2, htmx, or server-owned validation. Backend-only findings (observability, /docs, WAL, indexes, dead backend code, form limits, /healthz) are out of scope here and are covered by the companion plan `docs/plans/2026-08-14-backend-standards-remediation.md`, executed in coordination with this one.
@@ -464,4 +466,3 @@ git commit -m "fix: resolve web standards verification findings"
 - Task 12 is mandatory.
 
 No SPA, hydration, public authentication product, broad proxy trust, public SEO program, data/notebook deletion, or blanket axe/Lighthouse waiver is in scope.
-

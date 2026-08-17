@@ -1,5 +1,7 @@
 # Gestor de Splits de Entrenamiento — Plan de Implementación
 
+> **Estado: COMPLETADO (2026-08-16).** Gestor de splits, persistencia, métricas, catálogo y pruebas integrados.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Nueva página `GET /splits` para crear/editar/guardar/eliminar splits semanales con catálogo arrastrable (duplicados = series), métricas server-authoritative y multi-split persistente en SQLite.

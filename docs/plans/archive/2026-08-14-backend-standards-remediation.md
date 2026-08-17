@@ -1,5 +1,7 @@
 # Backend Standards Remediation — Plan de Implementación
 
+> **Estado: COMPLETADO (2026-08-15).** Remediación backend ejecutada; los pendientes conocidos quedaron documentados como decisiones operativas.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Resolver todos los hallazgos del informe `docs/analysis/2026-08-14-forensic-backend-standards.md` (observabilidad, inventario de API, operativa SQLite, hardening de input y drift documental) sin cambiar la arquitectura monolítica modular ni el contrato htmx/JSON existente.

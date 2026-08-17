@@ -1,5 +1,7 @@
 # Gestor de Splits v3 — Layout compacto, Editar/Borrar día y corrección del DnD
 
+> **Estado: COMPLETADO (2026-08-16).** Layout, modo edición, borrado por día y blindaje del DnD integrados en las iteraciones posteriores del gestor.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Nuevo layout de dos columnas (catálogo sticky 300px a la izquierda, editor a la derecha; móvil: editor → resumen → catálogo), resumen jerárquico tipo ledger (semana → grupos → ejercicios; diario denso), botones "Editar" y "Borrar día" con estado view/edit + dirty tracking, y corrección del problema real de agregar/mover ejercicios.
