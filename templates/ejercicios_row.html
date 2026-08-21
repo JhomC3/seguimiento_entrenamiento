@@ -9,11 +9,5 @@
         aria-pressed="{{ 'true' if item in seleccionados else 'false' }}"
         title="Click para seleccionar · Shift+click para añadir a la selección"
     >{{ item }}</button>
-    <button
-        class="detail-link"
-        data-action="exercise-detail"
-        data-foco="{{ item }}"
-        title="Ver detalle de {{ item }}"
-    >ⓘ</button>
     {% endfor %}
 </div>

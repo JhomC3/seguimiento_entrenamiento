@@ -50,9 +50,9 @@ document.addEventListener('DOMContentLoaded', function () {
     initLifecycle();
     // El bundle del dashboard (cascada, gráfica, editores) solo se inicializa
     // en la página raíz: los módulos asumen su DOM (p. ej. level-cascade hace
-    // htmx.ajax a #cascade-row, que no existe en otras páginas y caería al
-    // body, reemplazando la página completa).
-    const isDashboard = !!document.getElementById('cascade-row');
+    // htmx.ajax a #history-section/#unified-chart, que no existen en otras
+    // páginas y caerían al body, reemplazando la página completa).
+    const isDashboard = !!document.getElementById('dashboard-catalog');
     if (isDashboard) {
         initChartInteractions();
         renderUnifiedChart();

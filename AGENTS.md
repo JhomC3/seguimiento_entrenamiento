@@ -131,14 +131,13 @@ La app `app.py` sirve HTML renderizado con Jinja2 y usa htmx para actualizacione
 - **`GET /splits` (página completa a ancho completo; `?abrir={id}` precarga) / `GET /split/nuevo` (item nuevo sin persistir) / `POST /split/guardar` / `POST /split/eliminar/{split_id}`** → gestor de splits semanales: acordeón de items (todos colapsados, formulario por split), tarjetas de día de dimensiones invariantes con resumen jerárquico colapsable + lista editable (scrolls internos), catálogo izquierda sticky (duplicados = series, HIIT como item especial, métricas server-authoritative); OOB `#splits-section`; undo kind `'splits'`. La ruta `GET /split/{split_id}` fue retirada (los boards viven en la sección).
 - **`POST /undo`** → deshace la última acción (journal `undo_entries` en SQLite, máx. 10).
 - **`GET /healthz`** → liveness JSON (`{"status": "ok", "db": "ok"}`; 503 si la DB no responde). `/docs`, `/redoc` y `/openapi.json` están **deshabilitados** (sin inventario público).
-- **`GET /exportar/csv`** → descarga CSV de `training_sets`.
 - **`POST /sync/health-connect`** → API JSON (no htmx) de ingesta de Health Connect: autenticada con `X-Sync-Token` (`HC_SYNC_TOKEN` env; sin env → 503), exenta del CSRF de formularios **solo por igualdad exacta de ruta** (`CSRF_EXEMPT_PATHS` en `src/security.py`), lotes ≤500 ops / 1 MiB, upsert condicionado por revisión + baja lógica, acuse individual por `hc_id`+revisión (contrato en `docs/architecture/health-sync-contract.md`).
 - **`GET /exportar/health-connect.csv`** → CSV de `health_records` activos (orden `record_type, start_epoch_ms`); `?incluir_borrados=1` para auditoría de bajas.
 - **`GET /nivel?tipo=global|musculo|ejercicio&foco=`** → cascada de niveles: fila de músculos → ejercicios del músculo → detalle en `#history-section`; OOB de `#unified-chart` con el compilado de la selección.
 - **`GET /grafica`** → fragmento de la gráfica de la selección actual (1 músculo: compilado + ejercicios; 2+: global + músculos).
 - **`GET /semana/primer-entreno?semana=`** → primera fecha de entrenamiento de la semana (JSON).
 - **`POST /cardio/annotation`** → guarda o elimina anotación de cardio (OOB).
-- **Panel de alimentación integrado en `/`** (arriba del editor de sesión; no hay página standalone). **`GET /alimentacion/editor?fecha=`** → fragmento del editor. **`POST /alimentacion/save`** (solo `fecha`, `alimento[]`, `cantidad[]` + `peso_kg`, `factor_proteina`, `factor_grasa`, `kcal_objetivo`; el servidor recalcula contra el catálogo con `ROUND_HALF_UP(catálogo_100g × g / 100)`, nunca confía en macros del cliente) y **`POST /alimentacion/eliminar`** → mutaciones OOB (`#nutrition-editor-wrap`, `#nutrition-date-navigator`). **`POST /alimento/nuevo`** → alta de alimento (OOB `#alimento-create` + `#app-config` con `alimento_map` actualizado). **`POST /alimentacion/plantilla/guardar|eliminar|reordenar`** y **`GET /alimentacion/plantilla/aplicar/{id}`** → plantillas de comidas (OOB `#nutrition-editor-wrap`). **`GET /alimentacion/exportar/csv`** → CSV de `diario_alimentacion`. El `#app-config` del index incluye `alimento_map` (9 nutrientes) para la previsualización client-side. Fórmulas de objetivo: `prot = peso × factor_proteina`, `grasa = peso × factor_grasa`, `kcal` editable, `carb = (kcal − 4prot − 9grasa)/4`; la fila Consumido es la suma del día.
+- **Panel de alimentación integrado en `/`** (arriba del editor de sesión; no hay página standalone). **`GET /alimentacion/editor?fecha=`** → fragmento del editor. **`POST /alimentacion/save`** (solo `fecha`, `alimento[]`, `cantidad[]` + `peso_kg`, `factor_proteina`, `factor_grasa`, `kcal_objetivo`; el servidor recalcula contra el catálogo con `ROUND_HALF_UP(catálogo_100g × g / 100)`, nunca confía en macros del cliente) y **`POST /alimentacion/eliminar`** → mutaciones OOB (`#nutrition-editor-wrap`, `#nutrition-date-navigator`). **`POST /alimento/nuevo`** → alta de alimento (OOB `#alimento-create` + `#app-config` con `alimento_map` actualizado). **`POST /alimentacion/plantilla/guardar|eliminar|reordenar`** y **`GET /alimentacion/plantilla/aplicar/{id}`** → plantillas de comidas (OOB `#nutrition-editor-wrap`). El `#app-config` del index incluye `alimento_map` (9 nutrientes) para la previsualización client-side. Fórmulas de objetivo: `prot = peso × factor_proteina`, `grasa = peso × factor_grasa`, `kcal` editable, `carb = (kcal − 4prot − 9grasa)/4`; la fila Consumido es la suma del día.
 - La importación de Google Sheets **no es una ruta HTTP**: se ejecuta con `python scripts/import_google_sheets.py` (entrenamiento) y `python scripts/import_nutrition.py` (alimentación; idempotente, backup previo, reemplaza solo `origen='google'`).
 - Todos los handlers son `def` síncronos (FastAPI los ejecuta en threadpool); las mutaciones exigen token CSRF (`X-CSRF-Token` desde `#app-config`) y Origin del mismo sitio. Errores de dominio → 400 con aviso seguro; excepciones inesperadas → 500 genérico (log servidor).
 - **Gate LAN sync-only** (`GYM_LAN_SYNC_ONLY=1`, activado por `scripts/start_server.sh`): en LAN el servidor sirve **solo** `POST /sync/health-connect`; cualquier otra petición remota recibe 403 antes de parsear el body. Rate-limit por peer `GYM_SYNC_RATE_LIMIT_PER_MINUTE` (default 30, 429 + `Retry-After`). Exige `GYM_CSRF_SECRET` (persistido en `data/csrf_secret`); el arranque falla si el par env/secreto es inconsistente.
@@ -210,6 +209,16 @@ Referencia completa: `docs/architecture/web-standards.md`. Principios vinculante
   push a la pila de undo.
 
 ## 8. Control de Calidad y Pruebas
+
+### Flujo recomendado con OpenCode
+
+- Usa `/refine` solo cuando la solicitud sea ambigua o tenga varias decisiones abiertas.
+- Para tareas no triviales, empieza con `/plan` y revisa el plan antes de usar `/implement`.
+- Usa `/review` después de implementar; el agente reviewer no tiene permiso para editar.
+- Usa `/security-review` cuando el cambio toque autenticación, datos sensibles, red o Health Connect.
+- Los agentes de `.opencode/agents/` son roles especializados de análisis y no sustituyen estas instrucciones.
+- No se hacen commits ni pushes automáticamente; la rama y el diff deben revisarse antes de confirmar cambios.
+- Las skills del proyecto complementan estas instrucciones; las reglas permanentes siguen viviendo aquí.
 
 Antes de dar por completada una tarea, debes:
 

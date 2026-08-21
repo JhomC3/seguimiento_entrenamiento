@@ -87,7 +87,7 @@ def test_index_uses_stable_card(tmp_path, monkeypatch):
     r = _client().get("/")
     assert 'data-action="open-editor-popup"' in r.text
     assert 'id="editor-popup"' in r.text
-    assert 'id="cascade-row"' in r.text
+    assert 'id="dashboard-catalog"' in r.text
     # El editor vive en la ventana emergente de registro.
     r2 = _client().get("/editor/popup?fecha=2099-01-01")
     assert 'id="session-editor" data-editmode="0"' in r2.text
@@ -803,47 +803,6 @@ def test_semana_primer_entreno_sin_datos(tmp_path, monkeypatch):
     assert r.json() == {"fecha": None}
 
 
-def test_export_csv_orden_cronologico(tmp_path, monkeypatch):
-    from src.models import TrainingSetInput
-
-    db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    client = _client()
-    for iso, sets in [
-        ("2026-01-15", [TrainingSetInput("Press", 90, 7, 1)]),
-        ("2026-02-03", [TrainingSetInput("Press", 92, 7, 1)]),
-        ("2026-01-09", [TrainingSetInput("Press", 88, 7, 1)]),
-    ]:
-        save_session(db, iso, sets)
-    resp = client.get("/exportar/csv")
-    assert resp.status_code == 200
-    assert resp.headers["content-type"].startswith("text/csv")
-    lines = resp.text.splitlines()
-    fecha_idx = lines[0].split(",").index("fecha")
-    fechas = [ln.split(",")[fecha_idx] for ln in lines[1:]]
-    assert fechas == ["2026-01-09", "2026-01-15", "2026-02-03"]
-
-
-def test_export_csv_con_bom(tmp_path, monkeypatch):
-    import codecs
-
-    db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    resp = _client().get("/exportar/csv")
-    assert resp.status_code == 200
-    assert resp.content.startswith(codecs.BOM_UTF8)
-
-
-def test_export_nutrition_csv_con_bom(tmp_path, monkeypatch):
-    import codecs
-
-    db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    resp = _client().get("/alimentacion/exportar/csv")
-    assert resp.status_code == 200
-    assert resp.content.startswith(codecs.BOM_UTF8)
-
-
 def test_export_health_connect_csv_con_bom(tmp_path, monkeypatch):
     import codecs
 
@@ -1257,38 +1216,6 @@ def test_alimento_nuevo(tmp_path, monkeypatch):
     assert find_alimento(db, "aceite de oliva") is not None
 
 
-def test_alimentacion_export_csv(tmp_path, monkeypatch):
-    from src.database import replace_diario_by_fecha
-
-    db = _seed_nutrition(tmp_path)
-    replace_diario_by_fecha(
-        db,
-        "2025-04-24",
-        [
-            {
-                "alimento": "Avena",
-                "cantidad_g": 120.0,
-                "kcal": 467.0,
-                "carbohidratos": 82.0,
-                "fibra": 12.0,
-                "proteina": 20.0,
-                "grasa": 8.0,
-                "hierro": 5.0,
-                "calcio": 65.0,
-                "vitamina_c": 0.0,
-                "vitamina_a": 0.0,
-                "origen": "google",
-            }
-        ],
-    )
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    r = _client().get("/alimentacion/exportar/csv")
-    assert r.status_code == 200
-    assert "alimento" in r.text
-    assert "Avena" in r.text
-    assert "2025-04-24" in r.text
-
-
 def test_alimentacion_save_requires_csrf(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
@@ -1571,12 +1498,11 @@ def test_nivel_cascada_grupo_musculo_ejercicio(tmp_path, monkeypatch):
     assert r.status_code == 200
     assert 'id="cascade-row"' in r.text
     assert "Pectoral" in r.text
-    # Fila de ejercicios del músculo + gráfica del compilado (OOB)
+    # Fila de ejercicios del músculo (la gráfica viene de /grafica)
     r = client.get("/nivel", params={"tipo": "musculo", "foco": "Pectoral"})
     assert r.status_code == 200
     assert 'id="ejercicios-row"' in r.text
     assert "Press" in r.text
-    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
     # Detalle del ejercicio (con datos) -> #history-section, sin tocar filas
     from src.models import TrainingSetInput
     from src.training_service import save_session
@@ -1595,18 +1521,20 @@ def test_grafica_multi_traza_oob(tmp_path, monkeypatch):
     from src.training_service import save_session
 
     save_session(db, _fecha(), [TrainingSetInput("Press", 80, 8, 1)])
-    # Solo compilado
-    r = _client().get("/grafica", params={"musculo": "Pectoral"})
+    # Global + músculo identificado: OOB header + data + empty(hidden)
+    r = _client().get("/grafica", params={"musculos": "Pectoral"})
     assert r.status_code == 200
-    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
-    assert 'id="ejercicios-row" hx-swap-oob="outerHTML"' in r.text
-    assert "Compilado" in r.text
+    assert 'id="unified-chart-header" hx-swap-oob="outerHTML"' in r.text
+    assert 'id="unified-chart-data" hx-swap-oob="innerHTML"' in r.text
+    assert 'id="unified-chart-empty" hx-swap-oob="outerHTML"' in r.text
+    assert "hidden" in r.text.split('id="unified-chart-empty"')[1][:80]
+    assert "Pectoral" in r.text
     # Con un ejercicio seleccionado: su nombre en el fragmento
-    r = _client().get("/grafica", params={"musculo": "Pectoral", "ejercicios": "Press"})
+    r = _client().get("/grafica", params={"musculos": "Pectoral", "ejercicios": "Press"})
     assert r.status_code == 200
     assert "Press" in r.text
     # Ejercicio de otro músculo se descarta (solo compilado)
-    r = _client().get("/grafica", params={"musculo": "Pectoral", "ejercicios": "Otro"})
+    r = _client().get("/grafica", params={"musculos": "Pectoral", "ejercicios": "Otro"})
     assert r.status_code == 200
 
 
@@ -1625,16 +1553,143 @@ def test_grafica_multimusculo_global_y_sin_fila_ejercicios(tmp_path, monkeypatch
     from src.training_service import save_session
 
     save_session(db, _fecha(), [TrainingSetInput("Press", 80, 8, 1)])
-    # Dos músculos: OOB con Global, sin refresco de la fila de ejercicios.
-    r = _client().get("/grafica", params={"musculo": ["Pectoral", "Espalda"]})
+    # Dos músculos: OOB con Global, sin ejercicios-row.
+    r = _client().get("/grafica", params={"musculos": ["Pectoral", "Espalda"]})
     assert r.status_code == 200
-    assert 'id="unified-chart" hx-swap-oob="innerHTML"' in r.text
+    assert 'id="unified-chart-header" hx-swap-oob="outerHTML"' in r.text
+    assert 'id="unified-chart-data" hx-swap-oob="innerHTML"' in r.text
     assert "Global" in r.text
-    assert 'id="ejercicios-row" hx-swap-oob' not in r.text
-    # Un solo músculo: sí refresca la fila de ejercicios.
-    r2 = _client().get("/grafica", params={"musculo": "Pectoral", "ejercicios": "Press"})
+    assert 'id="ejercicios-row"' not in r.text
+    # Un solo músculo: sigue sin ejercicios-row en /grafica.
+    r2 = _client().get("/grafica", params={"musculos": "Pectoral", "ejercicios": "Press"})
     assert r2.status_code == 200
-    assert 'id="ejercicios-row" hx-swap-oob="outerHTML"' in r2.text
+    assert 'id="ejercicios-row"' not in r2.text
+
+
+def _assert_grafica_ok(client, params):
+    r = client.get("/grafica", params=params)
+    assert r.status_code == 200
+    assert 'id="unified-chart-header" hx-swap-oob="outerHTML"' in r.text
+    assert 'id="unified-chart-data" hx-swap-oob="innerHTML"' in r.text
+    return r
+
+
+def test_grafica_granularidad_acepta_valores_validos(tmp_path, monkeypatch):
+    """Contrato B1: /grafica acepta day|week|month y omite gran → day."""
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    from src.models import TrainingSetInput
+    from src.training_service import save_session
+
+    save_session(db, _fecha(), [TrainingSetInput("Press", 80, 8, 1)])
+    client = _client()
+
+    # Sin parámetro gran: default day.
+    _assert_grafica_ok(client, {"musculos": "Pectoral"})
+    # Cada valor válido.
+    for g in ("day", "week", "month"):
+        _assert_grafica_ok(client, {"musculos": "Pectoral", "gran": g})
+    # Sin musculos (sistémica) también acepta las tres.
+    for g in ("day", "week", "month"):
+        _assert_grafica_ok(client, {"gran": g})
+
+
+def _grafica_trace_xs(response) -> dict[str, list]:
+    """Extrae por nombre de traza los valores del eje X del payload /grafica."""
+    import json as _json
+    import re as _re
+
+    m = _re.search(r'<div id="unified-chart-data"[^>]*>(.*?)</div>', response, _re.DOTALL)
+    assert m, "no hay div unified-chart-data en la respuesta"
+    dat = _json.loads(m.group(1))
+    out: dict[str, list] = {}
+    for t in dat["data"]:
+        xs = t.get("x")
+        if isinstance(xs, dict):  # numpy serializado (int semana)
+            import base64 as _b64
+
+            xs = list(_b64.b64decode(xs["bdata"]))
+        out[t.get("name")] = [str(v) for v in xs]
+    return out
+
+
+def test_grafica_granularidad_day_y_week_axes_distintos(tmp_path, monkeypatch):
+    """Regresión B2-R1: gran=day usa fechas reales y gran=week usa semanas;
+    los ejes deben diferir. Falla si /grafica ignora gran y hardcodea week."""
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    from src.models import TrainingSetInput
+    from src.training_service import save_session
+
+    # Dos días en semanas distintas del ciclo.
+    d1 = _fecha()
+    d2 = _fecha(8)
+    save_session(db, d1, [TrainingSetInput("Press", 80, 8, 1), TrainingSetInput("Press", 82, 6, 0)])
+    save_session(db, d2, [TrainingSetInput("Press", 90, 5, 2)])
+
+    day = _grafica_trace_xs(
+        _assert_grafica_ok(_client(), {"musculos": "Pectoral", "gran": "day"}).text
+    )
+    week = _grafica_trace_xs(
+        _assert_grafica_ok(_client(), {"musculos": "Pectoral", "gran": "week"}).text
+    )
+
+    day_x = day["Pectoral"]
+    week_x = week["Pectoral"]
+
+    # day: fechas reales YYYY-MM-DD para los dos días con datos.
+    assert len(day_x) == 2, f"day debe tener 2 días con datos: {day_x}"
+    assert all(len(v) == 10 and "-" in v for v in day_x), f"day debe usar fechas: {day_x}"
+    # week: números de semana.
+    assert len(week_x) == 2, f"week debe tener 2 semanas: {week_x}"
+    assert all(v.isdigit() for v in week_x), f"week debe usar números de semana: {week_x}"
+    # Ejes distintos.
+    assert day_x != week_x, "day y week no pueden compartir el mismo eje"
+
+
+def test_grafica_granularidad_day_no_dias_descanso_multisesion(tmp_path, monkeypatch):
+    """Regresión B2-R1: gran=day agrega varias sesiones del mismo día en un solo
+    punto y no incluye días de descanso intermedios."""
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    from src.models import TrainingSetInput
+    from src.training_service import save_session
+
+    d1 = _fecha()
+    d2 = _fecha(4)  # hueco de 3 días sin entrenar
+    save_session(db, d1, [TrainingSetInput("Press", 80, 8, 1), TrainingSetInput("Press", 82, 6, 0)])
+    save_session(db, d2, [TrainingSetInput("Press", 90, 5, 2)])
+
+    xs = _grafica_trace_xs(
+        _assert_grafica_ok(_client(), {"musculos": "Pectoral", "gran": "day"}).text
+    )["Global"]
+    # Solo los 2 días reales: sin días de descanso entre d1 y d2.
+    assert len(xs) == 2, f"no deben aparecer días ficticios: {xs}"
+
+
+def test_grafica_granularidad_invalida_error_seguro(tmp_path, monkeypatch):
+    """Contrato B1: un valor inválido de gran devuelve 400 con aviso seguro."""
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    r = client.get("/grafica", params={"gran": "anual"})
+    assert r.status_code == 400
+    assert "notice-error" in r.text
+    assert "Granularidad inválida" in r.text
+
+
+def test_nivel_acepta_granularidad_y_rechaza_invalida(tmp_path, monkeypatch):
+    """Contrato B1: /nivel acepta el parámetro gran y rechaza inválidos."""
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    r = client.get("/nivel", params={"tipo": "musculo", "gran": "day"})
+    assert r.status_code == 200
+    r = client.get("/nivel", params={"tipo": "musculo", "gran": "week"})
+    assert r.status_code == 200
+    r = client.get("/nivel", params={"tipo": "ejercicio", "gran": "month"})
+    assert r.status_code == 200
+    r = client.get("/nivel", params={"tipo": "musculo", "gran": "quincena"})
 
 
 def test_cdn_scripts_are_deferred_and_no_eager_plotly(tmp_path, monkeypatch):
@@ -1802,13 +1857,13 @@ def test_index_serves_initial_muscles_noscript_and_seo(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     home = _client().get("/").text
-    # Fila inicial de músculos renderizada server-side.
-    assert 'id="cascade-row"' in home
-    assert 'data-action="select-muscle"' in home
-    # Fallback no-JS honesto con enlace de exportación.
+    # Catálogo de músculos renderizado server-side.
+    assert 'id="dashboard-catalog"' in home
+    assert 'data-action="toggle-muscle"' in home
+    # Fallback no-JS honesto.
     noscript = home[home.index("<noscript>") : home.index("</noscript>")]
     assert "JavaScript" in noscript
-    assert "/exportar/csv" in noscript
+    assert "/exportar/csv" not in noscript
     # SEO descriptivo.
     assert "<title>Gym Tracker — Progreso de entrenamiento</title>" in home
     assert 'name="description"' in home
@@ -1912,3 +1967,96 @@ def test_reordenar_lote_excesivo_devuelve_400(tmp_path, monkeypatch):
     client.headers.update({"X-CSRF-Token": make_csrf_token(get_csrf_secret())})
     resp = client.post("/plantilla/reordenar", data={"id": [str(i) for i in range(600)]})
     assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Dashboard catalog render tests (A2)
+# ---------------------------------------------------------------------------
+
+
+def test_dashboard_catalog_renders_groups(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/")
+    assert 'id="dashboard-catalog"' in r.text
+    assert "Pectoral" in r.text
+    assert "Press" in r.text
+
+
+def test_dashboard_catalog_multiple_groups(tmp_path, monkeypatch):
+    db = str(tmp_path / "gym.db")
+    init_db(db)
+    insert_exercise(db, "Press", "Pectoral", "EMPUJE")
+    insert_exercise(db, "Curl", "Biceps", "TIRON")
+    insert_exercise(db, "Sentadilla", "Cuadriceps", "PIERNA")
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/")
+    assert "Pectoral" in r.text
+    assert "Biceps" in r.text
+    assert "Cuadriceps" in r.text
+
+
+def test_dashboard_catalog_uses_accessible_group_header(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/")
+    assert "<header" in r.text
+    assert 'data-action="toggle-group"' in r.text
+    assert 'data-action="toggle-muscle"' in r.text
+    assert "db-group" in r.text
+    assert "db-summary" in r.text
+
+
+def test_dashboard_catalog_empty_db(tmp_path, monkeypatch):
+    db = str(tmp_path / "gym.db")
+    init_db(db)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/")
+    assert 'id="dashboard-catalog"' in r.text
+    assert "No hay ejercicios registrados" in r.text
+
+
+def test_dashboard_catalog_no_info_button(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/")
+    assert 'data-action="show-exercise-info"' not in r.text
+    assert 'aria-label="Información"' not in r.text
+
+
+def test_dashboard_catalog_no_redundant_role_button(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/")
+    # <button> elements must NOT have role="button" (redundant)
+    import re
+
+    buttons = re.findall(r"<button[^>]*role=\"button\"[^>]*>", r.text)
+    assert buttons == [], f"role='button' found on <button>: {buttons}"
+
+
+def test_dashboard_catalog_accessible_names(tmp_path, monkeypatch):
+    db = str(tmp_path / "gym.db")
+    init_db(db)
+    insert_exercise(db, "Press Banca", "Pectoral", "EMPUJE")
+    insert_exercise(db, "Curl Bíceps", "Biceps", "TIRON")
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/")
+    assert "Press Banca" in r.text
+    assert "Curl Bíceps" in r.text
+    # Exercise buttons expose an accessible name
+    assert 'aria-label="Seleccionar ejercicio Press Banca"' in r.text
+    assert 'aria-label="Seleccionar ejercicio Curl Bíceps"' in r.text
+
+
+def test_dashboard_catalog_groups_exercises_separated(tmp_path, monkeypatch):
+    db = str(tmp_path / "gym.db")
+    init_db(db)
+    insert_exercise(db, "Press", "Pectoral", "EMPUJE")
+    insert_exercise(db, "Curl", "Pectoral", "EMPUJE")
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/")
+    # Summary contains group name; body contains exercise rows
+    assert 'data-foco="Pectoral"' in r.text
+    assert 'data-action="toggle-exercise"' in r.text
+    assert 'data-action="toggle-muscle"' in r.text

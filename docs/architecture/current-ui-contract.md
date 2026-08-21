@@ -15,10 +15,10 @@
 ### `GET /` (index, HTML completo)
 
 - Renderiza `index.html` (extends `base.html`).
-- Sirve server-side: header (título, export CSV, botón Registrar),
+- Sirve server-side: header (título, botón Registrar),
   **fila inicial de músculos** (`#cascade-row`, chips `data-action="select-muscle"`),
   gráfica sistémica (`#unified-chart` con `#unified-chart-data` JSON + `#unified-chart-plot`),
-  `#history-section` vacío, `<noscript>` con enlace a `/exportar/csv` y los partials
+  `#history-section` vacío, `<noscript>` y los partials
   globales (`#notice-container` role=status, `#confirm-modal` dialog, `#app-config`).
 - `#app-config` (script `type="application/json"`, inerte): `categoria_map`,
   `alimento_map`, `ciclo_start`, `csrf_token` (firmado con `GYM_CSRF_SECRET`).
@@ -294,11 +294,26 @@
 
 ### Exports
 
-- `GET /exportar/csv` → `text/csv` de `training_sets` ordenado por `fecha, set_orden`
-  (`filename="entrenamientos.csv"`), con BOM UTF-8.
-- `GET /alimentacion/exportar/csv` → `diario_alimentacion` (`alimentacion.csv`, BOM).
 - `GET /exportar/health-connect.csv[?incluir_borrados=1]` → `health_records` activos
   (o con borrados para auditoría) ordenados `record_type, start_epoch_ms`, BOM.
+
+### Semántica de series de la gráfica
+
+La gráfica `#unified-chart` muestra trazas según el estado de selección
+(`src/charts.py:chart_selection`). Contrato blindado con tests parametrizados
+(`tests/test_charts.py:test_chart_semantics_decision_matrix`):
+
+| Estado | Trazas | Estilo |
+|---|---|---|
+| **Global** (0 músculos) | 1: "Crecimiento" (sistema) | Sólida `primary` (`#e56d88`), width 2.5, marker 8 |
+| **1 músculo**, 0 ejercicios | 2: "Global" + "Compilado" del músculo | Global sólida + Compilado sólida `primary`, width 2.5 |
+| **1 músculo**, N ejercicios válidos | N+1: compilado + ejercicios | Compilado sólido; ejercicios `alpha=0.4`, width 3.5, marker 6 |
+| **1 músculo**, ejercicio ajeno | Se descarta (no aparece) | — |
+| **2+ músculos** | 1 global + N músculos | Global sólida; músculos `alpha=0.4`, width 3.5; ejercicios ignorados |
+| **Cardio** (sin datos de entrenamiento) | "Sin datos para esta selección" | `chart-empty` |
+
+Eje X = semana del ciclo; Y = "Crecimiento (%)" (rendimiento − 100, baseline semana 1 = 0);
+hover unificado (series, fallos, volumen, peso, sueño).
 
 ### Sincronización LAN
 

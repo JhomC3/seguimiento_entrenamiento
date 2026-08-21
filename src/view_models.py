@@ -4,6 +4,18 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
+class CatalogExercise:
+    name: str
+    category: str
+
+
+@dataclass(frozen=True)
+class CatalogGroup:
+    name: str
+    exercises: list["CatalogExercise"]
+
+
+@dataclass(frozen=True)
 class DateDay:
     iso: str
     label: str

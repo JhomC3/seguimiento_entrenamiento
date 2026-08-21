@@ -49,6 +49,7 @@ node_modules/
 .agents/
 .claude/
 .opencode/node_modules/
+.opencode/skills/
 skills-lock.json
 
 # Artefactos locales de Lighthouse CI

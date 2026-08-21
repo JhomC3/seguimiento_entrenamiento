@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 py-8 flex flex-col gap-6">
+    <header class="flex items-center justify-between border-b border-neutral-800 pb-4">
+        <div class="flex items-center gap-3">
+            <h1 class="text-xl font-black tracking-[0.2em] text-white uppercase">Registro</h1>
+            <a href="/" class="btn btn-outline">← Dashboard</a>
+        </div>
+    </header>
+
+    {{ navigator_html | safe }}
+
+    <section id="session-date-title" class="flex items-baseline gap-1.5">
+        <h3 class="panel-title panel-title-neon truncate">{{ dia }} {{ fecha_display }}</h3>
+        <span class="text-xs text-neutral-400 flex-none">Semana {{ semana }}</span>
+    </section>
+
+    <div id="nutrition-templates-section">{{ nutrition_templates_html | safe }}</div>
+
+    <section id="nutrition-panel" data-editmode="0" class="panel panel-tight relative">
+        <div id="nutrition-editor-wrap">
+            {{ nutrition_editor_html | safe }}
+        </div>
+    </section>
+
+    <div id="session-editor" data-editmode="0" class="panel panel-tight relative">
+        <div id="editor-notice" role="status" aria-live="polite" aria-atomic="true"></div>
+        <div id="save-outcome" data-ok="0" hidden></div>
+        <section id="session-editor-wrap">
+            {{ editor_html | safe }}
+        </section>
+    </div>
+
+    <section id="cardio-day">
+        {{ cardio_html | safe }}
+    </section>
+
+    <div id="exercise-create">
+        {{ exercise_form_html | safe }}
+    </div>
+
+    <div id="alimento-create">
+        {{ alimento_form_html | safe }}
+    </div>
+
+    <div id="plantillas-section">
+        {{ plantillas_html | safe }}
+    </div>
+</div>
+
+<noscript>
+    <div class="notice notice-error" role="alert">
+        La página de registro requiere JavaScript para editar y guardar.
+    </div>
+</noscript>
+{% endblock %}

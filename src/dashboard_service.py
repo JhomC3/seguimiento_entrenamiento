@@ -3,13 +3,10 @@
 Pure orchestration: no HTTP, no template rendering. Handlers stay thin.
 """
 
-import html
 import logging
 import sqlite3
 from datetime import date, timedelta
 
-from config import CICLO_NUMERO
-from src.charts import chart_pfr_timeline
 from src.database import (
     get_alimentos_catalog,
     get_diario_by_fecha,
@@ -140,44 +137,29 @@ def _json_for_inline(serialized: str) -> str:
     )
 
 
-def _chart_header_html(title: str) -> str:
-    """Header del panel de gráfica (título + ciclo). Compartido por chart_html
-    y la selección de cascada para que ambos estados ocupen el mismo shell."""
-    return (
-        '<div class="flex items-baseline gap-2 min-w-0 pl-3 mb-3">'
-        f'<h2 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title truncate">{html.escape(title)}</h2>'
-        f'<span class="text-xs text-neutral-400 flex-none">Ciclo {CICLO_NUMERO}</span>'
+def chart_shell_html(title: str, fig, *, empty_text: str = "Sin datos") -> str:
+    """Persistent chart shell: header + data div + plot div + empty div.
+
+    Always outputs all four children (CLS 0): exactly one of plot/empty is
+    visible (the other carries ``hidden``); the data div is always hidden.
+    The client toggles visibility based on the JSON content.
+    """
+    header = (
+        '<div id="unified-chart-header" class="flex items-baseline gap-2 min-w-0 pl-3 mb-3">'
+        '<h2 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title truncate">Rendimiento</h2>'
         "</div>"
     )
-
-
-def chart_html(
-    db_path: str,
-    filter_type: str,
-    filter_value: str | None = None,
-    title: str = "",
-) -> str:
-    """Plotly chart fragment: panel header + figure JSON + render target div.
-
-    La figura viaja como JSON dentro de un <script type="application/json">
-    (elemento inerte, mismo patrón que #app-config) y la renderiza el módulo
-    cliente static/js/chart-interaction.js con Plotly.newPlot. Así no hay
-    scripts ejecutables inline: la CSP no necesita nonce y los swaps de htmx
-    no dependen del manejo de scripts.
-    """
-    header = _chart_header_html(title)
-    fig = chart_pfr_timeline(db_path, filter_type, filter_value, "")
-    if fig.data:
+    has_data = hasattr(fig, "data") and fig.data
+    if has_data:
         data = _json_for_inline(fig.to_json())
-        return (
-            header
-            + f'<script id="unified-chart-data" type="application/json">{data}</script>'
-            + '<div id="unified-chart-plot" class="plotly-graph-div"></div>'
-        )
-    return (
-        header
-        + "<div class='flex items-center justify-center chart-empty text-neutral-400 text-xs'>Sin datos</div>"
-    )
+        data_el = f'<div id="unified-chart-data" hidden>{data}</div>'
+        plot_el = '<div id="unified-chart-plot" class="plotly-graph-div"></div>'
+        empty_el = f'<div id="unified-chart-empty" class="chart-empty" hidden>{empty_text}</div>'
+    else:
+        data_el = '<div id="unified-chart-data" hidden>{}</div>'
+        plot_el = '<div id="unified-chart-plot" class="plotly-graph-div" hidden></div>'
+        empty_el = f'<div id="unified-chart-empty" class="chart-empty">{empty_text}</div>'
+    return header + data_el + plot_el + empty_el
 
 
 def _end_of_next_month(d: date) -> date:

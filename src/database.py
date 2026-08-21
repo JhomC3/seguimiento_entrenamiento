@@ -631,6 +631,53 @@ def get_split_catalog(db_path: str) -> list[dict]:
     return [{"ejercicio": r[0], "grupo_muscular": r[1], "categoria": r[2] or ""} for r in rows]
 
 
+def get_dashboard_catalog(db_path: str) -> list[dict]:
+    """Catálogo agrupado por grupo muscular para el panel izquierdo del dashboard.
+
+    Devuelve una lista de grupos, cada uno con sus ejercicios ordenados
+    alfabéticamente.  El orden de los grupos sigue el de la tabla
+    ``MUSCLE_CATEGORIES`` (EMPUJE, TIRON, PIERNA, CORE) y los que no
+    pertenecen a ninguna categoría quedan al final, ordenados
+    alfabéticamente.
+
+    El resultado usa ``list[dict]`` para mantener compatibilidad con el
+    patrón existente en ``get_split_catalog``.  Cada elemento tiene::
+
+        {
+            "name": "<grupo_muscular>",
+            "exercises": [
+                {"name": "<ejercicio>", "category": "<categoria>"},
+                ...
+            ],
+        }
+    """
+    if not os.path.exists(db_path):
+        return []
+    with read_connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT ejercicio, grupo_muscular, categoria "
+            "FROM ejercicios "
+            "WHERE grupo_muscular IS NOT NULL AND grupo_muscular != '' "
+            "ORDER BY grupo_muscular, ejercicio"
+        ).fetchall()
+    if not rows:
+        return []
+    cat_order: dict[str, int] = {}
+    for cat_idx, cat in enumerate(MUSCLE_CATEGORIES):
+        for muscle in cat.get("muscles", []):
+            cat_order[muscle] = cat_idx
+    groups: dict[str, list[dict]] = {}
+    for ejercicio, grupo, categoria in rows:
+        groups.setdefault(grupo, []).append(
+            {"name": ejercicio, "category": categoria or ""}
+        )
+    sorted_groups = sorted(
+        groups.items(),
+        key=lambda kv: (cat_order.get(kv[0], 999), kv[0]),
+    )
+    return [{"name": g, "exercises": exs} for g, exs in sorted_groups]
+
+
 def get_splits_summary(db_path: str) -> list[dict]:
     """Lista de splits con resumen comparativo (series, días activos, grupos)."""
     if not os.path.exists(db_path):

@@ -15,13 +15,12 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.gzip import GZipMiddleware
 
 from config import CICLO_START, DB_PATH, HC_SYNC_TOKEN, MUSCLE_CATEGORIES
-from src.charts import get_exercise_raw_data, get_exercise_session_summary
+from src.charts import chart_pfr_timeline, get_exercise_raw_data, get_exercise_session_summary
 from src.dashboard_service import (
-    _chart_header_html,
     build_date_navigator,
     build_nutrition_editor,
     build_session_editor,
-    chart_html,
+    chart_shell_html,
     get_filters,
     get_first_session_date,
     translate_error,
@@ -29,6 +28,7 @@ from src.dashboard_service import (
 from src.database import (
     get_alimentos_catalog,
     get_categories,
+    get_dashboard_catalog,
     get_ejercicio_categoria,
     get_exercises_catalog,
     get_plantillas,
@@ -75,7 +75,9 @@ from src.nutrition_service import (
 from src.response_fragments import (
     STATIC_MARKERS,
     app_config_oob,
-    chart_oob_wrapper,
+    chart_data_oob,
+    chart_empty_oob,
+    chart_header_oob,
     editor_state_oob,
     editor_wrap_oob,
     fragment_oob,
@@ -223,9 +225,16 @@ def _muscle_names() -> list[str]:
     return sorted({m for c in MUSCLE_CATEGORIES for m in c["muscles"]})
 
 
-def _chart_title(filtro: str | None = None) -> str:
-    base = "Rendimiento"
-    return f"{base} – {filtro}" if filtro else base
+GRANULARITY_VALUES = ("day", "week", "month")
+
+
+def _validate_granularity(gran: str) -> str:
+    """Valida gran y devuelve el valor canónico. Default: 'day' (contrato B1)."""
+    if gran not in GRANULARITY_VALUES:
+        raise ValidationError(
+            f"Granularidad inválida: {gran!r}. Valores permitidos: day, week, month."
+        )
+    return gran
 
 
 def _render_body(response) -> str:
@@ -517,11 +526,11 @@ def read_index(request: Request):
             "ejercicios_list": ejercicios_list,
             "ejercicios_grupo": ejercicios_list,
             "muscle_categories": categories,
+            "dashboard_catalog": get_dashboard_catalog(DB_PATH),
             "cascade_row_html": _cascade_row_html(request, "musculo", ""),
-            "systemic_chart_html": chart_html(
-                DB_PATH,
-                "systemic",
-                title=_chart_title(),
+            "systemic_chart_html": chart_shell_html(
+                "Rendimiento",
+                chart_pfr_timeline(DB_PATH, "systemic", "", granularity="day"),
             ),
             "navigator_html": _navigator_html(request, fecha),
             "editor_html": _editor_html(request, fecha),
@@ -556,6 +565,34 @@ def _cardio_day_html(request: Request, fecha: str) -> str:
             request=request,
             name="cardio_day.html",
             context={"cardio": get_day_cardio(DB_PATH, fecha), "fecha_iso": fecha},
+        )
+    )
+
+
+@app.get("/registro", response_class=HTMLResponse)
+def registro_page(request: Request, fecha: str = Query(default="")):
+    """Página dedicada de registro diario: navegador + editores + cardio."""
+    from datetime import date as _date
+
+    if not fecha:
+        fecha = _date.today().isoformat()
+    fecha_date = _date.fromisoformat(fecha)
+    context = {
+        "navigator_html": _navigator_html(request, fecha),
+        "nutrition_templates_html": _plantillas_alimentacion_list_html(request, fecha),
+        "nutrition_editor_html": _nutrition_editor_html(request, fecha),
+        "editor_html": _editor_html(request, fecha),
+        "cardio_html": _cardio_day_html(request, fecha),
+        "exercise_form_html": _exercise_form_html(request),
+        "alimento_form_html": _alimento_form_html(request),
+        "plantillas_html": _plantillas_list_html(request),
+        "dia": day_from_date(fecha_date),
+        "fecha_display": fecha_display(fecha),
+        "semana": calculate_cycle_week(fecha_date, CICLO_START_DATE),
+    }
+    return HTMLResponse(
+        content=_render_body(
+            templates.TemplateResponse(request=request, name="registro.html", context=context)
         )
     )
 
@@ -883,23 +920,6 @@ def plantilla_alimentacion_aplicar(request: Request, plantilla_id: int, fecha: s
     return HTMLResponse(content=notice + nutrition_editor_wrap_oob(templates, request, editor))
 
 
-@app.get("/alimentacion/exportar/csv", response_class=Response)
-def export_nutrition_csv():
-    with read_connection(DB_PATH) as conn:
-        df = pd.read_sql_query(
-            "SELECT fecha, orden, alimento, cantidad_g, kcal, carbohidratos, fibra, "
-            "proteina, grasa, hierro, calcio, vitamina_c, vitamina_a, origen "
-            "FROM diario_alimentacion ORDER BY fecha, orden",
-            conn,
-        )
-    csv = "\ufeff" + df.to_csv(index=False)
-    return Response(
-        content=csv,
-        media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="alimentacion.csv"'},
-    )
-
-
 @app.get("/plantillas", response_class=HTMLResponse)
 def plantillas_view(request: Request, editar: int | None = Query(None)):
     return HTMLResponse(content=_plantillas_list_html(request, editing_id=editar))
@@ -1183,18 +1203,6 @@ def semana_primer_entreno(
     return JSONResponse({"fecha": fecha})
 
 
-@app.get("/exportar/csv", response_class=Response)
-def export_csv():
-    with read_connection(DB_PATH) as conn:
-        df = pd.read_sql_query("SELECT * FROM training_sets ORDER BY fecha, set_orden", conn)
-    csv = "\ufeff" + df.to_csv(index=False)
-    return Response(
-        content=csv,
-        media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="entrenamientos.csv"'},
-    )
-
-
 def _cascade_items(nivel: str, foco: str) -> list[str]:
     """Siguiente fila de la cascada: categorías → músculos → ejercicios."""
     from src.db_connection import read_connection
@@ -1212,18 +1220,22 @@ def _cascade_items(nivel: str, foco: str) -> list[str]:
         return [str(r[0]) for r in rows]
     if nivel == "musculo":
         with read_connection(DB_PATH) as conn:
-            if foco:
+            if foco and foco.lower() != "cardio":
                 rows = conn.execute(
                     "SELECT ejercicio FROM ejercicios "
                     "WHERE LOWER(grupo_muscular) = LOWER(?) ORDER BY ejercicio",
                     (foco,),
                 ).fetchall()
-            else:
+                return [str(r[0]) for r in rows]
+            if not foco:
                 rows = conn.execute(
                     "SELECT DISTINCT grupo_muscular FROM ejercicios "
                     "WHERE grupo_muscular IS NOT NULL ORDER BY grupo_muscular"
                 ).fetchall()
-        return [str(r[0]) for r in rows]
+                items = [str(r[0]) for r in rows]
+                items.append("Cardio")
+                return items
+        return []
     if nivel == "ejercicio":
         with read_connection(DB_PATH) as conn:
             rows = conn.execute("SELECT ejercicio FROM ejercicios ORDER BY ejercicio").fetchall()
@@ -1266,26 +1278,22 @@ def _ejercicios_row_html(request: Request, musculo: str, seleccionados: list[str
     )
 
 
-def _chart_selection_html(musculos: list[str], ejercicios: list[str]) -> str:
-    """Fragmento de la gráfica de la selección (1 músculo: compilado + ejercicios;
-    2+: global + músculos). Mismo shell (header + altura) que chart_html para
-    que el swap no mueva layout."""
-    from src.charts import chart_selection
+def _exercise_detail_html(request, ejercicio):
 
-    fig = chart_selection(DB_PATH, musculos, ejercicios)
-    header = _chart_header_html("Rendimiento – " + ", ".join(musculos))
-    if not fig.data:
-        return (
-            header
-            + "<div class='flex items-center justify-center chart-empty text-neutral-400 text-xs'>"
-            "Sin datos para esta selección</div>"
+    raw_df = get_exercise_raw_data(DB_PATH, ejercicio)
+    session_df = get_exercise_session_summary(DB_PATH, ejercicio)
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="exercise_detail.html",
+            context={
+                "raw_data": raw_df.to_dict(orient="records") if not raw_df.empty else [],
+                "session_summary": (
+                    session_df.to_dict(orient="records") if not session_df.empty else []
+                ),
+                "ejercicio": ejercicio,
+            },
         )
-    from src.dashboard_service import _json_for_inline
-
-    return (
-        header + f'<script id="unified-chart-data" type="application/json">'
-        f"{_json_for_inline(fig.to_json())}</script>"
-        '<div id="unified-chart-plot" class="plotly-graph-div"></div>'
     )
 
 
@@ -1294,64 +1302,74 @@ def nivel_view(
     request: Request,
     tipo: str = Query(...),
     foco: str = Query(default=""),
+    ejercicios: list[str] = Query(default=[]),
+    gran: str = Query(default="day"),
 ):
     """Cascada: músculos (fila persistente) → ejercicios del músculo → detalle.
 
     - tipo=musculo sin foco: fila de músculos (no toca la gráfica).
-    - tipo=musculo con foco: fila de ejercicios del músculo + gráfica del
-      compilado (OOB unified-chart).
+    - tipo=musculo con foco: fila de ejercicios del músculo con aria-pressed.
     - tipo=ejercicio con foco: detalle tabular en #history-section.
+    - tipo=ejercicio sin foco: placeholder de detalle.
+    - tipo=global: fila de músculos únicamente (sin OOB de gráfica).
     """
-    if tipo == "ejercicio" and foco:
-        raw_df = get_exercise_raw_data(DB_PATH, foco)
-        session_df = get_exercise_session_summary(DB_PATH, foco)
-        body = _render_body(
-            templates.TemplateResponse(
-                request=request,
-                name="exercise_detail.html",
-                context={
-                    "raw_data": raw_df.to_dict(orient="records") if not raw_df.empty else [],
-                    "session_summary": (
-                        session_df.to_dict(orient="records") if not session_df.empty else []
-                    ),
-                    "ejercicio": foco,
-                },
+    _validate_granularity(gran)
+    if tipo == "ejercicio":
+        if foco:
+            body = _exercise_detail_html(request, foco)
+        else:
+            body = _render_body(
+                templates.TemplateResponse(
+                    request=request,
+                    name="exercise_detail.html",
+                    context={"raw_data": [], "session_summary": [], "ejercicio": ""},
+                )
             )
-        )
         return HTMLResponse(content=body)
     if tipo == "musculo" and foco:
-        return HTMLResponse(
-            content=_ejercicios_row_html(request, foco, [])
-            + chart_oob_wrapper(_chart_selection_html([foco], []))
-        )
+        selected = []
+        if ejercicios and len(ejercicios) == 1:
+            selected = [s.strip() for s in ejercicios[0].split(",") if s.strip()]
+        elif ejercicios:
+            selected = [s.strip() for s in ejercicios if s.strip()]
+        return HTMLResponse(content=_ejercicios_row_html(request, foco, selected))
     if tipo == "global":
-        # Estado base: fila de músculos + gráfica sistémica.
-        return HTMLResponse(
-            content=_cascade_row_html(request, "musculo", "")
-            + chart_oob_wrapper(chart_html(DB_PATH, "systemic", title=_chart_title()))
-        )
+        return HTMLResponse(content=_cascade_row_html(request, "musculo", ""))
     return HTMLResponse(content=_cascade_row_html(request, tipo, foco))
 
 
 @app.get("/grafica", response_class=HTMLResponse)
 def grafica_view(
     request: Request,
-    musculo: list[str] = Query(default=[]),
+    musculos: list[str] = Query(default=[]),
     ejercicios: list[str] = Query(default=[]),
+    gran: str = Query(default="day"),
 ):
-    """Gráfica de la selección: 1 músculo → compilado + ejercicios marcados;
-    2+ músculos → global + músculos marcados. La fila de ejercicios solo se
-    refresca cuando hay exactamente 1 músculo."""
-    chart = _chart_selection_html(musculo, ejercicios)
-    content = chart_oob_wrapper(chart)
-    if len(musculo) == 1:
-        content += fragment_oob(
-            templates,
-            request,
-            "ejercicios-row",
-            _ejercicios_row_html(request, musculo[0], ejercicios),
-            swap="outerHTML",
-        )
+    """Gráfica de la selección: targets exclusivos de gráfica.
+
+    Selección vacía → gráfica sistémica global.
+    1 músculo → compilado + ejercicios marcados.
+    2+ músculos → global + músculos marcados.
+    """
+    from src.charts import chart_selection
+
+    granularity = _validate_granularity(gran)
+
+    if not musculos:
+        fig = chart_pfr_timeline(DB_PATH, "systemic", "", "", granularity)
+    else:
+        fig = chart_selection(DB_PATH, musculos, ejercicios, granularity)
+
+    has_data = hasattr(fig, "data") and fig.data
+    if has_data:
+        from src.dashboard_service import _json_for_inline
+
+        data_json = _json_for_inline(fig.to_json())
+        content = chart_header_oob("Rendimiento") + chart_data_oob(data_json) + chart_empty_oob(False)
+    else:
+        empty_text = "Sin datos para esta selección" if musculos else "Sin datos"
+        content = chart_header_oob("Rendimiento") + chart_data_oob("{}") + chart_empty_oob(True, empty_text)
+
     return HTMLResponse(content=content)
 
 

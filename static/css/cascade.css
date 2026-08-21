@@ -11,59 +11,258 @@
     display: inline;
 }
 
-#unified-chart .plotly-graph-div,
-#unified-chart .js-plotly-plot {
-    animation: chartFadeIn 0.3s ease-out;
-}
-@keyframes chartFadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
 /* El shell de la gráfica tiene altura final: estados vacío y cargado ocupan
    el mismo espacio (CLS 0). La altura vive aquí (CSS commitado), no en
    clases arbitrarias de Tailwind que no se escanean desde Python. */
-#unified-chart-plot,
-#unified-chart .chart-empty {
+#unified-chart-plot {
     height: 450px;
+    width: 100%;
+    display: block;
+    min-width: 0;
+    outline: none;
 }
 
-/* Niveles de análisis y cascada */
-.level-chip {
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: .12em;
-    text-transform: uppercase;
+#unified-chart .chart-empty,
+#unified-chart-empty {
+    height: 450px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     color: var(--t-surfaces-neutral-400);
-    border: 1px solid var(--t-surfaces-neutral-800);
-    border-radius: 9999px;
-    padding: .25rem .7rem;
-    transition: all 150ms ease-out;
-    cursor: pointer;
-    background: transparent;
+    font-size: 12px;
 }
-.level-chip:hover {
-    color: var(--t-surfaces-neutral-200);
+
+/* The empty-state node is always present for CLS stability, but it must not
+   participate in layout while the Plotly figure contains data. */
+#unified-chart-empty[hidden] {
+    display: none !important;
+}
+
+#unified-chart-plot[hidden] {
+    display: none !important;
+}
+
+/* CLS 0: history-section con altura máxima y scroll interno */
+#history-section {
+    max-height: 480px;
+    overflow-y: auto;
+}
+
+/* Dashboard: layout 2 columnas (catálogo izquierdo + análisis derecho).
+   Mobile: apilado (análisis primero, catálogo después). */
+.dashboard-page {
+    width: 100%;
+    max-width: none;
+    padding: 24px 24px 48px;
+}
+.dashboard-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--t-surfaces-neutral-800);
+    padding-bottom: 16px;
+    margin-bottom: 16px;
+}
+.dashboard-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.dashboard-analytics-col {
+    order: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+.dashboard-catalog-col {
+    order: 2;
+    min-width: 0;
+    overflow-x: hidden;
+}
+@media (min-width: 1024px) {
+    .dashboard-layout {
+        flex-direction: row;
+        align-items: flex-start;
+    }
+    .dashboard-catalog-col {
+        order: -1;
+        flex: 0 0 var(--split-catalog-w);
+        position: sticky;
+        top: 16px;
+        max-height: calc(100vh - 32px);
+        overflow-y: auto;
+    }
+    .dashboard-analytics-col {
+        order: 0;
+        flex: 1 1 auto;
+    }
+}
+
+/* Dashboard catálogo — acordeón minimalista industrial */
+#dashboard-catalog {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+}
+.db-group {
+    width: 100%;
+    min-width: 0;
+    align-self: stretch;
+    box-sizing: border-box;
+    background: var(--t-surfaces-neutral-900);
+    border: 1px solid var(--t-surfaces-neutral-800);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.db-group.is-open {
     border-color: var(--t-surfaces-neutral-700);
 }
-.level-chip.selected {
-    color: var(--t-burgundy-400);
-    border-color: var(--t-burgundy-600);
+.db-group.selected {
+    border-color: var(--t-burgundy-700);
     background: var(--t-overlay-burgundy-015);
 }
-.exercise-chip[aria-pressed="true"] {
-    color: var(--t-burgundy-400);
-    border-color: var(--t-burgundy-600);
-    background: var(--t-overlay-burgundy-015);
+.db-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 44px;
+    height: 44px;
+    padding: 9px 10px;
+    user-select: none;
 }
-.detail-link {
-    font-size: 12px;
+.db-group-toggle {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    margin-left: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
     color: var(--t-surfaces-neutral-500);
     cursor: pointer;
-    background: transparent;
-    border: 0;
-    padding: 0 2px;
+    font-size: 24px;
+    line-height: 1;
+    transition: color 0.15s;
+}
+.db-group-toggle > span {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
     line-height: 1;
 }
-.detail-link:hover {
+.db-group-toggle > span::before {
+    content: '';
+    display: block;
+    width: 8px;
+    height: 8px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+}
+.db-group-toggle[aria-expanded="true"] > span::before {
+    transform: translateY(2px) rotate(225deg);
+}
+.db-group-toggle:hover,
+.db-group-toggle:focus-visible {
     color: var(--t-burgundy-400);
 }
+.db-group-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--t-surfaces-neutral-200);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    line-height: 1.2;
+    font-family: inherit;
+}
+.db-group-name:hover,
+.db-group-name:focus-visible,
+.db-group-name[aria-pressed="true"] {
+    color: var(--t-burgundy-400);
+}
+.db-group.selected .db-group-name {
+    color: var(--t-burgundy-400);
+}
+.db-exercise-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 4px 6px 8px 6px;
+    width: 100%;
+    background: var(--t-surfaces-matte-950);
+    border-top: 1px solid var(--t-surfaces-neutral-800);
+    max-height: 126px;
+    box-sizing: border-box;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: var(--t-overlay-white-014) transparent;
+}
+.db-exercise-list[hidden] { display: none; }
+.db-exercise-list::-webkit-scrollbar { width: 3px; }
+.db-exercise-list::-webkit-scrollbar-thumb {
+    background: var(--t-overlay-white-014);
+    border-radius: 9999px;
+}
+.db-exercise-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    line-height: 1.2;
+    transition: background 0.12s;
+}
+.db-exercise-row:hover {
+    background: var(--t-overlay-white-004);
+}
+.db-exercise-row[aria-pressed="true"] {
+    background: var(--t-overlay-burgundy-015);
+}
+.db-exercise-row:focus-visible {
+    outline: 2px solid var(--t-focus-ring);
+    outline-offset: -1px;
+}
+.db-exercise-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--t-surfaces-neutral-300);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.db-exercise-row[aria-pressed="true"] .db-exercise-name {
+    color: var(--t-surfaces-neutral-100);
+}
+
+/* Fin de cascade.css */

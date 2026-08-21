@@ -1,14 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="max-w-7xl mx-auto px-4 py-8 flex flex-col gap-8">
-    <!-- Header -->
-    <header class="flex items-center justify-between border-b border-neutral-800 pb-4">
+<div class="dashboard-page">
+    <header class="dashboard-header">
         <div class="flex items-center gap-3">
             <h1 class="text-xl font-black tracking-[0.2em] text-white uppercase">Gym Tracker</h1>
-            <a
-                href="/exportar/csv"
-                class="btn btn-outline"
-            >Exportar CSV</a>
             <a
                 href="/splits"
                 class="btn btn-outline"
@@ -22,35 +17,66 @@
         </div>
     </header>
 
-    <!-- Músculos (fila persistente) + ejercicios del músculo seleccionado -->
-    <div class="flex flex-col gap-2 border-b border-neutral-800 pb-4">
-        <div id="cascade-row">
-            {{ cascade_row_html | safe }}
-            <span class="htmx-indicator text-xs text-neutral-400">Cargando niveles…</span>
-        </div>
-        <div id="ejercicios-row">
-            <span class="htmx-indicator text-xs text-neutral-400">Cargando ejercicios…</span>
-        </div>
-    </div>
+    <div class="dashboard-layout">
+        <!-- Panel izquierdo: catálogo de músculos y ejercicios (sticky en desktop) -->
+        <aside class="dashboard-catalog-col">
+            <section class="panel panel-default">
+                {% include "partials/dashboard_catalog.html" %}
+            </section>
+        </aside>
 
-    <!-- Contenido principal -->
-    <main class="flex flex-col gap-6 min-w-0">
-        <!-- Gráfica Única -->
-        <div id="unified-chart-container" class="panel panel-spacious">
-            <div id="unified-chart">
-                {{ systemic_chart_html | safe }}
+        <!-- Panel derecho: gráfica, resumen y detalle -->
+        <main class="dashboard-analytics-col">
+                <div id="unified-chart-container" class="panel panel-spacious relative">
+                <!-- Selector granularidad compacto junto al título, fuera de #unified-chart -->
+                <div
+                    id="granularity-selector"
+                    class="absolute top-3 right-3 inline-flex items-center rounded-lg border border-neutral-800 overflow-hidden z-10"
+                    role="group"
+                    aria-label="Periodo de la gráfica"
+                >
+                    <button
+                        type="button"
+                        data-action="set-granularity"
+                        data-gran="day"
+                        class="px-3 py-1 text-xs font-medium bg-burgundy-600 text-white"
+                        aria-pressed="true"
+                        aria-label="Día"
+                    >Día</button>
+                    <button
+                        type="button"
+                        data-action="set-granularity"
+                        data-gran="week"
+                        class="px-3 py-1 text-xs font-medium text-neutral-400 hover:text-white"
+                        aria-pressed="false"
+                        aria-label="Semana"
+                    >Semana</button>
+                    <button
+                        type="button"
+                        data-action="set-granularity"
+                        data-gran="month"
+                        class="px-3 py-1 text-xs font-medium text-neutral-400 hover:text-white"
+                        aria-pressed="false"
+                        aria-label="Mes"
+                    >Mes</button>
+                </div>
+                <div id="unified-chart">
+                    {{ systemic_chart_html | safe }}
+                </div>
             </div>
-        </div>
 
-        <!-- Detalle y Tabla (loaded dynamically abajo de la gráfica) -->
-        <section id="history-section" class="flex flex-col gap-4"></section>
-    </main>
+            <section id="history-section" class="flex flex-col gap-4">
+                <div class="panel panel-default">
+                    <p class="text-xs text-neutral-400 px-3 py-2">Selecciona un músculo y un ejercicio para ver su detalle.</p>
+                </div>
+            </section>
+        </main>
+    </div>
 </div>
 
 <noscript>
     <div class="notice notice-error" role="alert">
         El dashboard requiere JavaScript para editar, navegar y ver las gráficas.
-        Sin JS puedes ver la vista inicial y <a href="/exportar/csv" class="underline">exportar los datos en CSV</a>.
     </div>
 </noscript>
 

@@ -464,7 +464,8 @@ input[type="number"]::-webkit-outer-spin-button {
 .split-day-items,
 .split-board-scroll,
 .split-summary-strip,
-.splits-catalog-col {
+.splits-catalog-col,
+.dashboard-catalog-col {
     scrollbar-width: thin;
     scrollbar-color: var(--t-overlay-white-014) transparent;
 }
@@ -472,7 +473,8 @@ input[type="number"]::-webkit-outer-spin-button {
 .split-day-items::-webkit-scrollbar,
 .split-board-scroll::-webkit-scrollbar,
 .split-summary-strip::-webkit-scrollbar,
-.splits-catalog-col::-webkit-scrollbar {
+.splits-catalog-col::-webkit-scrollbar,
+.dashboard-catalog-col::-webkit-scrollbar {
     width: var(--split-scrollbar-size);
     height: var(--split-scrollbar-size);
 }
@@ -480,7 +482,8 @@ input[type="number"]::-webkit-outer-spin-button {
 .split-day-items::-webkit-scrollbar-thumb,
 .split-board-scroll::-webkit-scrollbar-thumb,
 .split-summary-strip::-webkit-scrollbar-thumb,
-.splits-catalog-col::-webkit-scrollbar-thumb {
+.splits-catalog-col::-webkit-scrollbar-thumb,
+.dashboard-catalog-col::-webkit-scrollbar-thumb {
     background: var(--t-overlay-white-014);
     border-radius: 999px;
 }
@@ -488,14 +491,16 @@ input[type="number"]::-webkit-outer-spin-button {
 .split-day-items::-webkit-scrollbar-thumb:hover,
 .split-board-scroll::-webkit-scrollbar-thumb:hover,
 .split-summary-strip::-webkit-scrollbar-thumb:hover,
-.splits-catalog-col::-webkit-scrollbar-thumb:hover {
+.splits-catalog-col::-webkit-scrollbar-thumb:hover,
+.dashboard-catalog-col::-webkit-scrollbar-thumb:hover {
     background: var(--t-overlay-white-035);
 }
 .split-day-summary::-webkit-scrollbar-track,
 .split-day-items::-webkit-scrollbar-track,
 .split-board-scroll::-webkit-scrollbar-track,
 .split-summary-strip::-webkit-scrollbar-track,
-.splits-catalog-col::-webkit-scrollbar-track {
+.splits-catalog-col::-webkit-scrollbar-track,
+.dashboard-catalog-col::-webkit-scrollbar-track {
     background: transparent;
 }
 
@@ -1066,6 +1071,49 @@ input[type="number"]::-webkit-outer-spin-button {
     display: flex;
     align-items: center;
     justify-content: space-between;
+}
+/* Botón de selección de músculo dentro del cuerpo del grupo: acción distinta
+   de la expansión (el summary es SOLO expand/collapse nativo). */
+.split-catalog-select {
+    box-sizing: border-box;
+    flex: 1 0 100%;
+    width: 100%;
+    min-height: var(--split-item-height);
+    margin-bottom: 2px;
+    border: 1px dashed var(--t-surfaces-neutral-600);
+    border-radius: 6px;
+    background: var(--t-overlay-white-004);
+    color: var(--t-burgundy-400);
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 8px;
+}
+.split-catalog-select[aria-pressed="true"] {
+    background: var(--t-overlay-burgundy-015);
+    border-color: var(--t-burgundy-600);
+    border-style: solid;
+    color: var(--t-surfaces-neutral-100);
+}
+.split-catalog-select:focus-visible {
+    outline: 2px solid var(--t-burgundy-600);
+    outline-offset: 2px;
+    border-radius: 6px;
+}
+/* Estado seleccionado del grupo muscular (hook visual + aria-pressed). */
+.split-catalog-group.selected {
+    border-color: var(--t-burgundy-600);
+    background: var(--t-overlay-burgundy-015);
+}
+.split-catalog-chip[aria-pressed="true"] {
+    color: var(--t-burgundy-400);
+    border-color: var(--t-burgundy-600);
+    background: var(--t-overlay-burgundy-015);
 }
 .split-catalog-summary::-webkit-details-marker {
     display: none;

@@ -145,7 +145,7 @@ def test_chart_fragment_has_no_executable_script(authed_client):
     )
     r = authed_client.get("/")
     body = r.text
-    assert 'id="unified-chart-data" type="application/json"' in body
+    assert 'id="unified-chart-data"' in body  # div inerte con JSON
     assert '<div id="unified-chart-plot"' in body
     # Ningún script de la página es inline ejecutable: o es externo (src=) o es de datos.
     for m in re.finditer(r"<script[^>]*>", body):
@@ -621,15 +621,17 @@ def test_json_for_inline_escapes_hostile_values():
 
 
 def test_chart_fragment_never_contains_raw_script_terminator():
-    """Tripwire: la figura viaja como JSON escapado dentro de un script de datos.
+    """Tripwire: la figura viaja como JSON escapado dentro de un div de datos.
 
     El fragmento no puede contener scripts ejecutables ni </script> crudo en el
-    JSON: el nombre hostil del ejercicio no puede cerrar el elemento."
+    JSON: el nombre hostil del ejercicio no puede cerrar el elemento ni
+    inyectar HTML.
     """
     import json
     import tempfile
 
-    from src.dashboard_service import chart_html
+    from src.charts import chart_pfr_timeline
+    from src.dashboard_service import chart_shell_html
     from src.database import init_db, insert_exercise
     from src.models import TrainingSetInput
     from src.training_service import save_session
@@ -640,15 +642,15 @@ def test_chart_fragment_never_contains_raw_script_terminator():
         hostile = "x</script><script>alert(1)</script>y"
         insert_exercise(db, hostile, "Pectoral", "EMPUJE")
         save_session(db, "2026-02-10", [TrainingSetInput(ejercicio=hostile, kg=80, reps=8, rir=1)])
-        html = chart_html(db, "exercise", hostile, f"Rendimiento – {hostile}")
-        assert 'class="text-xs text-neutral-400 flex-none">Ciclo 1<' in html
-        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html  # título escapado en el h3
+        fig = chart_pfr_timeline(db, "exercise", hostile, f"Rendimiento – {hostile}")
+        html = chart_shell_html(f"Rendimiento – {hostile}", fig)
+        assert 'id="unified-chart-header"' in html
+        assert "Rendimiento<" in html
         assert "<script>alert(1)</script>" not in html  # nunca crudo en el documento
-        # El único <script> es el de datos; su contenido no cierra el elemento.
-        for m in re.finditer(r"<script[^>]*>", html):
-            assert 'type="application/json"' in m.group(0)
+        # El único <script> no existe: los datos viven en un div inerte.
+        assert "<script" not in html
         data = re.search(
-            r'<script id="unified-chart-data" type="application/json">(.*?)</script>',
+            r'<div id="unified-chart-data" hidden>(.*?)</div>',
             html,
             re.DOTALL,
         )
@@ -744,7 +746,7 @@ def test_lan_sync_only_blocks_remote_dashboard(monkeypatch):
 def test_lan_sync_only_allows_only_sync_post(monkeypatch):
     monkeypatch.setenv("GYM_LAN_SYNC_ONLY", "1")
     allowed, _ = _run_lan(_lan_scope(method="POST", path="/sync/health-connect"))
-    denied, _ = _run_lan(_lan_scope(path="/exportar/csv"))
+    denied, _ = _run_lan(_lan_scope(path="/exportar/health-connect.csv"))
     assert allowed == 200
     assert denied == 403
 

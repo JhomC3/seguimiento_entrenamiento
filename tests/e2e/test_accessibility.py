@@ -104,7 +104,13 @@ def test_axe_populated_chart(page, server):
     )
     page.click("#popup-close")
     page.wait_for_selector("#editor-popup", state="hidden", timeout=5000)
-    page.locator('.level-chip[data-action="select-muscle"][data-foco="Pectoral"]').click()
+    group = page.locator('#dashboard-catalog .db-group[data-group="Pectoral"]')
+    if group.locator('[data-action="toggle-group"]').get_attribute("aria-expanded") != "true":
+        group.locator('[data-action="toggle-group"]').click()
+        page.wait_for_timeout(120)
+    page.locator(
+        '#dashboard-catalog [data-action="toggle-muscle"][data-foco="Pectoral"]'
+    ).click()
     page.wait_for_selector("#unified-chart-plot .main-svg", timeout=15000)
     _assert_no_violations(_run_axe(page), "gráfica con datos")
 

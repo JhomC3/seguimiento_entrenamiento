@@ -1172,3 +1172,115 @@ def test_restore_splits_resecuencia_ids(tmp_path):
     restore_splits(db_path, snapshot)
     pid2 = insert_split(db_path, "B", [])
     assert pid2 > pid
+
+
+# ---------------------------------------------------------------------------
+# get_dashboard_catalog tests
+# ---------------------------------------------------------------------------
+
+
+def test_dashboard_catalog_empty_db(tmp_path):
+    from src.database import get_dashboard_catalog, init_db
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    assert get_dashboard_catalog(db_path) == []
+
+
+def test_dashboard_catalog_missing_file(tmp_path):
+    from src.database import get_dashboard_catalog
+
+    assert get_dashboard_catalog(str(tmp_path / "nonexistent.db")) == []
+
+
+def test_dashboard_catalog_single_group(tmp_path):
+    from src.database import get_dashboard_catalog, init_db, insert_exercise
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    insert_exercise(db_path, "Press", "Pectoral", "EMPUJE")
+    insert_exercise(db_path, "Press Mancuernas", "Pectoral", "EMPUJE")
+    catalog = get_dashboard_catalog(db_path)
+    assert len(catalog) == 1
+    assert catalog[0]["name"] == "Pectoral"
+    exercises = catalog[0]["exercises"]
+    assert len(exercises) == 2
+    assert [e["name"] for e in exercises] == ["Press", "Press Mancuernas"]
+    assert all(e["category"] == "EMPUJE" for e in exercises)
+
+
+def test_dashboard_catalog_multiple_groups_deterministic_order(tmp_path):
+    from src.database import get_dashboard_catalog, init_db, insert_exercise
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    insert_exercise(db_path, "Curl", "Biceps", "TIRON")
+    insert_exercise(db_path, "Press", "Pectoral", "EMPUJE")
+    insert_exercise(db_path, "Sentadilla", "Cuadriceps", "PIERNA")
+    catalog = get_dashboard_catalog(db_path)
+    group_names = [g["name"] for g in catalog]
+    # MUSCLE_CATEGORIES order: EMPUJE(Pectoral), TIRON(Biceps), PIERNA(Cuadriceps)
+    assert group_names == ["Pectoral", "Biceps", "Cuadriceps"]
+
+
+def test_dashboard_catalog_group_not_in_category_comes_last(tmp_path):
+    from src.database import get_dashboard_catalog, init_db, insert_exercise
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    insert_exercise(db_path, "Curl", "Biceps", "TIRON")
+    insert_exercise(db_path, "Press", "Pectoral", "EMPUJE")
+    insert_exercise(db_path, "Jump", "CardioVirtual", "CARDIO")
+    catalog = get_dashboard_catalog(db_path)
+    group_names = [g["name"] for g in catalog]
+    assert group_names == ["Pectoral", "Biceps", "CardioVirtual"]
+
+
+def test_dashboard_catalog_no_duplicate_exercises(tmp_path):
+    from src.database import get_dashboard_catalog, init_db, insert_exercise
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    insert_exercise(db_path, "Press", "Pectoral", "EMPUJE")
+    # INSERT OR IGNORE: duplicate silently ignored
+    insert_exercise(db_path, "Press", "Pectoral", "EMPUJE")
+    catalog = get_dashboard_catalog(db_path)
+    assert len(catalog) == 1
+    assert len(catalog[0]["exercises"]) == 1
+
+
+def test_dashboard_catalog_empty_group_not_shown(tmp_path):
+    from src.database import get_dashboard_catalog, init_db, insert_exercise
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    # Insert exercise then check: no group without exercises appears
+    insert_exercise(db_path, "Press", "Pectoral", "EMPUJE")
+    catalog = get_dashboard_catalog(db_path)
+    for group in catalog:
+        assert len(group["exercises"]) > 0, (
+            f"Grupo {group['name']} no debería estar vacío"
+        )
+
+
+def test_dashboard_catalog_groups_exercises_alphabetical(tmp_path):
+    from src.database import get_dashboard_catalog, init_db, insert_exercise
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    insert_exercise(db_path, "Z Press", "Pectoral", "EMPUJE")
+    insert_exercise(db_path, "A Curl", "Pectoral", "EMPUJE")
+    insert_exercise(db_path, "M Fly", "Pectoral", "EMPUJE")
+    catalog = get_dashboard_catalog(db_path)
+    exercises = catalog[0]["exercises"]
+    assert [e["name"] for e in exercises] == ["A Curl", "M Fly", "Z Press"]
+
+
+def test_dashboard_catalog_category_empty_string(tmp_path):
+    from src.database import get_dashboard_catalog, init_db, insert_exercise
+
+    db_path = str(tmp_path / "db.sqlite")
+    init_db(db_path)
+    insert_exercise(db_path, "Press", "Pectoral", "")
+    catalog = get_dashboard_catalog(db_path)
+    assert catalog[0]["exercises"][0]["category"] == ""

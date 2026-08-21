@@ -67,7 +67,6 @@ COMPONENT_CLASSES = {
     "rir-step",
     "level-chip",
     "exercise-chip",
-    "detail-link",
     "collapse-chevron",
     "notice",
     "notice-success",

@@ -1,0 +1,54 @@
+{# dashboard_catalog.html — Catálogo acordeón minimalista.
+   Industrial/rústico: bordes sutiles, tipografía condensada y controles compactos.
+   - la cabecera separa selección del músculo y expansión
+   - el control compacto del header selecciona el músculo
+   - cada nombre de ejercicio es un botón de selección
+   - sin botones "Seleccionar", sin drag, sin clases split-* #}
+
+{% if not dashboard_catalog %}
+<div id="dashboard-catalog" class="flex flex-col gap-2">
+    <p class="split-empty">No hay ejercicios registrados.</p>
+</div>
+{% else %}
+<div id="dashboard-catalog" class="flex flex-col gap-2">
+    {% for group in dashboard_catalog %}
+    <section class="db-group" data-group="{{ group.name }}">
+        <header class="db-summary">
+            <button
+                type="button"
+                class="db-group-name"
+                data-action="toggle-muscle"
+                data-foco="{{ group.name }}"
+                aria-label="Seleccionar músculo {{ group.name }}"
+                aria-pressed="false"
+            >{{ group.name }}</button>
+            <button
+                type="button"
+                class="db-group-toggle"
+                data-action="toggle-group"
+                data-foco="{{ group.name }}"
+                aria-label="Expandir {{ group.name }}"
+                aria-expanded="false"
+                aria-controls="db-exercises-{{ loop.index }}"
+            ><span aria-hidden="true"></span></button>
+        </header>
+        <div id="db-exercises-{{ loop.index }}" class="db-exercise-list" hidden>
+            {% for exercise in group.exercises %}
+            <button
+                type="button"
+                class="db-exercise-row"
+                data-exercise="{{ exercise.name }}"
+                data-foco="{{ exercise.name }}"
+                data-action="toggle-exercise"
+                data-padre="{{ group.name }}"
+                aria-label="Seleccionar ejercicio {{ exercise.name }}"
+                aria-pressed="false"
+            >
+                <span class="db-exercise-name">{{ exercise.name }}</span>
+            </button>
+            {% endfor %}
+        </div>
+    </section>
+    {% endfor %}
+</div>
+{% endif %}

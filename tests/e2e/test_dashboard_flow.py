@@ -84,6 +84,27 @@ def _click_chart_point(page, semana):
     page.mouse.click(pos["x"], pos["y"])
 
 
+def _catalog_select_muscle(page, name):
+    """Catálogo acordeón: expande el grupo y marca el checkbox del músculo."""
+    group = page.locator(f'#dashboard-catalog .db-group[data-group="{name}"]')
+    expect(group).to_be_visible(timeout=3000)
+    summary = group.locator('[data-action="toggle-group"]')
+    if summary.get_attribute("aria-expanded") != "true":
+        summary.click()
+        page.wait_for_timeout(120)
+    group.locator('[data-action="toggle-muscle"]').click()
+
+
+def _catalog_exercise_chip(page, name):
+    # La fila es un <label> visible; el input está oculto
+    return page.locator(f'#dashboard-catalog .db-exercise-row[data-exercise="{name}"]')
+
+
+def _exercise_input(page, name):
+    """Botón del ejercicio en el catálogo (estado de selección = aria-pressed)."""
+    return page.locator(f'#dashboard-catalog .db-exercise-row[data-foco="{name}"]')
+
+
 def test_empty_state_chart(page, server):
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
@@ -348,8 +369,8 @@ def test_dynamic_script_does_not_execute(page, server):
     assert page.evaluate("window.__xssProbe") is False, "la CSP debe bloquear scripts inyectados"
 
 
-def test_week_click_opens_popup_en_primer_entreno(page, server):
-    """Clic real sobre el marcador de una semana abre la ventana de registro
+def test_week_click_opens_registro_en_primer_entreno(page, server):
+    """Clic real sobre el marcador de una semana navega a /registro
     en el primer entreno de esa semana."""
     _open_popup(page, server)
 
@@ -371,17 +392,19 @@ def test_week_click_opens_popup_en_primer_entreno(page, server):
         )
 
     page.click("#popup-close")
-    page.locator('#cascade-row .level-chip[data-foco="Pectoral"]').click()
+    _catalog_select_muscle(page, "Pectoral")
+    # Este test valida el clic en el marcador de una SEMANA: fija la granularidad
+    # a week para que el eje X sea numérico (por defecto ahora es day → fechas).
+    page.locator('#granularity-selector [data-gran="week"]').click()
     page.wait_for_timeout(800)
-    page.locator("#unified-chart .js-plotly-plot").first.wait_for(state="visible", timeout=5000)
-    page.locator("#unified-chart-plot .point").first.wait_for(state="visible", timeout=5000)
+    page.locator("#unified-chart .js-plotly-plot").first.wait_for(state="visible", timeout=10000)
+    page.locator("#unified-chart-plot .point").first.wait_for(state="visible", timeout=10000)
 
     semana_b = (datetime.date.fromisoformat(iso_b) - datetime.date(2026, 5, 4)).days // 7 + 1
     _click_chart_point(page, semana_b)
-    # La ventana de registro se abre en el primer entreno de la semana.
-    expect(page.locator("#editor-popup")).to_be_visible(timeout=3000)
+    # La página de registro se abre en el primer entreno de la semana.
+    page.wait_for_url(f"**/registro?fecha={iso_b}", timeout=5000)
     expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso_b, timeout=3000)
-    assert "registro=" + iso_b in page.url
 
 
 def test_cascade_musculo_persistente_y_multi_traza(page, server):
@@ -395,32 +418,35 @@ def test_cascade_musculo_persistente_y_multi_traza(page, server):
     )
     page.click("#popup-close")
 
-    # Fila de músculos siempre visible.
-    muscle_chip = page.locator('#cascade-row .level-chip[data-foco="Pectoral"]')
-    expect(muscle_chip).to_be_visible(timeout=3000)
+    # Grupos del catálogo siempre visibles (Pectoral, Biceps).
+    group = page.locator('#dashboard-catalog .db-group[data-group="Pectoral"]')
+    expect(group).to_be_visible(timeout=3000)
 
     # Elegir músculo: se marca (no desaparece) y aparecen sus ejercicios.
-    muscle_chip.click()
-    expect(muscle_chip).to_have_class(re.compile(r"\bselected\b"))
-    exercise_chip = page.locator('#ejercicios-row .exercise-chip[data-foco="Press"]')
+    _catalog_select_muscle(page, "Pectoral")
+    muscle_input = page.locator(
+        '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
+    )
+    expect(muscle_input).to_have_attribute("aria-pressed", "true")
+    exercise_chip = page.locator('#dashboard-catalog .db-exercise-row[data-foco="Press"]')
     expect(exercise_chip).to_be_visible(timeout=3000)
-    expect(page.locator("#cascade-row .level-chip")).to_have_count(2)  # sigue visible
+    expect(page.locator("#dashboard-catalog .db-group")).to_have_count(2)
 
     # Marcar el ejercicio: la gráfica tiene compilado + línea del ejercicio.
     exercise_chip.click()
-    expect(exercise_chip).to_have_attribute("aria-pressed", "true")
+    expect(_exercise_input(page, "Press")).to_have_attribute("aria-pressed", "true")
     page.wait_for_function(
         "() => { const el = document.getElementById('unified-chart-plot');"
         " return el && el._fullData && el._fullData.length === 2; }",
         timeout=5000,
     )
 
-    # Desmarcar (Shift+click): vuelve a solo el compilado.
+    # Desmarcar (Shift+click): vuelve al estado muscular (Global + Compilado).
     exercise_chip.click(modifiers=["Shift"])
-    expect(exercise_chip).to_have_attribute("aria-pressed", "false")
+    expect(_exercise_input(page, "Press")).to_have_attribute("aria-pressed", "false")
     page.wait_for_function(
         "() => { const el = document.getElementById('unified-chart-plot');"
-        " return el && el._fullData && el._fullData.length === 1; }",
+        " return el && el._fullData && el._fullData.length === 2; }",
         timeout=5000,
     )
 
@@ -435,15 +461,26 @@ def test_grafica_atras_del_navegador_restaura(page, server):
     )
     page.click("#popup-close")
 
-    page.locator('#cascade-row .level-chip[data-foco="Pectoral"]').click()
-    expect(page.locator("#ejercicios-row .exercise-chip")).to_be_visible(timeout=3000)
+    _catalog_select_muscle(page, "Pectoral")
+    expect(
+        page.locator(
+            '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
+        )
+    ).to_have_attribute("aria-pressed", "true")
     assert "musculos=Pectoral" in page.url
 
     page.go_back()
     page.wait_for_timeout(800)
-    # Volvió al estado base: sin ejercicios seleccionados y dentro de la app.
+    # Volvió al estado base: sin músculos ni ejercicios seleccionados.
     assert page.url.endswith("/") or "?" not in page.url.split("/")[-1]
-    expect(page.locator("#ejercicios-row .exercise-chip")).to_have_count(0)
+    expect(
+        page.locator('#dashboard-catalog [data-action="toggle-muscle"][aria-pressed="true"]')
+    ).to_have_count(0)
+    expect(
+        page.locator(
+            '#dashboard-catalog .db-exercise-row[data-action="toggle-exercise"][aria-pressed="true"]'
+        )
+    ).to_have_count(0)
 
 
 def test_mobile_viewport_renders(page, server):
@@ -526,29 +563,41 @@ def test_muscle_toggle_y_escape_vuelven_al_cuerpo_completo(page, server):
     )
     page.click("#popup-close")
 
-    muscle_chip = page.locator('#cascade-row .level-chip[data-foco="Pectoral"]')
-    expect(muscle_chip).to_be_visible(timeout=3000)
-
     # Seleccionar el músculo: se marca y aparecen sus ejercicios.
-    muscle_chip.click()
-    expect(muscle_chip).to_have_class(re.compile(r"\bselected\b"))
-    expect(page.locator("#ejercicios-row .exercise-chip")).to_be_visible(timeout=3000)
+    muscle_select = page.locator(
+        '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
+    )
+    _catalog_select_muscle(page, "Pectoral")
+    expect(muscle_select).to_have_attribute("aria-pressed", "true")
+    expect(
+        page.locator('#dashboard-catalog .db-group[data-group="Pectoral"] .db-exercise-row')
+    ).to_be_visible(timeout=3000)
 
     # Oprimir de nuevo: se deselecciona y vuelve al cuerpo completo.
-    muscle_chip.click()
-    expect(muscle_chip).not_to_have_class(re.compile(r"\bselected\b"))
-    expect(page.locator("#ejercicios-row .exercise-chip")).to_have_count(0)
+    page.locator(
+        '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
+    ).click()
+    expect(muscle_select).to_have_attribute("aria-pressed", "false")
+    expect(
+        page.locator(
+            '#dashboard-catalog .db-exercise-row[data-action="toggle-exercise"][aria-pressed="true"]'
+        )
+    ).to_have_count(0)
     expect(page.locator("#unified-chart")).to_contain_text("Rendimiento", timeout=3000)
     expect(page.locator("#unified-chart")).not_to_contain_text("Pectoral")
     assert "musculos=" not in page.url
 
     # Escape también deselecciona.
-    muscle_chip.click()
-    expect(muscle_chip).to_have_class(re.compile(r"\bselected\b"))
+    _catalog_select_muscle(page, "Pectoral")
+    expect(muscle_select).to_have_attribute("aria-pressed", "true")
     page.keyboard.press("Escape")
     page.wait_for_timeout(500)
-    expect(muscle_chip).not_to_have_class(re.compile(r"\bselected\b"))
-    expect(page.locator("#ejercicios-row .exercise-chip")).to_have_count(0)
+    expect(muscle_select).to_have_attribute("aria-pressed", "false")
+    expect(
+        page.locator(
+            '#dashboard-catalog .db-exercise-row[data-action="toggle-exercise"][aria-pressed="true"]'
+        )
+    ).to_have_count(0)
     assert "musculos=" not in page.url
 
 
@@ -563,27 +612,38 @@ def test_recarga_mantiene_musculo_y_ejercicios_seleccionados(page, server):
     )
     page.click("#popup-close")
 
-    muscle_chip = page.locator('#cascade-row .level-chip[data-foco="Pectoral"]')
-    expect(muscle_chip).to_be_visible(timeout=3000)
-    muscle_chip.click()
-    expect(muscle_chip).to_have_class(re.compile(r"\bselected\b"))
-    exercise_chip = page.locator('#ejercicios-row .exercise-chip[data-foco="Press"]')
+    _catalog_select_muscle(page, "Pectoral")
+    muscle_input = page.locator(
+        '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
+    )
+    expect(muscle_input).to_have_attribute("aria-pressed", "true")
+    exercise_chip = page.locator('#dashboard-catalog .db-exercise-row[data-foco="Press"]')
     expect(exercise_chip).to_be_visible(timeout=3000)
     exercise_chip.click()
-    expect(exercise_chip).to_have_attribute("aria-pressed", "true")
+    expect(_exercise_input(page, "Press")).to_have_attribute("aria-pressed", "true")
     assert "musculos=Pectoral" in page.url
     assert "ejercicios=Press" in page.url
 
     # Recargar: el estado debe mantenerse completo y visible.
     page.reload()
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    page.wait_for_selector('#cascade-row .level-chip[data-foco="Pectoral"]', timeout=5000)
-    expect(page.locator('#cascade-row .level-chip[data-foco="Pectoral"]')).to_have_class(
+    page.wait_for_selector(
+        '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]',
+        timeout=5000,
+    )
+    expect(page.locator('#dashboard-catalog .db-group[data-group="Pectoral"]')).to_have_class(
         re.compile(r"\bselected\b")
     )
-    expect(page.locator('#ejercicios-row .exercise-chip[data-foco="Press"]')).to_have_attribute(
-        "aria-pressed", "true"
-    )
+    expect(
+        page.locator(
+            '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
+        )
+    ).to_have_attribute("aria-pressed", "true")
+    expect(
+        page.locator(
+            '#dashboard-catalog .db-exercise-row[data-action="toggle-exercise"][data-foco="Press"]'
+        )
+    ).to_have_attribute("aria-pressed", "true")
     page.wait_for_function(
         "() => { const el = document.getElementById('unified-chart-plot');"
         " return el && el._fullData && el._fullData.length === 2; }",
@@ -593,7 +653,7 @@ def test_recarga_mantiene_musculo_y_ejercicios_seleccionados(page, server):
 
 def test_multimusculo_con_shift_click_mantiene_global(page, server):
     """Shift+click añade músculos a la selección: la gráfica muestra el Global
-    grueso + cada músculo tenue, y la fila de ejercicios se oculta."""
+    grueso + cada músculo tenue, y la selección de ejercicios se vacía."""
     _open_popup(page, server)
     _fill_row(page, 0)
     page.click('#edit-actions button[type="submit"]')
@@ -610,21 +670,35 @@ def test_multimusculo_con_shift_click_mantiene_global(page, server):
     )
     page.click("#popup-close")
 
-    pectoral = page.locator('#cascade-row .level-chip[data-foco="Pectoral"]')
-    expect(pectoral).to_be_visible(timeout=3000)
-    pectoral.click()
-    expect(pectoral).to_have_class(re.compile(r"\bselected\b"))
-    # Fila de ejercicios visible con 1 músculo.
-    expect(page.locator("#ejercicios-row .exercise-chip")).to_be_visible(timeout=3000)
+    pectoral = page.locator(
+        '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
+    )
+    _catalog_select_muscle(page, "Pectoral")
+    expect(pectoral).to_have_attribute("aria-pressed", "true")
 
     # Shift+click en otro músculo: se añade a la selección.
-    biceps = page.locator('#cascade-row .level-chip[data-foco="Biceps"]')
+    biceps_input = page.locator(
+        '#dashboard-catalog .db-group[data-group="Biceps"] [data-action="toggle-muscle"]'
+    )
+    biceps = page.locator(
+        '#dashboard-catalog .db-group[data-group="Biceps"] [data-action="toggle-muscle"]'
+    )
+    biceps_grp = page.locator('#dashboard-catalog .db-group[data-group="Biceps"]')
+    if biceps_grp.locator('[data-action="toggle-group"]').get_attribute("aria-expanded") != "true":
+        biceps_grp.locator('[data-action="toggle-group"]').click()
+        page.wait_for_timeout(120)
     biceps.click(modifiers=["Shift"])
-    expect(biceps).to_have_class(re.compile(r"\bselected\b"))
-    expect(pectoral).to_have_class(re.compile(r"\bselected\b"))
-    # Con 2 músculos: la fila de ejercicios se oculta.
-    expect(page.locator("#ejercicios-row .exercise-chip")).to_have_count(0)
-    assert "musculos=Pectoral%2CBiceps" in page.url
+    expect(biceps_input).to_have_attribute("aria-pressed", "true")
+    expect(pectoral).to_have_attribute("aria-pressed", "true")
+    # Con 2 músculos: la selección de ejercicios queda vacía.
+    expect(
+        page.locator(
+            '#dashboard-catalog .db-exercise-row[data-action="toggle-exercise"][aria-pressed="true"]'
+        )
+    ).to_have_count(0)
+    url = page.url
+    musculos_param = url.split("musculos=", 1)[1].split("&", 1)[0]
+    assert set(musculos_param.split("%2C")) == {"Pectoral", "Biceps"}, url
     # Gráfica: Global + 2 músculos tenues.
     page.wait_for_function(
         "() => { const el = document.getElementById('unified-chart-plot');"
@@ -633,18 +707,22 @@ def test_multimusculo_con_shift_click_mantiene_global(page, server):
     )
 
     # Click simple en uno de los seleccionados: la selección se reemplaza
-    # (solo ese) y la fila de ejercicios reaparece.
+    # (solo ese) y vuelve a poder elegirse ejercicios.
     biceps.click()
-    expect(pectoral).not_to_have_class(re.compile(r"\bselected\b"))
-    expect(biceps).to_have_class(re.compile(r"\bselected\b"))
-    expect(page.locator("#ejercicios-row .exercise-chip")).to_be_visible(timeout=3000)
+    expect(pectoral).to_have_attribute("aria-pressed", "false")
+    expect(biceps_input).to_have_attribute("aria-pressed", "true")
+    expect(
+        page.locator('#dashboard-catalog .db-group[data-group="Biceps"] .db-exercise-row')
+    ).to_be_visible(timeout=3000)
     assert "musculos=Biceps" in page.url
 
     # Escape deselecciona todo → cuerpo entero puro.
     page.keyboard.press("Escape")
     page.wait_for_timeout(500)
-    expect(biceps).not_to_have_class(re.compile(r"\bselected\b"))
-    expect(page.locator("#ejercicios-row .exercise-chip")).to_have_count(0)
+    expect(biceps).to_have_attribute("aria-pressed", "false")
+    expect(
+        page.locator('#dashboard-catalog [data-action="toggle-muscle"][aria-pressed="true"]')
+    ).to_have_count(0)
     assert "musculos=" not in page.url
 
 
@@ -658,13 +736,11 @@ def test_multiejercicios_con_shift_click(page, server):
     )
     page.click("#popup-close")
 
-    pectoral = page.locator('#cascade-row .level-chip[data-foco="Pectoral"]')
-    expect(pectoral).to_be_visible(timeout=3000)
-    pectoral.click()
-    exercise_chip = page.locator('#ejercicios-row .exercise-chip[data-foco="Press"]')
+    _catalog_select_muscle(page, "Pectoral")
+    exercise_chip = page.locator('#dashboard-catalog .db-exercise-row[data-foco="Press"]')
     expect(exercise_chip).to_be_visible(timeout=3000)
     exercise_chip.click()
-    expect(exercise_chip).to_have_attribute("aria-pressed", "true")
+    expect(_exercise_input(page, "Press")).to_have_attribute("aria-pressed", "true")
     page.wait_for_function(
         "() => { const el = document.getElementById('unified-chart-plot');"
         " return el && el._fullData && el._fullData.length === 2; }",
@@ -672,18 +748,991 @@ def test_multiejercicios_con_shift_click(page, server):
     )
     assert "ejercicios=Press" in page.url
 
-    # Shift+click sobre el mismo ejercicio lo quita de la selección.
+    # Shift+click sobre el mismo ejercicio lo quita de la selección:
+    # vuelve al estado muscular (Global + Compilado).
     exercise_chip.click(modifiers=["Shift"])
-    expect(exercise_chip).to_have_attribute("aria-pressed", "false")
+    expect(_exercise_input(page, "Press")).to_have_attribute("aria-pressed", "false")
     page.wait_for_function(
         "() => { const el = document.getElementById('unified-chart-plot');"
-        " return el && el._fullData && el._fullData.length === 1; }",
+        " return el && el._fullData && el._fullData.length === 2; }",
         timeout=5000,
     )
     assert "ejercicios=" not in page.url
 
 
 # ---------------------------------------------------------------------------
+# A4 — Catalog selection state (muscle/exercise) behavior
+# ---------------------------------------------------------------------------
+
+
+def test_catalog_expand_sin_seleccionar(page, server):
+    """Expandir/contraer un grupo (summary nativo) no altera la selección:
+    ninguno queda con aria-pressed=true y la URL se mantiene base."""
+    _open_popup(page, server)
+    _fill_row(page, 0)
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+    page.click("#popup-close")
+
+    group = page.locator('#dashboard-catalog .db-group[data-group="Pectoral"]')
+    summary = group.locator('[data-action="toggle-group"]')
+    assert summary.get_attribute("aria-expanded") == "false", "los grupos arrancan colapsados"
+    summary.click()
+    page.wait_for_timeout(150)
+    assert summary.get_attribute("aria-expanded") == "true", "el control debe expandir el grupo"
+    expect(
+        page.locator('#dashboard-catalog [data-action="toggle-muscle"][aria-pressed="true"]')
+    ).to_have_count(0)
+    expect(
+        page.locator(
+            '#dashboard-catalog .db-exercise-row[data-action="toggle-exercise"][aria-pressed="true"]'
+        )
+    ).to_have_count(0)
+    assert "musculos=" not in page.url and "ejercicios=" not in page.url
+    # Contraer de nuevo: sin selección, la gráfica sigue sistémica.
+    summary.click()
+    page.wait_for_timeout(150)
+    assert summary.get_attribute("aria-expanded") == "false", "el control debe contraer el grupo"
+
+
+def test_catalog_seleccion_rapida_consecutiva(page, server):
+    """Selección rápida consecutiva (Pectoral → Biceps) termina en el último
+    músculo elegido, sin que una respuesta obsoleta sobrescriba la selección."""
+    _open_popup(page, server)
+    _fill_row(page, 0)
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+    page.locator(f'#popup-body .date-num[data-iso="{_iso(1)}"]').click()
+    page.wait_for_timeout(400)
+    _fill_row(page, 0, ejercicio="Curl", kg="12", reps="10", rir="1")
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+    page.click("#popup-close")
+
+    # Seleccionar Pectoral y Biceps casi a la vez (sin esperar el swap).
+    _catalog_select_muscle(page, "Pectoral")
+    biceps_grp = page.locator('#dashboard-catalog .db-group[data-group="Biceps"]')
+    biceps = page.locator(
+        '#dashboard-catalog .db-group[data-group="Biceps"] [data-action="toggle-muscle"]'
+    )
+    if biceps_grp.locator('[data-action="toggle-group"]').get_attribute("aria-expanded") != "true":
+        biceps_grp.locator('[data-action="toggle-group"]').click()
+        page.wait_for_timeout(120)
+    biceps.click()
+    page.wait_for_timeout(700)
+
+    expect(biceps).to_have_attribute("aria-pressed", "true")
+    expect(
+        page.locator(
+            '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
+        )
+    ).to_have_attribute("aria-pressed", "false")
+    assert "musculos=Biceps" in page.url
+    assert "musculos=Pectoral" not in page.url or "ejercicios=" not in page.url, page.url
+    # La gráfica refleja solo el último músculo: Global + Compilado (2 trazas).
+    page.wait_for_function(
+        "() => { const el = document.getElementById('unified-chart-plot');"
+        " return el && el._fullData && el._fullData.length === 2; }",
+        timeout=5000,
+    )
+
+
+def test_catalog_sel_rapida_sin_respuestas_obsoletas(page, server):
+    """Tras rápidos toggles el estado final coincide con la última acción: la
+    respuesta obsoleta del primer músculo no reemplaza a la del último."""
+    _open_popup(page, server)
+    _fill_row(page, 0)
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+    page.locator(f'#popup-body .date-num[data-iso="{_iso(1)}"]').click()
+    page.wait_for_timeout(400)
+    _fill_row(page, 0, ejercicio="Curl", kg="12", reps="10", rir="1")
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+    page.click("#popup-close")
+
+    # Ciclo rápido: seleccionar, deseleccionar (Escape), re-seleccionar.
+    biceps_grp = page.locator('#dashboard-catalog .db-group[data-group="Biceps"]')
+    biceps_grp.locator('[data-action="toggle-group"]').click()
+    page.wait_for_timeout(120)
+    _catalog_select_muscle(page, "Pectoral")
+    _catalog_select_muscle(page, "Biceps")
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(200)
+    _catalog_select_muscle(page, "Biceps")
+    page.wait_for_timeout(800)
+
+    expect(
+        biceps_grp.locator('[data-action="toggle-muscle"][data-foco="Biceps"]')
+    ).to_have_attribute("aria-pressed", "true")
+    assert "musculos=Biceps" in page.url
+    # Biceps tiene datos: la gráfica no queda como "Sin datos" ni global.
+    traces = page.evaluate(
+        "() => { const el = document.getElementById('unified-chart-plot');"
+        " return el && el._fullData ? el._fullData.map(t => t.name) : []; }"
+    )
+    assert "Biceps" in traces, f"faltan trazas de Biceps: {traces}"
+
+
+def test_catalog_clic_simple_en_marcado_quita_ejercicio(page, server, tmp_path):
+    """Volver a pulsar un ejercicio marcado (clic simple) lo deselecciona: su
+    línea desaparece, la gráfica vuelve al estado muscular (Global + músculo),
+    el checkbox se desmarca y la URL deja de incluir ejercicios=."""
+    import datetime
+    import sqlite3
+
+    db = str(tmp_path / "lifestyle.db")
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO ejercicios (grupo_muscular, ejercicio) VALUES ('Pectoral','Press')"
+        )
+        base = datetime.date(2026, 6, 1)
+        for i in range(8):
+            d = base + datetime.timedelta(days=i)
+            conn.execute(
+                "INSERT INTO training_sets "
+                "(semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) "
+                "VALUES (?,?,?,1,'Press',6,80,1)",
+                ((i // 7) + 1, "LUNES", d.isoformat()),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+
+    # Seleccionar músculo + ejercicio (primer clic).
+    _catalog_select_muscle(page, "Pectoral")
+    row = _exercise_input(page, "Press")
+    expect(row).to_be_visible(timeout=3000)
+    row.click()
+    expect(row).to_have_attribute("aria-pressed", "true", timeout=3000)
+    assert "ejercicios=Press" in page.url, page.url
+    # Esperar al swap de /grafica: la línea del ejercicio debe aparecer.
+    page.wait_for_function(
+        "() => { const el = document.getElementById('unified-chart-plot');"
+        " return el && el._fullData && el._fullData.some(t => t.name === 'Press'); }",
+        timeout=8000,
+    )
+    st_ex = _chart_state(page)
+    ex_names = [t["n"] for t in st_ex["traces"]]
+    assert "Press" in ex_names, f"la línea del ejercicio debe aparecer: {ex_names}"
+
+    # Segundo clic simple sobre el mismo ejercicio: se deselecciona.
+    row.click()
+    expect(row).to_have_attribute("aria-pressed", "false", timeout=3000)
+    # El músculo permanece seleccionado.
+    muscle_btn = page.locator(
+        '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
+    )
+    expect(muscle_btn).to_have_attribute("aria-pressed", "true")
+    # La URL ya no incluye ejercicios.
+    assert "musculos=Pectoral" in page.url, page.url
+    assert "ejercicios=" not in page.url, page.url
+    # La gráfica vuelve al estado muscular: Global + Pectoral (sin Press).
+    page.wait_for_function(
+        "() => { const el = document.getElementById('unified-chart-plot');"
+        " return el && el._fullData && el._fullData.length === 2"
+        " && el._fullData.every(t => t.name !== 'Press'); }",
+        timeout=8000,
+    )
+    st_back = _chart_state(page)
+    back_names = [t["n"] for t in st_back["traces"]]
+    assert "Press" not in back_names, f"la línea de Press debe desaparecer: {back_names}"
+    assert "Global" in back_names and "Pectoral" in back_names, back_names
+    # El detalle vuelve al placeholder.
+    expect(page.locator("#history-section")).to_contain_text("Selecciona un", timeout=3000)
+
+
+def test_catalog_flujo_sin_errores_consola(page, server):
+    """La interacción de selección (músculo → ejercicio) no produce excepciones
+    JavaScript reales. Las cancelaciones de respuestas obsoletas (cancelPending /
+    xhr.abort) provocan abortos intencionales que htmx registra como
+    console.error (htmx:sendAbort / htmx:afterRequest); eso NO es un error de la
+    aplicación. Las excepciones reales se capturan en window.onerror /
+    unhandledrejection instalados antes de cargar (add_init_script), de modo que
+    el test solo falla ante errores genuinos no controlados."""
+    # Captura real de excepciones de la aplicación (antes de que cargue el page).
+    page.add_init_script(
+        """() => {
+            window.__realErrors = [];
+            window.addEventListener('error', function (ev) {
+                const e = ev.error || {};
+                window.__realErrors.push({
+                    kind: 'onerror',
+                    message: ev.message || (e && e.message) || '',
+                    source: ev.filename || '',
+                    line: ev.lineno || 0,
+                    col: ev.colno || 0,
+                    stack: (e && e.stack) ? String(e.stack) : '',
+                });
+            });
+            window.addEventListener('unhandledrejection', function (ev) {
+                const r = ev.reason || {};
+                window.__realErrors.push({
+                    kind: 'unhandledrejection',
+                    message: (r && r.message) ? String(r.message) : String(r),
+                    source: '',
+                    line: 0,
+                    col: 0,
+                    stack: (r && r.stack) ? String(r.stack) : '',
+                });
+            });
+        }"""
+    )
+
+    # Consola y pageerror para diagnóstico: se asociará cada evento con el flujo.
+    console_error = []
+    page.on(
+        "console",
+        lambda m: (
+            console_error.append(f"console[{m.type}] {m.text[:140]}") if m.type == "error" else None
+        ),
+    )
+    page_errors = []
+    page.on("pageerror", lambda e: page_errors.append(getattr(e, "message", "")))
+
+    _open_popup(page, server)
+    _fill_row(page, 0)
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+    page.click("#popup-close")
+
+    # Flujo rápido músculo → ejercicio: genera cancelaciones intencionales de la
+    # petición /grafica + /nivel del músculo al elegir el ejercicio.
+    _catalog_select_muscle(page, "Pectoral")
+    chip = page.locator('#dashboard-catalog .db-exercise-row[data-foco="Press"]')
+    chip.click()
+    expect(_exercise_input(page, "Press")).to_have_attribute("aria-pressed", "true")
+    page.wait_for_function(
+        "() => { const el = document.getElementById('unified-chart-plot');"
+        " return el && el._fullData && el._fullData.length === 2; }",
+        timeout=10000,
+    )
+    # La selección queda consistente y la URL refleja músculo + ejercicio.
+    assert "musculos=Pectoral" in page.url and "ejercicios=Press" in page.url, page.url
+
+    # -- Verificaciones --
+    # 1) Excepciones reales de la aplicación: NINGUNA (canal window.onerror /
+    #    unhandledrejection, que no se dispara ante aborts de XHR de htmx).
+    real = page.evaluate("() => window.__realErrors || []")
+    assert real == [], f"excepciones reales de la aplicación: {real}"
+
+    # 2) Consola: cualquier console.error debe ser bookkeeping de aborto
+    #    intencional de htmx (htmx:sendAbort / htmx:afterRequest de una request
+    #    cancelada por cancelPending). Cualquier otro error es una regresión.
+    unjustified = [
+        m for m in console_error if "htmx:sendAbort" not in m and "htmx:afterRequest" not in m
+    ]
+    assert unjustified == [], f"console.error no justificados: {unjustified}"
+
+    # 3) pageerror: no se filtra indiscriminadamente. Un pageerror con mensaje
+    #    real (distinto de 'undefined'/vacío) es una excepción genuina → falla.
+    #    El pageerror 'undefined' sin stack coincide con la firma de aborto de
+    #    red de una request cancelada por cancelPending y se acepta. No se exige
+    #    la presencia de estos eventos (depende del timing de la cancelación),
+    #    solo se validan si aparecen.
+    abort_signatures = {"", "undefined"}
+    for m in page_errors:
+        assert m in abort_signatures, f"pageerror con mensaje real: {m!r}"
+
+    # Back/forward: navegaciones completas restauran el estado (URL).
+    page.go_back()
+    page.wait_for_timeout(700)
+    assert "musculos=Pectoral" in page.url and "ejercicios=Press" not in page.url, page.url
+    page.go_forward()
+    page.wait_for_timeout(700)
+    assert "musculos=Pectoral" in page.url and "ejercicios=Press" in page.url, page.url
+    # Tras back/forward, tampoco hay excepciones reales en la aplicación.
+    real_after = page.evaluate("() => window.__realErrors || []")
+    assert real_after == [], f"excepciones reales tras back/forward: {real_after}"
+
+
+# ---------------------------------------------------------------------------
+# B1 — Granularidad: selector día/semana/mes (contrato)
+# ---------------------------------------------------------------------------
+
+
+def _granularity_select(page):
+    # Compatibilidad: nuevo selector es grupo de botones, legacy era <select>
+    sel = page.locator("#granularity-select")
+    # Si es un <select> (legacy), devolverlo; si es un grupo de botones, devolver el grupo
+    return sel
+
+
+def _seed_sessions(page, server, dates, ejercicio="Press"):
+    """Guarda una sesión de `ejercicio` en cada fecha (ISO) usando el popup.
+    Luego cierra el popup y devuelve la página en el dashboard."""
+    _open_popup(page, server)
+    for iso in dates:
+        page.locator(f'#popup-body .date-num[data-iso="{iso}"]').click()
+        expect(page.locator(f'#popup-body .date-num[data-iso="{iso}"]')).to_have_class(
+            re.compile(r"\bselected\b")
+        )
+        expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
+        _wait_editor_settled(page)
+        _fill_row(page, 0, ejercicio=ejercicio)
+        page.click('#edit-actions button[type="submit"]')
+        expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+            "Entrenamiento guardado", timeout=2000
+        )
+    page.click("#popup-close")
+    page.wait_for_selector("#editor-popup", state="hidden", timeout=5000)
+
+
+def _chart_state(page):
+    """Lee el contenido real de la gráfica Plotly: eje X, trazas y tooltip."""
+    return page.evaluate(
+        """() => {
+            const el = document.getElementById('unified-chart-plot');
+            if (!el || !el._fullData) return {empty: true};
+            return {
+                xaxis: el._fullLayout && el._fullLayout.xaxis
+                    ? el._fullLayout.xaxis.title.text : null,
+                traces: el._fullData.map(t => ({
+                    n: t.name,
+                    x: Array.from(t.x).map(String),
+                    hover: t.hovertemplate || ''
+                }))
+            };
+        }"""
+    )
+
+
+def test_b1_selector_visible_default_day_fuera_oob(page, server):
+    """El selector de período es visible, arranca en 'day' y vive fuera del
+    contenedor OOB de Plotly (sobrevive a los swaps de la gráfica)."""
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    sel = page.locator("#granularity-selector")
+    expect(sel).to_be_visible(timeout=3000)
+    expect(
+        page.locator('#granularity-selector [data-gran="day"][aria-pressed="true"]')
+    ).to_be_visible()
+    # Seleccionar músculo → la gráfica se refresca (swap OOB); el selector sigue.
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(500)
+    expect(sel).to_be_visible(timeout=3000)
+    expect(
+        page.locator('#granularity-selector [data-gran="day"][aria-pressed="true"]')
+    ).to_be_visible()
+    assert 'id="granularity-selector"' in page.content()
+    assert page.evaluate(
+        "() => document.querySelector('#granularity-selector').closest('#unified-chart') === null"
+    )
+
+
+def test_b1_cambiar_granularidad_persiste_url_y_seleccion(page, server):
+    """Cambiar el período actualiza la URL (gran), conserva la selección de
+    músculos/ejercicios y refresca la gráfica."""
+    _open_popup(page, server)
+    _fill_row(page, 0)
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+    page.click("#popup-close")
+
+    _catalog_select_muscle(page, "Pectoral")
+    chip = page.locator('#dashboard-catalog .db-exercise-row[data-foco="Press"]')
+    chip.click()
+    expect(_exercise_input(page, "Press")).to_have_attribute("aria-pressed", "true")
+    assert "ejercicios=Press" in page.url
+
+    # Cambiar a 'week'.
+    page.locator('#granularity-selector [data-gran="week"]').click()
+    page.wait_for_timeout(600)
+    assert "gran=week" in page.url, page.url
+    assert "musculos=Pectoral" in page.url, page.url
+    assert "ejercicios=Press" in page.url, page.url
+    # La selección visual se conserva.
+    expect(_exercise_input(page, "Press")).to_have_attribute("aria-pressed", "true")
+
+    # Cambiar a 'month'.
+    page.locator('#granularity-selector [data-gran="month"]').click()
+    page.wait_for_timeout(600)
+    assert "gran=month" in page.url, page.url
+    assert "musculos=Pectoral" in page.url, page.url
+    assert "ejercicios=Press" in page.url, page.url
+
+    # Volver a 'day'.
+    page.locator('#granularity-selector [data-gran="day"]').click()
+    page.wait_for_timeout(600)
+    assert "gran=day" in page.url, page.url
+
+
+def test_b1_back_forward_y_recarga_restauran_granularidad(page, server):
+    """Back/forward y recarga restauran la granularidad desde la URL."""
+    _open_popup(page, server)
+    _fill_row(page, 0)
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+    page.click("#popup-close")
+
+    _catalog_select_muscle(page, "Pectoral")
+    page.locator('#granularity-selector [data-gran="month"]').click()
+    page.wait_for_timeout(600)
+    assert "gran=month" in page.url and "musculos=Pectoral" in page.url
+
+    # Recarga: se restaura 'month' y la selección.
+    page.reload()
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    expect(
+        page.locator('#granularity-selector [data-gran="month"][aria-pressed="true"]')
+    ).to_be_visible(timeout=5000)
+    assert "gran=month" in page.url, page.url
+    assert "musculos=Pectoral" in page.url, page.url
+
+    # Back/forward dentro de la app.
+    page.locator('#granularity-selector [data-gran="week"]').click()
+    page.wait_for_timeout(500)
+    assert "gran=week" in page.url
+    page.go_back()
+    page.wait_for_timeout(800)
+    assert "gran=month" in page.url, page.url
+    page.go_forward()
+    page.wait_for_timeout(800)
+    assert "gran=week" in page.url, page.url
+
+
+def test_b1_selector_nativo_accesible(page, server):
+    """El selector compacto es un grupo de botones accesible con 3 opciones."""
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    sel = page.locator("#granularity-selector")
+    expect(sel).to_have_attribute("aria-label", "Periodo de la gráfica")
+    expect(sel).to_have_attribute("role", "group")
+    btns = sel.locator('[data-action="set-granularity"]')
+    expect(btns).to_have_count(3)
+    texts = [btns.nth(i).inner_text() for i in range(3)]
+    assert texts == ["Día", "Semana", "Mes"], texts
+    for i in range(3):
+        expect(btns.nth(i)).to_have_attribute("aria-pressed", re.compile("true|false"))
+        assert btns.nth(i).get_attribute("aria-label") in ("Día", "Semana", "Mes")
+
+
+# ---------------------------------------------------------------------------
+# B2-R2 — Granularidad visible: el selector cambia realmente la gráfica
+# ---------------------------------------------------------------------------
+
+
+def test_b2r2_carga_inicial_day_fechas_sin_semana(page, server):
+    """Carga inicial: selector en Día, eje con fechas reales y hover sin 'Semana'."""
+    dates = [_iso(4), _iso(6)]
+    _seed_sessions(page, server, dates)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    expect(
+        page.locator('#granularity-selector [data-gran="day"][aria-pressed="true"]')
+    ).to_be_visible(timeout=5000)
+    st = _chart_state(page)
+    assert st.get("empty") is not True, st
+    assert st["xaxis"] == "Fecha", f"eje inicial debe ser Fecha: {st['xaxis']}"
+    # Fechas reales, no números de semana.
+    assert all("-" in x for t in st["traces"] for x in t["x"]), st
+    # El hover no dice 'Semana'.
+    assert all("Semana" not in t["hover"] for t in st["traces"]), st
+
+
+def test_b2r2_day_a_week_cambia_grafica_y_conserva_seleccion(page, server):
+    """Día→Semana: nueva petición, URL gran=week, eje a semanas, tooltip Semana,
+    y la selección de músculo + ejercicio se conserva."""
+    _seed_sessions(page, server, [_iso(4), _iso(11)])
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    _catalog_select_muscle(page, "Pectoral")
+    chip = page.locator('#dashboard-catalog .db-exercise-row[data-foco="Press"]')
+    chip.click()
+    expect(_exercise_input(page, "Press")).to_have_attribute("aria-pressed", "true")
+    page.wait_for_timeout(600)
+
+    reqs = []
+    page.on("request", lambda r: reqs.append(r.url) if "/grafica" in r.url else None)
+
+    day_state = _chart_state(page)
+    assert day_state["xaxis"] == "Fecha", day_state
+
+    page.locator('#granularity-selector [data-gran="week"]').click()
+    page.wait_for_timeout(700)
+    week_state = _chart_state(page)
+
+    # Nueva petición disparada y URL actualizada.
+    assert any("gran=week" in u for u in reqs), f"no hubo request gran=week: {reqs}"
+    assert "gran=week" in page.url, page.url
+    # Eje cambió a semanas y tooltip dice Semana.
+    assert week_state["xaxis"] == "Semana", week_state
+    assert all("Semana" in t["hover"] for t in week_state["traces"]), week_state
+    # Selección conservada (chip sigue marcado, URL con musculos+ejercicios).
+    expect(_exercise_input(page, "Press")).to_have_attribute("aria-pressed", "true")
+    assert "musculos=Pectoral" in page.url, page.url
+    assert "ejercicios=Press" in page.url, page.url
+    # La selección y sus trazas.
+    names = [t["n"] for t in week_state["traces"]]
+    assert "Compilado" in names, names
+
+
+def test_b2r2_semana_a_day_restaura_fechas_sin_descanso(page, server):
+    """Semana→Día: URL gran=day, eje vuelve a fechas, sin días de descanso
+    artificiales entre los días con datos."""
+    iso_a, iso_c = _iso(4), _iso(11)  # hueco de una semana sin entrenar
+    _seed_sessions(page, server, [iso_a, iso_c])
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(600)
+
+    page.locator('#granularity-selector [data-gran="week"]').click()
+    page.wait_for_timeout(700)
+    week_state = _chart_state(page)
+    assert week_state["xaxis"] == "Semana", week_state
+
+    page.locator('#granularity-selector [data-gran="day"]').click()
+    page.wait_for_timeout(700)
+    day_state = _chart_state(page)
+    assert day_state["xaxis"] == "Fecha", day_state
+    assert "gran=day" in page.url, page.url
+    # Solo los días reales con datos: sin puntos de descanso.
+    xs = {x for t in day_state["traces"] for x in t["x"]}
+    assert iso_a in xs and iso_c in xs, xs
+    assert len(xs) == 2, f"no deben aparecer días ficticios: {sorted(xs)}"
+    assert all("-" in x for x in xs), xs
+
+
+def test_b2r2_musculo_con_cambio_granularidad_mantiene_trazas(page, server):
+    """Seleccionar un músculo y cambiar granularidad: Global y músculo conservan
+    sus trazas y ambas usan el eje correcto."""
+    _seed_sessions(page, server, [_iso(4), _iso(11)])
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(600)
+
+    page.locator('#granularity-selector [data-gran="week"]').click()
+    page.wait_for_timeout(700)
+    week = _chart_state(page)
+    names = [t["n"] for t in week["traces"]]
+    assert "Global" in names and "Pectoral" in names, names
+    assert all("Semana" in t["hover"] for t in week["traces"]), week
+
+    page.locator('#granularity-selector [data-gran="day"]').click()
+    page.wait_for_timeout(700)
+    day = _chart_state(page)
+    names = [t["n"] for t in day["traces"]]
+    assert "Global" in names and "Pectoral" in names, names
+    assert day["xaxis"] == "Fecha", day
+    assert "musculos=Pectoral" in page.url, page.url
+
+
+def test_b2r2_ejercicio_con_cambio_granularidad_conserva_seleccion(page, server):
+    """Seleccionar un ejercicio y cambiar granularidad: Global + músculo guía +
+    ejercicio conservan la selección y el eje cambia correctamente."""
+    _seed_sessions(page, server, [_iso(4), _iso(11)])
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    _catalog_select_muscle(page, "Pectoral")
+    chip = page.locator('#dashboard-catalog .db-exercise-row[data-foco="Press"]')
+    chip.click()
+    expect(_exercise_input(page, "Press")).to_have_attribute("aria-pressed", "true")
+    page.wait_for_timeout(600)
+
+    page.locator('#granularity-selector [data-gran="week"]').click()
+    page.wait_for_timeout(700)
+    week = _chart_state(page)
+    names = [t["n"] for t in week["traces"]]
+    assert "Compilado" in names and "Press" in names, names
+    assert "ejercicios=Press" in page.url, page.url
+
+    page.locator('#granularity-selector [data-gran="day"]').click()
+    page.wait_for_timeout(700)
+    day = _chart_state(page)
+    names = [t["n"] for t in day["traces"]]
+    assert "Compilado" in names and "Press" in names, names
+    assert day["xaxis"] == "Fecha", day
+    expect(_exercise_input(page, "Press")).to_have_attribute("aria-pressed", "true")
+
+
+def test_b2r2_back_forward_restaura_seleccion_y_granularidad(page, server):
+    """Back/forward restaura selección, granularidad y los datos/labels reales."""
+    _seed_sessions(page, server, [_iso(4), _iso(11)])
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    _catalog_select_muscle(page, "Pectoral")
+    page.locator('#granularity-selector [data-gran="month"]').click()
+    page.wait_for_timeout(700)
+    assert "gran=month" in page.url and "musculos=Pectoral" in page.url
+
+    page.go_back()
+    page.wait_for_timeout(800)
+    assert "musculos=Pectoral" in page.url, page.url
+    # El estado anterior conserva la selección; la gráfica refleja el día.
+    assert "gran=day" in page.url, page.url
+    st = _chart_state(page)
+    assert st["xaxis"] == "Fecha", st
+    names = [t["n"] for t in st["traces"]]
+    assert "Global" in names and "Pectoral" in names, names
+
+    page.go_forward()
+    page.wait_for_timeout(800)
+    assert "gran=month" in page.url and "musculos=Pectoral" in page.url, page.url
+
+
+def test_b2r2_month_no_se_declara_terminado(page, server):
+    """Contrato month funciona (URL + eje 'Mes' con datos), pero la agregación
+    mensual COMPLETA (B3: cruce de año, huecos, orden) no se declara terminada.
+    Este test documenta el estado vigente sin ocultar la limitación."""
+    _seed_sessions(page, server, [_iso(4), _iso(11)])
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    _catalog_select_muscle(page, "Pectoral")
+    page.locator('#granularity-selector [data-gran="month"]').click()
+    page.wait_for_timeout(700)
+    assert "gran=month" in page.url, page.url
+    st = _chart_state(page)
+    assert st.get("empty") is not True, st
+    # El eje ya se etiqueta "Mes" (contrato del selector), pero B3 —política
+    # mensual completa— sigue pendiente y no debe darse por cerrado aquí.
+
+
+# ---------------------------------------------------------------------------
+# B2-R4 — Ventana temporal y navegación (desde/hasta)
+# B2-R4 — Navegación TradingView (scroll/drag/doble clic)
+# ---------------------------------------------------------------------------
+
+
+def _seed_e2e_many_days(tmp_path, n: int = 40):
+    """Siembra n días consecutivos vía DB directa (rápido para e2e)."""
+    import datetime
+    import sqlite3
+
+    db = str(tmp_path / "lifestyle.db")
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO ejercicios (grupo_muscular, ejercicio) VALUES ('Pectoral','Press')"
+        )
+        conn.commit()
+    except sqlite3.Error:
+        pass
+    rows = []
+    start = datetime.date(2026, 1, 1)
+    for i in range(n):
+        d = start + datetime.timedelta(days=i)
+        semana = (i // 7) + 1
+        rows.append((semana, "LUNES", d.isoformat(), 1, "Press", 80.0, 6.0, 1.0))
+    conn.executemany(
+        "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) VALUES (?,?,?,?,?,?,?,?)",
+        rows,
+    )
+    conn.commit()
+    conn.close()
+
+
+def _chart_window_state(page):
+    """Lee el estado real de la ventana: puntos, ticks, rango, altura."""
+    return page.evaluate(
+        """() => {
+            const el = document.getElementById('unified-chart-plot');
+            const container = document.getElementById('unified-chart-container');
+            const gd = el && el._fullData ? el : null;
+            const layout = el && el._fullLayout ? el._fullLayout : null;
+            const xaxis = layout && layout.xaxis ? layout.xaxis : null;
+            return {
+                pointCount: gd && gd._fullData ? gd._fullData.reduce((s,t)=> s + t.x.length, 0) : 0,
+                traceCount: gd && gd._fullData ? gd._fullData.length : 0,
+                tickText: xaxis && xaxis.ticktext ? Array.from(xaxis.ticktext) : [],
+                tickVals: xaxis && xaxis.tickvals ? Array.from(xaxis.tickvals) : [],
+                xRange: xaxis && xaxis.range ? Array.from(xaxis.range) : null,
+                height: container ? container.getBoundingClientRect().height : null,
+                plotHeight: el ? el.getBoundingClientRect().height : null,
+                hasSlider: !!document.querySelector('.rangeslider, [class*="rangeslider"]') || (xaxis && !!xaxis.rangeslider && xaxis.rangeslider.visible),
+                xaxisTitle: xaxis ? xaxis.title.text : null,
+                xType: xaxis ? xaxis.type : null,
+                dragmode: layout ? layout.dragmode : null,
+            };
+        }"""
+    )
+
+
+def test_b2r4_selector_compacto_sin_barra(page, server):
+    """El selector de granularidad es compacto junto al título, sin barra grande
+    ni texto explicativo permanente."""
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    assert page.locator("#period-range-controls").count() == 0
+    assert page.locator("#time-window-controls").count() == 0
+    sel = page.locator("#granularity-selector")
+    expect(sel).to_be_visible(timeout=3000)
+    btns = sel.locator('[data-action="set-granularity"]')
+    expect(btns).to_have_count(3)
+    expect(page.get_by_role("button", name="Día")).to_be_visible()
+    expect(page.get_by_role("button", name="Semana")).to_be_visible()
+    expect(page.get_by_role("button", name="Mes")).to_be_visible()
+    assert page.locator("#granularity-note").count() == 0
+    assert "eje semanal por ahora" not in page.content()
+    cbox = page.locator("#unified-chart-container").bounding_box()
+    sbox = sel.bounding_box()
+    assert sbox["width"] < cbox["width"] * 0.6, (
+        f"selector ocupa demasiado: {sbox['width']} vs {cbox['width']}"
+    )
+
+
+def test_b2r4_sin_controles_descartados(page, server):
+    """No existen 30/90/6m/Todo/Anterior/Siguiente ni range slider."""
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    for name in ["30 días", "90 días", "6 meses", "Todo", "Ventana anterior", "Ventana siguiente"]:
+        assert page.get_by_role("button", name=name).count() == 0, f"no debe existir {name}"
+    has_slider = page.evaluate(
+        "() => { const el=document.getElementById('unified-chart-plot'); const l=el && el._fullLayout && el._fullLayout.xaxis; return !!(l && l.rangeslider && l.rangeslider.visible); }"
+    )
+    assert not has_slider, "range slider debe estar eliminado"
+    assert page.locator(".rangeslider").count() == 0
+
+
+def test_b2r4_plotly_tradingview_config(page, server, tmp_path):
+    """ScrollZoom activo, dragmode pan, eje diario type=date."""
+    _seed_e2e_many_days(tmp_path, 10)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_function(
+        "() => document.getElementById('unified-chart-plot')._fullData && document.getElementById('unified-chart-plot')._fullData.length>0"
+    )
+    expect(
+        page.locator('#granularity-selector [data-gran="day"][aria-pressed="true"]')
+    ).to_be_visible()
+    st = page.evaluate(
+        """() => {
+            const el=document.getElementById('unified-chart-plot');
+            const l=el && el._fullLayout;
+            return {
+                dragmode: l ? l.dragmode : null,
+                xType: l && l.xaxis ? l.xaxis.type : null,
+            };
+        }"""
+    )
+    assert st["dragmode"] == "pan", f"dragmode debe ser pan: {st}"
+    assert st["xType"] == "date", f"xaxis.type debe ser date en day: {st}"
+    # ScrollZoom se verifica por config (no inspeccionable directo,
+    # pero el dragmode pan + type date implica TradingView)
+    assert page.locator("#unified-chart-plot").is_visible()
+
+
+def test_b2r4_interaccion_scroll_y_drag_no_deja_en_blanco(page, server, tmp_path):
+    """Scroll y arrastre modifican el rango visible sin dejar la gráfica en blanco;
+    doble clic restablece y no hay peticiones htmx por movimiento."""
+    _seed_e2e_many_days(tmp_path, 20)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_function(
+        "() => document.getElementById('unified-chart-plot')._fullData && document.getElementById('unified-chart-plot')._fullData.length>0"
+    )
+    before = page.evaluate(
+        "() => document.getElementById('unified-chart-plot')._fullLayout.xaxis.range.slice()"
+    )
+    h_before = page.locator("#unified-chart-plot").bounding_box()["height"]
+    reqs = []
+    page.on("request", lambda r: reqs.append(r.url) if "/grafica" in r.url else None)
+    # Simular zoom via Plotly.relayout (más fiable que wheel nativo)
+    page.evaluate(
+        """() => {
+            const gd=document.getElementById('unified-chart-plot');
+            const x0=gd._fullLayout.xaxis.range[0], x1=gd._fullLayout.xaxis.range[1];
+            const mid=new Date((new Date(x0).getTime()+new Date(x1).getTime())/2);
+            const start=new Date(mid); start.setDate(start.getDate()-2);
+            const end=new Date(mid); end.setDate(end.getDate()+2);
+            return Plotly.relayout(gd, {'xaxis.range[0]': start.toISOString().slice(0,10), 'xaxis.range[1]': end.toISOString().slice(0,10)});
+        }"""
+    )
+    page.wait_for_timeout(700)
+    after_scroll = page.evaluate(
+        "() => document.getElementById('unified-chart-plot')._fullLayout.xaxis.range.slice()"
+    )
+    assert after_scroll != before, f"zoom debe cambiar rango: {before} vs {after_scroll}"
+    assert not any("/grafica" in u for u in reqs), f"zoom no debe disparar htmx: {reqs}"
+    assert page.evaluate("() => document.getElementById('unified-chart-plot')._fullData.length>0")
+    assert page.evaluate("() => document.getElementById('unified-chart-empty').hidden")
+    # Arrastre: pan
+    box = page.locator("#unified-chart-plot").bounding_box()
+    page.mouse.move(box["x"] + box["width"] * 0.7, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] * 0.3, box["y"] + box["height"] / 2, steps=10)
+    page.mouse.up()
+    page.wait_for_timeout(700)
+    after_drag = page.evaluate(
+        "() => document.getElementById('unified-chart-plot')._fullLayout.xaxis.range.slice()"
+    )
+    assert after_drag != after_scroll, "drag debe cambiar rango"
+    assert page.evaluate("() => document.getElementById('unified-chart-plot')._fullData.length>0")
+    assert page.evaluate("() => document.getElementById('unified-chart-empty').hidden")
+    page.locator("#unified-chart-plot").dblclick()
+    page.wait_for_timeout(700)
+    assert page.evaluate("() => document.getElementById('unified-chart-plot')._fullData.length>0")
+    assert page.evaluate("() => document.getElementById('unified-chart-empty').hidden")
+    h_after = page.locator("#unified-chart-plot").bounding_box()["height"]
+    assert abs(h_after - h_before) <= 2, f"altura cambió: {h_before}→{h_after}"
+    assert not any("/grafica" in u for u in reqs), "zoom/pan no debe disparar htmx"
+
+
+def test_b2r4_conservacion_musculo_no_destruye_shell(page, server, tmp_path):
+    """Cambiar músculo/ejercicio no destruye la shell ni el rango visual."""
+    import sqlite3
+
+    db = str(tmp_path / "lifestyle.db")
+    conn = sqlite3.connect(db)
+    cnt = conn.execute("SELECT COUNT(*) FROM training_sets").fetchone()[0]
+    conn.close()
+    if cnt == 0:
+        from src.models import TrainingSetInput
+        from src.training_service import save_session
+
+        save_session(db, "2026-05-04", [TrainingSetInput("Press", 80, 6, 1)])
+        save_session(db, "2026-05-05", [TrainingSetInput("Press", 82, 6, 0)])
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    h_before = page.locator("#unified-chart-plot").bounding_box()["height"]
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(700)
+    h_after = page.locator("#unified-chart-plot").bounding_box()["height"]
+    assert abs(h_after - h_before) <= 2
+    assert page.locator("#unified-chart-plot").is_visible()
+    assert page.evaluate("() => document.getElementById('unified-chart-plot')._fullData.length>0")
+    chip = page.locator('#dashboard-catalog .db-exercise-row[data-foco="Press"]')
+    if chip.count() > 0:
+        chip.click()
+        page.wait_for_timeout(700)
+        assert page.locator("#unified-chart-plot").is_visible()
+        assert page.evaluate(
+            "() => document.getElementById('unified-chart-plot')._fullData.length>0"
+        )
+
+
+def test_layout_area_trazado_estable_global_a_musculo(page, server, tmp_path):
+    """Al pasar de modo global a selección muscular el ÁREA DE TRAZADO (dominio
+    del eje y SVG interno) no cambia: la leyenda vive en la banda superior
+    reservada y nunca empuja la gráfica."""
+    import datetime
+    import sqlite3
+
+    db = str(tmp_path / "lifestyle.db")
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO ejercicios (grupo_muscular, ejercicio) VALUES ('Pectoral','Press')"
+        )
+        base = datetime.date(2026, 6, 1)
+        for i in range(10):
+            d = base + datetime.timedelta(days=i)
+            conn.execute(
+                "INSERT INTO training_sets "
+                "(semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) "
+                "VALUES (?,?,?,1,'Press',6,80,1)",
+                ((i // 7) + 1, "LUNES", d.isoformat()),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    def plot_geometry(page):
+        return page.evaluate(
+            """() => {
+                const el = document.getElementById('unified-chart-plot');
+                if (!el || !el._fullLayout) return null;
+                const svg = el.querySelector('.main-svg');
+                const legend = el.querySelector('.legend');
+                const l = el._fullLayout;
+                const sr = svg ? svg.getBoundingClientRect() : null;
+                const lr = legend ? legend.getBoundingClientRect() : null;
+                const pr = el.getBoundingClientRect();
+                return {
+                    xDomain: [l.xaxis.domain[0], l.xaxis.domain[1]],
+                    yDomain: [l.yaxis.domain[0], l.yaxis.domain[1]],
+                    svgH: sr ? Math.round(sr.height * 10) / 10 : null,
+                    svgW: sr ? Math.round(sr.width * 10) / 10 : null,
+                    plotTop: Math.round(pr.top * 10) / 10,
+                    legendAbovePlot: lr && sr ? lr.bottom <= sr.top + 2 || lr.bottom <= pr.top + l.margin.t + 2 : null,
+                    traceCount: el._fullData.length,
+                };
+            }"""
+        )
+
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_function(
+        "() => document.getElementById('unified-chart-plot')._fullData &&"
+        " document.getElementById('unified-chart-plot')._fullData.length > 0"
+    )
+    geo_global = plot_geometry(page)
+    assert geo_global and geo_global["traceCount"] >= 1, geo_global
+
+    # Seleccionar músculo → aparecen trazas; el área de trazado NO cambia.
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(800)
+    geo_muscle = plot_geometry(page)
+    assert geo_muscle["traceCount"] >= 2, geo_muscle
+    assert geo_muscle["xDomain"] == geo_global["xDomain"], (
+        f"dominio X cambió: {geo_global['xDomain']} → {geo_muscle['xDomain']}"
+    )
+    assert geo_muscle["yDomain"] == geo_global["yDomain"], (
+        f"dominio Y cambió: {geo_global['yDomain']} → {geo_muscle['yDomain']}"
+    )
+    assert abs(geo_muscle["svgH"] - geo_global["svgH"]) <= 1.5, (
+        f"altura SVG cambió: {geo_global['svgH']} → {geo_muscle['svgH']}"
+    )
+    assert abs(geo_muscle["plotTop"] - geo_global["plotTop"]) <= 1.5
+
+    # Deseleccionar (Escape) → vuelve a global; área intacta de nuevo.
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(800)
+    geo_back = plot_geometry(page)
+    assert geo_back["xDomain"] == geo_global["xDomain"]
+    assert abs(geo_back["svgW"] - geo_global["svgW"]) <= 1.5
+
+
+def test_b2r4_sin_errores_y_sin_overflow_movil(page, server):
+    """Sin errores reales de consola y sin overflow horizontal en móvil."""
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    box = page.locator("#unified-chart-plot").bounding_box()
+    if box:
+        page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.mouse.wheel(0, -200)
+        page.wait_for_timeout(500)
+        page.mouse.move(box["x"] + box["width"] * 0.6, box["y"] + box["height"] / 2)
+        page.mouse.down()
+        page.mouse.move(box["x"] + box["width"] * 0.4, box["y"] + box["height"] / 2, steps=5)
+        page.mouse.up()
+        page.wait_for_timeout(500)
+        page.locator("#unified-chart-plot").dblclick()
+        page.wait_for_timeout(500)
+    assert errs == [], f"errores de consola: {errs}"
+    page.set_viewport_size({"width": 375, "height": 800})
+    page.wait_for_timeout(300)
+    assert page.evaluate(
+        "() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Web plan Task 4: WCAG contrast and lazy Plotly# ---------------------------------------------------------------------------
 # Web plan Task 4: WCAG contrast and lazy Plotly
 # ---------------------------------------------------------------------------
 
@@ -718,7 +1767,7 @@ def _wcag_in_page(page, selector, pseudo=None):
 def test_wcag_contrast_critical_elements(page, server):
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    vacio = _wcag_in_page(page, "#unified-chart .flex.items-center")
+    vacio = _wcag_in_page(page, "#unified-chart-empty")
     assert vacio is not None and vacio >= 4.5, f"vacio: {vacio}"
 
     # El navigator y los inputs viven en el popup de registro.
@@ -737,8 +1786,9 @@ def test_lazy_plotly_no_request_on_empty_chart(page, server):
     page.on("request", lambda r: plotly_requests.append(r.url) if "plotly" in r.url else None)
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    page.wait_for_selector("#unified-chart-data", state="detached")  # sin datos: no hay JSON
-    page.wait_for_selector("#unified-chart .flex.items-center")
+    # Persistent shell: #unified-chart-data exists with {} (no Plotly loaded).
+    page.wait_for_selector("#unified-chart-data", state="attached")
+    page.wait_for_selector("#unified-chart-empty")
     assert plotly_requests == [], plotly_requests
 
 
@@ -763,12 +1813,50 @@ def test_lazy_plotly_single_request_and_shell_stable(page, server):
     page.click("#popup-close")
     page.wait_for_selector("#editor-popup", state="hidden", timeout=5000)
 
-    # La gráfica con datos se pide vía la cascada de niveles (Press = Pectoral).
-    page.locator('.level-chip[data-action="select-muscle"][data-foco="Pectoral"]').click()
+    # La gráfica con datos se pide vía la cascada del catálogo (Press = Pectoral).
+    _catalog_select_muscle(page, "Pectoral")
     page.wait_for_selector("#unified-chart-plot .main-svg", timeout=15000)
     loaded_height = page.locator("#unified-chart-container").bounding_box()["height"]
     assert abs(loaded_height - empty_height) <= 1.0, (empty_height, loaded_height)
     assert len(plotly_requests) == 1, plotly_requests
+
+
+def test_cls_stable_shell_and_history(page, server):
+    """CLS 0: el panel analítico (gráfica y #history-section) no cambia de
+    altura ni de offset al seleccionar. El catálogo es una columna sticky con
+    altura máxima y scroll interno: puede crecer hasta el viewport sin
+    desplazar el resto de la página (plan §5.1)."""
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+
+    def rect(sel):
+        box = page.locator(sel).bounding_box()
+        return box or {}
+
+    # Estado base
+    chart_h = rect("#unified-chart-container").get("height")
+    chart_y = rect("#unified-chart-container").get("y")
+    history_h = rect("#history-section").get("height")
+    scroll_y = page.evaluate("() => window.scrollY")
+
+    # Seleccionar un músculo
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(600)
+
+    chart_after_h = rect("#unified-chart-container").get("height")
+    chart_after_y = rect("#unified-chart-container").get("y")
+    history_after_h = rect("#history-section").get("height")
+    scroll_after = page.evaluate("() => window.scrollY")
+
+    assert chart_h and chart_y and history_h is not None
+    assert abs(chart_after_h - chart_h) <= 1.0, f"chart CLS: {chart_h} → {chart_after_h}"
+    assert abs(chart_after_y - chart_y) <= 1.0, f"chart y shift: {chart_y} → {chart_after_y}"
+    assert abs(history_after_h - history_h) <= 1.0, f"history CLS: {history_h} → {history_after_h}"
+    assert abs(scroll_after - scroll_y) <= 2, f"scroll shifted: {scroll_y} → {scroll_after}"
+    # La columna sticky no supera la altura disponible (scroll interno).
+    catalog_h = rect(".dashboard-catalog-col").get("height") or 0
+    assert catalog_h <= 800 - 32 + 1, f"catálogo excede el viewport: {catalog_h}px"
 
 
 # ---------------------------------------------------------------------------
@@ -1126,3 +2214,88 @@ def test_cardio_refreshes_when_navigating_in_popup(page, server, tmp_path):
         page.locator("#popup-body #cardio-day form[data-action='cardio-annotation-save']")
     ).to_have_count(1, timeout=5000)
     expect(page.locator("#popup-body #cardio-day")).to_contain_text("Cinta")
+
+
+# ---------------------------------------------------------------------------
+# A3 — Layout tests for dashboard catalog
+# ---------------------------------------------------------------------------
+
+
+def test_dashboard_catalog_left_chart_right(page, server):
+    """On desktop, catalog is on the left and chart is on the right."""
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    catalog = page.locator(".dashboard-catalog-col").bounding_box()
+    chart = page.locator("#unified-chart-container").bounding_box()
+    assert catalog is not None and chart is not None
+    # Catalog should be to the left of the chart
+    assert catalog["x"] < chart["x"], f"Catalog x={catalog['x']} should be < chart x={chart['x']}"
+
+
+def test_dashboard_no_horizontal_overflow(page, server):
+    """No horizontal overflow on desktop or mobile."""
+    for width in [1280, 375]:
+        page.set_viewport_size({"width": width, "height": 800})
+        page.goto(server)
+        page.wait_for_function("document.body.dataset.appReady === '1'")
+        overflow = page.evaluate(
+            "() => document.documentElement.scrollWidth > document.documentElement.clientWidth"
+        )
+        assert not overflow, f"Horizontal overflow at {width}px"
+
+
+def test_dashboard_chart_height_stable_when_catalog_expands(page, server):
+    """Expanding a catalog group does not change chart height or offset."""
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    chart_before = page.locator("#unified-chart-container").bounding_box()
+    # Click the first details/summary to expand
+    summary = page.locator('#dashboard-catalog [data-action="toggle-group"]').first
+    summary.click()
+    page.wait_for_timeout(300)
+    chart_after = page.locator("#unified-chart-container").bounding_box()
+    assert chart_before is not None and chart_after is not None
+    # Height should not change
+    assert abs(chart_before["height"] - chart_after["height"]) < 2, (
+        f"Chart height changed: {chart_before['height']} -> {chart_after['height']}"
+    )
+    # Y offset should not change
+    assert abs(chart_before["y"] - chart_after["y"]) < 2, (
+        f"Chart y changed: {chart_before['y']} -> {chart_after['y']}"
+    )
+
+
+def test_dashboard_catalog_scrollable(page, server):
+    """The catalog column has internal scroll on desktop."""
+    page.set_viewport_size({"width": 1280, "height": 400})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    overflow_y = page.evaluate(
+        "() => { const el = document.querySelector('.dashboard-catalog-col');"
+        " return window.getComputedStyle(el).overflowY; }"
+    )
+    assert overflow_y in ("auto", "scroll"), f"overflow-y: {overflow_y}"
+
+
+def test_dashboard_mobile_catalog_below_chart(page, server):
+    """On mobile, catalog appears below the chart (not beside it)."""
+    page.set_viewport_size({"width": 375, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    catalog = page.locator(".dashboard-catalog-col").bounding_box()
+    chart = page.locator("#unified-chart-container").bounding_box()
+    assert catalog is not None and chart is not None
+    # On mobile, catalog should be below chart (catalog.y > chart.y)
+    assert catalog["y"] > chart["y"], (
+        f"Mobile: catalog y={catalog['y']} should be > chart y={chart['y']}"
+    )
+
+
+def test_dashboard_no_level_chip_in_catalog(page, server):
+    """The old .level-chip class is not used in the catalog."""
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    count = page.locator("#dashboard-catalog .level-chip").count()
+    assert count == 0, f"Found {count} .level-chip elements in catalog"

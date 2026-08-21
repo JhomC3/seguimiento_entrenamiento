@@ -519,8 +519,6 @@ def audit_routes(page: Page, base: str, audit: Audit, known: set[str], db: Path)
 
     # 9. Exports
     for path, fname in [
-        ("/exportar/csv", "entrenamientos.csv"),
-        ("/alimentacion/exportar/csv", "alimentacion.csv"),
         ("/exportar/health-connect.csv", "health_connect.csv"),
     ]:
         try:

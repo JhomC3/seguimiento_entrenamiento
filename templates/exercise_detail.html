@@ -1,3 +1,8 @@
+{% if not ejercicio %}
+<div class="panel panel-default">
+    <p class="text-xs text-neutral-400 px-3 py-2">Selecciona un ejercicio para ver su detalle.</p>
+</div>
+{% elif session_summary or raw_data %}
 <div class="animate-fade-in flex flex-col gap-6">
     {% if session_summary %}
     <div class="panel panel-spacious">
@@ -82,3 +87,4 @@
     </div>
     {% endif %}
 </div>
+{% endif %}

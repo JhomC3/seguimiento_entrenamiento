@@ -20,7 +20,9 @@ OOB_FRAGMENT_TARGETS = (
     "session-editor-wrap",
     "exercise-create",
     "plantillas-section",
-    "unified-chart",
+    "unified-chart-header",
+    "unified-chart-data",
+    "unified-chart-empty",
     "date-navigator",
     "session-history",
     "nutrition-editor-wrap",
@@ -32,6 +34,7 @@ OOB_FRAGMENT_TARGETS = (
     "ejercicios-row",
     "splits-section",
     "split-board",
+    "history-section",
 )
 
 STATIC_MARKERS = {
@@ -154,14 +157,33 @@ def fragment_oob(
     return f'<div id="{target}" hx-swap-oob="{swap}">{inner_html}</div>'
 
 
-def chart_oob_wrapper(chart_html: str) -> str:
-    """Trusted wrapper for the Plotly fragment.
+def chart_header_oob(title: str) -> str:
+    """OOB for the chart panel header (title + ciclo). outerHTML swap."""
+    return (
+        '<div id="unified-chart-header" hx-swap-oob="outerHTML" '
+        'class="flex items-baseline gap-2 min-w-0 pl-3 mb-3">'
+        '<h2 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title truncate">Rendimiento</h2>'
+        "</div>"
+    )
 
-    chart_html comes from `src/dashboard_service.chart_html()`: a server-owned
-    block with the figure JSON inside an inert <script type="application/json">
-    plus the #unified-chart-plot render div (client renders with Plotly). It
-    must never be built from request-derived strings; this wrapper exists so
-    the trust boundary is a named, documented function rather than a scattered
-    f-string.
+
+def chart_data_oob(fig_json: str) -> str:
+    """OOB for the chart data div (inert JSON text). innerHTML swap.
+
+    fig_json must be pre-escaped with _json_for_inline. The div is hidden in
+    the shell; the client reads its textContent and JSON.parses it.
     """
-    return f'<div id="unified-chart" hx-swap-oob="innerHTML">{chart_html}</div>'
+    return f'<div id="unified-chart-data" hx-swap-oob="innerHTML">{fig_json}</div>'
+
+
+def chart_empty_oob(visible: bool, message: str = "Sin datos") -> str:
+    """OOB for the chart empty-state div. outerHTML swap.
+
+    visible=False renders hidden; visible=True renders the message.
+    """
+    hidden = "" if visible else " hidden"
+    return (
+        f'<div id="unified-chart-empty" hx-swap-oob="outerHTML"'
+        f' class="chart-empty"{hidden}>'
+        f"{message}</div>"
+    )
