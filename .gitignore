@@ -48,6 +48,7 @@ node_modules/
 # Skills y tooling local del agente (no forman parte de la aplicación)
 .agents/
 .claude/
+.opencode/node_modules/
 skills-lock.json
 
 # Artefactos locales de Lighthouse CI
