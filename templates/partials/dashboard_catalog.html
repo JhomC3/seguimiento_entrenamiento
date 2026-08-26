@@ -6,11 +6,11 @@
    - sin botones "Seleccionar", sin drag, sin clases split-* #}
 
 {% if not dashboard_catalog %}
-<div id="dashboard-catalog" class="flex flex-col gap-2">
+<div class="flex flex-col gap-2">
     <p class="split-empty">No hay ejercicios registrados.</p>
 </div>
 {% else %}
-<div id="dashboard-catalog" class="flex flex-col gap-2">
+<div class="flex flex-col gap-2">
     {% for group in dashboard_catalog %}
     <section class="db-group" data-group="{{ group.name }}">
         <header class="db-summary">

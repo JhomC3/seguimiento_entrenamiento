@@ -1,0 +1,147 @@
+/* period-summary.css — Panel derecho de resumen periódico (Fase 2).
+   Vocabulario ps-*. Dimensiones vía --summary-w; colores solo por token;
+   el Δ usa signo textual (la información nunca depende solo del color). */
+/* UNA sola zona de scroll vertical (bloque A): el contenedor externo es flex
+   column con overflow hidden (cascade.css); .ps-panels desplaza en Y.
+   El scroll X queda CONFINADO a la vista de ejercicio (:has): las vistas
+   global/músculo nunca muestran barra horizontal. */
+.ps-panels {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: 8px 6px 12px;
+}
+.ps-panels:has(.ps-table--exercise) {
+    overflow-x: auto;
+}
+/* El panel destaca por espacio, jerarquía y contraste, no por brillo:
+   se suprime SOLO aquí el marco metálico degradado global de .panel. */
+#period-summary-wrap.panel::before {
+    display: none;
+}
+/* Selector de ventana 4/8: el ESTADO vive en aria-pressed y el estilo se
+   aplica por atributo — cero toggles de clase desde JS (web-standards §ARIA).
+   Vocabulario canónico ps-*; colores solo por token. */
+.ps-window {
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--t-surfaces-neutral-400);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 8px;
+}
+.ps-window:hover {
+    color: var(--t-surfaces-neutral-100);
+}
+.ps-window:focus-visible {
+    outline: 2px solid var(--t-focus-ring);
+    outline-offset: -2px;
+    border-radius: 6px;
+}
+.ps-window[aria-pressed="true"] {
+    background-color: var(--t-burgundy-600);
+    color: var(--t-surfaces-neutral-100);
+}
+.ps-tabs {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--t-surfaces-neutral-800);
+    scrollbar-width: thin;
+}
+.ps-tab {
+    appearance: none;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--t-surfaces-neutral-400);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 8px 10px;
+    white-space: nowrap;
+}
+.ps-tab:hover {
+    color: var(--t-surfaces-neutral-100);
+}
+.ps-tab:focus-visible {
+    outline: 2px solid var(--t-focus-ring);
+    outline-offset: -2px;
+    border-radius: 4px;
+}
+.ps-tab.ps-tab-active {
+    border-bottom-color: var(--t-burgundy-400);
+    color: var(--t-surfaces-neutral-100);
+}
+/* (definición única arriba; aquí solo densidad) */
+.ps-panel:focus-visible {
+    outline: 2px solid var(--t-focus-ring);
+    outline-offset: 2px;
+}
+.ps-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+/* La vista de EJERCICIO (7 columnas) no cabe en --summary-w del escritorio:
+   se desplaza horizontalmente dentro de .ps-panels. Las vistas global y
+   músculo (5-6 columnas) caben y NUNCA fuerzan scroll. */
+.ps-table--exercise {
+    min-width: 460px;
+}
+/* Columnas progresivas por VIEWPORT: el ancho del panel es constante en
+   escritorio (--summary-w), así que una container query no puede distinguir
+   móvil de escritorio. El discriminador correcto es el viewport: <480px las
+   secundarias colapsan visualmente PERO permanecen en la accesibilidad
+   (patrón visually-hidden, no display:none). */
+@media (max-width: 480px) {
+    .ps-table .col-peso,
+    .ps-table .col-rir {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+        border: 0;
+    }
+}
+.ps-table th,
+.ps-table td {
+    padding: 8px 7px;
+    text-align: left;
+    border-bottom: 1px solid var(--t-surfaces-neutral-800);
+}
+/* Los nombres largos de ejercicio envuelven en lugar de forzar ancho: las
+   vistas global/músculo caben SIEMPRE sin scroll horizontal. */
+.ps-table tbody th {
+    word-break: break-word;
+    min-width: 0;
+}
+.ps-table thead th {
+    color: var(--t-surfaces-neutral-400);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.ps-table tbody th {
+    font-weight: 500;
+    color: var(--t-surfaces-neutral-100);
+}
+.ps-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.ps-delta {
+    font-weight: 700;
+    color: var(--t-surfaces-neutral-100);
+}

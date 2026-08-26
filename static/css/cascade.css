@@ -64,12 +64,57 @@
     border-bottom: 1px solid var(--t-surfaces-neutral-800);
     padding-bottom: 16px;
     margin-bottom: 16px;
+    position: relative;
+    z-index: 31;
+}
+/* Botón compacto de catálogo (icono sidebar). */
+.catalog-toggle {
+    display: inline-grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid var(--t-surfaces-neutral-800);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--t-surfaces-neutral-400);
+    cursor: pointer;
+}
+.catalog-toggle:hover {
+    color: var(--t-surfaces-neutral-100);
+    border-color: var(--t-surfaces-neutral-700);
+}
+.catalog-toggle:focus-visible {
+    outline: 2px solid var(--t-focus-ring);
+    outline-offset: 2px;
+}
+.catalog-toggle-icon {
+    width: 16px;
+    height: 16px;
+    display: block;
+}
+/* Overlay del drawer móvil: elemento real focuseable con semántica. */
+.catalog-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--t-overlay-black-060);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    border: 0;
+    padding: 0;
+    z-index: 29;
+    cursor: pointer;
+}
+.catalog-overlay[hidden] {
+    display: none !important;
 }
 .dashboard-layout {
     display: flex;
     flex-direction: column;
     gap: 16px;
 }
+/* Móvil (<1024px): gráfica → resumen → catálogo. El catálogo es drawer
+   superpuesto, no pila inferior. */
 .dashboard-analytics-col {
     order: 1;
     min-width: 0;
@@ -77,36 +122,144 @@
     flex-direction: column;
     gap: 24px;
 }
-.dashboard-catalog-col {
+.dashboard-summary-col {
     order: 2;
+    min-width: 0;
+    /* UNA sola zona de scroll: el contenedor es flex vertical sin scroll
+       propio; .ps-panels (interior) desplaza. Altura FIJA en ambos rangos
+       para dimensiones invariantes. Se calcula dinámicamente con
+       --dashboard-layout-top (medido en JS). */
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    height: min(68dvh, calc(100dvh - var(--dashboard-layout-top, 16px) - 16px));
+}
+.dashboard-catalog-col {
+    order: 3;
     min-width: 0;
     overflow-x: hidden;
 }
+@media (max-width: 1023px) {
+    .dashboard-catalog-col {
+        position: fixed;
+        inset: 60px auto 0 0;
+        width: min(78vw, 320px);
+        max-width: 320px;
+        height: calc(100dvh - 60px);
+        z-index: 30;
+        background: var(--t-surfaces-neutral-900);
+        border-right: 1px solid var(--t-surfaces-neutral-800);
+        overflow-y: auto;
+        transform: translateX(-100%);
+        visibility: hidden;
+        transition: transform 0.2s ease, visibility 0.2s ease;
+        padding: 16px;
+    }
+    .dashboard-page:not(.is-catalog-collapsed) .dashboard-catalog-col {
+        transform: translateX(0);
+        visibility: visible;
+    }
+}
 @media (min-width: 1024px) {
+    /* Escritorio: catálogo + gráfica + panel derecho fijo (grid explícito,
+       inmune al atributo order usado por el orden móvil). */
     .dashboard-layout {
-        flex-direction: row;
-        align-items: flex-start;
+        display: grid;
+        grid-template-columns: var(--split-catalog-w) minmax(0, 1fr) var(--summary-w);
+        align-items: start;
+    }
+    /* Reset del orden móvil: en grid el auto-placement usa `order`; sin este
+       reset el catálogo (order:3) caería a una segunda fila. */
+    .dashboard-analytics-col,
+    .dashboard-summary-col,
+    .dashboard-catalog-col {
+        order: 0;
     }
     .dashboard-catalog-col {
-        order: -1;
-        flex: 0 0 var(--split-catalog-w);
+        grid-column: 1;
         position: sticky;
         top: 16px;
         max-height: calc(100vh - 32px);
+        max-height: calc(100dvh - 32px);
         overflow-y: auto;
     }
     .dashboard-analytics-col {
-        order: 0;
-        flex: 1 1 auto;
+        grid-column: 2;
     }
+    .dashboard-summary-col {
+        grid-column: 3;
+        position: sticky;
+        top: 16px;
+        height: calc(100dvh - var(--dashboard-layout-top, 16px) - 16px);
+        height: calc(100vh - var(--dashboard-layout-top, 16px) - 16px);
+        height: calc(100dvh - var(--dashboard-layout-top, 16px) - 16px);
+    }
+    .dashboard-page.is-catalog-collapsed .catalog-panel {
+        display: none;
+    }
+    .dashboard-page.is-catalog-collapsed .catalog-rail {
+        display: flex;
+    }
+    /* Rail persistente: la primera pista NUNCA desaparece (sin hueco). */
+    .dashboard-page.is-catalog-collapsed .dashboard-layout {
+        grid-template-columns: var(--catalog-collapsed-w) minmax(0, 1fr) var(--summary-w);
+    }
+    /* Botón compacto del header: SOLO móvil. */
+    .catalog-toggle-mobile {
+        display: none;
+    }
+}
+/* Altura de la gráfica: única fuente CSS para ready Y empty (sin CLS entre
+   estados). El shell es flex column: el header fijo arriba y Plotly llena el
+   resto exactamente (renderUnifiedChart lee plotEl.clientHeight). */
+#unified-chart {
+    height: clamp(480px, 58vh, 620px);
+    display: flex;
+    flex-direction: column;
+}
+#unified-chart #unified-chart-plot {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+#unified-chart .chart-empty {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 /* Dashboard catálogo — acordeón minimalista industrial */
-#dashboard-catalog {
+.dashboard-catalog-list {
     display: flex;
     flex-direction: column;
     gap: 6px;
     width: 100%;
+}
+/* Cabecera del panel de catálogo: título + toggle (desktop abierto /
+   cierre del drawer móvil). */
+.catalog-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+/* Rail persistente cuando el catálogo está plegado en escritorio. */
+.catalog-rail {
+    position: sticky;
+    top: 16px;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+}
+@media (max-width: 1023px) {
+    .catalog-rail {
+        display: none !important;
+    }
 }
 .db-group {
     width: 100%;

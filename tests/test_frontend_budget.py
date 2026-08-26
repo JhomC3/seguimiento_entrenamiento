@@ -10,10 +10,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 # Presupuestos first-party (bytes, post-remediación 2026-08-15).
+# Revisado 2026-08-25: drawer móvil + ResizeObserver + altura dinámica
+# añaden ~2 KB intencionales (Fase 2 visual).
 CSS_INDIVIDUAL_MAX = 32 * 1024  # tailwind.css ~16K; cada CSS componente muy por debajo
 CSS_AGGREGATE_MAX = 80 * 1024  # ~60K total
 JS_INDIVIDUAL_MAX = 64 * 1024
-JS_AGGREGATE_MAX = 160 * 1024  # ~132K total
+JS_AGGREGATE_MAX = 170 * 1024  # ~132K → 165K tras Fase 2 visual
 
 
 def _size(path: Path) -> int:

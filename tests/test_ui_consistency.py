@@ -20,3 +20,17 @@ def test_templates_use_canonical_component_vocabulary():
 def test_css_has_no_literal_colors_outside_tokens():
     issues = audit_css()
     assert issues == [], "Colores literales en CSS de componentes:\n" + "\n".join(issues)
+
+
+def test_index_html_div_balance():
+    """Regresión Fase 2: el shell del dashboard debe tener <div> balanceados.
+
+    Un cierre de más hace que el navegador repare el DOM y desplaza selectores
+    (bloqueante #1 de la revisión post-Fase 2). Solo cuenta index.html porque
+    los parciales se incluyen dentro de shells válidos.
+    """
+    html = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    # Ignora self-contained tags y comentarios: cuenta solo aperturas/cierres.
+    abiertos = html.count("<div")
+    cerrados = html.count("</div>")
+    assert abiertos == cerrados, f"index.html desbalanceado: {abiertos} <div> vs {cerrados} </div>"

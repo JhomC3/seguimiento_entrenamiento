@@ -85,6 +85,9 @@ COMPONENT_CLASSES = {
     "splits-layout",
     "splits-editor-col",
     "splits-catalog-col",
+    # Alias de compatibilidad del catálogo de splits (regla canónica en
+    # components.css; su consumo migrará con el rediseño del gestor).
+    "split-catalog-select",
     "split-columns",
     "split-board-scroll",
     "split-day-zone",

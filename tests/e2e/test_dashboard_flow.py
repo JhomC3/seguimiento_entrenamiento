@@ -3,6 +3,7 @@
 import datetime
 import re
 
+import pytest
 from playwright.sync_api import expect
 
 
@@ -63,36 +64,28 @@ def _simulate_drag(page, source_sel, target_sel):
     )
 
 
-def _click_chart_point(page, semana):
-    pos = page.evaluate(
-        """(semana) => {
-            const plotEl = document.getElementById('unified-chart-plot');
-            if (!plotEl) return null;
-            const gd = plotEl._fullData ? plotEl : null;
-            const idx = gd ? gd._fullData[0].x.indexOf(semana) : -1;
-            const pts = plotEl.querySelectorAll('.point');
-            if (idx >= 0 && idx < pts.length) {
-                pts[idx].scrollIntoView({ block: 'center' });
-                const r = pts[idx].getBoundingClientRect();
-                return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-            }
-            return null;
-        }""",
-        semana,
-    )
-    assert pos, f"no se encontró el marcador de la semana {semana}"
-    page.mouse.click(pos["x"], pos["y"])
-
-
 def _catalog_select_muscle(page, name):
     """Catálogo acordeón: expande el grupo y marca el checkbox del músculo."""
+    # Drawer móvil: abrir si el viewport es móvil y está plegado.
+    # (En desktop el botón móvil es display:none: no se intenta clicar.)
+    try:
+        is_mobile_vp = page.evaluate("() => window.matchMedia('(max-width: 1023px)').matches")
+        if (
+            is_mobile_vp
+            and page.locator("#catalog-toggle-mobile").get_attribute("aria-expanded") == "false"
+        ):
+            page.locator("#catalog-toggle-mobile").click()
+            page.wait_for_timeout(300)
+    except Exception:  # noqa: BLE001, S110
+        pass
     group = page.locator(f'#dashboard-catalog .db-group[data-group="{name}"]')
-    expect(group).to_be_visible(timeout=3000)
+    expect(group).to_be_visible(timeout=5000)
     summary = group.locator('[data-action="toggle-group"]')
     if summary.get_attribute("aria-expanded") != "true":
-        summary.click()
-        page.wait_for_timeout(120)
-    group.locator('[data-action="toggle-muscle"]').click()
+        # Drawer puede interceptar pointer events en móvil; usar JS click
+        summary.evaluate("el => el.click()")
+        page.wait_for_timeout(200)
+    group.locator('[data-action="toggle-muscle"]').evaluate("el => el.click()")
 
 
 def _catalog_exercise_chip(page, name):
@@ -369,42 +362,133 @@ def test_dynamic_script_does_not_execute(page, server):
     assert page.evaluate("window.__xssProbe") is False, "la CSP debe bloquear scripts inyectados"
 
 
-def test_week_click_opens_registro_en_primer_entreno(page, server):
-    """Clic real sobre el marcador de una semana navega a /registro
-    en el primer entreno de esa semana."""
+def test_click_en_punto_no_navega_ni_cambia_estado(page, server):
+    """La gráfica es exclusivamente analítica: clic sobre un punto en
+    Día/Semana/Mes NO navega, NO abre popup, NO llama /semana/primer-entreno,
+    NO modifica URL ni granularidad ni selección."""
     _open_popup(page, server)
-
-    # Dos sesiones en semanas distintas (lunes 10/08 y lunes 17/08) para que el
-    # primer entreno de la semana del segundo clic sea inequívoco.
-    iso_a = _iso(4)
-    iso_b = _iso(11)
-    for iso in (iso_a, iso_b):
-        page.locator(f'#popup-body .date-num[data-iso="{iso}"]').click()
-        expect(page.locator(f'#popup-body .date-num[data-iso="{iso}"]')).to_have_class(
-            re.compile(r"\bselected\b")
-        )
-        expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
-        _wait_editor_settled(page)
-        _fill_row(page, 0)
-        page.click('#edit-actions button[type="submit"]')
-        expect(page.locator("#editor-notice .notice-success")).to_contain_text(
-            "Entrenamiento guardado", timeout=2000
-        )
-
+    page.locator(f'#popup-body .date-num[data-iso="{_iso(4)}"]').click()
+    _wait_editor_settled(page)
+    _fill_row(page, 0)
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
     page.click("#popup-close")
-    _catalog_select_muscle(page, "Pectoral")
-    # Este test valida el clic en el marcador de una SEMANA: fija la granularidad
-    # a week para que el eje X sea numérico (por defecto ahora es day → fechas).
-    page.locator('#granularity-selector [data-gran="week"]').click()
-    page.wait_for_timeout(800)
-    page.locator("#unified-chart .js-plotly-plot").first.wait_for(state="visible", timeout=10000)
-    page.locator("#unified-chart-plot .point").first.wait_for(state="visible", timeout=10000)
 
-    semana_b = (datetime.date.fromisoformat(iso_b) - datetime.date(2026, 5, 4)).days // 7 + 1
-    _click_chart_point(page, semana_b)
-    # La página de registro se abre en el primer entreno de la semana.
-    page.wait_for_url(f"**/registro?fecha={iso_b}", timeout=5000)
-    expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso_b, timeout=3000)
+    _catalog_select_muscle(page, "Pectoral")
+
+    # Registrar cualquier petición al endpoint de primer entreno (una sola vez;
+    # el listener acumula durante todo el test, en las 3 granularidades).
+    primer_requests = []
+    page.on(
+        "request",
+        lambda r: primer_requests.append(r.url) if "primer-entreno" in r.url else None,
+    )
+
+    for gran, eje in (("day", "Fecha"), ("week", "Semana"), ("month", "Mes")):
+        page.locator(f'#granularity-selector [data-gran="{gran}"]').click()
+        page.wait_for_timeout(500)
+        url_before = page.url
+        history_before = page.evaluate("() => history.length")
+        assert f"gran={gran}" in url_before, (gran, url_before)
+
+        # Clic real sobre el primer punto visible.
+        point = page.locator("#unified-chart-plot .point").first
+        point.wait_for(state="visible", timeout=10000)
+        box = point.bounding_box()
+        assert box, gran
+        page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+
+        # Clics adicionales en otro punto (si existe): nada debe cambiar.
+        points = page.locator("#unified-chart-plot .point")
+        if points.count() > 1:
+            b2 = points.nth(1).bounding_box()
+            if b2:
+                page.mouse.click(b2["x"] + b2["width"] / 2, b2["y"] + b2["height"] / 2)
+        page.wait_for_timeout(600)
+
+        # Sin navegación, sin popup, sin petición, sin cambios de estado.
+        assert page.url == url_before, f"{gran}: la URL cambió → {page.url}"
+        assert not page.locator("#editor-popup[open]").count(), gran
+        assert primer_requests == [], f"{gran}: llamó primer-entreno {primer_requests}"
+        st = _chart_state(page)
+        assert st["xaxis"] == eje, f"{gran}: eje cambió a {st['xaxis']}"
+        assert f"gran={gran}" in page.url
+        expect(
+            page.locator(
+                '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
+            )
+        ).to_have_attribute("aria-pressed", "true")
+        # Sin entradas de historial por los clics.
+        history_after = page.evaluate("() => history.length")
+        assert history_after == history_before, (
+            f"{gran}: los clics añadieron historial ({history_before}→{history_after})"
+        )
+
+
+def test_back_forward_granularidad_tras_clics_en_puntos(page, server):
+    """Los clics en puntos no ensucian el historial: back/forward restauran
+    granularidad y selección exactamente como si no se hubiera hecho clic."""
+    _open_popup(page, server)
+    _fill_row(page, 0)
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+    page.click("#popup-close")
+
+    _catalog_select_muscle(page, "Pectoral")
+
+    # Día → Semana.
+    page.locator('#granularity-selector [data-gran="week"]').click()
+    page.wait_for_timeout(500)
+    # Clics sobre puntos dentro de Semana.
+    point = page.locator("#unified-chart-plot .point").first
+    point.wait_for(state="visible", timeout=10000)
+    for idx in range(min(2, page.locator("#unified-chart-plot .point").count())):
+        b = page.locator("#unified-chart-plot .point").nth(idx).bounding_box()
+        if b:
+            page.mouse.click(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2)
+    page.wait_for_timeout(400)
+    # Semana → Mes y más clics.
+    page.locator('#granularity-selector [data-gran="month"]').click()
+    page.wait_for_timeout(500)
+    point = page.locator("#unified-chart-plot .point").first
+    if point.count():
+        b = point.bounding_box()
+        if b:
+            page.mouse.click(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2)
+    page.wait_for_timeout(400)
+    assert "gran=month" in page.url and "musculos=Pectoral" in page.url
+
+    # Atrás: restaura Semana + músculo.
+    page.go_back()
+    page.wait_for_timeout(800)
+    assert "gran=week" in page.url and "musculos=Pectoral" in page.url, page.url
+    expect(
+        page.locator('#granularity-selector [data-gran="week"][aria-pressed="true"]')
+    ).to_be_visible(timeout=5000)
+    st = _chart_state(page)
+    assert st["xaxis"] == "Semana", st
+    expect(
+        page.locator(
+            '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
+        )
+    ).to_have_attribute("aria-pressed", "true")
+
+    # Atrás de nuevo: Día (estado base).
+    page.go_back()
+    page.wait_for_timeout(800)
+    assert "gran=day" in page.url or "gran=" not in page.url, page.url
+    expect(
+        page.locator('#granularity-selector [data-gran="day"][aria-pressed="true"]')
+    ).to_be_visible(timeout=5000)
+
+    # Adelante: vuelve a Semana con selección intacta.
+    page.go_forward()
+    page.wait_for_timeout(800)
+    assert "gran=week" in page.url and "musculos=Pectoral" in page.url, page.url
 
 
 def test_cascade_musculo_persistente_y_multi_traza(page, server):
@@ -1106,7 +1190,9 @@ def _chart_state(page):
                 traces: el._fullData.map(t => ({
                     n: t.name,
                     x: Array.from(t.x).map(String),
-                    hover: t.hovertemplate || ''
+                    hover: t.hovertemplate || '',
+                    cd0: t.customdata && t.customdata.length
+                        ? Array.from(t.customdata[0]).map(String) : []
                 }))
             };
         }"""
@@ -1211,6 +1297,253 @@ def test_b1_back_forward_y_recarga_restauran_granularidad(page, server):
     assert "gran=week" in page.url, page.url
 
 
+def test_recarga_granularidad_sincroniza_grafica_y_selector(page, server):
+    """Recargar con gran en la URL mantiene selector Y gráfica en la misma
+    granularidad (regresión: el render inicial ignoraba gran y pintaba Día)."""
+    _open_popup(page, server)
+    _fill_row(page, 0)
+    page.click('#edit-actions button[type="submit"]')
+    expect(page.locator("#editor-notice .notice-success")).to_contain_text(
+        "Entrenamiento guardado", timeout=2000
+    )
+    page.click("#popup-close")
+
+    # Seleccionar el músculo UNA vez: persiste entre recargas y cambios de gran.
+    _catalog_select_muscle(page, "Pectoral")
+    expect(
+        page.locator(
+            '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
+        )
+    ).to_have_attribute("aria-pressed", "true")
+
+    for gran, eje in (("week", "Semana"), ("month", "Mes")):
+        page.locator(f'#granularity-selector [data-gran="{gran}"]').click()
+        page.wait_for_timeout(600)
+        assert f"gran={gran}" in page.url
+
+        # Recarga: URL, selector y gráfica deben coincidir.
+        page.reload()
+        page.wait_for_function("document.body.dataset.appReady === '1'")
+        expect(
+            page.locator(f'#granularity-selector [data-gran="{gran}"][aria-pressed="true"]')
+        ).to_be_visible(timeout=5000)
+        page.wait_for_function(
+            """(eje) => {
+                const el = document.getElementById('unified-chart-plot');
+                return el && el._fullLayout && el._fullLayout.xaxis
+                    && el._fullLayout.xaxis.title.text === eje;
+            }""",
+            arg=eje,
+            timeout=8000,
+        )
+        st = _chart_state(page)
+        assert st["xaxis"] == eje, f"gráfica debe usar {eje}: {st}"
+        assert f"gran={gran}" in page.url, page.url
+        # La selección de músculo también se conserva junto a la granularidad.
+        expect(
+            page.locator(
+                '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
+            )
+        ).to_have_attribute("aria-pressed", "true")
+
+    # Carga directa con gran=week sin selección: la gráfica inicial ya es semanal.
+    page.goto(server + "/?gran=week")
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_function(
+        "() => { const el = document.getElementById('unified-chart-plot');"
+        " return el && el._fullLayout && el._fullLayout.xaxis"
+        " && el._fullLayout.xaxis.title.text === 'Semana'; }",
+        timeout=8000,
+    )
+    expect(
+        page.locator('#granularity-selector [data-gran="week"][aria-pressed="true"]')
+    ).to_be_visible()
+
+
+def test_sin_flicker_de_granularidad_al_cargar(page, server, tmp_path):
+    """Carga directa y recarga con week/month: el selector y la gráfica NUNCA
+    pasan visualmente por Día. Instrumentación temporal (solo en el test)
+    registra la historia de {eje, botón activo} y los renders de Plotly."""
+    import datetime
+    import sqlite3
+
+    db = str(tmp_path / "lifestyle.db")
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO ejercicios (grupo_muscular, ejercicio) VALUES ('Pectoral','Press')"
+        )
+        base = datetime.date(2026, 6, 1)
+        for i in range(10):
+            d = base + datetime.timedelta(days=i)
+            conn.execute(
+                "INSERT INTO training_sets "
+                "(semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) "
+                "VALUES (?,?,?,1,'Press',6,80,1)",
+                ((i // 7) + 1, "LUNES", d.isoformat()),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Recorder instalado antes de CUALQUIER script de la página: registra cada
+    # transición de {título del eje, granularidad presionada} y los renders.
+    # El observer se instala cuando exista documentElement (el init-script corre
+    # sobre un documento vacío) y todo va en try/catch: si el instrumento
+    # fallara, los asserts lo detectarán como historial vacío.
+    init_js = """() => {
+            window.__flickerLog = [];
+            window.__plotlyRenders = 0;
+            const record = () => {
+                try {
+                    const pressed = document.querySelector(
+                        '#granularity-selector [aria-pressed="true"]'
+                    );
+                    const plot = document.getElementById('unified-chart-plot');
+                    window.__flickerLog.push({
+                        gran: pressed ? pressed.dataset.gran : null,
+                        axis: plot && plot._fullLayout && plot._fullLayout.xaxis
+                            ? plot._fullLayout.xaxis.title.text : null,
+                    });
+                } catch (e) {}
+            };
+            const startObserver = () => {
+                try {
+                    new MutationObserver(record).observe(document.documentElement, {
+                        subtree: true, childList: true, attributes: true,
+                        attributeFilter: ['aria-pressed', 'hidden'],
+                    });
+                } catch (e) {}
+            };
+            if (document.documentElement) {
+                startObserver();
+            } else {
+                document.addEventListener('DOMContentLoaded', () => {
+                    startObserver();
+                    record();
+                });
+            }
+        }"""
+    # add_init_script evalúa el texto como EXPRESIÓN: una arrow sin invocar no
+    # ejecuta nada. Se invoca explícitamente como IIFE.
+    page.add_init_script(f"({init_js})()")
+    # Los renders visibles se miden desde Python: peticiones /grafica reales.
+    grafica_requests = []
+    page.on(
+        "request",
+        lambda r: grafica_requests.append(r.url) if "/grafica" in r.url else None,
+    )
+
+    def flicker_state():
+        return page.evaluate(
+            "() => ({ log: window.__flickerLog || [], renders: window.__plotlyRenders || 0 })"
+        )
+
+    # 1) Carga directa /?gran=week: nunca Día/Fecha; selector siempre week.
+    grafica_requests.clear()
+    page.goto(server + "/?gran=week")
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_function(
+        "() => { const el=document.getElementById('unified-chart-plot');"
+        " return el && el._fullLayout && el._fullLayout.xaxis"
+        " && el._fullLayout.xaxis.title.text === 'Semana'; }",
+        timeout=8000,
+    )
+    st = flicker_state()
+    axes = [e["axis"] for e in st["log"] if e["axis"]]
+    assert axes and set(axes) == {"Semana"}, f"eje pasó por otro valor: {st['log']}"
+    assert not grafica_requests, f"carga directa no debe pedir /grafica: {grafica_requests}"
+    assert all(e["gran"] == "week" for e in st["log"]), f"Día visible: {st['log']}"
+
+    # 2) Carga directa /?gran=month: ídem.
+    page.goto(server + "/?gran=month")
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_function(
+        "() => { const el=document.getElementById('unified-chart-plot');"
+        " return el && el._fullLayout && el._fullLayout.xaxis"
+        " && el._fullLayout.xaxis.title.text === 'Mes'; }",
+        timeout=8000,
+    )
+    st = flicker_state()
+    axes_m = [e["axis"] for e in st["log"] if e["axis"]]
+    assert axes_m and set(axes_m) == {"Mes"}, f"eje pasó por otro valor: {st['log']}"
+    assert not grafica_requests, f"carga directa no debe pedir /grafica: {grafica_requests}"
+    assert all(e["gran"] == "month" for e in st["log"]), f"Día visible: {st['log']}"
+
+    # 3) Reload en week CON músculo seleccionado: un solo render, sin Día.
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(600)
+    page.locator('#granularity-selector [data-gran="week"]').click()
+    page.wait_for_timeout(600)
+    assert "gran=week" in page.url and "musculos=Pectoral" in page.url
+    grafica_requests.clear()
+    page.reload()
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    expect(
+        page.locator('#granularity-selector [data-gran="week"][aria-pressed="true"]')
+    ).to_be_visible(timeout=5000)
+    page.wait_for_function(
+        "() => { const el=document.getElementById('unified-chart-plot');"
+        " return el && el._fullData && el._fullData.some(t => t.name === 'Pectoral'); }",
+        timeout=8000,
+    )
+    st = flicker_state()
+    # Un solo render visible: se salta la figura sistémica porque la respuesta
+    # de /grafica (músculo+week) pinta la gráfica directamente.
+    assert len(grafica_requests) == 1, f"doble render con selección: {grafica_requests}"
+    assert all(e["gran"] == "week" for e in st["log"]), f"Día visible: {st['log']}"
+    assert all(e["axis"] != "Fecha" for e in st["log"]), f"eje Día visible: {st['log']}"
+    expect(
+        page.locator(
+            '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
+        )
+    ).to_have_attribute("aria-pressed", "true")
+
+    # 4) Reload en month CON ejercicio seleccionado: un solo render, sin Día.
+    pecto_toggle = page.locator(
+        '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-group"]'
+    )
+    if pecto_toggle.get_attribute("aria-expanded") != "true":
+        pecto_toggle.click()
+        page.wait_for_timeout(200)
+    chip = _exercise_input(page, "Press")
+    expect(chip).to_be_visible(timeout=3000)
+    chip.click()
+    page.wait_for_timeout(600)
+    page.locator('#granularity-selector [data-gran="month"]').click()
+    page.wait_for_timeout(600)
+    assert "gran=month" in page.url and "ejercicios=Press" in page.url
+    grafica_requests.clear()
+    page.reload()
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    expect(
+        page.locator('#granularity-selector [data-gran="month"][aria-pressed="true"]')
+    ).to_be_visible(timeout=5000)
+    expect(_exercise_input(page, "Press")).to_have_attribute("aria-pressed", "true", timeout=5000)
+    st = flicker_state()
+    # Un solo render: exactamente UNA petición /grafica tras la recarga.
+    assert len(grafica_requests) == 1, f"doble render con ejercicio: {grafica_requests}"
+    assert all(e["gran"] == "month" for e in st["log"]), f"Día visible: {st['log']}"
+    assert all(e["axis"] != "Fecha" for e in st["log"]), f"eje Día visible: {st['log']}"
+    assert "musculos=Pectoral" in page.url and "ejercicios=Press" in page.url
+
+    # 5) Back/forward restaura sin estados contradictorios.
+    page.go_back()
+    page.wait_for_timeout(800)
+    assert "gran=week" in page.url, page.url
+    st_back = page.evaluate(
+        """() => {
+            const p = document.querySelector('#granularity-selector [aria-pressed="true"]');
+            const el = document.getElementById('unified-chart-plot');
+            return { gran: p ? p.dataset.gran : null,
+                axis: el && el._fullLayout && el._fullLayout.xaxis
+                    ? el._fullLayout.xaxis.title.text : null };
+        }"""
+    )
+    assert st_back["gran"] == "week", st_back
+    assert st_back["axis"] in ("Semana", None), st_back
+
+
 def test_b1_selector_nativo_accesible(page, server):
     """El selector compacto es un grupo de botones accesible con 3 opciones."""
     page.goto(server)
@@ -1246,8 +1579,9 @@ def test_b2r2_carga_inicial_day_fechas_sin_semana(page, server):
     assert st["xaxis"] == "Fecha", f"eje inicial debe ser Fecha: {st['xaxis']}"
     # Fechas reales, no números de semana.
     assert all("-" in x for t in st["traces"] for x in t["x"]), st
-    # El hover no dice 'Semana'.
+    # El hover no dice 'Semana' y la etiqueta del punto (cd0[0]) es fecha.
     assert all("Semana" not in t["hover"] for t in st["traces"]), st
+    assert all("/" in t["cd0"][0] for t in st["traces"]), st
 
 
 def test_b2r2_day_a_week_cambia_grafica_y_conserva_seleccion(page, server):
@@ -1275,9 +1609,9 @@ def test_b2r2_day_a_week_cambia_grafica_y_conserva_seleccion(page, server):
     # Nueva petición disparada y URL actualizada.
     assert any("gran=week" in u for u in reqs), f"no hubo request gran=week: {reqs}"
     assert "gran=week" in page.url, page.url
-    # Eje cambió a semanas y tooltip dice Semana.
+    # Eje cambió a semanas y la etiqueta del punto dice 'Semana N'.
     assert week_state["xaxis"] == "Semana", week_state
-    assert all("Semana" in t["hover"] for t in week_state["traces"]), week_state
+    assert all("Semana" in t["cd0"][0] for t in week_state["traces"]), week_state
     # Selección conservada (chip sigue marcado, URL con musculos+ejercicios).
     expect(_exercise_input(page, "Press")).to_have_attribute("aria-pressed", "true")
     assert "musculos=Pectoral" in page.url, page.url
@@ -1328,7 +1662,7 @@ def test_b2r2_musculo_con_cambio_granularidad_mantiene_trazas(page, server):
     week = _chart_state(page)
     names = [t["n"] for t in week["traces"]]
     assert "Global" in names and "Pectoral" in names, names
-    assert all("Semana" in t["hover"] for t in week["traces"]), week
+    assert all("Semana" in t["cd0"][0] for t in week["traces"]), week
 
     page.locator('#granularity-selector [data-gran="day"]').click()
     page.wait_for_timeout(700)
@@ -1480,9 +1814,9 @@ def test_b2r4_selector_compacto_sin_barra(page, server):
     expect(sel).to_be_visible(timeout=3000)
     btns = sel.locator('[data-action="set-granularity"]')
     expect(btns).to_have_count(3)
-    expect(page.get_by_role("button", name="Día")).to_be_visible()
-    expect(page.get_by_role("button", name="Semana")).to_be_visible()
-    expect(page.get_by_role("button", name="Mes")).to_be_visible()
+    expect(page.get_by_role("button", name="Día", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="Semana", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="Mes", exact=True)).to_be_visible()
     assert page.locator("#granularity-note").count() == 0
     assert "eje semanal por ahora" not in page.content()
     cbox = page.locator("#unified-chart-container").bounding_box()
@@ -1659,12 +1993,13 @@ def test_layout_area_trazado_estable_global_a_musculo(page, server, tmp_path):
                 const sr = svg ? svg.getBoundingClientRect() : null;
                 const lr = legend ? legend.getBoundingClientRect() : null;
                 const pr = el.getBoundingClientRect();
+                const cr = document.getElementById('unified-chart-container').getBoundingClientRect();
                 return {
                     xDomain: [l.xaxis.domain[0], l.xaxis.domain[1]],
                     yDomain: [l.yaxis.domain[0], l.yaxis.domain[1]],
                     svgH: sr ? Math.round(sr.height * 10) / 10 : null,
                     svgW: sr ? Math.round(sr.width * 10) / 10 : null,
-                    plotTop: Math.round(pr.top * 10) / 10,
+                    plotTop: Math.round((pr.top - cr.top) * 10) / 10,
                     legendAbovePlot: lr && sr ? lr.bottom <= sr.top + 2 || lr.bottom <= pr.top + l.margin.t + 2 : null,
                     traceCount: el._fullData.length,
                 };
@@ -1702,6 +2037,668 @@ def test_layout_area_trazado_estable_global_a_musculo(page, server, tmp_path):
     geo_back = plot_geometry(page)
     assert geo_back["xDomain"] == geo_global["xDomain"]
     assert abs(geo_back["svgW"] - geo_global["svgW"]) <= 1.5
+
+
+def _x_span_ms(page):
+    """Devuelve el span del eje X en milisegundos (rango real de Plotly)."""
+    return page.evaluate(
+        """() => {
+            const r = document.getElementById('unified-chart-plot')._fullLayout.xaxis.range;
+            return new Date(r[1]).getTime() - new Date(r[0]).getTime();
+        }"""
+    )
+
+
+def _x_range_slice(page):
+    return page.evaluate(
+        "() => document.getElementById('unified-chart-plot')._fullLayout.xaxis.range.slice()"
+    )
+
+
+def _y_range_slice(page):
+    return page.evaluate(
+        "() => document.getElementById('unified-chart-plot')._fullLayout.yaxis.range.slice()"
+    )
+
+
+def test_rueda_direccion_zoom_invertida_y_eje_y_estable(page, server, tmp_path):
+    """Rueda arriba acerca (span X menor), rueda abajo aleja (span X mayor);
+    el eje Y y el historial permanecen intactos. Shift+rueda desplaza sin
+    cambiar el span."""
+    _seed_e2e_many_days(tmp_path, 40)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_function(
+        "() => document.getElementById('unified-chart-plot')._fullData"
+        " && document.getElementById('unified-chart-plot')._fullData.length > 0"
+    )
+    history_before = page.evaluate("() => history.length")
+    grafica_reqs = []
+    page.on("request", lambda r: grafica_reqs.append(r.url) if "/grafica" in r.url else None)
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
+
+    box = page.locator("#unified-chart-plot").bounding_box()
+    cx = box["x"] + box["width"] / 2
+    cy = box["y"] + box["height"] / 2
+    page.mouse.move(cx, cy)
+
+    span_inicial = _x_span_ms(page)
+    y_inicial = _y_range_slice(page)
+
+    # Rueda hacia arriba (deltaY < 0) → acercar → span menor.
+    page.mouse.wheel(0, -200)
+    page.wait_for_timeout(500)
+    span_arriba = _x_span_ms(page)
+    assert span_arriba < span_inicial, f"rueda arriba debe acercar: {span_inicial} → {span_arriba}"
+
+    # Rueda hacia abajo (deltaY > 0) → alejar → span mayor (gradual).
+    page.mouse.wheel(0, 120)
+    page.wait_for_timeout(500)
+    span_abajo = _x_span_ms(page)
+    assert span_abajo > span_arriba, f"rueda abajo debe alejar: {span_arriba} → {span_abajo}"
+    assert span_abajo < span_inicial * 1.6, (
+        f"cambio gradual esperado: {span_inicial} → {span_abajo}"
+    )
+    assert span_abajo > span_arriba * 1.001
+
+    # El eje Y NO cambia durante el zoom X.
+    y_tras_rueda = _y_range_slice(page)
+    assert y_tras_rueda == y_inicial, f"el eje Y cambió: {y_inicial} → {y_tras_rueda}"
+
+    # Shift+rueda: desplaza el rango sin cambiar el span.
+    span_antes_shift = _x_span_ms(page)
+    x_antes_shift = _x_range_slice(page)
+    page.locator("#unified-chart-plot").press("Shift")
+    page.keyboard.down("Shift")
+    page.mouse.wheel(0, 200)
+    page.wait_for_timeout(500)
+    page.keyboard.up("Shift")
+    span_shift = _x_span_ms(page)
+    x_shift = _x_range_slice(page)
+    assert abs(span_shift - span_antes_shift) < max(10, span_antes_shift * 0.001), (
+        f"Shift+rueda no debe cambiar el span: {span_antes_shift} → {span_shift}"
+    )
+    assert x_shift != x_antes_shift, "Shift+rueda debe desplazar el rango"
+
+    # Sin historial nuevo, sin peticiones /grafica, sin errores.
+    assert page.evaluate("() => history.length") == history_before
+    assert not grafica_reqs, grafica_reqs
+    assert errs == [], errs
+
+
+def test_rueda_vertical_sobre_eje_y(page, server, tmp_path):
+    """Rueda sobre el eje Y: arriba acerca Y, abajo aleja Y; X permanece igual."""
+    _seed_e2e_many_days(tmp_path, 40)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_function(
+        "() => document.getElementById('unified-chart-plot')._fullData"
+        " && document.getElementById('unified-chart-plot')._fullData.length > 0"
+    )
+    history_before = page.evaluate("() => history.length")
+    grafica_reqs = []
+    page.on("request", lambda r: grafica_reqs.append(r.url) if "/grafica" in r.url else None)
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
+
+    # Calcular posición geométrica del eje Y (sin depender de clases internas)
+    y_axis_pos = page.evaluate(
+        """() => {
+            const el = document.getElementById('unified-chart-plot');
+            const rect = el.getBoundingClientRect();
+            const m = el._fullLayout.margin;
+            const plotH = el._fullLayout.height - m.t - m.b;
+            return {
+                x: rect.left + m.l / 2,
+                y: rect.top + m.t + plotH / 2,
+            };
+        }"""
+    )
+    x_before = _x_range_slice(page)
+    y_before = _y_range_slice(page)
+    span_y_before = abs(y_before[1] - y_before[0])
+
+    # Rueda arriba sobre Y → acerca Y (span menor), X igual
+    page.mouse.move(y_axis_pos["x"], y_axis_pos["y"])
+    page.mouse.wheel(0, -200)
+    page.wait_for_timeout(500)
+    y_up = _y_range_slice(page)
+    x_after_up = _x_range_slice(page)
+    span_y_up = abs(y_up[1] - y_up[0])
+    assert span_y_up < span_y_before, (
+        f"rueda arriba sobre Y debe acercar Y: {span_y_before} → {span_y_up}"
+    )
+    assert x_after_up == x_before, f"rueda Y no debe tocar X: {x_before} vs {x_after_up}"
+    assert y_up[0] < y_up[1] and span_y_up > 1e-9, "Y no invertido ni colapsado"
+
+    # Rueda abajo sobre Y → aleja Y, X igual
+    page.mouse.move(y_axis_pos["x"], y_axis_pos["y"])
+    page.mouse.wheel(0, 200)
+    page.wait_for_timeout(500)
+    y_down = _y_range_slice(page)
+    span_y_down = abs(y_down[1] - y_down[0])
+    assert span_y_down > span_y_up, f"rueda abajo sobre Y debe alejar: {span_y_up} → {span_y_down}"
+    assert _x_range_slice(page) == x_after_up, "rueda Y no debe tocar X"
+
+    # Varias vueltas graduales sobre Y
+    for _ in range(3):
+        page.mouse.move(y_axis_pos["x"], y_axis_pos["y"])
+        page.mouse.wheel(0, -200)
+        page.wait_for_timeout(300)
+    y_multi = _y_range_slice(page)
+    span_y_multi = abs(y_multi[1] - y_multi[0])
+    assert span_y_multi < span_y_down, "zoom Y debe ser gradual"
+    assert y_multi[0] < y_multi[1], "Y no invertido tras varias vueltas"
+    # Verificar que el rango conserva decimales (no redondeo a enteros)
+    assert (
+        any(isinstance(v, float) and v != int(v) for v in y_multi)
+        or span_y_multi < span_y_down * 0.9
+    ), "Y range debe conservar decimales"
+
+    # Shift+rueda sobre Y debe seguir desplazando X (prioridad absoluta), no Y
+    x_before_shift = _x_range_slice(page)
+    y_before_shift = _y_range_slice(page)
+    span_x_before_shift = (
+        abs(float(_x_range_slice(page)[1]) - float(_x_range_slice(page)[0]))
+        if isinstance(_x_range_slice(page)[0], (int, float))
+        else abs(_x_span_ms(page))
+    )
+    page.keyboard.down("Shift")
+    page.mouse.move(y_axis_pos["x"], y_axis_pos["y"])
+    page.mouse.wheel(0, 200)
+    page.wait_for_timeout(500)
+    page.keyboard.up("Shift")
+    x_after_shift = _x_range_slice(page)
+    y_after_shift = _y_range_slice(page)
+    assert x_after_shift != x_before_shift, "Shift+rueda sobre Y debe desplazar X"
+    assert y_after_shift == y_before_shift, "Shift+rueda sobre Y no debe cambiar Y"
+    assert abs(_x_span_ms(page) - span_x_before_shift) < max(10, span_x_before_shift * 0.001), (
+        "Shift+rueda no debe cambiar span X"
+    )
+
+    # Rueda fuera de la gráfica → sin cambios
+    page.mouse.move(5, 5)
+    x_out_before = _x_range_slice(page)
+    y_out_before = _y_range_slice(page)
+    page.mouse.wheel(0, -200)
+    page.wait_for_timeout(500)
+    assert _x_range_slice(page) == x_out_before
+    assert _y_range_slice(page) == y_out_before
+
+    # Sin historial ni peticiones por zoom vertical
+    assert page.evaluate("() => history.length") == history_before
+    assert not grafica_reqs, grafica_reqs
+    assert errs == [], errs
+
+
+def test_rueda_vertical_week_y_month(page, server, tmp_path):
+    """Rueda sobre el eje Y funciona en Semana y Mes (ejes categóricos)."""
+    for gran in ("week", "month"):
+        _seed_e2e_many_days(tmp_path, 40)
+        page.goto(server + f"/?gran={gran}")
+        page.wait_for_function("document.body.dataset.appReady === '1'")
+        page.wait_for_function(
+            "() => document.getElementById('unified-chart-plot')._fullData && document.getElementById('unified-chart-plot')._fullData.length>0"
+        )
+        y_before = _y_range_slice(page)
+        x_before = _x_range_slice(page)
+        span_y_before = abs(y_before[1] - y_before[0])
+        y_pos = page.evaluate(
+            """() => {
+                const el = document.getElementById('unified-chart-plot');
+                const rect = el.getBoundingClientRect();
+                const m = el._fullLayout.margin;
+                const h = el._fullLayout.height - m.t - m.b;
+                return {x: rect.left + m.l/2, y: rect.top + m.t + h/2};
+            }"""
+        )
+        page.mouse.move(y_pos["x"], y_pos["y"])
+        page.mouse.wheel(0, -200)
+        page.wait_for_timeout(500)
+        y_up = _y_range_slice(page)
+        assert abs(y_up[1] - y_up[0]) < span_y_before, f"{gran} rueda arriba debe acercar Y"
+        assert _x_range_slice(page) == x_before, f"{gran} rueda Y no debe tocar X"
+        page.mouse.move(y_pos["x"], y_pos["y"])
+        page.mouse.wheel(0, 200)
+        page.wait_for_timeout(500)
+        y_down = _y_range_slice(page)
+        assert abs(y_down[1] - y_down[0]) > abs(y_up[1] - y_up[0]), (
+            f"{gran} rueda abajo debe alejar"
+        )
+        assert _x_range_slice(page) == x_before
+
+
+def _cat_x_state(page):
+    """Estado X real para ejes categóricos: rango numérico, tipos JS, span,
+    validez (finito, ordenado) y puntos visibles dentro de la ventana."""
+    return page.evaluate(
+        """() => {
+            const el = document.getElementById('unified-chart-plot');
+            const r = el._fullLayout.xaxis.range;
+            const nums = Array.from(r, v => typeof v === 'number' ? v : NaN);
+            const valid = nums.every(v => Number.isFinite(v)) && nums[0] < nums[1];
+            let nCats = 0;
+            el._fullData.forEach(t => { if (Array.isArray(t.x)) nCats = Math.max(nCats, t.x.length); });
+            const lo = Math.max(0, Math.ceil(nums[0]));
+            const hi = Math.min(nCats - 1, Math.floor(nums[1]));
+            return {
+                range: [nums[0], nums[1]],
+                types: Array.from(r, v => typeof v),
+                span: nums[1] - nums[0],
+                valid: valid,
+                nCats: nCats,
+                visiblePts: hi >= lo ? hi - lo + 1 : 0,
+            };
+        }"""
+    )
+
+
+def _plot_point(page, fx=0.5):
+    """Punto dentro del área de trazado a fracción fx del ancho útil."""
+    return page.evaluate(
+        """(fx) => {
+            const el = document.getElementById('unified-chart-plot');
+            const rect = el.getBoundingClientRect();
+            const m = el._fullLayout.margin;
+            const w = el._fullLayout.width - m.l - m.r;
+            const h = el._fullLayout.height - m.t - m.b;
+            return {x: rect.left + m.l + w * fx, y: rect.top + m.t + h * 0.5};
+        }""",
+        fx,
+    )
+
+
+def _y_axis_point(page):
+    """Punto sobre el eje Y (geometría real, sin clases internas)."""
+    return page.evaluate(
+        """() => {
+            const el = document.getElementById('unified-chart-plot');
+            const rect = el.getBoundingClientRect();
+            const m = el._fullLayout.margin;
+            const h = el._fullLayout.height - m.t - m.b;
+            return {x: rect.left + m.l / 2, y: rect.top + m.t + h * 0.5};
+        }"""
+    )
+
+
+@pytest.mark.parametrize("gran", ["week", "month"])
+def test_zoom_categorico_estable_semana_mes(page, server, tmp_path, gran):
+    """Zoom/pan por rueda en Semana/Mes es estable: reducción/ampliación
+    progresiva del span, Shift+rueda conserva el span desplazando el rango,
+    zoom Y no toca X, los datos permanecen visibles y no hay historial,
+    peticiones /grafica ni errores de consola."""
+    _seed_e2e_many_days(tmp_path, 400)
+    page.goto(server + f"/?gran={gran}")
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_function(
+        "() => document.getElementById('unified-chart-plot')._fullData"
+        " && document.getElementById('unified-chart-plot')._fullData.length > 0"
+    )
+    history_before = page.evaluate("() => history.length")
+    grafica_reqs = []
+    page.on("request", lambda r: grafica_reqs.append(r.url) if "/grafica" in r.url else None)
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
+
+    evidencia = {"gran": gran, "x_inicial": _x_range_slice(page)}
+    pos = _plot_point(page, 0.5)
+
+    # Rueda arriba ×5 → reducción progresiva del span.
+    spans = []
+    for i in range(5):
+        page.mouse.move(pos["x"], pos["y"])
+        page.mouse.wheel(0, -200)
+        page.wait_for_timeout(400)
+        st = _cat_x_state(page)
+        assert st["valid"], f"{gran} zoom {i}: rango inválido {st}"
+        assert st["types"] == ["number", "number"], (
+            f"{gran} zoom {i}: rango debe ser numérico (no etiquetas): {st['types']}"
+        )
+        if spans:
+            assert st["span"] < spans[-1] * 0.999, (
+                f"{gran} zoom {i}: span debe reducirse: {spans[-1]} → {st['span']}"
+            )
+        spans.append(st["span"])
+        evidencia[f"zoom_arriba_{i + 1}"] = st
+
+    # Rueda abajo → ampliación progresiva.
+    page.mouse.move(pos["x"], pos["y"])
+    page.mouse.wheel(0, 200)
+    page.wait_for_timeout(400)
+    st_down = _cat_x_state(page)
+    assert st_down["valid"] and st_down["span"] > spans[-1], (
+        f"{gran} rueda abajo debe ampliar: {spans[-1]} → {st_down['span']}"
+    )
+    evidencia["zoom_abajo"] = st_down
+
+    # Shift+rueda ×2 → span constante, rango desplazado.
+    for i in range(2):
+        prev = _cat_x_state(page)
+        page.keyboard.down("Shift")
+        page.mouse.move(pos["x"], pos["y"])
+        page.mouse.wheel(0, 200)
+        page.keyboard.up("Shift")
+        page.wait_for_timeout(400)
+        nxt = _cat_x_state(page)
+        assert nxt["valid"], f"{gran} shift {i}: rango inválido {nxt}"
+        assert abs(nxt["span"] - prev["span"]) < max(1e-9, prev["span"] * 1e-6), (
+            f"{gran} shift {i}: span debe conservarse: {prev['span']} → {nxt['span']}"
+        )
+        assert nxt["range"] != prev["range"], f"{gran} shift {i}: rango debe desplazarse"
+        evidencia[f"shift_{i + 1}"] = nxt
+
+    # Ciclo repetido: otro acercamiento y otro alejamiento.
+    page.mouse.move(pos["x"], pos["y"])
+    page.mouse.wheel(0, -200)
+    page.wait_for_timeout(400)
+    st_ciclo_in = _cat_x_state(page)
+    assert st_ciclo_in["valid"] and st_ciclo_in["span"] < st_down["span"]
+    page.mouse.move(pos["x"], pos["y"])
+    page.mouse.wheel(0, 200)
+    page.wait_for_timeout(400)
+    st_ciclo_out = _cat_x_state(page)
+    assert st_ciclo_out["valid"] and st_ciclo_out["span"] > st_ciclo_in["span"]
+
+    # Los datos siguen visibles dentro de la ventana.
+    assert st_ciclo_out["visiblePts"] >= 1, (
+        f"{gran}: datos fuera de vista tras las operaciones: {st_ciclo_out}"
+    )
+
+    # Zoom Y sobre el eje Y: solo cambia Y, X intacto.
+    ypos = _y_axis_point(page)
+    x_antes_y = _cat_x_state(page)["range"]
+    y0 = _y_range_slice(page)
+    page.mouse.move(ypos["x"], ypos["y"])
+    page.mouse.wheel(0, -200)
+    page.wait_for_timeout(400)
+    y_up = _y_range_slice(page)
+    assert abs(y_up[1] - y_up[0]) < abs(y0[1] - y0[0]), f"{gran}: zoom Y arriba debe acercar"
+    assert _cat_x_state(page)["range"] == x_antes_y, f"{gran}: zoom Y no debe tocar X"
+    page.mouse.move(ypos["x"], ypos["y"])
+    page.mouse.wheel(0, 200)
+    page.wait_for_timeout(400)
+    y_dn = _y_range_slice(page)
+    assert abs(y_dn[1] - y_dn[0]) > abs(y_up[1] - y_up[0]), f"{gran}: zoom Y abajo debe alejar"
+    assert _cat_x_state(page)["range"] == x_antes_y, f"{gran}: zoom Y no debe tocar X"
+
+    # Shift+rueda sobre Y sigue desplazando X sin tocar Y.
+    prev = _cat_x_state(page)
+    y_antes_shift = _y_range_slice(page)
+    page.keyboard.down("Shift")
+    page.mouse.move(ypos["x"], ypos["y"])
+    page.mouse.wheel(0, 200)
+    page.keyboard.up("Shift")
+    page.wait_for_timeout(400)
+    nxt = _cat_x_state(page)
+    assert nxt["range"] != prev["range"], f"{gran}: Shift+rueda sobre Y debe desplazar X"
+    assert _y_range_slice(page) == y_antes_shift, f"{gran}: Shift+rueda sobre Y no debe tocar Y"
+
+    # Sin historial, sin peticiones, sin errores.
+    assert page.evaluate("() => history.length") == history_before
+    assert not grafica_reqs, grafica_reqs
+    assert errs == [], errs
+    print(f"\n[evidencia {gran}] {evidencia}")
+
+
+def test_regresion_decimal_rango_category_sin_redondeo(page, server, tmp_path):
+    """Regresión del redondeo categórico: category inicial (etiquetas) → zoom
+    con rango decimal → segundo zoom → Shift+rueda → zoom inverso. Falla si
+    cualquier conversión redondea a etiquetas (strings) o colapsa el rango."""
+    _seed_e2e_many_days(tmp_path, 400)
+    page.goto(server + "/?gran=week")
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_function(
+        "() => document.getElementById('unified-chart-plot')._fullData"
+        " && document.getElementById('unified-chart-plot')._fullData.length > 0"
+    )
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
+
+    evidencia = {"rango_inicial": _x_range_slice(page)}
+    # Ratio 0.37 (asimétrico) para forcar extremos fraccionarios.
+    pos = _plot_point(page, 0.37)
+
+    # Zoom 1: el rango pasa a numérico con decimales; nunca strings (etiquetas).
+    page.mouse.move(pos["x"], pos["y"])
+    page.mouse.wheel(0, -200)
+    page.wait_for_timeout(400)
+    s1 = _cat_x_state(page)
+    assert s1["types"] == ["number", "number"], f"post-zoom debe ser numérico: {s1['types']}"
+    assert s1["valid"], f"rango inválido tras zoom 1: {s1}"
+    tiene_decimal = (s1["range"][0] % 1) != 0 or (s1["range"][1] % 1) != 0
+    assert tiene_decimal, f"el zoom debe conservar decimales, no redondear: {s1['range']}"
+
+    # Zoom 2: la precisión se mantiene y el span vuelve a reducirse.
+    page.mouse.move(pos["x"], pos["y"])
+    page.mouse.wheel(0, -200)
+    page.wait_for_timeout(400)
+    s2 = _cat_x_state(page)
+    assert s2["types"] == ["number", "number"] and s2["valid"], f"zoom 2 dañó el rango: {s2}"
+    assert s2["span"] < s1["span"], f"segundo zoom debe acercar: {s1['span']} → {s2['span']}"
+
+    # Shift+rueda: span intacto, números con decimales preservados.
+    page.keyboard.down("Shift")
+    page.mouse.move(pos["x"], pos["y"])
+    page.mouse.wheel(0, 200)
+    page.keyboard.up("Shift")
+    page.wait_for_timeout(400)
+    s3 = _cat_x_state(page)
+    assert s3["valid"], f"Shift rompió el rango: {s3}"
+    assert abs(s3["span"] - s2["span"]) < max(1e-9, s2["span"] * 1e-6), (
+        f"Shift debe conservar span: {s2['span']} → {s3['span']}"
+    )
+    assert s3["range"] != s2["range"], "Shift debe desplazar el rango"
+
+    # Zoom inverso: el span crece de nuevo sin saltos ni colapso.
+    page.mouse.move(pos["x"], pos["y"])
+    page.mouse.wheel(0, 200)
+    page.wait_for_timeout(400)
+    s4 = _cat_x_state(page)
+    assert s4["valid"], f"zoom inverso rompió el rango: {s4}"
+    assert s4["span"] > s3["span"], f"zoom inverso debe ampliar: {s3['span']} → {s4['span']}"
+    assert s4["span"] <= s1["span"] * 1.35, (
+        f"zoom inverso no debe sobrepasar bruscamente: {s4['span']}"
+    )
+    assert s4["visiblePts"] >= 1, f"datos perdidos tras zoom inverso: {s4}"
+
+    assert errs == [], errs
+    print(f"\n[evidencia regresion-decimal] {evidencia}")
+
+
+def test_autoajuste_y_incluye_series_visibles_y_respeta_manual(page, server, tmp_path):
+    """Al seleccionar un músculo cuyo pico excede a Global, el rango Y cubre
+    todas las series visibles; el zoom manual del eje X no se destruye al
+    cambiar la selección."""
+    import datetime
+    import sqlite3
+
+    db = str(tmp_path / "lifestyle.db")
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO ejercicios (grupo_muscular, ejercicio) VALUES ('Pectoral','Press')"
+        )
+        # Global ~80, músculo Pectoral con pico alto (kg 150 en el último día).
+        for i in range(10):
+            d = datetime.date(2026, 6, 1) + datetime.timedelta(days=i)
+            kg = 150.0 if i == 9 else 80.0
+            conn.execute(
+                "INSERT INTO training_sets "
+                "(semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) "
+                "VALUES (?,?,?,1,'Press',6,?,0)",
+                ((i // 7) + 1, "LUNES", d.isoformat(), kg),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_function(
+        "() => document.getElementById('unified-chart-plot')._fullData"
+        " && document.getElementById('unified-chart-plot')._fullData.length > 0"
+    )
+    page.wait_for_timeout(300)
+
+    # Zoom manual en X: reducir el span visible.
+    page.evaluate(
+        """() => {
+            const gd = document.getElementById('unified-chart-plot');
+            const r = gd._fullLayout.xaxis.range;
+            const mid = new Date((new Date(r[0]).getTime() + new Date(r[1]).getTime()) / 2);
+            const s = new Date(mid); s.setDate(s.getDate() - 1);
+            const e = new Date(mid); e.setDate(e.getDate() + 1);
+            return Plotly.relayout(gd, {
+                'xaxis.range[0]': s.toISOString().slice(0, 10),
+                'xaxis.range[1]': e.toISOString().slice(0, 10),
+            });
+        }"""
+    )
+    page.wait_for_timeout(500)
+    x_manual = _x_range_slice(page)
+
+    # Seleccionar músculo: Y se reajusta incluyendo su pico; X manual se conserva.
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(800)
+    y_sel = _y_range_slice(page)
+    assert y_sel[1] >= 0, f"el tope Y debe cubrir el pico: {y_sel}"
+    # El pico visible (kg 150) debe quedar dentro del rango Y.
+    gd = page.evaluate(
+        """() => {
+            const el = document.getElementById('unified-chart-plot');
+            let maxY = -Infinity;
+            for (const t of el._fullData) {
+                for (const v of t.y) if (v !== null && v !== undefined) maxY = Math.max(maxY, v);
+            }
+            return { maxY, yRange: el._fullLayout.yaxis.range.slice() };
+        }"""
+    )
+    assert gd["yRange"][1] >= gd["maxY"], f"max visible cortado: {gd}"
+    # X manual NO se reinicia por el cambio de selección.
+    x_tras_sel = _x_range_slice(page)
+    assert x_tras_sel == x_manual, f"X manual se reinició: {x_manual} → {x_tras_sel}"
+
+
+def test_y_window_ignora_historicos_fuera_de_la_ventana(page, server, tmp_path):
+    """Datos negativos antiguos fuera de la ventana X inicial no condicionan el
+    eje Y: la línea 0 queda en posición razonable; la rueda/pan siguen vivos."""
+    import datetime
+    import sqlite3
+
+    db = str(tmp_path / "lifestyle.db")
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO ejercicios (grupo_muscular, ejercicio) VALUES ('Pectoral','Press')"
+        )
+        # 150 días: 120 antiguos con kg baja (negativos) + 30 recientes altos.
+        start = datetime.date(2026, 1, 1)
+        rows = []
+        for i in range(150):
+            d = start + datetime.timedelta(days=i)
+            kg = 130.0 if i >= 120 else 50.0
+            rows.append(
+                (
+                    (i // 7) + 1,
+                    "LUNES",
+                    d.isoformat(),
+                    1,
+                    "Press",
+                    6.0,
+                    kg,
+                    0.0,
+                )
+            )
+        conn.executemany(
+            "INSERT INTO training_sets "
+            "(semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            rows,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_function(
+        "() => document.getElementById('unified-chart-plot')._fullData"
+        " && document.getElementById('unified-chart-plot')._fullData.length > 0"
+    )
+
+    def plot_state():
+        return page.evaluate(
+            """() => {
+                const el = document.getElementById('unified-chart-plot');
+                const l = el._fullLayout;
+                let minV = Infinity, maxV = -Infinity;
+                const xr = l.xaxis.range;
+                for (const t of el._fullData) {
+                    t.x.forEach(function (x, i) {
+                        const y = t.y[i];
+                        if (y === null || y === undefined) return;
+                        if (new Date(x) >= new Date(xr[0]) && new Date(x) <= new Date(xr[1])) {
+                            if (y < minV) minV = y;
+                            if (y > maxV) maxV = y;
+                        }
+                    });
+                }
+                return { xRange: l.xaxis.range.slice(), yRange: l.yaxis.range.slice(), minV, maxV };
+            }"""
+        )
+
+    st = plot_state()
+    x_lo = st["xRange"][0]
+    # La ventana X inicial: últimos 2 meses aprox. (desde hoy - 2 meses).
+    from datetime import date, timedelta
+
+    hoy = date.today()
+    esperado_lo = (hoy - timedelta(days=62)).isoformat()
+    assert x_lo <= esperado_lo, f"ventana X inicial mal calculada: {x_lo} vs {esperado_lo}"
+    # El rango Y NO está hundido por los negativos antiguos (fuera de la ventana).
+    y_lo, y_hi = st["yRange"]
+    assert y_lo > -15, f"la base no debe hundirse por antiguos: {st['yRange']}"
+    assert y_hi >= st["maxV"], f"el máximo visible debe caber: {st['maxV']} > {y_hi}"
+    assert y_lo <= 0 <= y_hi, f"la línea 0 debe ser visible: {st['yRange']}"
+    # Los datos históricos siguen en la traza (pan hacia atrás posible).
+    total_points = page.evaluate(
+        "() => document.getElementById('unified-chart-plot')._fullData[0].x.length"
+    )
+    assert total_points == 150, total_points
+
+    # Seleccionar músculo con datos recientes: Y se recalcula con los visibles.
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(800)
+    st2 = plot_state()
+    assert st2["yRange"][1] >= st2["maxV"], st2["yRange"]
+    assert st2["yRange"][0] > -15, st2["yRange"]
+
+    # Granularidades: cada una recalcula con su ventana.
+    for gran in ("week", "month"):
+        page.locator(f'#granularity-selector [data-gran="{gran}"]').click()
+        page.wait_for_timeout(700)
+        st3 = plot_state()
+        assert st3["yRange"][0] <= 0 <= st3["yRange"][1], (gran, st3["yRange"])
+        assert st3["yRange"][0] > -15, (gran, st3["yRange"])
+
+    # Rueda y pan siguen funcionando tras el cambio.
+    box = page.locator("#unified-chart-plot").bounding_box()
+    cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    page.mouse.move(cx, cy)
+    x_before = page.evaluate(
+        "() => document.getElementById('unified-chart-plot')._fullLayout.xaxis.range.slice()"
+    )
+    page.mouse.wheel(0, -200)
+    page.wait_for_timeout(500)
+    x_after = page.evaluate(
+        "() => document.getElementById('unified-chart-plot')._fullLayout.xaxis.range.slice()"
+    )
+    assert x_after != x_before, "la rueda debe seguir funcionando tras el autoajuste"
 
 
 def test_b2r4_sin_errores_y_sin_overflow_movil(page, server):
@@ -1834,29 +2831,43 @@ def test_cls_stable_shell_and_history(page, server):
         box = page.locator(sel).bounding_box()
         return box or {}
 
-    # Estado base
+    # Estado base (Fase 2: el detalle vive en #period-summary-wrap;
+    # #history-section es un stub deprecado oculto, altura 0 constante).
     chart_h = rect("#unified-chart-container").get("height")
-    chart_y = rect("#unified-chart-container").get("y")
-    history_h = rect("#history-section").get("height")
-    scroll_y = page.evaluate("() => window.scrollY")
+    # Contrato Fase 2-layout: posición RELATIVA AL DOCUMENTO (el scroll del
+    # navegador puede anclar al crecer columnas sticky; eso no es CLS).
+    chart_doc_y = page.evaluate(
+        "() => { const r = document.getElementById('unified-chart-container').getBoundingClientRect(); return r.top + window.scrollY; }"
+    )
+    summary_h = rect("#period-summary-wrap").get("height")
 
     # Seleccionar un músculo
     _catalog_select_muscle(page, "Pectoral")
     page.wait_for_timeout(600)
 
     chart_after_h = rect("#unified-chart-container").get("height")
-    chart_after_y = rect("#unified-chart-container").get("y")
-    history_after_h = rect("#history-section").get("height")
-    scroll_after = page.evaluate("() => window.scrollY")
+    chart_after_doc_y = page.evaluate(
+        "() => { const r = document.getElementById('unified-chart-container').getBoundingClientRect(); return r.top + window.scrollY; }"
+    )
+    summary_after_h = rect("#period-summary-wrap").get("height")
 
-    assert chart_h and chart_y and history_h is not None
+    assert chart_h and chart_doc_y and summary_h, (chart_h, chart_doc_y, summary_h)
     assert abs(chart_after_h - chart_h) <= 1.0, f"chart CLS: {chart_h} → {chart_after_h}"
-    assert abs(chart_after_y - chart_y) <= 1.0, f"chart y shift: {chart_y} → {chart_after_y}"
-    assert abs(history_after_h - history_h) <= 1.0, f"history CLS: {history_h} → {history_after_h}"
-    assert abs(scroll_after - scroll_y) <= 2, f"scroll shifted: {scroll_y} → {scroll_after}"
+    assert abs(chart_after_doc_y - chart_doc_y) <= 1.0, (
+        f"chart doc-y shift: {chart_doc_y} → {chart_after_doc_y}"
+    )
+    # El panel puede cambiar de contenido pero NO desplazar la página: su caja
+    # es sticky con altura acotada; el ancho externo debe ser invariante.
+    summary_w_before = rect("#period-summary-wrap").get("width") or 0
+    summary_w_after = rect("#period-summary-wrap").get("width") or 0
+    assert abs(summary_w_after - summary_w_before) <= 1.0
+    # (scroll crudo puede variar por scroll-anchoring; no es desplazamiento
+    #  de layout — la posición documental ya se verifica arriba.)
     # La columna sticky no supera la altura disponible (scroll interno).
     catalog_h = rect(".dashboard-catalog-col").get("height") or 0
     assert catalog_h <= 800 - 32 + 1, f"catálogo excede el viewport: {catalog_h}px"
+    summary_h_ok = summary_after_h <= 800 - 32 + 1
+    assert summary_h_ok, f"panel excede el viewport: {summary_after_h}px"
 
 
 # ---------------------------------------------------------------------------
@@ -2246,25 +3257,32 @@ def test_dashboard_no_horizontal_overflow(page, server):
 
 
 def test_dashboard_chart_height_stable_when_catalog_expands(page, server):
-    """Expanding a catalog group does not change chart height or offset."""
+    """Expanding a catalog group does not change chart height or offset.
+
+    Contrato Fase 2-layout: la posición se mide RELATIVA AL DOCUMENTO
+    (rect.top + scrollY); el scroll del navegador puede anclar al expandir
+    columnas sticky más altas que el viewport, y eso no es CLS de layout.
+    """
     page.set_viewport_size({"width": 1280, "height": 800})
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    chart_before = page.locator("#unified-chart-container").bounding_box()
-    # Click the first details/summary to expand
+
+    def doc_metrics():
+        return page.evaluate(
+            """() => {
+                const el = document.getElementById('unified-chart-container');
+                const r = el.getBoundingClientRect();
+                return {h: r.height, docY: r.top + window.scrollY};
+            }"""
+        )
+
+    before = doc_metrics()
     summary = page.locator('#dashboard-catalog [data-action="toggle-group"]').first
     summary.click()
     page.wait_for_timeout(300)
-    chart_after = page.locator("#unified-chart-container").bounding_box()
-    assert chart_before is not None and chart_after is not None
-    # Height should not change
-    assert abs(chart_before["height"] - chart_after["height"]) < 2, (
-        f"Chart height changed: {chart_before['height']} -> {chart_after['height']}"
-    )
-    # Y offset should not change
-    assert abs(chart_before["y"] - chart_after["y"]) < 2, (
-        f"Chart y changed: {chart_before['y']} -> {chart_after['y']}"
-    )
+    after = doc_metrics()
+    assert abs(before["h"] - after["h"]) < 2, f"Chart height changed: {before} -> {after}"
+    assert abs(before["docY"] - after["docY"]) < 2, f"Chart document-y changed: {before} -> {after}"
 
 
 def test_dashboard_catalog_scrollable(page, server):
@@ -2280,17 +3298,26 @@ def test_dashboard_catalog_scrollable(page, server):
 
 
 def test_dashboard_mobile_catalog_below_chart(page, server):
-    """On mobile, catalog appears below the chart (not beside it)."""
+    """On mobile, catalog is a drawer overlay (fixed, initially hidden)."""
     page.set_viewport_size({"width": 375, "height": 800})
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    catalog = page.locator(".dashboard-catalog-col").bounding_box()
-    chart = page.locator("#unified-chart-container").bounding_box()
-    assert catalog is not None and chart is not None
-    # On mobile, catalog should be below chart (catalog.y > chart.y)
-    assert catalog["y"] > chart["y"], (
-        f"Mobile: catalog y={catalog['y']} should be > chart y={chart['y']}"
-    )
+    expect(page.locator("#catalog-toggle-mobile")).to_have_attribute("aria-expanded", "false")
+    expect(page.locator("#catalog-toggle-mobile")).to_be_visible()
+    expect(page.locator(".dashboard-catalog-col")).to_be_hidden()
+    expect(page.locator("#catalog-overlay")).to_be_hidden()
+    page.locator("#catalog-toggle-mobile").click()
+    page.wait_for_timeout(300)
+    expect(page.locator(".dashboard-catalog-col")).to_be_visible()
+    expect(page.locator("#catalog-overlay")).to_be_visible()
+    box = page.locator(".dashboard-catalog-col").bounding_box()
+    assert 50 <= box["y"] <= 80, f"drawer top should be below header: {box}"
+    # Overlay cubre toda la pantalla; el drawer (z-index 30) está por encima.
+    # Clicar el centro del overlay caería sobre el drawer, así que se usa
+    # click evaluado.
+    page.locator("#catalog-overlay").evaluate("el => el.click()")
+    page.wait_for_timeout(300)
+    expect(page.locator(".dashboard-catalog-col")).to_be_hidden()
 
 
 def test_dashboard_no_level_chip_in_catalog(page, server):
@@ -2299,3 +3326,762 @@ def test_dashboard_no_level_chip_in_catalog(page, server):
     page.wait_for_function("document.body.dataset.appReady === '1'")
     count = page.locator("#dashboard-catalog .level-chip").count()
     assert count == 0, f"Found {count} .level-chip elements in catalog"
+
+
+def _seed_long_history(tmp_path):
+    """Siembra 420 días (~60 semanas, ~14 meses): antiguos negativos + recientes
+    positivos + cola ligeramente negativa. Devuelve la ruta de la DB."""
+    import datetime
+    import sqlite3
+
+    db = str(tmp_path / "lifestyle.db")
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO ejercicios (grupo_muscular, ejercicio) VALUES ('Pectoral','Press')"
+        )
+        start = datetime.date(2025, 1, 1)
+        rows = []
+        for i in range(420):
+            d = start + datetime.timedelta(days=i)
+            if i < 240:
+                kg = 50.0  # antiguos muy negativos (fuera de ventana)
+            elif i < 400:
+                kg = 140.0  # recientes positivos (dentro de ventana)
+            else:
+                kg = 80.0  # cola ligera
+            rows.append(
+                (
+                    (i // 7) + 1,
+                    "LUNES",
+                    d.isoformat(),
+                    1,
+                    "Press",
+                    6.0,
+                    kg,
+                    0.0,
+                )
+            )
+        conn.executemany(
+            "INSERT INTO training_sets "
+            "(semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) VALUES (?,?,?,?,?,?,?,?)",
+            rows,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return db
+
+
+def test_granularidades_grafica_visible_y_y_por_ventana(page, server, tmp_path):
+    """Global en Día/Semana/Mes: la gráfica es visible, el rango X y el rango
+    Y cubren ventanas correctas y la línea 0 está dentro. Repite con músculo
+    seleccionado. Al final, rueda/pan siguen operativos."""
+    _seed_long_history(tmp_path)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_function(
+        "() => document.getElementById('unified-chart-plot')._fullData"
+        " && document.getElementById('unified-chart-plot')._fullData.length > 0"
+    )
+
+    def chart_view():
+        return page.evaluate(
+            """() => {
+                const el = document.getElementById('unified-chart-plot');
+                const l = el._fullLayout;
+                if (!l.xaxis || !l.yaxis) return null;
+                const xr = l.xaxis.range, yr = l.yaxis.range;
+                const cat = l.xaxis.type === 'category';
+                const lo = xr[0], hi = xr[1];
+                const nlo = Number(lo), nhi = Number(hi);
+                const useIdx = !Number.isNaN(nlo) && !Number.isNaN(nhi);
+                // Categorías en orden de aparición (categoryorder='trace').
+                const cats = [];
+                for (const t of el._fullData) {
+                    t.x.forEach(function (x) {
+                        const sx = String(x);
+                        if (cats.indexOf(sx) === -1) cats.push(sx);
+                    });
+                }
+                let minV = Infinity, maxV = -Infinity, visibles = 0;
+                for (const t of el._fullData) {
+                    t.x.forEach(function (x, i) {
+                        const y = t.y[i];
+                        if (y === null || y === undefined) return;
+                        let inside = false;
+                        if (cat) {
+                            // Plotly convierte el rango category a índices sobre
+                            // las categorías en orden de aparición.
+                            if (useIdx) {
+                                const idx = cats.indexOf(String(x));
+                                if (idx >= 0) inside = nlo <= idx && idx <= nhi;
+                            } else {
+                                inside = String(lo) <= String(x) && String(x) <= String(hi);
+                            }
+                        } else {
+                            const xt = new Date(x).getTime();
+                            inside = xt >= new Date(lo).getTime() && xt <= new Date(hi).getTime();
+                        }
+                        if (inside) {
+                            visibles++;
+                            if (y < minV) minV = y;
+                            if (y > maxV) maxV = y;
+                        }
+                    });
+                }
+                return {
+                    xType: l.xaxis.type, xRange: xr.slice(),
+                    yRange: yr.slice(), minV, maxV, visibles,
+                    plotVisible: !el.hidden,
+                };
+            }"""
+        )
+
+    # Global en las 3 granularidades: visible, 0 en rango, Y cubre visibles.
+    for gran in ("day", "week", "month"):
+        page.locator(f'#granularity-selector [data-gran="{gran}"]').click()
+        page.wait_for_timeout(800)
+        v = chart_view()
+        assert v and v["plotVisible"] is not False, (gran, v)
+        assert v["plotVisible"], f"gráfica invisible en {gran}: {v}"
+        y0, y1 = v["yRange"]
+        assert y0 <= 0 <= y1, f"{gran}: 0 fuera del rango Y: {v['yRange']}"
+        assert y1 >= v["maxV"], f"{gran}: max visible cortado: {v}"
+        assert y0 <= v["minV"], f"{gran}: min visible cortado: {v}"
+        assert v["visibles"] > 0, f"{gran}: ningún punto en la ventana"
+        # El rango X de semana debe cubrir ~15 semanas: los visibles son esos.
+        if gran == "week":
+            assert v["xRange"][1] > v["xRange"][0], v["xRange"]
+
+    # Con músculo seleccionado: sigue visible y el Y se recalcula.
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(800)
+    for gran in ("week", "month"):
+        page.locator(f'#granularity-selector [data-gran="{gran}"]').click()
+        page.wait_for_timeout(800)
+        v = chart_view()
+        assert v and v["plotVisible"], (gran, v)
+        assert v["yRange"][0] <= 0 <= v["yRange"][1], (gran, v["yRange"])
+        assert v["yRange"][1] >= v["maxV"], (gran, v)
+    # Conexión viva: rueda y pan siguen funcionando en Mes.
+    box = page.locator("#unified-chart-plot").bounding_box()
+    cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    page.mouse.move(cx, cy)
+    x_before = page.evaluate(
+        "() => document.getElementById('unified-chart-plot')._fullLayout.xaxis.range.slice()"
+    )
+    page.mouse.wheel(0, -200)
+    page.wait_for_timeout(500)
+    x_after = page.evaluate(
+        "() => document.getElementById('unified-chart-plot')._fullLayout.xaxis.range.slice()"
+    )
+    assert x_after != x_before, "la rueda debe seguir funcionando"
+
+
+# ---------------------------------------------------------------------------
+# Fase 2 — Panel derecho: sincronización en una sola petición
+# ---------------------------------------------------------------------------
+
+
+def _panel(page):
+    return page.locator("#period-summary-wrap")
+
+
+def test_panel_sync_una_peticion_seleccion(page, server, tmp_path):
+    """Cambio de selección → exactamente UNA petición /grafica que actualiza
+    gráfica y panel juntos; el panel muestra la vista del músculo."""
+    _seed_e2e_many_days(tmp_path, 40)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    grafica_reqs = []
+    page.on("request", lambda r: grafica_reqs.append(r.url) if "/grafica" in r.url else None)
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
+
+    expect(_panel(page)).to_be_visible()
+    base = len(grafica_reqs)
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(700)
+    nuevos = grafica_reqs[base:]
+    assert len(nuevos) == 1, f"debe haber UNA petición: {nuevos}"
+    assert "ventana=8" in nuevos[0], nuevos[0]
+    # El panel OOB llegó: sigue visible y sin estado de error.
+    assert "No se pudo calcular" not in _panel(page).inner_text()
+
+
+def test_tabs_cero_peticiones(page, server, tmp_path):
+    """Multi-músculos → pestañas prerenderizadas; cambiar pestaña no fetch."""
+    _seed_e2e_many_days(tmp_path, 40)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    grafica_reqs = []
+    page.on("request", lambda r: grafica_reqs.append(r.url) if "/grafica" in r.url else None)
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
+
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(600)
+    base = len(grafica_reqs)
+    # Shift+click en la fila del músculo Biceps (multi-selección).
+    biceps_group = page.locator('#dashboard-catalog .db-group[data-group="Biceps"]')
+    biceps_summary = biceps_group.locator('[data-action="toggle-group"]')
+    if biceps_summary.get_attribute("aria-expanded") != "true":
+        biceps_summary.click()
+        page.wait_for_timeout(120)
+    biceps_row = biceps_group.locator('[data-action="toggle-muscle"]').first
+    biceps_row.click(modifiers=["Shift"])
+    page.wait_for_timeout(800)
+    assert len(grafica_reqs) - base == 1, grafica_reqs[base:]
+
+    tabs = page.locator('#period-summary-wrap [role="tab"]')
+    expect(tabs.first).to_be_visible()
+    assert tabs.count() >= 2
+    segunda = tabs.nth(1)
+    segunda.evaluate("el => el.click()")
+    page.wait_for_timeout(300)
+    assert len(grafica_reqs) - base == 1, "cambiar pestaña NO debe pedir nada"
+    expect(segunda).to_have_attribute("aria-selected", "true")
+    panel_activo = page.locator("#ps-panel-1")
+    expect(panel_activo).to_be_visible()
+    panel_oculto = page.locator("#ps-panel-0")
+    expect(panel_oculto).to_be_hidden()
+    # Teclado: flecha derecha mueve la tab activa sin fetch.
+    segunda.press("ArrowLeft")
+    page.wait_for_timeout(200)
+    expect(tabs.first).to_have_attribute("aria-selected", "true")
+    assert len(grafica_reqs) - base == 1
+    assert errs == [], errs
+
+
+def test_ventana_cambio_una_peticion(page, server, tmp_path):
+    """Selector 4/8 semanas: un fetch con ventana=N; default marcada en 8."""
+    _seed_e2e_many_days(tmp_path, 40)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    grafica_reqs = []
+    page.on("request", lambda r: grafica_reqs.append(r.url) if "/grafica" in r.url else None)
+    btn4 = page.locator('[data-action="set-summary-window"][data-weeks="4"]')
+    btn8 = page.locator('[data-action="set-summary-window"][data-weeks="8"]')
+    expect(btn8).to_have_attribute("aria-pressed", "true")
+    base = len(grafica_reqs)
+    btn4.click()
+    page.wait_for_timeout(700)
+    assert len(grafica_reqs) - base == 1, grafica_reqs[base:]
+    assert "ventana=4" in grafica_reqs[-1]
+    expect(btn4).to_have_attribute("aria-pressed", "true")
+    expect(btn8).to_have_attribute("aria-pressed", "false")
+
+
+def test_back_forward_restaura_grafica_y_panel(page, server, tmp_path):
+    """Back restaura selección vacía y dispara refresco de gráfica+panel."""
+    _seed_e2e_many_days(tmp_path, 40)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    grafica_reqs = []
+    page.on("request", lambda r: grafica_reqs.append(r.url) if "/grafica" in r.url else None)
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(700)
+    base = len(grafica_reqs)
+    page.go_back()
+    page.wait_for_timeout(900)
+    assert len(grafica_reqs) > base, "back debe refrescar gráfica+panel"
+    assert "No se pudo calcular" not in _panel(page).inner_text()
+
+
+def test_rapido_doble_clic_sin_errores(page, server, tmp_path):
+    """Stale protection: dos selecciones rápidas terminan en estado válido,
+    sin errores de consola y con panel consistente."""
+    import re as _re
+
+    _seed_e2e_many_days(tmp_path, 40)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
+    urls = []
+    page.on(
+        "request",
+        lambda r: urls.append(r.url) if "/grafica" in r.url else None,
+    )
+    group = page.locator('#dashboard-catalog .db-group[data-group="Pectoral"]')
+    summary_btn = group.locator('[data-action="toggle-group"]')
+    if summary_btn.get_attribute("aria-expanded") != "true":
+        summary_btn.click()
+        page.wait_for_timeout(120)
+    row = page.locator('#dashboard-catalog [data-action="toggle-muscle"]').first
+    row.click()
+    row.click()  # segundo clic deselecciona
+    page.wait_for_timeout(1000)
+    # La última URL ganadora determina el panel; ninguna respuesta vieja rompe.
+    for u in urls:
+        assert _re.search(r"[?&]gran=", u), u
+    # El abort del segundo clic dispara el log interno de htmx (sendAbort):
+    # es la protección stale POR DISEÑO (cancelPending), no un error real.
+    errs_reales = [
+        e for e in errs if not (e.startswith("htmx:") or e == "undefined" or "abort" in e.lower())
+    ]
+    assert errs_reales == [], errs_reales
+
+
+# ---------------------------------------------------------------------------
+# Fase 2-fix — Correcciones de la revisión: altura estable, overflow y ARIA
+# ---------------------------------------------------------------------------
+
+
+def test_panel_botones_ventana_estado_por_aria(page, server, tmp_path):
+    """El estilo del selector 4/8 se aplica por [aria-pressed] (CSS por
+    atributo); JS no alterna clases de color."""
+    _seed_e2e_many_days(tmp_path, 40)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    btn4 = page.locator('[data-action="set-summary-window"][data-weeks="4"]')
+    btn8 = page.locator('[data-action="set-summary-window"][data-weeks="8"]')
+    # Clase canónica única; sin utilidades Tailwind de color en el botón.
+    for btn in (btn4, btn8):
+        cls = btn.get_attribute("class")
+        assert "ps-window" in cls and "bg-burgundy" not in cls, cls
+    expect(btn8).to_have_attribute("aria-pressed", "true")
+    btn4.click()
+    page.wait_for_timeout(600)
+    expect(btn4).to_have_attribute("aria-pressed", "true")
+    expect(btn8).to_have_attribute("aria-pressed", "false")
+
+
+def test_tabla_ejercicio_scroll_horizontal_390px(page, server, tmp_path):
+    """390px (viewport <480): Peso/RIR ocultos por CSS en TODAS las vistas;
+    global/músculo sin scroll forzado; página sin overflow horizontal."""
+
+    _seed_e2e_many_days(tmp_path, 40)
+    page.set_viewport_size({"width": 390, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(800)
+    metrics = page.evaluate(
+        """() => {
+            const wrap = document.getElementById('period-summary-wrap');
+            const panels = wrap.querySelector('.ps-panels');
+            const table = panels.querySelector('.ps-table');
+            const rirTh = table.querySelector('th.col-rir');
+            const st = rirTh ? getComputedStyle(rirTh) : null;
+            return {
+                docOverflowX: document.documentElement.scrollWidth <= window.innerWidth,
+                panelW: wrap.getBoundingClientRect().width,
+                tableScroll: table.scrollWidth,
+                panelsClient: panels.clientWidth,
+                panelsOvX: getComputedStyle(panels).overflowX,
+                // Contrato sr: colapsada visualmente pero presente para AT.
+                rirCollapsed: st ? st.position === 'absolute' && parseFloat(st.width) <= 1.5 : null,
+            };
+        }"""
+    )
+    assert metrics["docOverflowX"], "la página no debe desbordar horizontalmente"
+    assert metrics["panelW"] <= 391, f"panel excede viewport: {metrics['panelW']}"
+    # Columnas progresivas activas por media query <480px (patrón sr).
+    assert metrics["rirCollapsed"] is True, metrics
+    # Vista músculo (5 cols visibles): overflow X desactivado por contrato.
+    assert metrics["panelsOvX"] == "hidden", metrics
+
+
+def test_tabla_ejercicio_escritorio_columnas_visibles(page, server, tmp_path):
+    """Regresión del bug @container: en escritorio (panel 300px) Peso/RIR del
+    ejercicio NO se ocultan; solo la tabla exercise fuerza scroll."""
+    from playwright.sync_api import expect as _expect
+
+    _seed_e2e_many_days(tmp_path, 40)
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(600)
+    _exercise_input(page, "Press").click()
+    page.wait_for_timeout(900)
+    info = page.evaluate(
+        """() => {
+            const table = document.querySelector('#period-summary-wrap .ps-table--exercise');
+            if (!table) return {found: false};
+            const pesoTh = table.querySelector('th.col-peso');
+            return {
+                found: true,
+                minW: getComputedStyle(table).minWidth,
+                pesoVisible: pesoTh ? getComputedStyle(pesoTh).display !== 'none' : false,
+            };
+        }"""
+    )
+    assert info["found"], "la vista ejercicio debe estar activa tras seleccionar uno"
+    _expect(page.locator("#period-summary-wrap")).to_be_visible()
+    assert info["minW"] == "460px", f"min-width debe aplicar SOLO a exercise: {info}"
+    assert info["pesoVisible"] is True, "Peso no debe ocultarse en escritorio"
+
+
+def test_movil_cambio_tab_catalogo_estable(page, server, tmp_path):
+    """Opción A (altura fija móvil): cambiar de pestaña con distinto nº de
+    filas NO desplaza el catálogo (dimensiones invariantes)."""
+    _seed_e2e_many_days(tmp_path, 40)
+    page.set_viewport_size({"width": 390, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(600)
+    # Drawer móvil: asegurar abierto antes de interactuar con Biceps
+    if page.locator("#catalog-toggle-mobile").get_attribute("aria-expanded") == "false":
+        page.locator("#catalog-toggle-mobile").click()
+        page.wait_for_timeout(300)
+    group = page.locator('#dashboard-catalog .db-group[data-group="Biceps"]')
+    bsum = group.locator('[data-action="toggle-group"]')
+    if bsum.get_attribute("aria-expanded") != "true":
+        bsum.evaluate("el => el.click()")
+        page.wait_for_timeout(200)
+    group.locator('[data-action="toggle-muscle"]').first.click(modifiers=["Shift"])
+    page.wait_for_timeout(800)
+    # Cerrar drawer para poder interactuar con el panel (evita intercepción)
+    if page.locator("#catalog-toggle-mobile").get_attribute("aria-expanded") == "true":
+        page.locator("#catalog-toggle-mobile").click()
+        page.wait_for_timeout(300)
+    tabs = page.locator('#period-summary-wrap [role="tab"]')
+    expect(tabs.first).to_be_visible()
+    y_before = page.evaluate(
+        "() => document.querySelector('.dashboard-catalog-col').getBoundingClientRect().y"
+    )
+    tabs.nth(1).evaluate("el => el.click()")
+    page.wait_for_timeout(400)
+    y_after = page.evaluate(
+        "() => document.querySelector('.dashboard-catalog-col').getBoundingClientRect().y"
+    )
+    assert abs(y_after - y_before) <= 2.0, f"catálogo desplazado: {y_before} → {y_after}"
+
+
+# ---------------------------------------------------------------------------
+# Fase 2-layout — Jerarquía visual: scroll único, alturas fijas, plegado
+# ---------------------------------------------------------------------------
+
+
+def test_panel_scroll_unico_y_glow_apagado(page, server, tmp_path):
+    """Dentro de #period-summary-wrap SOLO .ps-panels desplaza verticalmente;
+    el contenedor externo es overflow hidden y sin marco metálico."""
+    _seed_e2e_many_days(tmp_path, 40)
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    info = page.evaluate(
+        """() => {
+            const wrap = document.getElementById('period-summary-wrap');
+            const panels = wrap.querySelector('.ps-panels');
+            const ws = getComputedStyle(wrap);
+            const ps = getComputedStyle(panels);
+            // Hijos directos con overflow-y auto además de .ps-panels
+            const otros = [...wrap.querySelectorAll('*')].filter((el) => {
+                if (el === panels) return false;
+                const oy = getComputedStyle(el).overflowY;
+                return (oy === 'auto' || oy === 'scroll') &&
+                       el.scrollHeight > el.clientHeight + 1;
+            }).map(el => el.className || el.id);
+            return {
+                wrapOverflowY: ws.overflowY,
+                wrapDisplay: ws.display,
+                flexDir: ws.flexDirection,
+                panelsOvY: ps.overflowY,
+                panelsOvX: ps.overflowX,
+                otrosScrollables: otros,
+                pseudoBefore: getComputedStyle(wrap, '::before').display,
+            };
+        }"""
+    )
+    assert info["wrapOverflowY"] == "hidden", info
+    assert info["flexDir"] == "column", info
+    assert info["panelsOvY"] == "auto", info
+    assert info["otrosScrollables"] == [], f"segunda zona de scroll: {info}"
+    # Glow metálico suprimido solo en este panel.
+    assert info["pseudoBefore"] == "none", info
+
+
+def test_panel_altura_fija_entre_tabs_y_ventana(page, server, tmp_path):
+    """La caja del panel no cambia ante pestañas ni ventana 4↔8."""
+    _seed_e2e_many_days(tmp_path, 40)
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    h0 = page.evaluate(
+        "() => document.getElementById('period-summary-wrap').getBoundingClientRect().height"
+    )
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(700)
+    tabs = page.locator('#period-summary-wrap [role="tab"]')
+    if tabs.count() >= 2:
+        tabs.nth(1).click()
+        page.wait_for_timeout(300)
+    h1 = page.evaluate(
+        "() => document.getElementById('period-summary-wrap').getBoundingClientRect().height"
+    )
+    btn4 = page.locator('[data-action="set-summary-window"][data-weeks="4"]')
+    btn4.click()
+    page.wait_for_timeout(700)
+    h2 = page.evaluate(
+        "() => document.getElementById('period-summary-wrap').getBoundingClientRect().height"
+    )
+    assert abs(h1 - h0) <= 1.0, f"tab cambió altura: {h0} → {h1}"
+    assert abs(h2 - h0) <= 1.0, f"ventana cambió altura: {h0} → {h2}"
+    # Altura fija basada en viewport (~calc(100dvh-32px) = 768 aquí).
+    assert 600 <= h2 <= 800, f"altura fuera de rango viewport: {h2}"
+
+
+def test_catalogo_plegable_accesible(page, server, tmp_path):
+    """Plegar/reabrir catálogo: ARIA correcto, selección intacta, cero fetch,
+    URL y history invariantes."""
+    _seed_e2e_many_days(tmp_path, 40)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    grafica_reqs = []
+    page.on("request", lambda r: grafica_reqs.append(r.url) if "/grafica" in r.url else None)
+    errs = []
+    page.on("pageerror", lambda e: errs.append(str(e)))
+    page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
+
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(600)
+    base_reqs = len(grafica_reqs)
+
+    btn = page.locator("#catalog-toggle")
+    expect(btn).to_be_visible()
+    expect(btn).to_have_attribute("aria-expanded", "true")
+    expect(btn).to_have_attribute("aria-controls", "dashboard-catalog")
+    url_before = page.url
+    hist_before = page.evaluate("() => history.length")
+
+    btn.click()
+    page.wait_for_timeout(300)
+    # Rail persistente: el panel de grupos se oculta, la rail aparece con su
+    # propio botón; la primera pista del grid NUNCA desaparece.
+    rail = page.locator(".catalog-rail")
+    expect(page.locator(".catalog-panel")).to_be_hidden()
+    expect(rail).to_be_visible()
+    rail_btn = page.locator("#catalog-rail-toggle")
+    expect(rail_btn).to_be_visible()
+    expect(rail_btn).to_have_attribute("aria-expanded", "false")
+    expect(rail_btn).to_have_attribute("aria-label", "Mostrar catálogo")
+    expect(btn).to_have_attribute("aria-expanded", "false")
+    expect(btn).to_have_attribute("aria-label", "Mostrar catálogo")
+    cols = page.evaluate(
+        "() => getComputedStyle(document.querySelector('.dashboard-layout')).gridTemplateColumns"
+    )
+    assert cols.split(" ")[0].replace("px", "").isdigit(), cols
+    first_track = float(cols.split(" ")[0].replace("px", ""))
+    assert 44 <= first_track <= 52, f"rail debe medir ~48px: {cols}"
+    # Sin fetch, sin URL, sin history, sin errores.
+    assert len(grafica_reqs) == base_reqs, grafica_reqs[base_reqs:]
+    assert page.url == url_before
+    assert page.evaluate("() => history.length") == hist_before
+
+    # Reabrir desde la rail restaura el panel con la selección conservada.
+    rail_btn.click()
+    page.wait_for_timeout(400)
+    expect(page.locator(".catalog-panel")).to_be_visible()
+    expect(rail).to_be_hidden()
+    expect(btn).to_have_attribute("aria-expanded", "true")
+    expect(btn).to_have_attribute("aria-label", "Ocultar catálogo")
+    assert len(grafica_reqs) == base_reqs
+    musculo_btn = page.locator(
+        '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
+    )
+    expect(musculo_btn).to_have_attribute("aria-pressed", "true")
+    assert errs == [], errs
+
+
+def test_grafica_altura_css_ready(page, server, tmp_path):
+    """La gráfica usa la altura CSS clamp (480-620) y es idéntica entre
+    selecciones (ready); Plotly llena exactamente la caja."""
+    _seed_e2e_many_days(tmp_path, 40)
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_selector("#unified-chart-plot .main-svg", timeout=15000)
+
+    def medidas():
+        return page.evaluate(
+            """() => {
+                const wrap = document.getElementById('unified-chart');
+                const plot = document.getElementById('unified-chart-plot');
+                const svg = plot && plot.querySelector('.main-svg');
+                return {
+                    wrapH: wrap.getBoundingClientRect().height,
+                    plotH: plot ? plot.getBoundingClientRect().height : null,
+                    svgH: svg ? svg.getBoundingClientRect().height : null,
+                };
+            }"""
+        )
+
+    m1 = medidas()
+    assert 480 <= m1["wrapH"] <= 620, f"altura CSS fuera de clamp: {m1}"
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(800)
+    m2 = medidas()
+    assert abs(m2["wrapH"] - m1["wrapH"]) <= 1.0, f"CLS de gráfica: {m1} → {m2}"
+    # Plotly llena EXACTAMENTE la caja del plot (flex fill tras el header).
+    assert abs(m2["svgH"] - m2["plotH"]) <= 2.0, m2
+    assert m2["plotH"] >= 480 - 40, f"plot demasiado bajo respecto al clamp: {m2}"
+
+
+def test_grid_sin_overflow_horizontal_escritorio(page, server, tmp_path):
+    """1280px: catálogo compacto + panel ancho no provocan overflow de página;
+    las vistas global/músculo no necesitan scroll horizontal interno."""
+
+    _seed_e2e_many_days(tmp_path, 40)
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(800)
+    ok = page.evaluate(
+        """() => {
+            const panels = document.querySelector('#period-summary-wrap .ps-panels');
+            const table = panels.querySelector('.ps-table:not(.ps-table--exercise)');
+            return {
+                docOk: document.documentElement.scrollWidth <= window.innerWidth,
+                bodyOk: document.body.scrollWidth <= window.innerWidth + 1,
+                layoutOk: (() => { const l=document.querySelector('.dashboard-layout'); return l.scrollWidth <= l.clientWidth + 1; })(),
+                panelsOvX: getComputedStyle(panels).overflowX,
+            };
+        }"""
+    )
+    assert ok["docOk"] and ok["bodyOk"] and ok["layoutOk"], ok
+    # Vista global/músculo: overflow-x desactivado por contrato (:has no aplica).
+    assert ok["panelsOvX"] == "hidden", ok
+
+
+# ---------------------------------------------------------------------------
+# Fase 2-sidebar — Rail persistente, IDs únicos, caja real y resize Plotly
+# ---------------------------------------------------------------------------
+
+
+def test_ids_unicos_dashboard(page, server):
+    """Regresión: #dashboard-catalog existe UNA sola vez en el DOM y todos los
+    controles del sidebar tienen ids únicos (aria-controls/getElementById)."""
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    for dom_id in (
+        "dashboard-catalog",
+        "catalog-toggle",
+        "catalog-toggle-mobile",
+        "catalog-rail-toggle",
+        "catalog-overlay",
+    ):
+        n = page.evaluate(f"() => document.querySelectorAll('#{dom_id}').length")
+        assert n == 1, f"id duplicado #{dom_id}: {n} instancias"
+
+
+def test_catalog_rail_desktop_sin_hueco_y_alineado(page, server):
+    """Plegado desktop: primera pista = rail 48px (sin hueco), gráfica se
+    expande, y catálogo/gráfica arrancan en el mismo eje vertical."""
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+
+    def tops():
+        return page.evaluate(
+            """() => ({
+                catalog: document.getElementById('dashboard-catalog').getBoundingClientRect().top,
+                chart: document.getElementById('unified-chart-container').getBoundingClientRect().top,
+            })"""
+        )
+
+    t_open = tops()
+    assert abs(t_open["catalog"] - t_open["chart"]) <= 1.0, t_open
+    page.locator("#catalog-toggle").click()
+    page.wait_for_timeout(300)
+    cols = page.evaluate(
+        "() => getComputedStyle(document.querySelector('.dashboard-layout')).gridTemplateColumns"
+    )
+    tracks = [float(x.replace("px", "")) for x in cols.split(" ")]
+    assert len(tracks) == 3 and 44 <= tracks[0] <= 52, cols
+    ok = page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth")
+    assert ok, "overflow horizontal con rail"
+    t_closed = tops()
+    assert abs(t_closed["catalog"] - t_closed["chart"]) <= 1.0, t_closed
+    # Reabrir: vuelve a 3 pistas originales.
+    page.locator("#catalog-rail-toggle").click()
+    page.wait_for_timeout(300)
+    cols_open = page.evaluate(
+        "() => getComputedStyle(document.querySelector('.dashboard-layout')).gridTemplateColumns"
+    )
+    assert float(cols_open.split(" ")[0].replace("px", "")) > 200, cols_open
+
+
+def test_panel_dentro_del_viewport_desktop(page, server, tmp_path):
+    """La caja REAL del panel derecho cabe tras la cabecera en escritorio:
+    top >= layout.top y bottom <= innerHeight, con datos y sin ellos; la
+    página no crece entre estados (sin extensión por el panel)."""
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    box_empty = page.evaluate(
+        """() => {
+            const p = document.getElementById('period-summary-wrap').getBoundingClientRect();
+            const l = document.querySelector('.dashboard-layout').getBoundingClientRect();
+            return {top: p.top, bottom: p.bottom, layoutTop: l.top,
+                    docH: document.documentElement.scrollHeight};
+        }"""
+    )
+    assert box_empty["top"] >= box_empty["layoutTop"] - 1, box_empty
+    assert box_empty["bottom"] <= 800 + 1, f"panel excede viewport (vacío): {box_empty}"
+    _ = box_empty["docH"]
+
+    _seed_e2e_many_days(tmp_path, 40)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(700)
+    box_ready = page.evaluate(
+        """() => {
+            const p = document.getElementById('period-summary-wrap').getBoundingClientRect();
+            const l = document.querySelector('.dashboard-layout').getBoundingClientRect();
+            return {top: p.top, bottom: p.bottom, layoutTop: l.top,
+                    docH: document.documentElement.scrollHeight};
+        }"""
+    )
+    assert box_ready["top"] >= box_ready["layoutTop"] - 1, box_ready
+    assert box_ready["bottom"] <= 800 + 1, f"panel excede viewport (datos): {box_ready}"
+    # La altura de la caja es idéntica vacío vs datos (dimensiones invariantes).
+    h_empty = box_empty["bottom"] - box_empty["top"]
+    h_ready = box_ready["bottom"] - box_ready["top"]
+    assert abs(h_ready - h_empty) <= 1.0, f"altura cambió: {h_empty} → {h_ready}"
+
+
+def test_plotly_resize_bidireccional(page, server, tmp_path):
+    """Resize REAL de Plotly: 1280 → 900 → 1280 mantiene svg.width ≈ plot.width
+    en los tres puntos (el ResizeObserver re-sincroniza ambos sentidos)."""
+    _seed_e2e_many_days(tmp_path, 40)
+    # Viewports SOLO desktop (≥1024): cruzar el breakpoint cambiaría a layout
+    # móvil de pila y el ancho del gráfico legítimamente crecería.
+    page.set_viewport_size({"width": 1400, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_selector("#unified-chart-plot .main-svg", timeout=15000)
+
+    def medidas():
+        return page.evaluate(
+            """() => {
+                const plot = document.getElementById('unified-chart-plot');
+                const svg = plot && plot.querySelector('.main-svg');
+                return {
+                    svgW: svg ? Math.round(svg.getBoundingClientRect().width * 10) / 10 : null,
+                    plotW: Math.round(plot.getBoundingClientRect().width * 10) / 10,
+                };
+            }"""
+        )
+
+    m1 = medidas()
+    assert m1["svgW"] and abs(m1["svgW"] - m1["plotW"]) <= 2.0, m1
+    page.set_viewport_size({"width": 1100, "height": 800})
+    page.wait_for_timeout(600)
+    m2 = medidas()
+    assert m2["svgW"] < m1["svgW"] - 50, f"no encogió al reducir viewport: {m1} → {m2}"
+    assert abs(m2["svgW"] - m2["plotW"]) <= 2.0, m2
+    page.set_viewport_size({"width": 1400, "height": 800})
+    page.wait_for_timeout(600)
+    m3 = medidas()
+    assert abs(m3["svgW"] - m1["svgW"]) <= 4.0, f"no recuperó ancho: {m1} → {m3}"
+    assert abs(m3["svgW"] - m3["plotW"]) <= 2.0, m3

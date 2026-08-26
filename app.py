@@ -83,6 +83,8 @@ from src.response_fragments import (
     fragment_oob,
     notice_oob,
     nutrition_editor_wrap_oob,
+    render_fragment,
+    summary_oob,
     undo_result_oob,
 )
 from src.security import (
@@ -235,6 +237,13 @@ def _validate_granularity(gran: str) -> str:
             f"Granularidad inválida: {gran!r}. Valores permitidos: day, week, month."
         )
     return gran
+
+
+def _validate_window(ventana: int) -> int:
+    """Valida la ventana del panel: solo 4 u 8 semanas (contrato Fase 2)."""
+    if ventana not in (4, 8):
+        raise ValidationError(f"Ventana inválida: {ventana}. Valores permitidos: 4, 8.")
+    return ventana
 
 
 def _render_body(response) -> str:
@@ -511,13 +520,20 @@ def _domain_error_response(
 
 
 @app.get("/", response_class=HTMLResponse)
-def read_index(request: Request):
+def read_index(request: Request, gran: str = Query(default="day")):
     from datetime import date as _date
+
+    from src.summary_service import build_period_summary
 
     ejercicios_list, grupos_list = get_filters(DB_PATH)
     categories = get_categories(DB_PATH) or MUSCLE_CATEGORIES
     fecha = _today_iso()
     _fecha_date = _date.fromisoformat(fecha)
+    granularity = _validate_granularity(gran)
+    # Render inicial del panel derecho server-side: sin flash ni layout shift
+    # (misma técnica anti-parpadeo de la granularidad). El servicio devuelve
+    # estado error/empty controlado; nunca propaga a HTTP.
+    period_summary = build_period_summary(DB_PATH, [], [], granularity, 8)
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -526,11 +542,13 @@ def read_index(request: Request):
             "ejercicios_list": ejercicios_list,
             "ejercicios_grupo": ejercicios_list,
             "muscle_categories": categories,
+            "effective_gran": granularity,
+            "period_summary": period_summary,
             "dashboard_catalog": get_dashboard_catalog(DB_PATH),
             "cascade_row_html": _cascade_row_html(request, "musculo", ""),
             "systemic_chart_html": chart_shell_html(
                 "Rendimiento",
-                chart_pfr_timeline(DB_PATH, "systemic", "", granularity="day"),
+                chart_pfr_timeline(DB_PATH, "systemic", "", granularity=granularity),
             ),
             "navigator_html": _navigator_html(request, fecha),
             "editor_html": _editor_html(request, fecha),
@@ -1344,16 +1362,20 @@ def grafica_view(
     musculos: list[str] = Query(default=[]),
     ejercicios: list[str] = Query(default=[]),
     gran: str = Query(default="day"),
+    ventana: int = Query(default=8),
 ):
-    """Gráfica de la selección: targets exclusivos de gráfica.
+    """Gráfica + panel de resumen en UNA sola respuesta (contrato Fase 2).
 
-    Selección vacía → gráfica sistémica global.
-    1 músculo → compilado + ejercicios marcados.
-    2+ músculos → global + músculos marcados.
+    Targets OOB exclusivos: unified-chart-header/data/empty + period-summary-wrap.
+    Gráfica y panel comparten exactamente la misma selección y granularidad;
+    la ventana del panel es propia (4|8 semanas, default 8) e independiente de
+    las ventanas visuales de la gráfica.
     """
     from src.charts import chart_selection
+    from src.summary_service import build_period_summary
 
     granularity = _validate_granularity(gran)
+    semanas = _validate_window(ventana)
 
     if not musculos:
         fig = chart_pfr_timeline(DB_PATH, "systemic", "", "", granularity)
@@ -1365,10 +1387,28 @@ def grafica_view(
         from src.dashboard_service import _json_for_inline
 
         data_json = _json_for_inline(fig.to_json())
-        content = chart_header_oob("Rendimiento") + chart_data_oob(data_json) + chart_empty_oob(False)
+        content = (
+            chart_header_oob("Rendimiento") + chart_data_oob(data_json) + chart_empty_oob(False)
+        )
     else:
         empty_text = "Sin datos para esta selección" if musculos else "Sin datos"
-        content = chart_header_oob("Rendimiento") + chart_data_oob("{}") + chart_empty_oob(True, empty_text)
+        content = (
+            chart_header_oob("Rendimiento")
+            + chart_data_oob("{}")
+            + chart_empty_oob(True, empty_text)
+        )
+
+    # El panel viaja en la MISMA respuesta: una petición actualiza ambos y el
+    # abort existente (cancelPending('/grafica')) protege gráfica+panel juntos.
+    summary = build_period_summary(DB_PATH, musculos, ejercicios, granularity, semanas)
+    summary_html = render_fragment(
+        templates,
+        request,
+        "partials/period_summary_panel.html",
+        summary=summary,
+        oob=True,
+    )
+    content += summary_oob(summary_html)
 
     return HTMLResponse(content=content)
 

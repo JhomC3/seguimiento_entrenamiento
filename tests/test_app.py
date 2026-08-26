@@ -1692,6 +1692,69 @@ def test_nivel_acepta_granularidad_y_rechaza_invalida(tmp_path, monkeypatch):
     r = client.get("/nivel", params={"tipo": "musculo", "gran": "quincena"})
 
 
+def _index_xaxis_title(html: str) -> str:
+    """Extrae el título del eje X de la gráfica sistémica server-renderizada."""
+    import json as _json
+    import re as _re
+
+    m = _re.search(r'<div id="unified-chart-data" hidden>(.*?)</div>', html, _re.DOTALL)
+    assert m, "no hay unified-chart-data en /"
+    dat = _json.loads(m.group(1))
+    assert dat.get("layout"), f"figura sin layout (¿sin datos?): {list(dat)}"
+    return dat["layout"]["xaxis"]["title"]["text"]
+
+
+def test_index_renderiza_grafica_con_gran_de_url(tmp_path, monkeypatch):
+    """La carga inicial respeta gran de la URL: el eje server-renderizado usa
+    la misma granularidad que el selector (day→Fecha, week→Semana, month→Mes)."""
+    from src.models import TrainingSetInput
+    from src.training_service import save_session
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    save_session(db, _fecha(), [TrainingSetInput("Press", 80, 8, 1)])
+    client = _client()
+    casos = {"day": "Fecha", "week": "Semana", "month": "Mes"}
+    for gran, esperado in casos.items():
+        r = client.get("/", params={"gran": gran})
+        assert r.status_code == 200, (gran, r.status_code)
+        assert _index_xaxis_title(r.text) == esperado, gran
+    # Sin parámetro → default day.
+    r = client.get("/")
+    assert _index_xaxis_title(r.text) == "Fecha"
+
+
+def test_index_selector_y_grafica_sin_estados_contradictorios(tmp_path, monkeypatch):
+    """El HTML inicial no puede contener un selector activo distinto de la
+    granularidad de la gráfica renderizada (regresión del parpadeo Día→Semana)."""
+    from src.models import TrainingSetInput
+    from src.training_service import save_session
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    save_session(db, _fecha(), [TrainingSetInput("Press", 80, 8, 1)])
+    client = _client()
+    eje_por_gran = {"day": "Fecha", "week": "Semana", "month": "Mes"}
+    for gran, eje in eje_por_gran.items():
+        html = client.get("/", params={"gran": gran}).text
+        activos = re.findall(
+            r'data-action="set-granularity"[^>]*data-gran="([a-z]+)"[^>]*aria-pressed="true"',
+            html,
+        )
+        # Exactamente un botón activo y coincide con el eje de la gráfica.
+        assert activos == [gran], f"gran={gran}: selector activo {activos}"
+        assert _index_xaxis_title(html) == eje, f"gran={gran}"
+
+
+def test_index_gran_invalida_error_seguro(tmp_path, monkeypatch):
+    """gran inválido en / devuelve 400 con aviso seguro (consistente con /grafica)."""
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/", params={"gran": "anual"})
+    assert r.status_code == 400
+    assert "Granularidad inválida" in r.text
+
+
 def test_cdn_scripts_are_deferred_and_no_eager_plotly(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
@@ -2060,3 +2123,174 @@ def test_dashboard_catalog_groups_exercises_separated(tmp_path, monkeypatch):
     assert 'data-foco="Pectoral"' in r.text
     assert 'data-action="toggle-exercise"' in r.text
     assert 'data-action="toggle-muscle"' in r.text
+
+
+# ---------------------------------------------------------------------------
+# Fase 2 — Panel derecho: vistas, estados y sincronización /grafica
+# ---------------------------------------------------------------------------
+
+
+def _seed_summary_db(tmp_path):
+    import sqlite3
+
+    from src.training_service import calculate_cycle_week, parse_cycle_start
+
+    db = _setup_db(tmp_path)
+    insert_exercise(db, "Press inclinado", "Pectoral", "EMPUJE")
+    insert_exercise(db, "Curl", "Biceps", "TIRON")
+    conn = sqlite3.connect(db)
+    try:
+        filas = []
+        # Baseline (semana 1 del ciclo, fuera de cualquier ventana 4/8 típica)
+        for i, (ej, kg) in enumerate([("Press", 80.0), ("Curl", 40.0)], start=1):
+            f = "2026-01-05"
+            sem = calculate_cycle_week(datetime.date.fromisoformat(f), parse_cycle_start())
+            filas.append((sem, "LUNES", f, i, ej, 8.0, kg, 1.0))
+        # Datos recientes en ventana (agosto 2026)
+        datos = [
+            ("2026-08-10", "Press", 90.0, 6, 1.0),
+            ("2026-08-10", "Press", 95.0, 4, 1.0),
+            ("2026-08-11", "Press inclinado", 70.0, 8, 1.0),
+            ("2026-08-12", "Curl", 45.0, 10, 1.0),
+        ]
+        for j, (f, ej, kg, reps, rir) in enumerate(datos, start=1):
+            sem = calculate_cycle_week(datetime.date.fromisoformat(f), parse_cycle_start())
+            filas.append((sem, "LUNES", f, j, ej, float(reps), kg, rir))
+        conn.executemany(
+            "INSERT INTO training_sets (semana,dia,fecha,set_orden,ejercicio,reps,kg,rir)"
+            " VALUES (?,?,?,?,?,?,?,?)",
+            filas,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return db
+
+
+def test_grafica_incluye_panel_oob(tmp_path, monkeypatch):
+    db = _seed_summary_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/grafica", params={"musculos": ["Pectoral"], "gran": "week"})
+    assert r.status_code == 200
+    assert 'id="period-summary-wrap"' in r.text
+    assert 'hx-swap-oob="outerHTML"' in r.text
+
+
+def test_grafica_ventana_default_y_validacion(tmp_path, monkeypatch):
+    import re as _re
+
+    db = _seed_summary_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    c = _client()
+    # Default 8 semanas: botón aria-pressed en 8.
+    r = c.get("/grafica")
+    assert _re.search(r'data-weeks="8"[^>]*aria-pressed="true"', r.text)
+    assert not _re.search(r'data-weeks="4"[^>]*aria-pressed="true"', r.text)
+    # Ventana inválida → 400 seguro.
+    r_bad = c.get("/grafica", params={"ventana": 5})
+    assert r_bad.status_code == 400
+
+
+def test_panel_global_sin_columna_rm(tmp_path, monkeypatch):
+    db = _seed_summary_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    html = appmod._render_body(None) if False else None
+    from src.summary_service import build_period_summary
+
+    s = build_period_summary(db, [], [], "week", 8)
+    assert s.nivel == "global"
+    ctx = {"summary": s}
+    html = appmod.templates.env.get_template("partials/period_summary_panel.html").render(**ctx)
+    assert ">Músculo<" in html and ">RM aj.<" not in html.split("</thead>")[0].split("<thead>")[1]
+    assert "Pectoral" in html and "Abdomen" in html  # orden config completo
+
+
+def test_panel_musculo_con_rm(tmp_path, monkeypatch):
+    from src.summary_service import build_period_summary
+
+    db = _seed_summary_db(tmp_path)
+    s = build_period_summary(db, ["Pectoral"], [], "week", 8)
+    assert s.nivel == "muscle"
+    html = appmod.templates.env.get_template("partials/period_summary_panel.html").render(summary=s)
+    thead = html.split("<thead>")[1].split("</thead>")[0]
+    assert "RM aj." in thead and "Ejercicio" in thead
+    assert "Press banca" not in html  # catálogo del test usa "Press"
+    for nombre in ("Press", "Press inclinado"):
+        assert nombre in html
+
+
+def test_panel_ejercicio_periodos_descendentes(tmp_path):
+    from src.summary_service import build_period_summary
+
+    db = _seed_summary_db(tmp_path)
+    s = build_period_summary(db, [], ["Press"], "day", 8)
+    assert s.nivel == "exercise"
+    assert len(s.tabs) == 1 and s.tabs[0].titulo == "Press"
+    labels = [f.etiqueta for f in s.tabs[0].filas]
+    assert labels == sorted(labels, reverse=True)  # descendente cronológico
+    assert len(labels) >= 1
+
+
+def test_panel_multi_tabs_orden_seleccion(tmp_path):
+    from src.summary_service import build_period_summary
+
+    db = _seed_summary_db(tmp_path)
+    s = build_period_summary(db, ["Biceps", "Pectoral"], [], "week", 8)
+    titulos = [t.titulo for t in s.tabs]
+    assert titulos[0] == "Resumen" and titulos[1:] == ["Biceps", "Pectoral"]
+    html = appmod.templates.env.get_template("partials/period_summary_panel.html").render(summary=s)
+    assert 'role="tablist"' in html
+    assert html.index("Biceps") < html.index("Pectoral")
+
+
+def test_panel_accesibilidad_tabs(tmp_path):
+    from src.summary_service import build_period_summary
+
+    db = _seed_summary_db(tmp_path)
+    s = build_period_summary(db, ["Biceps", "Pectoral"], [], "week", 8)
+    html = appmod.templates.env.get_template("partials/period_summary_panel.html").render(summary=s)
+    assert 'role="tablist"' in html and 'role="tab"' in html and 'role="tabpanel"' in html
+    assert 'aria-selected="true"' in html and 'tabindex="0"' in html
+    assert "hidden" in html  # paneles no activos prerenderizados ocultos
+
+
+def test_panel_estados_empty_y_error(tmp_path, monkeypatch):
+    from src.database import init_db
+    from src.summary_service import build_period_summary
+
+    tpl = appmod.templates.env.get_template("partials/period_summary_panel.html")
+
+    vacia = str(tmp_path / "vacia.db")
+    init_db(vacia)
+    empty_html = tpl.render(summary=build_period_summary(vacia, [], [], "week", 4))
+    assert 'role="status"' in empty_html and "Sin datos" in empty_html
+
+    error_s = build_period_summary(str(tmp_path / "sin_tablas"), [], [], "week", 4)
+    assert error_s.estado == "error"
+    error_html = tpl.render(summary=error_s)
+    assert 'role="alert"' in error_html
+
+
+def test_nivel_ejercicio_deprecado_sigue_vivo(tmp_path, monkeypatch):
+    """Ruta /nivel?tipo=ejercicio&foco= se mantiene durante la deprecación."""
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/nivel", params={"tipo": "ejercicio", "foco": "Press"})
+    assert r.status_code == 200
+
+
+def test_read_index_renderiza_panel_server_side(tmp_path, monkeypatch):
+    db = _seed_summary_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/")
+    assert r.status_code == 200
+    body = r.text
+    assert 'id="period-summary-wrap"' in body
+    # El stub deprecado está oculto y FUERA de la columna de la gráfica.
+    assert '<section id="history-section" hidden' in body
+    assert body.index("</main>") < body.index('id="history-section"')
+    # El panel es hermano dentro de .dashboard-layout (tres columnas).
+    layout_open = body.index('class="dashboard-layout"')
+    main_close = body.index("</main>")
+    ps = body.index('id="period-summary-wrap"')
+    assert layout_open < main_close < ps

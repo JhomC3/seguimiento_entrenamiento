@@ -2,24 +2,95 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from config import CICLO_NUMERO
-from src.analysis_data import daily_sleep_hours, daily_volume, daily_weight
 from src.db_connection import read_connection
 from src.design_tokens import color, palette
-from src.metrics_engine import RM_FACTOR, calculate_pfr_timeline
-from src.training_service import calculate_cycle_week, parse_cycle_start
+from src.metrics_engine import RM_FACTOR, calculate_pfr_timeline, rm_ajustado
+from src.summary_service import (
+    _PeriodTotals,
+    aggregate_sets,
+    day_label,
+    month_label,
+    totals_by_period,
+    week_label,
+)
+
+# Hovertemplate canónico de Fase 2: Δ + métricas del periodo,
+# peso corporal, sueño, fallos ni fecha duplicada. El nombre viaja en <extra>.
+HOVERTEMPLATE = (
+    "%{customdata[0]}<br>Δ %{customdata[1]}"
+    "<br>Series %{customdata[2]} · Reps %{customdata[3]}"
+    "<br>Peso %{customdata[4]} kg · RIR %{customdata[5]}"
+    "<br>RM aj. %{customdata[6]}"
+    "<extra>%{customdata[7]}</extra>"
+)
 
 
-def _week_series(db_path: str, daily_fn) -> dict[int, float]:
-    """Promedio por semana de ciclo de una serie diaria (analysis_data)."""
-    df = daily_fn(db_path)
-    if df.empty:
-        return {}
-    ciclo = parse_cycle_start()
-    out: dict[int, list[float]] = {}
+def _fmt_num(value: float | None, decimals: int = 1) -> str:
+    """Número redondeado para hover; None/NaN → '—' (ausencia, nunca 0)."""
+    if value is None:
+        return "—"
+    try:
+        if pd.isna(value):
+            return "—"
+    except (TypeError, ValueError):
+        pass
+    return f"{round(float(value), decimals)}"
+
+
+def _fmt_delta(pct: float | None) -> str:
+    """Δ con signo explícito; 0.0% neutro; None → '—'."""
+    if pct is None:
+        return "—"
+    v = round(float(pct), 1)
+    if v > 0:
+        return f"+{v}%"
+    if v < 0:
+        return f"{v}%"
+    return "0.0%"
+
+
+def _hover_rows(df: pd.DataFrame, name: str) -> list[list[str]]:
+    """Construye las 8 posiciones canónicas del customdata por punto.
+
+    1 etiqueta · 2 Δ · 3 series · 4 reps · 5 peso · 6 RIR · 7 RM aj. · 8 nombre.
+    """
+    rows: list[list[str]] = []
     for _, r in df.iterrows():
-        semana = calculate_cycle_week(r["fecha_dt"].date(), ciclo)
-        out.setdefault(semana, []).append(float(r["valor"]))
-    return {w: sum(v) / len(v) for w, v in out.items()}
+        series_val = r.get("h_series")
+        rows.append(
+            [
+                str(r.get("hlabel", "—")),
+                _fmt_delta(r.get("crecimiento")),
+                "—" if series_val is None or pd.isna(series_val) else str(int(series_val)),
+                _fmt_num(r.get("h_reps")),
+                _fmt_num(r.get("h_peso")),
+                _fmt_num(r.get("h_rir")),
+                _fmt_num(r.get("h_rm")),
+                name,
+            ]
+        )
+    return rows
+
+
+def _hover_totals_for(
+    db_path: str, filter_type: str, filter_value: str | None, granularity: str
+) -> dict[int, _PeriodTotals]:
+    """Totales por periodo desde el camino compartido (summary_service).
+
+    Reutiliza aggregate_sets + totals_by_period: cero SQL ni agregación
+    duplicada. Devuelve {sort_key: _PeriodTotals}.
+    """
+    if filter_type == "muscle_group" and filter_value:
+        muscles: tuple[str, ...] = (filter_value,)
+        exercises: tuple[str, ...] = ()
+    elif filter_type == "exercise" and filter_value:
+        muscles = ()
+        exercises = (filter_value,)
+    else:
+        muscles = ()
+        exercises = ()
+    aggs = aggregate_sets(db_path, muscles, exercises, granularity, None, None)
+    return totals_by_period(aggs)
 
 
 def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
@@ -47,7 +118,14 @@ def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
 
     rir_safe = df["rir"].fillna(0)
     df["rm"] = (df["kg"] * (1 + RM_FACTOR * df["reps"])).round(1)
-    df["rm_ajustado"] = (df["kg"] * (1 + RM_FACTOR * (df["reps"] + (1 + rir_safe)))).round(1)
+    # RM ajustado centralizado (única fuente: metrics_engine.rm_ajustado);
+    # RIR ausente cuenta como 0 (semántica vigente del dominio).
+    df["rm_ajustado"] = df.apply(
+        lambda r: round(
+            rm_ajustado(float(r["kg"]), float(r["reps"]), float(rir_safe.loc[r.name])), 1
+        ),
+        axis=1,
+    )
 
     df = df.sort_values(["semana", "fecha_dt", "serie"]).reset_index(drop=True)
     return df[
@@ -72,8 +150,14 @@ def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
 def _pfr_df(
     db_path: str, filter_type: str, filter_value: str | None, granularity: str = "week"
 ) -> pd.DataFrame:
-    """DataFrame de rendimiento por periodo con customdata de resumen (series,
-    fallos, volumen, peso, sueño) para el hover enriquecido.
+    """DataFrame de rendimiento por periodo con columnas de hover.
+
+    X/Y provienen de calculate_pfr_timeline (intacto). Las métricas del hover
+    (series, reps/peso/RIR medios y RM máximo del periodo) vienen del camino
+    ÚNICO de agregación en summary_service (aggregate_sets → totals_by_period).
+
+    Columnas de hover: hlabel (etiqueta centralizada), h_series (int|None),
+    h_reps/h_peso/h_rir/h_rm (float|None). None → '—' al renderizar.
 
     granularity: 'day' | 'week' | 'month'
     """
@@ -81,38 +165,57 @@ def _pfr_df(
     if df.empty:
         return pd.DataFrame()
 
-    volume_all = _week_series(db_path, daily_volume)
-    peso_all = _week_series(db_path, daily_weight)
-    sueno_all = _week_series(db_path, daily_sleep_hours)
+    totals = _hover_totals_for(db_path, filter_type, filter_value, granularity)
+
+    def _key_for(row) -> int:
+        if granularity == "day":
+            return row["fecha_dt"].date().toordinal()
+        if granularity == "month":
+            return int(str(row["periodo"]).replace("-", "")[:6])
+        return int(row["semana"])
+
+    def _label_for(row) -> str:
+        if granularity == "day":
+            return day_label(row["fecha_dt"].date())
+        if granularity == "month":
+            iso = str(row["periodo"])
+            return month_label(int(iso[:4]), int(iso[5:7]))
+        return week_label(int(row["semana"]))
+
+    def _totals_cols(row):
+        t = totals.get(_key_for(row))
+        if t is None or getattr(t, "series", 0) == 0:
+            return pd.Series(
+                {
+                    "hlabel": _label_for(row),
+                    "h_series": None,
+                    "h_reps": None,
+                    "h_peso": None,
+                    "h_rir": None,
+                    "h_rm": None,
+                }
+            )
+        return pd.Series(
+            {
+                "hlabel": t.label,
+                "h_series": float(t.series),
+                "h_reps": t.reps_media,
+                "h_peso": t.peso_medio,
+                "h_rir": t.rir_medio,
+                "h_rm": t.rm_max,
+            }
+        )
 
     if granularity == "day":
         # calculate_pfr_timeline devuelve una cronología continua con los días de
         # descanso rellenados (rendimiento ffill, sets_totales=0). Solo mostramos
         # días con entrenamiento real: sin inventar puntos de descanso (req. 2-3).
-        result = df[df["sets_totales"] > 0][
-            ["fecha_dt", "rendimiento", "sets_totales", "sets_fallo"]
-        ].copy()
-        result = result.rename(columns={"sets_totales": "series", "sets_fallo": "fallos"})
+        result = df[df["sets_totales"] > 0][["fecha_dt", "rendimiento", "sets_totales"]].copy()
+        result = result.rename(columns={"sets_totales": "series"})
         result["periodo"] = result["fecha_dt"].dt.strftime("%Y-%m-%d")
         result = result.sort_values("periodo")
         result["crecimiento"] = result["rendimiento"] - 100
-
-        # Volume/peso/sueño por semana de ciclo (fallback diario)
-        from src.training_service import calculate_cycle_week, parse_cycle_start
-
-        ciclo = parse_cycle_start()
-
-        def _daily_customdata(row):
-            sem = calculate_cycle_week(row["fecha_dt"].date(), ciclo)
-            return [
-                int(row["series"]),
-                int(row["fallos"]),
-                f"{volume_all.get(sem, 0):.0f} kg" if volume_all.get(sem) else "—",
-                f"{peso_all[sem]:.1f} kg" if peso_all.get(sem) else "—",
-                f"{sueno_all[sem]:.1f} h" if sueno_all.get(sem) else "—",
-            ]
-
-        result["customdata"] = result.apply(_daily_customdata, axis=1)
+        result = pd.concat([result, result.apply(_totals_cols, axis=1)], axis=1)
         return result
 
     if granularity == "month":
@@ -122,34 +225,20 @@ def _pfr_df(
             .agg(
                 rendimiento=("rendimiento", "mean"),
                 series=("sets_totales", "sum"),
-                fallos=("sets_fallo", "sum"),
             )
             .reset_index()
             .sort_values("periodo")
         )
         grouped["crecimiento"] = grouped["rendimiento"] - 100
-        grouped["customdata"] = grouped.apply(
-            lambda r: [
-                int(r["series"]),
-                int(r["fallos"]),
-                "—",
-                "—",
-                "—",
-            ],
-            axis=1,
-        )
+        grouped = pd.concat([grouped, grouped.apply(_totals_cols, axis=1)], axis=1)
         return grouped
 
     # Default: week (comportamiento original)
-    volume_w = volume_all
-    peso_w = peso_all
-    sueno_w = sueno_all
     weekly = (
         df.groupby("semana")
         .agg(
             rendimiento=("rendimiento", "mean"),
             series=("sets_totales", "sum"),
-            fallos=("sets_fallo", "sum"),
         )
         .reset_index()
         .dropna(subset=["semana"])
@@ -158,15 +247,7 @@ def _pfr_df(
     weekly = weekly.sort_values("semana")
     weekly["crecimiento"] = weekly["rendimiento"] - 100
     weekly["periodo"] = weekly["semana"].astype(str)
-    weekly["customdata"] = weekly["semana"].apply(
-        lambda sem: [
-            int(weekly.loc[weekly["semana"] == sem, "series"].iloc[0]),
-            int(weekly.loc[weekly["semana"] == sem, "fallos"].iloc[0]),
-            f"{volume_w.get(sem, 0):.0f} kg" if volume_w.get(sem) else "—",
-            f"{peso_w[sem]:.1f} kg" if peso_w.get(sem) else "—",
-            f"{sueno_w[sem]:.1f} h" if sueno_w.get(sem) else "—",
-        ]
-    )
+    weekly = pd.concat([weekly, weekly.apply(_totals_cols, axis=1)], axis=1)
     return weekly
 
 
@@ -192,12 +273,6 @@ def _hex_to_rgba(hex_color: str, alpha: float) -> str:
     hex_color = hex_color.lstrip("#")
     r, g, b = (int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
     return f"rgba({r}, {g}, {b}, {alpha})"
-
-
-def _iso_to_full(iso: str) -> str:
-    """YYYY-MM-DD → DD/MM/YYYY."""
-    y, m, d = iso.split("-")
-    return f"{d}/{m}/{y}"
 
 
 def _compact_day_labels(periods: list[str]) -> list[str]:
@@ -242,6 +317,96 @@ def _day_tick_subset(periods: list[str], max_ticks: int = 8) -> tuple[list[str],
     return tickvals, ticktext
 
 
+def _x_key(value, granularity: str):
+    """Clave de comparación NORMALIZADA por granularidad, compartida entre el
+    rango X inicial y el filtro de puntos visibles.
+
+    - day: fecha ISO (str) — lexicográfica == cronológica.
+    - week: número de semana (int).
+    - month: YYYYMM (int) — sin ambigüedad de string 'YYYY-MM' (cruce de año OK).
+    """
+    if granularity == "week":
+        return int(value)
+    if granularity == "month":
+        return int(str(value).replace("-", "")[:6])
+    return str(value)
+
+
+def _initial_x_range(x_values: list, granularity: str) -> list | None:
+    """Ventana temporal inicial del eje X (solo presentación: los datos completos
+    permanecen en la figura y el usuario puede hacer pan/zoom hacia atrás).
+
+    - day: últimos 2 meses naturales disponibles (fin = última fecha con datos).
+    - week: últimas 15 semanas disponibles.
+    - month: últimos 12 meses disponibles.
+    Si los datos cubren menos que la ventana, devuelve None → Plotly muestra todo.
+
+    Valores devueltos: claves NORMALIZADAS por granularidad (ISO str para day,
+    int para week, YYYYMM int para month) — compatibles con `_y_visible_in_window`
+    y convertibles a la representación del eje por `_range_for_axis`.
+    """
+    if not x_values or granularity not in ("day", "week", "month"):
+        return None
+
+    if granularity == "day":
+        xs = sorted({str(v) for v in x_values})
+        end = pd.Timestamp(xs[-1])
+        # Restar 2 meses de calendario (aritmética año*12+mes, clamp a fin de mes).
+        total = end.year * 12 + (end.month - 1) - 2
+        y2, m0 = divmod(total, 12)
+        m2 = m0 + 1
+        try:
+            start = pd.Timestamp(year=y2, month=m2, day=end.day)
+        except ValueError:
+            start = pd.Timestamp(year=y2, month=m2, day=28) + pd.offsets.MonthEnd(0)
+        start_iso = start.strftime("%Y-%m-%d")
+        if xs[0] >= start_iso:
+            return None
+        return [start_iso, xs[-1]]
+
+    nums = sorted({_x_key(v, granularity) for v in x_values})
+    span = {"week": 15, "month": 12}[granularity]
+    if len(nums) <= span:
+        return None
+    return [nums[-span], nums[-1]]
+
+
+def _range_for_axis(x_range: list, granularity: str) -> list:
+    """Convierte las claves normalizadas de _initial_x_range a la representación
+    del eje X en la figura (day: ISO; week: str(posición); month: 'YYYY-MM')."""
+    if granularity == "day":
+        return list(x_range)
+    if granularity == "week":
+        return [str(v) for v in x_range]
+    return [f"{v // 100}-{v % 100:02d}" for v in x_range]
+
+
+def _y_visible_in_window(
+    x_values: list, y_values: list, x_range: list | None, granularity: str
+) -> list:
+    """Devuelve los valores Y de puntos cuyo X cae dentro de la ventana inicial.
+
+    - Sin ventana (None) → todos los Y (datos insuficientes o ventana completa).
+    - Comparación NORMALIZADA por granularidad mediante _x_key (ISO para day,
+      int para week, YYYYMM int para month) — el rango y el filtro comparten la
+      misma representación, sin ambigüedad de strings.
+    - Los puntos fuera de la ventana NO influyen en el rango Y inicial, pero la
+      traza conserva todos sus puntos para pan/zoom hacia atrás.
+    """
+    if x_range is None or not y_values:
+        return [v for v in y_values if v is not None]
+    lo = _x_key(x_range[0], granularity)
+    hi = _x_key(x_range[1], granularity)
+    out: list[float] = []
+    for x, y in zip(x_values, y_values):
+        if y is None:
+            continue
+        k = _x_key(x, granularity)
+        if lo <= k <= hi:
+            out.append(y)
+    return out
+
+
 def _pfr_trace(
     df: pd.DataFrame,
     name: str,
@@ -255,41 +420,10 @@ def _pfr_trace(
     # Eje X y etiqueta de periodo según granularidad: la serie semanal conserva
     # `semana`; day y month usan `periodo` (fecha/label cronológico real).
     x_col = "semana" if granularity == "week" else "periodo"
-    period_label = {"week": "Semana", "day": "Fecha", "month": "Mes"}[granularity]
 
     line_color = color if alpha >= 1.0 else _hex_to_rgba(color, alpha)
-    if granularity == "day":
-        hover_vals = df[["series", "fallos"]].assign(
-            volumen=df["customdata"].apply(lambda c: c[2]),
-            peso=df["customdata"].apply(lambda c: c[3]),
-            sueno=df["customdata"].apply(lambda c: c[4]),
-            nombre=name,
-            fecha_full=df["periodo"].apply(_iso_to_full),
-        )
-        customdata = hover_vals.values.tolist()
-        hovertemplate = (
-            "%{customdata[5]}<br>Fecha %{customdata[6]}<br>Crecimiento: %{y:.1f}%"
-            "<br>Series: %{customdata[0]} · Fallos: %{customdata[1]}"
-            "<br>Volumen: %{customdata[2]} · Peso: %{customdata[3]} · Sueño: %{customdata[4]}"
-            "<extra></extra>"
-        )
-    else:
-        customdata = (
-            df[["series", "fallos"]]
-            .assign(
-                volumen=df["customdata"].apply(lambda c: c[2]),
-                peso=df["customdata"].apply(lambda c: c[3]),
-                sueno=df["customdata"].apply(lambda c: c[4]),
-                nombre=name,
-            )
-            .values.tolist()
-        )
-        hovertemplate = (
-            f"%{{customdata[5]}}<br>{period_label} %{{x}}<br>Crecimiento: %{{y:.1f}}%"
-            "<br>Series: %{customdata[0]} · Fallos: %{customdata[1]}"
-            "<br>Volumen: %{customdata[2]} · Peso: %{customdata[3]} · Sueño: %{customdata[4]}"
-            "<extra></extra>"
-        )
+    customdata = _hover_rows(df, name)
+    hovertemplate = HOVERTEMPLATE
     return go.Scatter(
         x=df[x_col],
         y=df["crecimiento"],
@@ -419,17 +553,40 @@ def chart_selection(
     for t in traces:
         fig.add_trace(t)
 
-    all_y = [v for t in traces for v in t.y if v is not None]
-    reference_y = [v for v in reference_df["crecimiento"] if v is not None]
-    scale_y = reference_y or all_y
-    y_min = min(scale_y) if scale_y else 0
-    y_max = max(scale_y) if scale_y else 0
-    y_padding = (y_max - y_min) * 0.15 if y_max > y_min else 5
-    y_bottom = 0 if y_min >= 0 else y_min - y_padding
-
-    # Eje X: tickmode array con subconjunto para no apiñar (day: máx 8 etiquetas)
+    # Eje X primero: la ventana temporal inicial determina qué puntos visibles
+    # condicionan el rango Y (los históricos fuera de la ventana permanecen en
+    # la traza para pan/zoom, pero no afectan la escala vertical inicial).
     all_x = [v for t in traces for v in t.x]
     x_title = {"week": "Semana", "day": "Fecha", "month": "Mes"}[granularity]
+    initial_range = _initial_x_range(all_x, granularity)
+
+    y_visible: list[float] = []
+    for t in traces:
+        y_visible.extend(_y_visible_in_window(list(t.x), list(t.y), initial_range, granularity))
+    ref_x_col = "semana" if granularity == "week" else "periodo"
+    reference_y = _y_visible_in_window(
+        list(reference_df[ref_x_col]),
+        list(reference_df["crecimiento"]),
+        initial_range,
+        granularity,
+    )
+    # El rango Y incluye todas las series visibles en la ventana (Global,
+    # músculos y ejercicios) más la línea base 0: ningún punto visible queda cortado.
+    scale_vals = y_visible + reference_y + [0.0]
+    y_min = min(scale_vals)
+    y_max = max(scale_vals)
+    # Margen por lado, proporcional a la extensión de cada lado desde 0: así la
+    # línea 0 queda visible con un margen pequeño sin inflar huecos (p. ej. un
+    # baseline ~0 apenas añade margen superior aunque el mínimo sea muy negativo).
+    flat = y_max == y_min
+    extent_hi = max(0.0, y_max)
+    extent_lo = max(0.0, -y_min)
+    y_padding_hi = extent_hi * 0.15 if extent_hi > 0 else (5 if flat else 0)
+    y_padding_lo = extent_lo * 0.15 if extent_lo > 0 else (5 if flat else 0)
+    y_bottom = min(0.0, y_min) - y_padding_lo
+    y_top = max(0.0, y_max) + y_padding_hi
+
+    # Eje X: tickmode array con subconjunto para no apiñar (day: máx 8 etiquetas)
     if granularity == "day":
         all_periods = sorted({str(v) for v in all_x})
         tickvals, ticktext = _day_tick_subset(all_periods, max_ticks=8)
@@ -448,15 +605,19 @@ def chart_selection(
         "tickfont": {"size": 10, "color": chart_color("axes")},
         "showgrid": False,
     }
-    if granularity == "day":
-        xaxis_cfg["type"] = "date"
+    # Tipo de eje explícito por granularidad: date para day, category para
+    # week y month (las claves normalizadas se convierten a la representación
+    # del eje con _range_for_axis; sin ambigüedad de tipo).
+    xaxis_cfg["type"] = "date" if granularity == "day" else "category"
+    if initial_range:
+        xaxis_cfg["range"] = _range_for_axis(initial_range, granularity)
 
     fig.update_layout(
         title={"text": title, "font": {"color": chart_color("hover.text"), "size": 14}},
         xaxis=xaxis_cfg,
         yaxis={
             "title": "Crecimiento (%)",
-            "range": [y_bottom, y_max + y_padding],
+            "range": [y_bottom, y_top],
             "showgrid": False,
             "zerolinecolor": chart_color("grid"),
             "tickfont": {"color": chart_color("axes")},
@@ -509,44 +670,45 @@ def chart_pfr_timeline(
     if periodic.empty:
         return go.Figure()
 
-    y_min = periodic["crecimiento"].min()
-    y_max = periodic["crecimiento"].max()
-    y_padding = (y_max - y_min) * 0.15 if y_max > y_min else 5
-    y_bottom = 0 if y_min >= 0 else y_min - y_padding
-
     # Eje X
     x_col = "periodo" if "periodo" in periodic.columns else "semana"
     x_title = {"week": "Semana", "day": "Fecha", "month": "Mes"}[granularity]
+
+    # Ventana temporal inicial antes del rango Y: solo los puntos dentro de la
+    # ventana visible condicionan la escala vertical (los históricos permanecen
+    # en la traza para pan/zoom, pero no afectan el rango Y inicial).
+    initial_range = _initial_x_range(periodic[x_col].tolist(), granularity)
+    y_visible = _y_visible_in_window(
+        list(periodic[x_col]),
+        list(periodic["crecimiento"]),
+        initial_range,
+        granularity,
+    )
+    scale_vals = y_visible + [0.0]
+    y_min = min(scale_vals)
+    y_max = max(scale_vals)
+    # Margen por lado proporcional a la extensión desde 0 (línea base siempre
+    # visible con un margen pequeño, sin inflar huecos; fallback 5 solo si plano).
+    flat = y_max == y_min
+    extent_hi = max(0.0, y_max)
+    extent_lo = max(0.0, -y_min)
+    y_padding_hi = extent_hi * 0.15 if extent_hi > 0 else (5 if flat else 0)
+    y_padding_lo = extent_lo * 0.15 if extent_lo > 0 else (5 if flat else 0)
+    y_bottom = min(0.0, y_min) - y_padding_lo
+    y_top = max(0.0, y_max) + y_padding_hi
 
     fig = go.Figure()
 
     if granularity == "day":
         periods = [str(v) for v in periodic[x_col].tolist()]
         tickvals, ticktext = _day_tick_subset(periods, max_ticks=8)
-        # Tooltip con fecha completa DD/MM/YYYY
-        cd_full = periodic.apply(
-            lambda r: [*r["customdata"], _iso_to_full(str(r["periodo"]))], axis=1
-        ).tolist()
-        hover = (
-            "Fecha %{customdata[5]}<br>Crecimiento: %{y:.1f}%"
-            "<br>Series: %{customdata[0]} · Fallos: %{customdata[1]}"
-            "<br>Volumen: %{customdata[2]} · Peso: %{customdata[3]} · Sueño: %{customdata[4]}"
-            "<extra></extra>"
-        )
-        customdata_vals = cd_full
+        customdata_vals = _hover_rows(periodic, "Crecimiento")
         x_tickvals = tickvals
         x_ticktext = ticktext
     else:
-        ticktext = [str(v) for v in periodic[x_col]]
-        hover = (
-            f"{x_title} %{{x}}<br>Crecimiento: %{{y:.1f}}%"
-            "<br>Series: %{customdata[0]} · Fallos: %{customdata[1]}"
-            "<br>Volumen: %{customdata[2]} · Peso: %{customdata[3]} · Sueño: %{customdata[4]}"
-            "<extra></extra>"
-        )
-        customdata_vals = periodic["customdata"].tolist()
         x_tickvals = periodic[x_col].tolist()
-        x_ticktext = ticktext
+        x_ticktext = [str(v) for v in periodic[x_col]]
+        customdata_vals = _hover_rows(periodic, "Crecimiento")
 
     fig.add_trace(
         go.Scatter(
@@ -557,7 +719,7 @@ def chart_pfr_timeline(
             line={"color": chart_color("primary"), "width": 2.5},
             marker={"size": 8, "color": chart_color("primary")},
             customdata=customdata_vals,
-            hovertemplate=hover,
+            hovertemplate=HOVERTEMPLATE,
         )
     )
 
@@ -569,15 +731,19 @@ def chart_pfr_timeline(
         "tickfont": {"size": 10, "color": chart_color("axes")},
         "showgrid": False,
     }
-    if granularity == "day":
-        xaxis_cfg["type"] = "date"
+    # Tipo de eje explícito por granularidad (date/category).
+    xaxis_cfg["type"] = "date" if granularity == "day" else "category"
+    # Ventana temporal inicial (solo presentación; todos los datos quedan en la
+    # figura y el usuario puede navegar hacia atrás con pan/zoom).
+    if initial_range:
+        xaxis_cfg["range"] = _range_for_axis(initial_range, granularity)
 
     fig.update_layout(
         title={"text": title, "font": {"color": chart_color("hover.text"), "size": 14}},
         xaxis=xaxis_cfg,
         yaxis={
             "title": "Crecimiento (%)",
-            "range": [y_bottom, y_max + y_padding],
+            "range": [y_bottom, y_top],
             "showgrid": False,
             "zerolinecolor": chart_color("grid"),
             "tickfont": {"color": chart_color("axes")},
@@ -636,9 +802,18 @@ def get_exercise_session_summary(db_path: str, ejercicio: str) -> pd.DataFrame:
         lambda x: x.rank(method="dense").astype(int)
     )
     df["tonelaje"] = df["kg"] * df["reps"]
-    df["rm_ajustado"] = (
-        df["kg"] * (1 + RM_FACTOR * (df["reps"] + (1 + df["rir"].fillna(0))))
-    ).round(1)
+    # RM ajustado centralizado (única fuente: metrics_engine.rm_ajustado).
+    df["rm_ajustado"] = df.apply(
+        lambda r: round(
+            rm_ajustado(
+                float(r["kg"]),
+                float(r["reps"]),
+                0.0 if pd.isna(r["rir"]) else float(r["rir"]),
+            ),
+            1,
+        ),
+        axis=1,
+    )
 
     session_df = (
         df.groupby(["semana", "sesion", "fecha", "dia"])
@@ -658,111 +833,3 @@ def get_exercise_session_summary(db_path: str, ejercicio: str) -> pd.DataFrame:
     session_df["total_tonelaje"] = session_df["total_tonelaje"].round(1)
     session_df = session_df.sort_values(["semana", "sesion"]).reset_index(drop=True)
     return session_df
-
-
-def period_summary(
-    db_path: str,
-    filter_type: str,
-    filter_value: str | None,
-    granularity: str = "week",
-) -> dict:
-    """Resumen de métricas del periodo: series, reps, peso, RM, rendimiento,
-    delta RM vs último rendimiento. Todo server-side."""
-    pfr = calculate_pfr_timeline(db_path, filter_type, filter_value)
-    if pfr.empty:
-        return {"empty": True}
-
-    # Agregar por periodo según granularidad
-    if granularity == "day":
-        pfr["periodo"] = pfr["fecha_dt"].dt.strftime("%Y-%m-%d")
-    elif granularity == "month":
-        pfr["periodo"] = pfr["fecha_dt"].dt.to_period("M").astype(str)
-    else:
-        pfr["periodo"] = pfr["semana"].astype(int).astype(str)
-
-    grouped = (
-        pfr.groupby("periodo")
-        .agg(
-            rendimiento=("rendimiento", "mean"),
-            series=("sets_totales", "sum"),
-        )
-        .reset_index()
-        .sort_values("periodo")
-    )
-
-    # RM promedio por periodo desde training_sets
-    with read_connection(db_path) as conn:
-        if filter_type == "muscle_group" and filter_value:
-            rm_df = pd.read_sql_query(
-                "SELECT fecha, reps, kg, rir, ejercicio FROM training_sets "
-                "WHERE ejercicio IN (SELECT ejercicio FROM ejercicios "
-                "WHERE LOWER(grupo_muscular) = LOWER(?))",
-                conn,
-                params=(filter_value,),
-            )
-        elif filter_type == "exercise" and filter_value:
-            rm_df = pd.read_sql_query(
-                "SELECT fecha, reps, kg, rir FROM training_sets WHERE LOWER(ejercicio) = LOWER(?)",
-                conn,
-                params=(filter_value,),
-            )
-        else:
-            rm_df = pd.read_sql_query("SELECT fecha, reps, kg, rir FROM training_sets", conn)
-
-    if not rm_df.empty:
-        rm_df["fecha_dt"] = pd.to_datetime(rm_df["fecha"], errors="coerce")
-        rm_df = rm_df.dropna(subset=["fecha_dt"])
-        rir_safe = rm_df["rir"].fillna(0.0)
-        rm_df["rm_ajustado"] = rm_df["kg"] * (1 + RM_FACTOR * (rm_df["reps"] + 1 + rir_safe))
-        rm_df["reps_sum"] = rm_df["reps"]
-
-        if granularity == "day":
-            rm_df["periodo"] = rm_df["fecha_dt"].dt.strftime("%Y-%m-%d")
-        elif granularity == "month":
-            rm_df["periodo"] = rm_df["fecha_dt"].dt.to_period("M").astype(str)
-        else:
-            ciclo = parse_cycle_start()
-            rm_df["periodo"] = rm_df["fecha_dt"].apply(
-                lambda d: str(calculate_cycle_week(d.date(), ciclo))
-            )
-
-        rm_grouped = (
-            rm_df.groupby("periodo")
-            .agg(
-                rm_avg=("rm_ajustado", "mean"),
-                reps_total=("reps_sum", "sum"),
-                peso_avg=("kg", "mean"),
-            )
-            .reset_index()
-        )
-    else:
-        rm_grouped = pd.DataFrame(columns=["periodo", "rm_avg", "reps_total", "peso_avg"])
-
-    merged = grouped.merge(rm_grouped, on="periodo", how="left")
-
-    # Delta RM: comparar con el periodo anterior con datos
-    rm_values = merged["rm_avg"].dropna().tolist()
-    current_rm = rm_values[-1] if rm_values else None
-    prev_rm = rm_values[-2] if len(rm_values) >= 2 else None
-    delta_rm = (
-        round(current_rm - prev_rm, 1) if (current_rm is not None and prev_rm is not None) else None
-    )
-
-    last = merged.iloc[-1] if not merged.empty else None
-
-    return {
-        "empty": False,
-        "periodo": str(last["periodo"]) if last is not None else "—",
-        "series": int(last["series"]) if last is not None else 0,
-        "reps": int(last["reps_total"])
-        if last is not None and pd.notna(last.get("reps_total"))
-        else 0,
-        "peso": round(float(last["peso_avg"]), 1)
-        if last is not None and pd.notna(last.get("peso_avg"))
-        else None,
-        "rm": round(float(last["rm_avg"]), 1)
-        if last is not None and pd.notna(last.get("rm_avg"))
-        else None,
-        "rendimiento": round(float(last["rendimiento"]), 1) if last is not None else None,
-        "delta_rm": delta_rm,
-    }

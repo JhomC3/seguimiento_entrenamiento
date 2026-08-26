@@ -1,0 +1,135 @@
+{# period_summary_panel.html — Panel derecho de resumen periódico (Fase 2).
+
+   Raíz OOB-ready: el render inicial server-side no lleva atributo htmx; la
+   respuesta de /grafica renderiza este mismo parcial con oob=True para que la
+   raíz incluya hx-swap-oob="outerHTML".
+
+   Estados explícitos del contrato PeriodSummary:
+   - ready → tablist opcional + tablas prerenderizadas;
+   - empty → mensaje con role="status";
+   - error → alerta con role="alert".
+   NOTA: el estado "loading" queda FUERA DE ALCANCE en esta fase: el swap htmx
+   es atómico (una respuesta trae gráfica+panel) y no existe skeleton real;
+   no se simula un estado que el sistema no produce.
+
+   Accesibilidad: tablist/tab/tabpanel ARIA nativos, roving tabindex gestionado
+   por level-cascade.js (flechas/Home/End), Δ con signo textual (la información
+   nunca depende solo del color), '—' para ausencia de dato. #}
+<aside
+    id="period-summary-wrap"
+    class="dashboard-summary-col panel panel-default"
+    aria-label="Resumen por periodo"
+    {% if oob %}hx-swap-oob="outerHTML"{% endif %}
+>
+    <header class="flex items-center justify-between gap-2 pl-3 pr-3 pt-3">
+        <h2 class="panel-title">Resumen</h2>
+        <div
+            id="summary-window-selector"
+            class="inline-flex items-center rounded-lg border border-neutral-800 overflow-hidden"
+            role="group"
+            aria-label="Ventana del resumen"
+            aria-describedby="summary-window-desc"
+        >
+            {% for w in [4, 8] %}
+            <button
+                type="button"
+                data-action="set-summary-window"
+                data-weeks="{{ w }}"
+                class="ps-window"
+                aria-pressed="{{ 'true' if summary.semanas == w else 'false' }}"
+                aria-label="Ventana de {{ w }} semanas"
+            >{{ w }} sem</button>
+            {% endfor %}
+        </div>
+    </header>
+    <p id="summary-window-desc" class="sr-only">
+        Resumen de las últimas 4 u 8 semanas.
+    </p>
+
+    {% if summary.estado == "error" %}
+        <div class="px-3 pb-3">
+            <p class="notice notice-error" role="alert">No se pudo calcular el resumen.</p>
+        </div>
+    {% elif summary.estado == "empty" or not summary.tabs %}
+        <div class="px-3 pb-3">
+            <p class="text-xs text-neutral-400" role="status">Sin datos para esta selección.</p>
+            {% if summary.hint %}<p class="text-xs text-neutral-400 pt-1">{{ summary.hint }}</p>{% endif %}
+        </div>
+    {% else %}
+        {% if summary.tabs | length > 1 %}
+        <nav
+            class="ps-tabs"
+            role="tablist"
+            aria-label="Vistas del resumen"
+        >
+            {% for t in summary.tabs %}
+            <button
+                type="button"
+                role="tab"
+                id="ps-tab-{{ loop.index0 }}"
+                data-action="select-summary-tab"
+                data-tab-index="{{ loop.index0 }}"
+                aria-selected="{{ 'true' if loop.first else 'false' }}"
+                aria-controls="ps-panel-{{ loop.index0 }}"
+                tabindex="{{ '0' if loop.first else '-1' }}"
+                class="ps-tab {% if loop.first %}ps-tab-active{% endif %}"
+            >{{ t.titulo }}</button>
+            {% endfor %}
+        </nav>
+        {% endif %}
+
+        <div class="ps-panels">
+            {% for t in summary.tabs %}
+            <section
+                role="tabpanel"
+                id="ps-panel-{{ loop.index0 }}"
+                aria-labelledby="ps-tab-{{ loop.index0 }}"
+                tabindex="0"
+                class="ps-panel"
+                {% if not loop.first %}hidden{% endif %}
+            >
+                {% if not t.filas %}
+                    <p class="text-xs text-neutral-400 px-2 py-2" role="status">Sin datos para esta selección.</p>
+                {% else %}
+                    <table class="ps-table {% if t.nivel == 'exercise' %}ps-table--exercise{% endif %}">
+                        <thead>
+                            <tr>
+                                {% if t.nivel == "global" %}
+                                    <th scope="col">Músculo</th><th scope="col" class="num">Δ</th>
+                                    <th scope="col" class="num">Series</th><th scope="col" class="num">Reps</th>
+                                    <th scope="col" class="num col-rir" title="RIR medio">RIR</th>
+                                {% elif t.nivel == "muscle" %}
+                                    <th scope="col">Ejercicio</th><th scope="col" class="num">Δ</th>
+                                    <th scope="col" class="num">Series</th><th scope="col" class="num">Reps</th>
+                                    <th scope="col" class="num col-rir" title="RIR medio">RIR</th><th scope="col" class="num">RM aj.</th>
+                                {% else %}
+                                    <th scope="col">{{ t.titulo }}</th><th scope="col" class="num">Δ</th>
+                                    <th scope="col" class="num">Series</th><th scope="col" class="num">Reps</th>
+                                    <th scope="col" class="num col-peso" title="Peso medio (kg)">Peso</th><th scope="col" class="num col-rir" title="RIR medio">RIR</th><th scope="col" class="num">RM aj.</th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for f in t.filas %}
+                            <tr>
+                                <th scope="row">{{ f.etiqueta }}</th>
+                                <td class="num">{% if f.delta_pct is none %}—{% else %}<span class="ps-delta" title="Variación media de rendimiento">{{ "+" if f.delta_pct > 0 }}{{ f.delta_pct }}%</span>{% endif %}</td>
+                                <td class="num">{{ f.series if f.series is not none else "—" }}</td>
+                                <td class="num">{{ f.reps_media if f.reps_media is not none else "—" }}</td>
+                                {% if t.nivel == "exercise" %}
+                                    <td class="num col-peso">{{ f.peso_medio if f.peso_medio is not none else "—" }}</td>
+                                {% endif %}
+                                <td class="num col-rir">{{ f.rir_medio if f.rir_medio is not none else "—" }}</td>
+                                {% if t.nivel != "global" %}
+                                    <td class="num">{{ f.rm_max if f.rm_max is not none else "—" }}</td>
+                                {% endif %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% endif %}
+            </section>
+            {% endfor %}
+        </div>
+    {% endif %}
+</aside>

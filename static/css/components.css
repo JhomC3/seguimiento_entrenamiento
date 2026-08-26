@@ -362,7 +362,13 @@ input[type="number"]::-webkit-outer-spin-button {
    estas variables NO cambian entre modo vista y edición, ni al expandir
    resúmenes, ni al agregar/eliminar ejercicios, ni al abrir/cerrar el split. */
 :root {
-    --split-catalog-w: 280px;
+    --split-catalog-w: clamp(232px, 18vw, 260px);
+    /* Rail persistente del catálogo plegado (escritorio). */
+    --catalog-collapsed-w: 48px;
+    /* Ancho canónico del panel derecho de resumen (Fase 2). Igual que las
+       dimensiones split: variable CSS como fuente de verdad; el JSON de
+       design tokens valida solo colores. Escala fluida para 7 columnas. */
+    --summary-w: clamp(320px, 26vw, 420px);
     --split-day-min-width: 146px;
     --split-day-height: 620px;
     --split-summary-h: 260px;

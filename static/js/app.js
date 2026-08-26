@@ -55,10 +55,17 @@ document.addEventListener('DOMContentLoaded', function () {
     const isDashboard = !!document.getElementById('dashboard-catalog');
     if (isDashboard) {
         initChartInteractions();
-        renderUnifiedChart();
+        // La cascada restaura el estado de la URL ANTES del render inicial:
+        // con selección en la URL, restoreFromURL ya pidió /grafica y SU
+        // respuesta pinta la gráfica (renderizar aquí la figura sistémica
+       // sería un doble render que se reemplaza al instante).
+        initLevelCascade();
+        const urlSelection = new URLSearchParams(location.search).get('musculos');
+        if (!urlSelection) {
+            renderUnifiedChart();
+        }
         initDateNavigation();
         initEditorPopup();
-        initLevelCascade();
         initEditorActions();
         initTemplateActions();
         initNutritionEditor();

@@ -35,6 +35,7 @@ OOB_FRAGMENT_TARGETS = (
     "splits-section",
     "split-board",
     "history-section",
+    "period-summary-wrap",
 )
 
 STATIC_MARKERS = {
@@ -187,3 +188,16 @@ def chart_empty_oob(visible: bool, message: str = "Sin datos") -> str:
         f' class="chart-empty"{hidden}>'
         f"{message}</div>"
     )
+
+
+def summary_oob(html: str) -> str:
+    """OOB del panel derecho de resumen (Fase 2). outerHTML swap.
+
+    ``html`` es el render completo de period_summary_panel.html con
+    oob=True: su raíz ya trae id + hx-swap-oob. Se valida contra la raíz
+    esperada para nunca inyectar un target fuera de la allow-list.
+    """
+    marker = 'id="period-summary-wrap"'
+    if marker not in html:
+        raise ValueError("summary_oob requiere el render del parcial del panel")
+    return html

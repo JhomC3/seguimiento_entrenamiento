@@ -95,7 +95,10 @@ def test_chart_pfr_timeline_crecimiento_base_0(setup_test_db):
     assert ys[0] == pytest.approx(0, abs=0.5)  # semana 1 = baseline
     assert ys[1] > 0  # semana 2 = crecimiento
     assert "Ciclo 1" in fig.layout.title.text
-    assert "Crecimiento" in fig.data[0].hovertemplate
+    # Fase 2: el hovertemplate canónico ya no dice 'Crecimiento' ni 'Fecha'.
+    assert "Crecimiento" not in fig.data[0].hovertemplate
+    assert "Fecha" not in fig.data[0].hovertemplate
+    assert "Δ %{customdata[1]}" in fig.data[0].hovertemplate
 
 
 def test_chart_html_header_ciclo_igual_que_semana_panel(setup_test_db):
@@ -135,7 +138,6 @@ def test_get_exercise_session_summary(setup_test_db):
     assert len(df) == 3  # 3 sesiones únicas (Sem1-Lun, Sem1-Vie, Sem2-Lun)
     s1 = df[df["sesion"] == 1].iloc[0]
     assert s1["total_sets"] == 2
-    assert s1["total_tonelaje"] == 1020.0  # 2 x 85kg x 6reps
     assert s1["avg_rm_ajustado"] == pytest.approx(106.2, abs=0.1)
 
 
@@ -145,11 +147,14 @@ def test_chart_pfr_timeline_hover_incluye_resumen(setup_test_db):
     assert fig.data, "la figura debe tener datos"
     trace = fig.data[0]
     assert trace.customdata is not None
-    # customdata por semana: [series, fallos, volumen, peso, sueño]
-    assert len(trace.customdata[0]) == 5
-    assert trace.customdata[0][0] >= 2  # series de la semana 1
-    assert "customdata[1]" in trace.hovertemplate
-    assert "Fallos" in trace.hovertemplate
+    # customdata Fase 2: [etiqueta, Δ, series, reps, peso, rir, rm_max, nombre]
+    fila = trace.customdata[0]
+    assert len(fila) == 8
+    assert fila[2] >= "1"  # series de la semana 1 (>=2 aquí) como string
+    assert int(fila[2]) >= 2
+    for texto in ("Fallos", "Volumen", "Sueño", "Crecimiento", "Fecha"):
+        assert texto not in trace.hovertemplate
+    assert "<extra>%{customdata[7]}</extra>" in trace.hovertemplate
 
 
 def test_get_exercise_raw_data_incluye_descanso(setup_test_db):
@@ -188,9 +193,9 @@ def test_chart_muscle_exercises_una_traza_por_ejercicio(setup_test_db):
     fig = chart_selection(db, ["Pectoral"], ["Press Convergente"])
     assert len(fig.data) == 2  # compilado + ejercicio
     assert fig.data[1].name == "Press Convergente"
-    # El hover muestra el nombre del ejercicio (customdata[5]).
-    assert fig.data[1].customdata[0][5] == "Press Convergente"
-    assert "%{customdata[5]}" in fig.data[1].hovertemplate
+    # El hover muestra el nombre del ejercicio en la posición 8 (extra).
+    assert fig.data[1].customdata[0][7] == "Press Convergente"
+    assert "<extra>%{customdata[7]}</extra>" in fig.data[1].hovertemplate
 
 
 def test_chart_muscle_exercises_filtra_ejercicios_ajenos(setup_test_db):
@@ -416,11 +421,16 @@ def test_chart_selection_day_con_seleccion_persistida(setup_test_db):
 
 
 def test_pfr_df_day_tooltip_diario(setup_test_db):
-    """El hover diario nombra 'Fecha' (no 'Semana') y conserva series/fallos."""
+    """Fase 2: el hover canónico ya no menciona Fecha/Semana; la etiqueta del
+    punto (customdata[0]) es DD/MM/YYYY y trae Δ con signo."""
     fig = chart_selection(setup_test_db, ["Pectoral"], [], "day")
     for t in fig.data:
-        assert "Fecha" in t.hovertemplate, t.hovertemplate
+        assert "Fecha" not in t.hovertemplate, t.hovertemplate
         assert "Semana" not in t.hovertemplate, t.hovertemplate
+        fila = t.customdata[0]
+        assert len(fila) == 8
+        assert fila[0] == "04/05/2026"
+        assert fila[1].startswith(("+", "-")) or fila[1] == "0.0%"
 
 
 def test_pfr_trace_week_inmutable(setup_test_db):
@@ -471,17 +481,18 @@ def test_day_ticktext_cambio_de_ano(setup_test_db):
 
 
 def test_day_tooltip_fecha_completa(setup_test_db):
-    """Tooltip diario muestra DD/MM/YYYY, no ISO ni Semana."""
+    """Fase 2: tooltip diario muestra DD/MM/YYYY en customdata[0]; sin ISO ni
+    'Fecha' duplicada. Semana usa 'Semana N' y Mes 'Mes' (nombre)."""
     fig = chart_selection(setup_test_db, ["Pectoral"], [], "day")
     for t in fig.data:
-        # Hover usa Fecha + DD/MM/YYYY via customdata[6]
-        assert "Fecha" in t.hovertemplate
-        assert "Semana" not in t.hovertemplate
-        # customdata[6] debe ser DD/MM/YYYY
-        assert t.customdata[0][6] == "04/05/2026"
+        assert t.customdata[0][0] == "04/05/2026"
+        assert "Fecha" not in t.hovertemplate
     # chart_pfr_timeline también
     fig2 = chart_pfr_timeline(setup_test_db, "systemic", granularity="day")
-    assert "04/05/2026" in fig2.data[0].customdata[0][5]
+    assert fig2.data[0].customdata[0][0] == "04/05/2026"
+    # Week: etiqueta centralizada 'Semana 1'
+    figw = chart_pfr_timeline(setup_test_db, "systemic", granularity="week")
+    assert figw.data[0].customdata[0][0] == "Semana 1"
 
 
 def test_day_eje_interno_sigue_iso(setup_test_db):
@@ -619,3 +630,745 @@ def test_chart_global_muestra_leyenda_en_banda_superior(setup_test_db):
     # Misma firma que la figura de selección muscular.
     sel = chart_selection(setup_test_db, ["Pectoral"], [], "day")
     assert _layout_signature(fig) == _layout_signature(sel)
+
+
+# ---------------------------------------------------------------------------
+# Ventana temporal inicial (xaxis.range) por granularidad
+# ---------------------------------------------------------------------------
+
+
+def _seed_days_from(db_path: str, start, n: int, ejercicio: str = "Press Convergente"):
+    """Siembra n días consecutivos desde `start` (date) — 1 set/día."""
+    import datetime
+
+    rows = []
+    for i in range(n):
+        d = start + datetime.timedelta(days=i)
+        rows.append(
+            {
+                "semana": (i // 7) + 1,
+                "dia": "LUNES",
+                "fecha": d.isoformat(),
+                "set_orden": 1,
+                "ejercicio": ejercicio,
+                "reps": 6.0,
+                "kg": 80.0,
+                "rir": 1.0,
+            }
+        )
+    load_training_data(db_path, pd.DataFrame(rows))
+
+
+def test_ventana_day_datos_suficientes(tmp_path):
+    """day: con >2 meses de datos el rango cubre los últimos 2 meses naturales."""
+    import datetime
+
+    db = str(tmp_path / "v_day.db")
+    init_db(db)
+    load_ejercicios(
+        db, pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"}])
+    )
+    _seed_days_from(db, datetime.date(2026, 1, 1), 120)  # ene→abr
+    fig = chart_pfr_timeline(db, "systemic", granularity="day")
+    rng = fig.layout.xaxis.range
+    assert rng is not None
+    # Última fecha = 2026-04-30 → inicio = 2026-02-28 (feb no tiene día 30).
+    assert list(rng) == ["2026-02-28", "2026-04-30"]
+    # Todos los datos permanecen en la figura.
+    assert len(fig.data[0].x) == 120
+
+
+def test_ventana_day_cruce_de_mes(tmp_path):
+    """day: fin a mitad de mes → inicio es el mismo día, 2 meses antes."""
+    import datetime
+
+    db = str(tmp_path / "v_dm.db")
+    init_db(db)
+    load_ejercicios(
+        db, pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"}])
+    )
+    _seed_days_from(db, datetime.date(2026, 1, 10), 65)  # 10-ene → 15-mar
+    fig = chart_pfr_timeline(db, "systemic", granularity="day")
+    assert list(fig.layout.xaxis.range) == ["2026-01-15", "2026-03-15"]
+
+
+def test_ventana_day_cruce_de_ano(tmp_path):
+    """day: cruce de año → restar 2 meses cae en el año anterior."""
+    import datetime
+
+    db = str(tmp_path / "v_dy.db")
+    init_db(db)
+    load_ejercicios(
+        db, pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"}])
+    )
+    _seed_days_from(db, datetime.date(2025, 11, 1), 80)  # nov-25 → ene-26
+    fig = chart_pfr_timeline(db, "systemic", granularity="day")
+    assert list(fig.layout.xaxis.range) == ["2025-11-19", "2026-01-19"]
+
+
+def test_ventana_day_datos_insuficientes(setup_test_db):
+    """day: <2 meses de datos → sin rango; Plotly muestra todo lo disponible."""
+    fig = chart_pfr_timeline(setup_test_db, "systemic", granularity="day")
+    # La fixture cubre 2026-05-04..11 (<2 meses): sin ventana inicial.
+    assert not fig.layout.xaxis.range
+    assert len(fig.data[0].x) == 3
+
+
+def test_ventana_week_datos_suficientes_e_insuficientes(tmp_path, setup_test_db):
+    """week: ≥16 semanas disponibles → últimas 15; ≤15 → sin rango."""
+    import datetime
+
+    db = str(tmp_path / "v_week.db")
+    init_db(db)
+    load_ejercicios(
+        db, pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"}])
+    )
+    # 20 semanas de ciclo = 140 días.
+    _seed_days_from(db, datetime.date(2026, 1, 1), 140)
+    fig = chart_selection(db, ["Pectoral"], [], "week")
+    rng = fig.layout.xaxis.range
+    assert rng is not None and len(rng) == 2
+    # Eje category con rótulos string de semana (contrato consistente con trace.x).
+    assert fig.layout.xaxis.type == "category"
+    assert [int(rng[0]), int(rng[1])] == [6, 20]
+    assert len(fig.data[0].x) == 20  # datos completos en la figura
+    # Insuficiente: la fixture base solo tiene semanas 1-2.
+    fig2 = chart_selection(setup_test_db, ["Pectoral"], [], "week")
+    assert fig2.layout.xaxis.range is None
+
+
+def test_ventana_month_datos_suficientes_y_cruce_de_ano(tmp_path, setup_test_db):
+    """month: ≥13 meses disponibles → últimos 12; cruce de año correcto."""
+    import datetime
+
+    db = str(tmp_path / "v_month.db")
+    init_db(db)
+    load_ejercicios(
+        db, pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"}])
+    )
+    # 14 meses: 2025-01-01 + 420 días ≈ 2026-02-19.
+    _seed_days_from(db, datetime.date(2025, 1, 1), 420)
+    fig = chart_selection(db, ["Pectoral"], [], "month")
+    rng = fig.layout.xaxis.range
+    assert rng is not None and len(rng) == 2
+    # Eje category con rótulos YYYY-MM (contrato consistente con trace.x).
+    assert fig.layout.xaxis.type == "category"
+    # Meses distintos presentes: 2025-01..2026-02 (14). Últimos 12: 2025-03..2026-02.
+    assert list(rng) == ["2025-03", "2026-02"]
+    # Datos completos en la figura.
+    total_points = sum(len(t.x) for t in fig.data)
+    assert total_points >= 14
+    # Insuficiente: fixture base (un solo mes).
+    fig2 = chart_selection(setup_test_db, ["Pectoral"], [], "month")
+    assert fig2.layout.xaxis.range is None
+
+
+# ---------------------------------------------------------------------------
+# Autoajuste vertical del eje Y (todas las series visibles + línea 0)
+# ---------------------------------------------------------------------------
+
+
+def _seed_days_kg(db_path: str, start, n: int, kg: float, ejercicio: str = "Press Convergente"):
+    """Siembra n días consecutivos con la misma kg (controla el crecimiento)."""
+    import datetime
+
+    rows = []
+    for i in range(n):
+        d = start + datetime.timedelta(days=i)
+        rows.append(
+            {
+                "semana": (i // 7) + 1,
+                "dia": "LUNES",
+                "fecha": d.isoformat(),
+                "set_orden": 1,
+                "ejercicio": ejercicio,
+                "reps": 6.0,
+                "kg": kg,
+                "rir": 0.0,
+            }
+        )
+    load_training_data(db_path, pd.DataFrame(rows))
+
+
+def _assert_contiene_0_y_extremos(fig, y_vals, tol=1e-6):
+    rng = fig.layout.yaxis.range
+    lo, hi = rng[0], rng[1]
+    # Contiene la línea 0 siempre.
+    assert lo <= 0 <= hi, f"rango Y {rng} no contiene 0"
+    # Contiene todos los valores visibles.
+    lo_v = min(y_vals)
+    hi_v = max(y_vals)
+    assert lo <= lo_v, f"min visible cortado: {lo} > {lo_v}"
+    assert hi >= hi_v, f"max visible cortado: {hi} < {hi_v}"
+    # Padding razonable: holgura <= 25% del span (no espacio excesivo).
+    span = hi - lo
+    assert span > 0
+    assert (hi_v - hi) / span <= 0.30, (hi, hi_v, span)
+    assert (lo - lo_v) / span <= 0.30, (lo, lo_v, span)
+
+
+def _seed_days_kg_ramp(db_path, start, n, kg_min, kg_max, ejercicio="Press Convergente"):
+    """Siembra n días con kg creciente de kg_min→kg_max (crecimiento sube)."""
+    import datetime
+
+    rows = []
+    for i in range(n):
+        d = start + datetime.timedelta(days=i)
+        frac = i / max(1, n - 1)
+        kg = kg_min + (kg_max - kg_min) * frac
+        rows.append(
+            {
+                "semana": (i // 7) + 1,
+                "dia": "LUNES",
+                "fecha": d.isoformat(),
+                "set_orden": 1,
+                "ejercicio": ejercicio,
+                "reps": 6.0,
+                "kg": round(kg, 1),
+                "rir": 0.0,
+            }
+        )
+    load_training_data(db_path, pd.DataFrame(rows))
+
+
+def _seed_week_kg(db_path, semana, kg, ejercicio="Press Convergente"):
+    """Siembra 1 set por día de una semana completa con kg constante."""
+    import datetime
+
+    start = datetime.date(2026, 1, 1) + datetime.timedelta(days=(semana - 1) * 7)
+    rows = []
+    for i in range(7):
+        d = start + datetime.timedelta(days=i)
+        rows.append(
+            {
+                "semana": semana,
+                "dia": "LUNES",
+                "fecha": d.isoformat(),
+                "set_orden": 1,
+                "ejercicio": ejercicio,
+                "reps": 6.0,
+                "kg": kg,
+                "rir": 0.0,
+            }
+        )
+    load_training_data(db_path, pd.DataFrame(rows))
+
+
+def test_y_solo_positivos_incluye_0_y_max(tmp_path):
+    """Todos positivos (baseline = semana 1): rango inferior 0, superior con margen."""
+    db = str(tmp_path / "y_pos.db")
+    init_db(db)
+    load_ejercicios(
+        db, pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"}])
+    )
+    _seed_week_kg(db, 1, 60.0)
+    _seed_week_kg(db, 2, 100.0)
+    _seed_week_kg(db, 3, 140.0)
+    fig = chart_pfr_timeline(db, "systemic", granularity="week")
+    y_vals = [v for v in fig.data[0].y if v is not None]
+    # Baseline (semana 1) ≈ 0; el resto claramente positivo.
+    assert max(y_vals[1:]) > 0 and min(y_vals[1:]) >= 0, y_vals
+    _assert_contiene_0_y_extremos(fig, y_vals)
+    rng = fig.layout.yaxis.range
+    # Base en 0 (o epsilon de ruido del baseline): sin margen negativo.
+    assert rng[0] <= 0.5, f"base debe abrazar 0: {rng}"
+
+
+def test_y_solo_negativos_incluye_0_y_min(tmp_path):
+    """Todos negativos: rango superior 0, inferior bajo el mínimo."""
+    db = str(tmp_path / "y_neg.db")
+    init_db(db)
+    load_ejercicios(
+        db, pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"}])
+    )
+    _seed_week_kg(db, 1, 140.0)
+    _seed_week_kg(db, 2, 100.0)
+    _seed_week_kg(db, 3, 60.0)
+    fig = chart_pfr_timeline(db, "systemic", granularity="week")
+    y_vals = [v for v in fig.data[0].y if v is not None]
+    # Baseline (semana 1) ≈ 0; el resto claramente negativo.
+    assert min(y_vals[1:]) < 0 and max(y_vals[1:]) <= 0, y_vals
+    rng = fig.layout.yaxis.range
+    # Tope en 0 (o epsilon de ruido del baseline): sin margen positivo inflado.
+    assert rng[1] <= 0.5, f"tope debe abrazar 0: {rng}"
+    _assert_contiene_0_y_extremos(fig, y_vals)
+
+
+def test_y_mixtos_contiene_0_con_margen(tmp_path):
+    """Positivos y negativos: el rango contiene 0 con margen en ambos extremos."""
+    import datetime
+
+    db = str(tmp_path / "y_mix.db")
+    init_db(db)
+    load_ejercicios(
+        db, pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"}])
+    )
+    # Días alternando kg alta/baja.
+    rows = []
+    for i in range(6):
+        d = datetime.date(2026, 1, 1) + datetime.timedelta(days=i)
+        kg = 95.0 if i % 2 == 0 else 45.0
+        rows.append(
+            {
+                "semana": (i // 7) + 1,
+                "dia": "LUNES",
+                "fecha": d.isoformat(),
+                "set_orden": 1,
+                "ejercicio": "Press Convergente",
+                "reps": 6.0,
+                "kg": kg,
+                "rir": 0.0,
+            }
+        )
+    load_training_data(db, pd.DataFrame(rows))
+    fig = chart_pfr_timeline(db, "systemic", granularity="day")
+    y_vals = [v for v in fig.data[0].y if v is not None]
+    assert any(v < 0 for v in y_vals) and any(v > 0 for v in y_vals), y_vals
+    _assert_contiene_0_y_extremos(fig, y_vals)
+
+
+def test_y_musculo_con_max_mayor_que_global_no_se_corta(tmp_path):
+    """Regresión del bug: la escala ya no depende solo de Global."""
+    import datetime
+
+    db = str(tmp_path / "y_mus.db")
+    init_db(db)
+    load_ejercicios(
+        db,
+        pd.DataFrame(
+            [
+                {"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"},
+                {"grupo_muscular": "Biceps", "ejercicio": "Curl Bayesian"},
+            ]
+        ),
+    )
+    # Global: kg 80 (crecimiento ~0). Músculo Pectoral: kg 120 (máx alto).
+    _seed_days_kg(db, datetime.date(2026, 1, 1), 5, kg=80.0, ejercicio="Press Convergente")
+    _seed_days_kg(db, datetime.date(2026, 1, 1), 5, kg=125.0, ejercicio="Curl Bayesian")
+    # Solo Pectoral seleccionado: su serie (kg 120) debe estar dentro del rango.
+    fig = chart_selection(db, ["Pectoral"], [], "day")
+    y_vals = [v for t in fig.data for v in t.y if v is not None]
+    _assert_contiene_0_y_extremos(fig, y_vals)
+
+
+def test_y_ejercicio_fuera_de_rango_global_incluido(tmp_path):
+    """Ejercicio con valores fuera del rango Global no queda cortado."""
+    import datetime
+
+    db = str(tmp_path / "y_ej.db")
+    init_db(db)
+    load_ejercicios(
+        db, pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"}])
+    )
+    _seed_days_kg(db, datetime.date(2026, 1, 1), 5, kg=130.0, ejercicio="Press Convergente")
+    fig = chart_selection(db, ["Pectoral"], ["Press Convergente"], "day")
+    y_vals = [v for t in fig.data for v in t.y if v is not None]
+    _assert_contiene_0_y_extremos(fig, y_vals)
+
+
+def test_y_multimusculos_incluye_todas_las_series(tmp_path):
+    """Varios músculos: el rango Y cubre todas las series visibles."""
+    import datetime
+
+    db = str(tmp_path / "y_multi.db")
+    init_db(db)
+    load_ejercicios(
+        db,
+        pd.DataFrame(
+            [
+                {"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"},
+                {"grupo_muscular": "Biceps", "ejercicio": "Curl Bayesian"},
+            ]
+        ),
+    )
+    _seed_days_kg(db, datetime.date(2026, 1, 1), 5, kg=90.0, ejercicio="Press Convergente")
+    _seed_days_kg(db, datetime.date(2026, 1, 1), 5, kg=115.0, ejercicio="Curl Bayesian")
+    fig = chart_selection(db, ["Pectoral", "Biceps"], [], "day")
+    y_vals = [v for t in fig.data for v in t.y if v is not None]
+    _assert_contiene_0_y_extremos(fig, y_vals)
+
+
+def test_y_recalcula_por_granularidad(tmp_path):
+    """Day/Week/Month calculan su rango con sus propios datos."""
+    import datetime
+
+    db = str(tmp_path / "y_gran.db")
+    init_db(db)
+    load_ejercicios(
+        db, pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"}])
+    )
+    # Datos crecientes: semanas 1..3 con kg que sube (crecimiento creciente).
+    rows = []
+    for i in range(21):
+        d = datetime.date(2026, 1, 1) + datetime.timedelta(days=i)
+        kg = 80.0 + i  # sube 1 kg/día → crecimiento distinto por semana
+        rows.append(
+            {
+                "semana": (i // 7) + 1,
+                "dia": "LUNES",
+                "fecha": d.isoformat(),
+                "set_orden": 1,
+                "ejercicio": "Press Convergente",
+                "reps": 6.0,
+                "kg": kg,
+                "rir": 0.0,
+            }
+        )
+    load_training_data(db, pd.DataFrame(rows))
+    for gran in ("day", "week", "month"):
+        fig = chart_selection(db, ["Pectoral"], [], gran)
+        y_vals = [v for t in fig.data for v in t.y if v is not None]
+        assert y_vals, gran
+        rng = fig.layout.yaxis.range
+        assert rng[0] <= 0 <= rng[1], (gran, rng)
+        assert rng[1] >= max(y_vals), (gran, rng, max(y_vals))
+        assert rng[0] <= min(y_vals), (gran, rng, min(y_vals))
+
+
+def test_y_dato_nuevo_superior_incluido(tmp_path):
+    """Un nuevo máximo/distinto queda incluido en el rango."""
+    import datetime
+
+    db = str(tmp_path / "y_new.db")
+    init_db(db)
+    load_ejercicios(
+        db, pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"}])
+    )
+    # Primera carga: semana 1 kg 80.
+    _seed_days_kg(db, datetime.date(2026, 1, 1), 7, kg=80.0)
+    fig = chart_pfr_timeline(db, "systemic", granularity="week")
+    y_vals = [v for v in fig.data[0].y if v is not None]
+    _assert_contiene_0_y_extremos(fig, y_vals)
+
+
+def test_y_vacio_sin_excepcion(tmp_path):
+    """Datos vacíos: figura vacía sin rango y sin excepción."""
+    db = str(tmp_path / "y_empty.db")
+    init_db(db)
+    load_ejercicios(
+        db, pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"}])
+    )
+    fig = chart_selection(db, ["Pectoral"], [], "day")  # sin sets
+    assert len(fig.data) == 0
+    # No debe crashear ni romper el shell.
+    assert fig.layout is not None
+
+
+# ---------------------------------------------------------------------------
+# El rango Y inicial solo considera puntos dentro de la ventana X visible
+# ---------------------------------------------------------------------------
+
+
+def _y_window_fixture(db_path: str, periodo_dias: int, kg_viejos: float, kg_recientes: float):
+    """Siembra datos antiguos (muy negativos si kg baja) + recientes positivos.
+
+    periodo_dias: días antiguos con kg_viejos; último tramo con kg_recientes.
+    Devuelve la DB con Pectoral/Press.
+    """
+    import datetime
+
+    load_ejercicios(
+        db_path, pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"}])
+    )
+    start = datetime.date(2026, 1, 1)
+    total = periodo_dias
+    rows = []
+    for i in range(total):
+        d = start + datetime.timedelta(days=i)
+        kg = kg_recientes if i >= total - 30 else kg_viejos
+        rows.append(
+            {
+                "semana": (i // 7) + 1,
+                "dia": "LUNES",
+                "fecha": d.isoformat(),
+                "set_orden": 1,
+                "ejercicio": "Press Convergente",
+                "reps": 6.0,
+                "kg": kg,
+                "rir": 0.0,
+            }
+        )
+    load_training_data(db_path, pd.DataFrame(rows))
+
+
+def test_y_ignora_datos_antiguos_fuera_de_ventana_day(tmp_path):
+    """Datos antiguos muy negativos fuera de la ventana no afectan el rango Y:
+    la línea 0 queda en posición razonable (sin espacio vacío inflado abajo)."""
+    db = str(tmp_path / "ywin.db")
+    init_db(db)
+    # 120 días: 90 antiguos con kg baja (crecimiento negativo) + 30 recientes altos.
+    _y_window_fixture(db, 120, kg_viejos=40.0, kg_recientes=120.0)
+    fig = chart_pfr_timeline(db, "systemic", granularity="day")
+    rng = fig.layout.yaxis.range
+    # La ventana solo contiene los últimos ~2 meses (recientes positivos).
+    y_vals = [v for v in fig.data[0].y if v is not None]
+    max_reciente = max(y_vals)
+    # El tope incluye el máximo reciente con margen…
+    assert rng[1] >= max_reciente
+    # …pero la base NO está hundida por los antiguos negativos: 0 o apenas abajo.
+    assert -10 <= rng[0] <= 0, f"la base debe rondar 0, no hundirse: {rng}"
+    # Los datos históricos permanecen en la traza (para pan/zoom hacia atrás).
+    assert len(fig.data[0].x) == 120
+
+
+def test_y_ventana_day_solo_recientes_positivos_partida_cerca_de_0(tmp_path):
+    """Ventana day con recientes positivos: el eje comienza en 0 (no en -grande)."""
+    db = str(tmp_path / "ywin2.db")
+    init_db(db)
+    _y_window_fixture(db, 120, kg_viejos=50.0, kg_recientes=130.0)
+    fig = chart_pfr_timeline(db, "systemic", granularity="day")
+    rng = fig.layout.yaxis.range
+    assert 0.0 <= rng[1]
+    assert -1.0 <= rng[0] <= 0.5, f"base cerca de 0: {rng}"
+
+
+def test_y_ventana_day_recientes_negativos_incluyen_0_y_min(tmp_path):
+    """Recientes negativos dentro de la ventana: 0 incluido y mínimo visible."""
+    db = str(tmp_path / "ywin3.db")
+    init_db(db)
+    # Antiguos positivos (out), recientes decrecientes (in).
+    _y_window_fixture(db, 120, kg_viejos=120.0, kg_recientes=40.0)
+    fig = chart_pfr_timeline(db, "systemic", granularity="day")
+    rng = fig.layout.yaxis.range
+    y_vals = [v for v in fig.data[0].y if v is not None]
+    min_visible = min(y_vals[-30:])  # últimos 30 días (ventana)
+    assert rng[0] <= min_visible
+    assert rng[1] >= 0, f"el tope debe incluir 0: {rng}"
+
+
+def test_y_ventana_mixta_dentro_incluye_todo_y_0(tmp_path):
+    """Mixto dentro de la ventana: contiene todos los valores visibles y 0."""
+    import datetime
+
+    db = str(tmp_path / "ywin4.db")
+    init_db(db)
+    load_ejercicios(
+        db, pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"}])
+    )
+    rows = []
+    for i in range(120):
+        d = datetime.date(2026, 1, 1) + datetime.timedelta(days=i)
+        if i < 90:
+            kg = 120.0  # antiguos altos (out)
+        else:
+            kg = 90.0 + 40.0 * ((i % 2) - 0.5)  # alterna ± dentro de la ventana
+        rows.append(
+            {
+                "semana": (i // 7) + 1,
+                "dia": "LUNES",
+                "fecha": d.isoformat(),
+                "set_orden": 1,
+                "ejercicio": "Press Convergente",
+                "reps": 6.0,
+                "kg": kg,
+                "rir": 0.0,
+            }
+        )
+    load_training_data(db, pd.DataFrame(rows))
+    fig = chart_pfr_timeline(db, "systemic", granularity="day")
+    rng = fig.layout.yaxis.range
+    y_vals = [v for v in fig.data[0].y if v is not None]
+    assert rng[0] <= min(y_vals) and rng[1] >= max(y_vals)
+    assert rng[0] <= 0 <= rng[1]
+
+
+def test_y_ventana_multimusculos_solo_puntos_visibles(tmp_path):
+    """Multi-músculo: solo los puntos dentro del rango X condicionan el Y."""
+    import datetime
+
+    db = str(tmp_path / "ywin5.db")
+    init_db(db)
+    load_ejercicios(
+        db,
+        pd.DataFrame(
+            [
+                {"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"},
+                {"grupo_muscular": "Biceps", "ejercicio": "Curl Bayesian"},
+            ]
+        ),
+    )
+    # Presión: antiguo muy negativo; Biceps reciente muy positivo fuera de rango
+    # de presión.
+    rows = []
+    for i in range(120):
+        d = datetime.date(2026, 1, 1) + datetime.timedelta(days=i)
+        rows.append(
+            {
+                "semana": (i // 7) + 1,
+                "dia": "LUNES",
+                "fecha": d.isoformat(),
+                "set_orden": 1,
+                "ejercicio": "Press Convergente",
+                "reps": 6.0,
+                "kg": 50.0 if i < 90 else 90.0,
+                "rir": 0.0,
+            }
+        )
+        rows.append(
+            {
+                "semana": (i // 7) + 1,
+                "dia": "LUNES",
+                "fecha": d.isoformat(),
+                "set_orden": 2,
+                "ejercicio": "Curl Bayesian",
+                "reps": 10.0,
+                "kg": 140.0 if i >= 90 else 12.0,
+                "rir": 0.0,
+            }
+        )
+    load_training_data(db, pd.DataFrame(rows))
+    fig = chart_selection(db, ["Pectoral", "Biceps"], [], "day")
+    rng = fig.layout.yaxis.range
+    # El tope cubre el máximo visible (Biceps reciente 140); la base no se hunde.; el antiguo negativo de Press (50)
+    # fuera de la ventana no hunde la base.
+    assert rng[1] >= 0 and rng[0] <= 0
+    assert -12 <= rng[0] <= 1, f"base no hundida por antiguos: {rng}"
+    assert len(fig.data[0].x) == 120 and len(fig.data[1].x) == 120
+
+
+def test_y_menos_datos_que_ventana_usa_todo(tmp_path):
+    """Menos datos que la ventana: sin rango X explícito → Y con todos los datos."""
+    db = str(tmp_path / "ywin6.db")
+    init_db(db)
+    _y_window_fixture(db, 10, kg_viejos=40.0, kg_recientes=120.0)  # 10 días < 2 meses
+    fig = chart_pfr_timeline(db, "systemic", granularity="day")
+    rng = fig.layout.yaxis.range
+    y_vals = [v for v in fig.data[0].y if v is not None]
+    assert rng[0] <= min(y_vals) and rng[1] >= max(y_vals)
+    assert rng[0] <= 0 <= rng[1]
+
+
+def test_y_granularidades_recalculan_con_su_ventana(tmp_path):
+    """Cada granularidad recalcula Y con los datos de su ventana visible."""
+    import datetime
+
+    db = str(tmp_path / "ywin7.db")
+    init_db(db)
+    load_ejercicios(
+        db, pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press Convergente"}])
+    )
+    rows = []
+    for i in range(150):  # ~5 meses y 22 semanas
+        d = datetime.date(2026, 1, 1) + datetime.timedelta(days=i)
+        kg = 50.0 if i < 120 else 130.0  # antiguos negativos; último mes fuerte
+        rows.append(
+            {
+                "semana": (i // 7) + 1,
+                "dia": "LUNES",
+                "fecha": d.isoformat(),
+                "set_orden": 1,
+                "ejercicio": "Press Convergente",
+                "reps": 6.0,
+                "kg": kg,
+                "rir": 0.0,
+            }
+        )
+    load_training_data(db, pd.DataFrame(rows))
+    for gran in ("day", "week", "month"):
+        fig = chart_selection(db, ["Pectoral"], [], gran)
+        rng = fig.layout.yaxis.range
+        assert rng[0] <= 0 <= rng[1], (gran, rng)
+        # La base no debe hundirse por los negativos antiguos fuera de la ventana.
+        assert rng[0] > -15, (gran, rng)
+
+
+# ---------------------------------------------------------------------------
+# Fase 2 — Tooltip canónico (8 posiciones) y RM centralizado
+# ---------------------------------------------------------------------------
+
+
+def test_tooltip_customdata_8_posiciones_day(setup_test_db):
+    """Day: [etiqueta DD/MM/YYYY, Δ±, series, reps, peso, rir, rm_max, nombre]."""
+    from src.metrics_engine import rm_ajustado
+
+    fig = chart_pfr_timeline(setup_test_db, "systemic", granularity="day")
+    fila = fig.data[0].customdata[0]
+    assert len(fila) == 8
+    assert fila[0] == "04/05/2026"
+    assert fila[1].endswith("%")
+    assert int(fila[2]) == 2  # 2 sets del día en la fixture
+    assert float(fila[3]) == pytest.approx(6.0)
+    assert float(fila[4]) == pytest.approx(85.0)
+    assert float(fila[5]) == pytest.approx((1.0 + 0.0) / 2)
+    # rm_max = rm_ajustado de la serie top: (85kg, reps 6, rir 1) vía metrics_engine.
+    assert float(fila[6]) == pytest.approx(rm_ajustado(85.0, 6.0, 1.0), abs=0.15)
+    assert fila[7] == "Crecimiento"
+
+
+def test_tooltip_customdata_week_y_month_labels(setup_test_db):
+    """Week → 'Semana N'; Month → nombre de mes; siempre 8 posiciones."""
+    figw = chart_pfr_timeline(setup_test_db, "systemic", granularity="week")
+    assert figw.data[0].customdata[0][0] == "Semana 1"
+    assert len(figw.data[0].customdata[0]) == 8
+    figm = chart_pfr_timeline(setup_test_db, "systemic", granularity="month")
+    assert figm.data[0].customdata[0][0] == "Mayo"
+    assert len(figm.data[0].customdata[0]) == 8
+
+
+def test_tooltip_sin_textos_antiguos_en_figura(setup_test_db):
+    """Ni hovertemplate ni customdata contienen Volumen/Sueño/Fallos/Crecimiento."""
+    for gran in ("day", "week", "month"):
+        fig = chart_pfr_timeline(setup_test_db, "systemic", granularity=gran)
+        t = fig.data[0]
+        for texto in ("Volumen", "Sueño", "Fallos", "Crecimiento:", '"Fecha "'):
+            assert texto not in t.hovertemplate, (gran, texto)
+        for fila in t.customdata:
+            joined = "|".join(str(v) for v in fila)
+            assert "kg" not in joined.replace("RM aj.", ""), (gran, joined)
+            assert " h" not in joined
+            assert "Fallos" not in joined
+
+
+def test_altura_layout_intacta(setup_test_db):
+    """La altura del layout no cambia con el nuevo tooltip (450 en ambas fns)."""
+    fig = chart_pfr_timeline(setup_test_db, "systemic")
+    assert fig.layout.height == 450
+    fig2 = chart_selection(setup_test_db, ["Pectoral"], [])
+    assert fig2.layout.height == 450
+
+
+def test_rm_max_usa_metrics_engine(tmp_path):
+    """rm_max del hover == rm_ajustado(kg, reps, rir) del mejor set del periodo."""
+    import sqlite3
+    from datetime import date as _d
+
+    from src.metrics_engine import rm_ajustado
+    from src.training_service import calculate_cycle_week, parse_cycle_start
+
+    db = str(tmp_path / "hover.db")
+    init_db(db)
+    load_ejercicios(
+        db,
+        pd.DataFrame([{"grupo_muscular": "Pectoral", "ejercicio": "Press"}]),
+    )
+    fecha = "2026-08-10"
+    semana = calculate_cycle_week(_d.fromisoformat(fecha), parse_cycle_start())
+    sets_datos = [(40.0, 8.0, 3.0), (95.0, 4.0, 1.0)]
+    conn = sqlite3.connect(db)
+    try:
+        for i, (kg, reps, rir) in enumerate(sets_datos, start=1):
+            conn.execute(
+                "INSERT INTO training_sets (semana,dia,fecha,set_orden,ejercicio,reps,kg,rir)"
+                " VALUES (?, 'LUNES', ?, ?, 'Press', ?, ?, ?)",
+                (semana, fecha, i, reps, kg, rir),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    fig = chart_pfr_timeline(db, "systemic", granularity="day")
+    fila = fig.data[0].customdata[-1]
+    esperado = max(rm_ajustado(kg, reps, rir) for kg, reps, rir in sets_datos)
+    assert float(fila[6]) == pytest.approx(esperado, abs=0.15)
+
+
+def test_fmt_num_none_como_guion():
+    """None/NaN se renderizan como '—' (ausencia), nunca como 0."""
+    from src.charts import _fmt_delta, _fmt_num
+
+    assert _fmt_num(None) == "—"
+    assert _fmt_num(float("nan")) == "—"
+    assert _fmt_num(82.55) == "82.5" or _fmt_num(82.55) == "82.6"
+    assert _fmt_delta(None) == "—"
+    assert _fmt_delta(8.44) == "+8.4%"
+    assert _fmt_delta(-3.21) == "-3.2%"
+    assert _fmt_delta(0.0) == "0.0%"

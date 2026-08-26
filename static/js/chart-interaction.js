@@ -53,31 +53,87 @@ function plotData(fig) {
 }
 
 // WeakSet: nodes that already have handlers bound.
-const _clickBound = new WeakSet();
 const _relayoutBound = new WeakSet();
 const _wheelBound = new WeakSet();
+const _plotResizeObserver = new WeakMap();
 
-function parseAxisRange(range, axis) {
+// Lista real de categorías del eje: interna de Plotly o reconstruida desde las
+// trazas en orden de aparición (mismo criterio por defecto de Plotly para
+// categoryorder). Nunca se infiere de los valores del rango.
+function categoryListOf(plotEl, axis) {
+    const internal = axis && (axis._categories || axis.categoryarray);
+    if (Array.isArray(internal) && internal.length) return internal.map(String);
+    const cats = [];
+    const seen = Object.create(null);
+    const fullData = plotEl && plotEl._fullData;
+    if (Array.isArray(fullData)) {
+        fullData.forEach(function (trace) {
+            if (!trace || !Array.isArray(trace.x)) return;
+            if (axis && axis._id && trace.xaxis && trace.xaxis !== axis._id) return;
+            trace.x.forEach(function (value) {
+                const key = String(value);
+                if (!(key in seen)) {
+                    seen[key] = true;
+                    cats.push(key);
+                }
+            });
+        });
+    }
+    return cats.length ? cats : null;
+}
+
+function parseAxisRange(plotEl, axis) {
+    const range = axis && axis.range;
     if (!Array.isArray(range) || range.length !== 2) return null;
     if (range.every(function (value) {
         return typeof value === 'number' && Number.isFinite(value);
     })) {
-        return { values: range.slice(), isDate: false };
+        // El rango ya es numérico (índices con decimales incluidos): usarlo tal cual.
+        return { values: range.slice(), isDate: false, isCategory: false };
     }
-    if (axis && axis.type === 'date') {
+    if (axis.type === 'date') {
         const values = range.map(function (value) {
             return typeof value === 'number' ? value : Date.parse(String(value));
         });
-        if (values.every(Number.isFinite)) return { values: values, isDate: true };
+        if (values.every(Number.isFinite)) return { values: values, isDate: true, isCategory: false };
+    }
+    if (axis.type === 'category') {
+        // Las etiquetas categóricas se resuelven EXCLUSIVAMENTE contra la lista
+        // real de categorías del eje. Si no se pueden resolver, no hay zoom:
+        // nunca se convierte un string numérico a índice con Number() porque la
+        // etiqueta "2" (Semana 2) no representa el índice 2.
+        if (range.every(function (value) { return typeof value === 'string'; })) {
+            const cats = categoryListOf(plotEl, axis);
+            if (!cats) return null;
+            const indexOfCat = Object.create(null);
+            cats.forEach(function (cat, i) {
+                if (!(cat in indexOfCat)) indexOfCat[cat] = i;
+            });
+            const values = range.map(function (value) {
+                const idx = indexOfCat[value];
+                return typeof idx === 'number' ? idx : NaN;
+            });
+            if (values.every(Number.isFinite)) {
+                return { values: values, isDate: false, isCategory: true };
+            }
+        }
     }
     return null;
 }
 
-function formatAxisRange(values, isDate) {
-    if (!isDate) return values;
-    return values.map(function (value) {
-        return new Date(value).toISOString();
-    });
+function formatAxisRange(values, parsed) {
+    // Compatibilidad: segundo arg puede ser boolean isDate o objeto parsed.
+    const isDate = parsed && typeof parsed === 'object' ? !!parsed.isDate : !!parsed;
+    if (isDate) {
+        return values.map(function (value) {
+            return new Date(value).toISOString();
+        });
+    }
+    // Numérico y categórico: devolver los números tal cual, conservando los
+    // decimales producidos por zoom/pan. Plotly acepta rangos numéricos
+    // fraccionarios en ejes categoría; redondear a etiquetas destruye la
+    // precisión y hace saltar el rango tras varias operaciones.
+    return values;
 }
 
 function bindHorizontalWheel(plotEl, Plotly) {
@@ -85,42 +141,97 @@ function bindHorizontalWheel(plotEl, Plotly) {
     plotEl.addEventListener(
         'wheel',
         function (event) {
-            const axis = plotEl._fullLayout && plotEl._fullLayout.xaxis;
-            const parsed = parseAxisRange(axis && axis.range, axis);
-            if (!parsed) return;
-
+            const full = plotEl._fullLayout;
+            if (!full || !full.xaxis || !full.yaxis) return;
             const delta = event.deltaY || event.deltaX;
             if (!delta) return;
+
+            // Shift+rueda tiene prioridad absoluta: siempre desplazamiento horizontal sobre X,
+            // incluso cuando el cursor está sobre el eje Y.
+            if (event.shiftKey) {
+                const axis = full.xaxis;
+                const parsed = parseAxisRange(plotEl, axis);
+                if (!parsed) return;
+                const span = parsed.values[1] - parsed.values[0];
+                if (!Number.isFinite(span) || span <= 0) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const direction = delta > 0 ? 1 : -1;
+                const shift = span * 0.04 * direction;
+                const nextRange = parsed.values.map(function (value) {
+                    return value + shift;
+                });
+                Plotly.relayout(plotEl, {
+                    'xaxis.range': formatAxisRange(nextRange, parsed),
+                    'yaxis.range': full.yaxis.range,
+                    'yaxis.autorange': false,
+                });
+                return;
+            }
+
+            // Detección geométrica del eje Y (sin depender de clases internas de Plotly).
+            const rect = plotEl.getBoundingClientRect();
+            const margin = full.margin || { l: 0, r: 0, t: 0, b: 0 };
+            const plotWidth = (full.width || rect.width) - margin.l - margin.r;
+            const plotHeight = (full.height || rect.height) - margin.t - margin.b;
+            const plotLeft = rect.left + margin.l;
+            const plotTop = rect.top + margin.t;
+            const isOverYAxis =
+                event.clientX >= rect.left &&
+                event.clientX < plotLeft &&
+                event.clientY >= plotTop &&
+                event.clientY < plotTop + plotHeight;
+            const isOverPlot =
+                event.clientX >= plotLeft &&
+                event.clientX < plotLeft + plotWidth &&
+                event.clientY >= plotTop &&
+                event.clientY < plotTop + plotHeight;
+            if (!isOverYAxis && !isOverPlot) return;
+
             event.preventDefault();
             event.stopPropagation();
 
-            const span = parsed.values[1] - parsed.values[0];
-            if (!Number.isFinite(span) || span <= 0) return;
-            const rect = plotEl.getBoundingClientRect();
-            const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-            let nextRange;
-            if (event.shiftKey) {
-                const direction = delta > 0 ? 1 : -1;
-                // Small, deliberate steps feel closer to a timeline scrubber.
-                const shift = span * 0.04 * direction;
-                nextRange = parsed.values.map(function (value) {
-                    return value + shift;
+            if (isOverYAxis) {
+                const axis = full.yaxis;
+                const parsed = parseAxisRange(plotEl, axis);
+                if (!parsed) return;
+                const span = parsed.values[1] - parsed.values[0];
+                if (!Number.isFinite(span) || span <= 0) return;
+                const ratioY = Math.min(1, Math.max(0, (event.clientY - plotTop) / plotHeight));
+                const zoomFactor = delta > 0 ? 1.15 : 0.85;
+                let nextSpan = span * zoomFactor;
+                const minSpan = 1e-9;
+                if (nextSpan < minSpan) nextSpan = minSpan;
+                const anchor = parsed.values[0] + span * ratioY;
+                let nextRange = [anchor - nextSpan * ratioY, anchor + nextSpan * (1 - ratioY)];
+                if (nextRange[0] >= nextRange[1]) return;
+                Plotly.relayout(plotEl, {
+                    'yaxis.range': formatAxisRange(nextRange, parsed),
+                    'xaxis.range': full.xaxis.range,
+                    'xaxis.autorange': false,
                 });
             } else {
-                // Normal wheel zooms only X, anchored at the pointer.
-                const zoomFactor = delta > 0 ? 0.85 : 1.15;
-                const nextSpan = span * zoomFactor;
+                const axis = full.xaxis;
+                const parsed = parseAxisRange(plotEl, axis);
+                if (!parsed) return;
+                const span = parsed.values[1] - parsed.values[0];
+                if (!Number.isFinite(span) || span <= 0) return;
+                const ratio = Math.min(1, Math.max(0, (event.clientX - plotLeft) / plotWidth));
+                const zoomFactor = delta > 0 ? 1.15 : 0.85;
+                let nextSpan = span * zoomFactor;
+                const minSpan = 1e-9;
+                if (nextSpan < minSpan) nextSpan = minSpan;
                 const anchor = parsed.values[0] + span * ratio;
-                nextRange = [anchor - nextSpan * ratio, anchor + nextSpan * (1 - ratio)];
+                let nextRange = [anchor - nextSpan * ratio, anchor + nextSpan * (1 - ratio)];
+                if (nextRange[0] >= nextRange[1]) return;
+                Plotly.relayout(plotEl, {
+                    'xaxis.range': formatAxisRange(nextRange, parsed),
+                    'yaxis.range': full.yaxis.range,
+                    'yaxis.autorange': false,
+                });
             }
-            Plotly.relayout(plotEl, {
-                'xaxis.range': formatAxisRange(nextRange, parsed.isDate),
-                'yaxis.range': plotEl._fullLayout.yaxis.range,
-                'yaxis.autorange': false,
-            });
         },
-        // Capture all wheel events before Plotly. Both paths update only X;
-        // drag-pan remains Plotly's free two-axis interaction.
+        // Capture all wheel events before Plotly.
         { capture: true, passive: false },
     );
     _wheelBound.add(plotEl);
@@ -141,7 +252,11 @@ export function renderUnifiedChart() {
     }
 
     if (!plotData(fig)) {
-        // Empty state: purge plot, hide it, show empty div.
+        // Empty state: purge plot, hide it, show empty div. Desconectar observer.
+        if (_plotResizeObserver.has(plotEl)) {
+            _plotResizeObserver.get(plotEl).disconnect();
+            _plotResizeObserver.delete(plotEl);
+        }
         if (typeof Plotly !== 'undefined') Plotly.purge(plotEl);
         plotEl.hidden = true;
         if (emptyEl) emptyEl.hidden = false;
@@ -162,6 +277,14 @@ export function renderUnifiedChart() {
             layout.title = { ...(layout.title || {}), text: '' };
             layout.dragmode = 'pan';
             layout.uirevision = 'chart';
+            // La caja visual la fija el CSS (#unified-chart clamp + flex):
+            // se pasan ancho y alto EXPLÍCITOS medidos del propio plot para
+            // evitar la carrera del primer render (sin CLS ready/empty).
+            const targetW = plotEl.clientWidth;
+            const targetH = plotEl.clientHeight;
+            if (targetW > 0) layout.width = targetW;
+            if (targetH > 0) layout.height = targetH;
+            if (targetW > 0 || targetH > 0) layout.autosize = false;
             // El pan con clic sostenido permite mover ambos ejes.
             if (!layout.xaxis) layout.xaxis = {};
             if (!layout.yaxis) layout.yaxis = {};
@@ -173,6 +296,25 @@ export function renderUnifiedChart() {
                 scrollZoom: false,
                 doubleClick: 'reset',
                 responsive: true,
+            }).then(function () {
+                // ResizeObserver robusto: observa #unified-chart-plot y mantiene
+                // Plotly sincronizado con el contenedor en ambas direcciones.
+                if (_plotResizeObserver.has(plotEl)) {
+                    _plotResizeObserver.get(plotEl).disconnect();
+                }
+                const ro = new ResizeObserver(function () {
+                    if (plotEl.hidden) return;
+                    const w = plotEl.clientWidth;
+                    const h = plotEl.clientHeight;
+                    if (w < 10 || h < 10) return;
+                    const layoutW = plotEl._fullLayout && plotEl._fullLayout.width;
+                    const layoutH = plotEl._fullLayout && plotEl._fullLayout.height;
+                    if (Math.abs(w - layoutW) > 1 || Math.abs(h - layoutH) > 1) {
+                        Plotly.relayout(plotEl, { width: w, height: h, autosize: false });
+                    }
+                });
+                ro.observe(plotEl);
+                _plotResizeObserver.set(plotEl, ro);
             });
         })
         .then(function () {
@@ -181,17 +323,9 @@ export function renderUnifiedChart() {
             // Accesibilidad: aria-label y foco visible para el gráfico
             plotEl.setAttribute('aria-label', 'Gráfica de rendimiento');
             plotEl.setAttribute('role', 'img');
-            // Bind plotly_click once per node (WeakSet).
-            if (!_clickBound.has(plotEl)) {
-                plotEl.on('plotly_click', function (e) {
-                    const points = e && e.points;
-                    if (!points || !points.length) return;
-                    const semana = points[0].x;
-                    if (semana == null) return;
-                    firstTrainingOfWeek(semana, 0);
-                });
-                _clickBound.add(plotEl);
-            }
+            // La gráfica es EXCLUSIVAMENTE analítica: sin handler de
+            // plotly_click. Un clic sobre un punto no navega, no abre registro
+            // ni modifica URL/selección (zoom, pan y tooltips quedan intactos).
             if (!_relayoutBound.has(plotEl)) {
                 plotEl.on('plotly_relayout', function (e) {
                     // El rango Y se deja libre para que el pan con clic
@@ -203,29 +337,6 @@ export function renderUnifiedChart() {
         })
         .catch(function (err) {
             showChartError(err && err.message ? err.message : 'Error al renderizar la gráfica.');
-        });
-}
-
-function firstTrainingOfWeek(semana, attempt) {
-    const params = new URLSearchParams({ semana: String(semana) });
-    fetch(`/semana/primer-entreno?${params.toString()}`)
-        .then(function (r) {
-            if (!r.ok) {
-                throw new Error('No se pudo obtener el primer entreno de la semana.');
-            }
-            return r.json();
-        })
-        .then(function (data) {
-            if (data && data.fecha) {
-                window.location.href = '/registro?fecha=' + data.fecha;
-            }
-        })
-        .catch(function (err) {
-            if (!attempt) {
-                setTimeout(function () { firstTrainingOfWeek(semana, 1); }, 400);
-                return;
-            }
-            showChartError(err && err.message ? err.message : 'No se pudo abrir el entreno de la semana.');
         });
 }
 

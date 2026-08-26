@@ -269,7 +269,9 @@ def test_pagina_estructura_sin_overflow(page, server):
     )
     assert layout["sticky"] == "sticky", layout
     assert layout["catLeft"], layout
-    assert 260 <= layout["catWidth"] <= 340, layout
+    # Contrato Fase 2-layout: el catálogo comparte el token compacto
+    # --split-catalog-w = clamp(232px, 18vw, 260px) (antes fijo 280px).
+    assert 230 <= layout["catWidth"] <= 300, layout
     # Grupos del catálogo cerrados por defecto, sin título de panel.
     expect(page.locator('.split-catalog-group[data-group="Pectoral"]')).not_to_have_attribute(
         "open", ""
