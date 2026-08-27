@@ -15,7 +15,11 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.gzip import GZipMiddleware
 
 from config import CICLO_START, DB_PATH, HC_SYNC_TOKEN, MUSCLE_CATEGORIES
-from src.charts import chart_pfr_timeline, get_exercise_raw_data, get_exercise_session_summary
+from src.charts import (
+    chart_pfr_timeline,
+    get_exercise_raw_data,
+    get_exercise_session_summary,
+)
 from src.dashboard_service import (
     build_date_navigator,
     build_nutrition_editor,
@@ -240,9 +244,11 @@ def _validate_granularity(gran: str) -> str:
 
 
 def _validate_window(ventana: int) -> int:
-    """Valida la ventana del panel: solo 4 u 8 semanas (contrato Fase 2)."""
-    if ventana not in (4, 8):
-        raise ValidationError(f"Ventana inválida: {ventana}. Valores permitidos: 4, 8.")
+    """Valida la ventana del panel: 1–8 semanas (contrato Fase 2)."""
+    if ventana not in (1, 2, 3, 4, 5, 6, 7, 8):
+        raise ValidationError(
+            f"Ventana inválida: {ventana}. Valores permitidos: 1, 2, 3, 4, 5, 6, 7, 8."
+        )
     return ventana
 
 
@@ -1409,6 +1415,19 @@ def grafica_view(
         oob=True,
     )
     content += summary_oob(summary_html)
+    # Catálogo con orden dinámico compartido (misma ventana que el resumen)
+    from src.database import get_dashboard_catalog
+    from src.summary_service import db_window
+
+    window = db_window(DB_PATH, semanas)
+    if window is not None:
+        catalog = get_dashboard_catalog(DB_PATH, window.start.isoformat(), window.end.isoformat())
+    else:
+        catalog = get_dashboard_catalog(DB_PATH)
+    catalog_html = render_fragment(
+        templates, request, "partials/dashboard_catalog.html", dashboard_catalog=catalog
+    )
+    content += fragment_oob(templates, request, "dashboard-catalog-list", catalog_html)
 
     return HTMLResponse(content=content)
 

@@ -16,6 +16,8 @@ from src.summary_service import (
 
 # Hovertemplate canónico de Fase 2: Δ + métricas del periodo,
 # peso corporal, sueño, fallos ni fecha duplicada. El nombre viaja en <extra>.
+# Contrato 8 posiciones: 0 etiqueta, 1 Δ, 2 series, 3 reps, 4 peso, 5 RIR, 6 RM aj., 7 nombre.
+# La comparación reutiliza customdata[2] (Series) sin alterar el tooltip visible.
 HOVERTEMPLATE = (
     "%{customdata[0]}<br>Δ %{customdata[1]}"
     "<br>Series %{customdata[2]} · Reps %{customdata[3]}"
@@ -49,10 +51,94 @@ def _fmt_delta(pct: float | None) -> str:
     return "0.0%"
 
 
+# --- TAREA 3: helpers de comparación compacta (testeables, sin tocar métricas) ---
+
+_MESES_CORTO = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+
+
+def format_day_short(iso_date: str, all_dates: list[str] | None = None) -> str:
+    """Etiqueta compacta de día: '18 jul' o '18 jul 26' si hay >1 año.
+
+    iso_date: 'YYYY-MM-DD'. all_dates: opcional para decidir si añade año corto.
+    """
+    try:
+        y_str, m_str, d_str = str(iso_date).split("-")
+        _, m, d = int(y_str), int(m_str), int(d_str)
+    except Exception:  # noqa: BLE001
+        return str(iso_date)
+    mes = _MESES_CORTO[m - 1] if 1 <= m <= 12 else m_str
+    base = f"{d} {mes}"
+    # Año solo si hay ambigüedad entre años en el conjunto visible.
+    if all_dates is not None:
+        years = set()
+        for v in all_dates:
+            try:
+                years.add(str(v).split("-")[0])
+            except Exception:  # noqa: BLE001, S112
+                continue
+        if len(years) > 1:
+            base += f" {y_str[2:]}"
+    return base
+
+
+def format_week_short(semana: int | str) -> str:
+    """Etiqueta compacta de semana: 'S1', 'S14'."""
+    try:
+        return f"S{int(str(semana).strip())}"
+    except Exception:  # noqa: BLE001
+        return f"S{semana}"
+
+
+def format_month_short(periodo: str) -> str:
+    """Etiqueta compacta de mes: 'ene 26' desde '2026-01' o '2026-01-15'."""
+    try:
+        s = str(periodo).strip()
+        # acepta 'YYYY-MM' o 'YYYY-MM-DD' o 'YYYY-MM' con separador '-'
+        parts = s.split("-")
+        y = int(parts[0])
+        m = int(parts[1])
+        mes = _MESES_CORTO[m - 1] if 1 <= m <= 12 else parts[1]
+        return f"{mes} {str(y)[2:]}"
+    except Exception:  # noqa: BLE001
+        return str(periodo)
+
+
+def extract_point_values(customdata: list | tuple | None) -> dict | None:
+    """Extrae los valores visibles del customdata canónico (8 posiciones).
+
+    Contrato visible 8: [etiqueta, Δ, series, reps, peso, rir, rm, trace]
+    La comparación usa series en posición 2 sin metadata extra.
+    Retorna None si incompleto.
+    """
+    if not isinstance(customdata, (list, tuple)):
+        return None
+    if len(customdata) == 8:
+        try:
+            return {
+                "periodo": str(customdata[0]),
+                "delta": str(customdata[1]),
+                "series": str(customdata[2]),
+                "reps": str(customdata[3]),
+                "peso": str(customdata[4]),
+                "rir": str(customdata[5]),
+                "rm": str(customdata[6]),
+                "trace": str(customdata[7]),
+            }
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def point_comparison_id(granularity: str, periodo: str, trace_name: str) -> str:
+    """Identidad única por granularidad+periodo+traza (case-insensitive trace)."""
+    return f"{str(granularity).lower()}|{str(periodo)}|{str(trace_name).strip().lower()}"  # noqa: RUF010
+
+
 def _hover_rows(df: pd.DataFrame, name: str) -> list[list[str]]:
     """Construye las 8 posiciones canónicas del customdata por punto.
 
     1 etiqueta · 2 Δ · 3 series · 4 reps · 5 peso · 6 RIR · 7 RM aj. · 8 nombre.
+    Contrato visible: series en posición 2, reutilizado por comparación sin metadata extra.
     """
     rows: list[list[str]] = []
     for _, r in df.iterrows():
@@ -373,9 +459,20 @@ def _initial_x_range(x_values: list, granularity: str) -> list | None:
 
 def _range_for_axis(x_range: list, granularity: str) -> list:
     """Convierte las claves normalizadas de _initial_x_range a la representación
-    del eje X en la figura (day: ISO; week: str(posición); month: 'YYYY-MM')."""
+    del eje X en la figura (day: ISO; week: str(posición); month: 'YYYY-MM').
+
+    Solo para day se añade padding visual de ~1 día antes y después para
+    separar el primer/último punto del borde del plot; no inventa datos ni
+    afecta al cálculo de y_visible.
+    """
     if granularity == "day":
-        return list(x_range)
+        # Padding simétrico de 1 día para day; funciona con 1 punto.
+        try:
+            start = (pd.Timestamp(x_range[0]) - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+            end = (pd.Timestamp(x_range[1]) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+            return [start, end]
+        except Exception:  # noqa: BLE001
+            return list(x_range)
     if granularity == "week":
         return [str(v) for v in x_range]
     return [f"{v // 100}-{v % 100:02d}" for v in x_range]
@@ -628,7 +725,7 @@ def chart_selection(
         height=450,
         # Reserve a fixed top band for the horizontal legend so adding or
         # removing traces never changes the chart shell or plot width.
-        margin={"l": 60, "r": 20, "t": 76, "b": 50},
+        margin={"l": 60, "r": 20, "t": 48, "b": 50},
         hovermode="x unified",
         hoverlabel={
             "bgcolor": chart_color("hover.bg"),
@@ -642,7 +739,7 @@ def chart_selection(
         legend={
             "orientation": "h",
             "x": 0,
-            "y": 1.22,
+            "y": 1.08,
             "xanchor": "left",
             "yanchor": "bottom",
             "entrywidth": 100,
@@ -752,7 +849,7 @@ def chart_pfr_timeline(
         paper_bgcolor=chart_color("background"),
         font={"color": chart_color("axes")},
         height=450,
-        margin={"l": 60, "r": 20, "t": 76, "b": 50},
+        margin={"l": 60, "r": 20, "t": 48, "b": 50},
         hovermode="x unified",
         hoverlabel={
             "bgcolor": chart_color("hover.bg"),
@@ -766,7 +863,7 @@ def chart_pfr_timeline(
         legend={
             "orientation": "h",
             "x": 0,
-            "y": 1.22,
+            "y": 1.08,
             "xanchor": "left",
             "yanchor": "bottom",
             "entrywidth": 100,

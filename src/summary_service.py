@@ -26,7 +26,7 @@ from src.training_service import calculate_cycle_week, parse_cycle_start
 
 logger = logging.getLogger(__name__)
 
-WindowWeeks = Literal[4, 8]
+WindowWeeks = Literal[1, 2, 3, 4, 5, 6, 7, 8]
 
 MONTH_NAMES_ES: tuple[str, ...] = (
     "Enero",
@@ -43,7 +43,7 @@ MONTH_NAMES_ES: tuple[str, ...] = (
     "Diciembre",
 )
 
-ALLOWED_WINDOWS: tuple[int, ...] = (4, 8)
+ALLOWED_WINDOWS: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7, 8)
 
 
 @dataclass(frozen=True)
@@ -51,10 +51,10 @@ class Window:
     """Ventana calendario cerrada [start, end] de N semanas NATURALES.
 
     Invariantes:
-    - weeks ∈ {4, 8}
+    - weeks ∈ {1..8}
     - start <= end
     - (end - start).days == weeks*7 - 1  → exactamente weeks*7 días inclusivos
-      (4 semanas = 28 días; 8 semanas = 56 días).
+      (1 semana = 7 días; 8 semanas = 56 días).
     """
 
     start: date
@@ -85,12 +85,12 @@ def calendar_window(end: date, weeks: int) -> Window:
 
     Fin = última fecha con datos.
     Inicio = fin - (N*7 - 1) días  → la ventana inclusiva mide exactamente
-    N*7 días (4 semanas = 28 días; 8 semanas = 56 días).
+    N*7 días (1 semana = 7 días; 8 semanas = 56 días).
 
-    Solo N ∈ {4, 8}. Cualquier otro valor lanza ``ValidationError``.
+    Solo N ∈ {1..8}. Cualquier otro valor lanza ``ValidationError``.
     """
     if weeks not in ALLOWED_WINDOWS:
-        raise ValidationError(f"La ventana debe ser 4 u 8 semanas, recibido: {weeks}")
+        raise ValidationError(f"La ventana debe ser 1–8 semanas, recibido: {weeks}")
     # N semanas naturales: N*7 días inclusivos → desplazamiento N*7 - 1.
     start = end - timedelta(days=weeks * 7 - 1)
     # Cast para mypy: weeks ya validado como 4|8.
@@ -639,6 +639,13 @@ def build_period_summary(
     """
     if granularidad not in GRANULARITIES:
         raise ValidationError(f"Granularidad no soportada: {granularidad}")
+    # Import compartido para orden dinámico (evita circular y asegura disponibilidad)
+    from src.database import (
+        get_exercise_valid_counts,
+        get_exercises_catalog,
+        sort_exercises_by_data,
+    )
+
     muscles = _dedupe_keep_order(musculos)
     exercises = _dedupe_keep_order(ejercicios)
 
@@ -669,7 +676,7 @@ def build_period_summary(
             if ultimo is not None:
                 hint = (
                     f"Último registro de la selección: {day_label(ultimo)}. "
-                    "Queda fuera de las ventanas disponibles (4 u 8 semanas). "
+                    "Queda fuera de las ventanas disponibles. "
                     "Revisa el historial."
                 )
         except Exception:
@@ -684,11 +691,20 @@ def build_period_summary(
 
     elif nivel == "muscle" and len(muscles) == 1:
         muscle = muscles[0]
-        catalog_order = sorted({pa.entidad for pa in aggs}, key=str.lower)
+        counts = get_exercise_valid_counts(
+            db_path, window.start.isoformat(), window.end.isoformat()
+        )
+        catalog_order = get_exercises_catalog(db_path)
+        # Filtra solo ejercicios del músculo y con datos en ventana
+        muscle_exercises = [pa.entidad for pa in aggs if pa.grupo_muscular == muscle]
+        # Usa helper compartido para ordenar (más datos primero)
+        ordered = [
+            n for n in sort_exercises_by_data(counts, catalog_order) if n in set(muscle_exercises)
+        ]
+        remaining = [n for n in muscle_exercises if n not in ordered]
+        ordered.extend(sorted(remaining, key=str.lower))
         tabs.append(
-            SummaryTab(
-                muscle, "muscle", _collapse_entity_rows(aggs, catalog_order, include_rm=True)
-            )
+            SummaryTab(muscle, "muscle", _collapse_entity_rows(aggs, ordered, include_rm=True))
         )
 
     elif nivel == "exercise" and len(exercises) == 1 and not muscles:
@@ -703,20 +719,38 @@ def build_period_summary(
                 aggs, muscles
             )
         else:
+            counts = get_exercise_valid_counts(
+                db_path, window.start.isoformat(), window.end.isoformat()
+            )
+            catalog_order = get_exercises_catalog(db_path)
             involved = [pa.entidad for pa in aggs]
-            resumen_order = sorted(dict.fromkeys(involved), key=str.lower)
+            # Usa helper compartido: más datos primero
+            resumen_order = [
+                n for n in sort_exercises_by_data(counts, catalog_order) if n in set(involved)
+            ]
+            remaining = [n for n in involved if n not in resumen_order]
+            resumen_order.extend(sorted(set(remaining), key=str.lower))
             resumen_filas = _collapse_entity_rows(aggs, resumen_order, include_rm=True)
         tabs.append(SummaryTab("Resumen", nivel, resumen_filas))
 
         for ejercicio in exercises:
             own = [pa for pa in aggs if pa.entidad == ejercicio]
             tabs.append(SummaryTab(ejercicio, "exercise", _period_rows_desc(own)))
-        # Tabs por músculo SOLO en multi-músculos puro; en mixto el Resumen ya
-        # muestra los músculos (contrato §5 de Fase 2).
         if not exercises:
             for muscle in muscles:
                 own = [pa for pa in aggs if pa.grupo_muscular.lower() == muscle.lower()]
-                ent_order = sorted({p.entidad for p in own}, key=str.lower)
+                # Orden dinámico para pestañas de músculo
+                counts_m = get_exercise_valid_counts(
+                    db_path, window.start.isoformat(), window.end.isoformat()
+                )
+                catalog_m = get_exercises_catalog(db_path)
+                ent_order = [
+                    n
+                    for n in sort_exercises_by_data(counts_m, catalog_m)
+                    if n in {p.entidad for p in own}
+                ]
+                remaining_m = [n for n in {p.entidad for p in own} if n not in ent_order]
+                ent_order.extend(sorted(remaining_m, key=str.lower))
                 tabs.append(
                     SummaryTab(
                         muscle, "muscle", _collapse_entity_rows(own, ent_order, include_rm=True)

@@ -130,6 +130,7 @@ function popupIsOpen() {
 
 function deselectAll() {
     cancelPending();
+    if (window.clearChartComparison) window.clearChartComparison({silent:true});
     selectedMuscles = new Set();
     selectedExercises = new Set();
     markMuscles();
@@ -139,6 +140,7 @@ function deselectAll() {
 }
 
 function clickMuscle(muscle, shift) {
+    if (window.clearChartComparison) window.clearChartComparison({silent:true});
     if (shift) {
         if (selectedMuscles.has(muscle)) {
             selectedMuscles.delete(muscle);
@@ -168,6 +170,7 @@ function clickMuscle(muscle, shift) {
 }
 
 function clickExercise(ejercicio, shift, padre) {
+    if (window.clearChartComparison) window.clearChartComparison({silent:true});
     if (shift) {
         if (selectedExercises.has(ejercicio)) {
             selectedExercises.delete(ejercicio);
@@ -218,14 +221,8 @@ function setGranularity(g) { _granularity = g; markGranularity(); }
 function markGranularity() {
     const g = getGranularity();
     document.querySelectorAll('#granularity-selector [data-action="set-granularity"]').forEach((btn) => {
-        const isActive = btn.dataset.gran === g;
-        btn.setAttribute('aria-pressed', String(isActive));
-        btn.classList.toggle('bg-burgundy-600', isActive);
-        btn.classList.toggle('text-white', isActive);
-        btn.classList.toggle('text-neutral-400', !isActive);
-        btn.classList.toggle('hover:text-white', !isActive);
+        btn.setAttribute('aria-pressed', String(btn.dataset.gran === g));
     });
-    // Compatibilidad con el select legacy (si existe)
     const sel = document.getElementById('granularity-select');
     if (sel) sel.value = g;
 }
@@ -235,6 +232,7 @@ function markGranularity() {
 function changeGranularity(g) {
     if (!['day', 'week', 'month'].includes(g)) return;
     if (g === getGranularity()) return;
+    if (window.clearChartComparison) window.clearChartComparison({silent:true});
     setGranularity(g);
     cancelPending();
     refreshChart();
@@ -242,24 +240,25 @@ function changeGranularity(g) {
 }
 
 // --- Panel derecho (Fase 2) -----------------------------------------------
-// La ventana del panel se adopta del botón aria-pressed server-renderizado;
-// el cambio dispara UNA petición /grafica que trae gráfica + panel juntos.
-// El cambio de pestaña es 100 % local: paneles prerenderizados con hidden,
-// roving tabindex y flechas del teclado. Cero fetch.
+// La ventana del panel viaja en la MISMA respuesta que la gráfica.
 
 function getSummaryWindow() {
+    const sel = document.getElementById('summary-window-select');
+    if (sel) {
+        const v = sel.value;
+        if (['1','2','3','4','5','6','7','8'].includes(v)) return v;
+    }
     const active = document.querySelector(
         '#summary-window-selector [data-action="set-summary-window"][aria-pressed="true"]'
     );
-    return active && (active.dataset.weeks === '4' || active.dataset.weeks === '8')
-        ? active.dataset.weeks
-        : '8';
+    return active && ['1','2','3','4','5','6','7','8'].includes(active.dataset.weeks)
+        ? active.dataset.weeks : '8';
 }
 
 function markSummaryWindow() {
-    // El ESTADO visual lo aplica el CSS vía [aria-pressed] (sin toggles de
-    // clase): aquí solo se sincroniza el atributo.
     const w = getSummaryWindow();
+    const sel = document.getElementById('summary-window-select');
+    if (sel) sel.value = w;
     document
         .querySelectorAll('#summary-window-selector [data-action="set-summary-window"]')
         .forEach((btn) => {
@@ -268,13 +267,15 @@ function markSummaryWindow() {
 }
 
 function changeSummaryWindow(weeks) {
-    if (!['4', '8'].includes(weeks)) return;
-    if (weeks === getSummaryWindow()) return;
-    // 1) Estado ARIA (fuente de verdad para estilo y para el refresco).
+    const s = String(weeks);
+    if (!['1','2','3','4','5','6','7','8'].includes(s)) return;
+    if (s === getSummaryWindow()) return;
+    if (window.clearChartComparison) window.clearChartComparison({silent:true});
+    const sel = document.getElementById('summary-window-select');
+    if (sel) sel.value = s;
     document
         .querySelectorAll('#summary-window-selector [data-action="set-summary-window"]')
-        .forEach((btn) => btn.setAttribute('aria-pressed', String(btn.dataset.weeks === weeks)));
-    // 2) Una sola petición: gráfica + panel en la misma respuesta.
+        .forEach((btn) => btn.setAttribute('aria-pressed', String(btn.dataset.weeks === s)));
     refreshChart();
 }
 
@@ -423,7 +424,8 @@ export function initLevelCascade() {
             changeGranularity(el.dataset.gran);
         } else if (el.dataset.action === 'set-summary-window') {
             e.preventDefault();
-            changeSummaryWindow(el.dataset.weeks);
+            const v = el.value || el.dataset.weeks;
+            changeSummaryWindow(v);
         } else if (el.dataset.action === 'select-summary-tab') {
             // Cambio de pestaña 100 % local: cero peticiones.
             e.preventDefault();
@@ -456,6 +458,7 @@ export function initLevelCascade() {
 
     window.addEventListener('popstate', function () {
         cancelPending();
+        if (window.clearChartComparison) window.clearChartComparison({silent:true});
         restoreFromURL();
         if (!selectedMuscles.size) {
             refreshChart();
@@ -473,6 +476,15 @@ export function initLevelCascade() {
             toggleCatalog();
             e.preventDefault();
             return;
+        }
+        // Comparación tiene prioridad sobre deselección de músculos
+        if (window.clearChartComparison) {
+            const cur = window.getChartComparison ? window.getChartComparison() : [];
+            if (cur && cur.length) {
+                window.clearChartComparison();
+                e.preventDefault();
+                return;
+            }
         }
         if (selectedMuscles.size) deselectAll();
     });
@@ -498,11 +510,47 @@ export function initLevelCascade() {
         }
     });
 
+    // Orden dinámico compartido: tras OOB del catálogo, conserva selección y reordena
+    let _openGroupsBeforeSwap = [];
+    document.body.addEventListener('htmx:oobBeforeSwap', function (e) {
+        if (e.detail.target.id !== 'dashboard-catalog-list') return;
+        _openGroupsBeforeSwap = [...document.querySelectorAll('#dashboard-catalog .db-group.is-open')].map(g => g.dataset.group);
+    });
+    document.body.addEventListener('htmx:oobAfterSwap', function (e) {
+        if (e.detail.target.id !== 'dashboard-catalog-list') return;
+        markMuscles();
+        markExercises();
+        _openGroupsBeforeSwap.forEach(name => openGroup(name, true));
+        _openGroupsBeforeSwap = [];
+        const active = document.activeElement;
+        if (active && active.closest('#dashboard-catalog')) {
+            const first = document.querySelector('#dashboard-catalog [data-action]');
+            if (first) first.focus();
+        }
+    });
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+        if (e.detail.target.id === 'dashboard-catalog-list') {
+            markMuscles();
+            markExercises();
+        }
+    });
+
     initPanelTabsKeyboard();
     initCatalogDrawer();
     updateDashboardViewportOffset();
     new ResizeObserver(updateDashboardViewportOffset).observe(document.querySelector('.dashboard-header') || document.body);
     window.addEventListener('resize', updateDashboardViewportOffset);
+    // Exponer para tests y para inline handlers si fuera necesario
+    window.getSummaryWindow = getSummaryWindow;
+    window.changeSummaryWindow = changeSummaryWindow;
+    document.addEventListener('change', function (e) {
+        const sel = e.target.closest('#summary-window-select');
+        if (!sel) return;
+        changeSummaryWindow(sel.value);
+    });
+    // Fallback directo por si el delegado no captura (select nativo)
+    const _sel = document.getElementById('summary-window-select');
+    if (_sel) _sel.addEventListener('change', function (e) { changeSummaryWindow(e.target.value); });
     markSummaryWindow();
     restoreFromURL();
     markGranularity();

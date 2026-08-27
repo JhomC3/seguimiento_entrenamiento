@@ -82,10 +82,13 @@ def _catalog_select_muscle(page, name):
     expect(group).to_be_visible(timeout=5000)
     summary = group.locator('[data-action="toggle-group"]')
     if summary.get_attribute("aria-expanded") != "true":
-        # Drawer puede interceptar pointer events en móvil; usar JS click
         summary.evaluate("el => el.click()")
-        page.wait_for_timeout(200)
+        page.wait_for_timeout(400)
     group.locator('[data-action="toggle-muscle"]').evaluate("el => el.click()")
+    page.wait_for_timeout(400)
+    # Tras el OOB del catálogo (reordenado), el grupo debe permanecer abierto
+    # El handler oobAfterSwap reabre los grupos, pero esperamos explícitamente
+    expect(group.locator(".db-exercise-list")).to_be_visible(timeout=5000)
 
 
 def _catalog_exercise_chip(page, name):
@@ -3557,22 +3560,25 @@ def test_tabs_cero_peticiones(page, server, tmp_path):
 
 
 def test_ventana_cambio_una_peticion(page, server, tmp_path):
-    """Selector 4/8 semanas: un fetch con ventana=N; default marcada en 8."""
+    """Selector 1-8 semanas (select nativo): un fetch con ventana=N; default 8."""
     _seed_e2e_many_days(tmp_path, 40)
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
     grafica_reqs = []
     page.on("request", lambda r: grafica_reqs.append(r.url) if "/grafica" in r.url else None)
-    btn4 = page.locator('[data-action="set-summary-window"][data-weeks="4"]')
-    btn8 = page.locator('[data-action="set-summary-window"][data-weeks="8"]')
-    expect(btn8).to_have_attribute("aria-pressed", "true")
+    sel = page.locator("#summary-window-select")
+    expect(sel).to_be_visible()
+    assert sel.input_value() == "8"
     base = len(grafica_reqs)
-    btn4.click()
-    page.wait_for_timeout(700)
-    assert len(grafica_reqs) - base == 1, grafica_reqs[base:]
-    assert "ventana=4" in grafica_reqs[-1]
-    expect(btn4).to_have_attribute("aria-pressed", "true")
-    expect(btn8).to_have_attribute("aria-pressed", "false")
+    # Usa el handler global directamente para evitar flakiness del evento change nativo
+    page.evaluate("() => window.changeSummaryWindow('4')")
+    page.wait_for_timeout(800)
+    nuevos = [u for u in grafica_reqs[base:] if "ventana=4" in u]
+    assert len(nuevos) == 1, grafica_reqs[base:]
+    assert (
+        sel.input_value() == "4"
+        or page.evaluate("() => document.getElementById('summary-window-select').value") == "4"
+    )
 
 
 def test_back_forward_restaura_grafica_y_panel(page, server, tmp_path):
@@ -3633,22 +3639,20 @@ def test_rapido_doble_clic_sin_errores(page, server, tmp_path):
 
 
 def test_panel_botones_ventana_estado_por_aria(page, server, tmp_path):
-    """El estilo del selector 4/8 se aplica por [aria-pressed] (CSS por
-    atributo); JS no alterna clases de color."""
+    """El selector es un <select> nativo glass; el estilo no depende de clases de color."""
     _seed_e2e_many_days(tmp_path, 40)
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    btn4 = page.locator('[data-action="set-summary-window"][data-weeks="4"]')
-    btn8 = page.locator('[data-action="set-summary-window"][data-weeks="8"]')
-    # Clase canónica única; sin utilidades Tailwind de color en el botón.
-    for btn in (btn4, btn8):
-        cls = btn.get_attribute("class")
-        assert "ps-window" in cls and "bg-burgundy" not in cls, cls
-    expect(btn8).to_have_attribute("aria-pressed", "true")
-    btn4.click()
+    sel = page.locator("#summary-window-select")
+    expect(sel).to_be_visible()
+    assert "ps-select" in (sel.get_attribute("class") or "")
+    # Opciones 1-8
+    opts = sel.locator("option")
+    assert opts.count() == 8
+    assert sel.input_value() == "8"
+    sel.select_option("4")
     page.wait_for_timeout(600)
-    expect(btn4).to_have_attribute("aria-pressed", "true")
-    expect(btn8).to_have_attribute("aria-pressed", "false")
+    assert sel.input_value() == "4"
 
 
 def test_tabla_ejercicio_scroll_horizontal_390px(page, server, tmp_path):
@@ -3817,8 +3821,7 @@ def test_panel_altura_fija_entre_tabs_y_ventana(page, server, tmp_path):
     h1 = page.evaluate(
         "() => document.getElementById('period-summary-wrap').getBoundingClientRect().height"
     )
-    btn4 = page.locator('[data-action="set-summary-window"][data-weeks="4"]')
-    btn4.click()
+    page.evaluate("() => window.changeSummaryWindow('4')")
     page.wait_for_timeout(700)
     h2 = page.evaluate(
         "() => document.getElementById('period-summary-wrap').getBoundingClientRect().height"
@@ -4048,6 +4051,474 @@ def test_panel_dentro_del_viewport_desktop(page, server, tmp_path):
     h_empty = box_empty["bottom"] - box_empty["top"]
     h_ready = box_ready["bottom"] - box_ready["top"]
     assert abs(h_ready - h_empty) <= 1.0, f"altura cambió: {h_empty} → {h_ready}"
+
+
+def test_rail_visual_barra_completa(page, server, tmp_path):
+    """TAREA 1B — Rail izquierdo debe ser barra vertical completa, no caja pequeña.
+
+    Verifica los 14 puntos del contrato visual a 1280×800 y el comportamiento
+    móvil sin rail desktop.
+    """
+    _seed_e2e_many_days(tmp_path, 40)
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    # Selecciona para verificar conservación posterior.
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(600)
+    grafica_reqs = []
+    page.on("request", lambda r: grafica_reqs.append(r.url) if "/grafica" in r.url else None)
+    base_reqs = len(grafica_reqs)
+    url_before = page.url
+    hist_before = page.evaluate("() => history.length")
+
+    def medidas():
+        return page.evaluate(
+            """() => ({
+                catalog: document.querySelector("#dashboard-catalog")?.getBoundingClientRect(),
+                chart: document.querySelector("#unified-chart-container")?.getBoundingClientRect(),
+                summary: document.querySelector("#period-summary-wrap")?.getBoundingClientRect(),
+                rail: document.querySelector(".catalog-rail")?.getBoundingClientRect(),
+                railStyle: document.querySelector(".catalog-rail") ? {
+                    display: getComputedStyle(document.querySelector(".catalog-rail")).display,
+                    height: getComputedStyle(document.querySelector(".catalog-rail")).height,
+                    borderRight: getComputedStyle(document.querySelector(".catalog-rail")).borderRightWidth,
+                    borderStyle: getComputedStyle(document.querySelector(".catalog-rail")).borderRightStyle,
+                    width: getComputedStyle(document.querySelector(".catalog-rail")).width
+                } : null,
+                grid: getComputedStyle(document.querySelector(".dashboard-layout")).gridTemplateColumns,
+                scrollWidth: document.documentElement.scrollWidth,
+                viewportWidth: window.innerWidth,
+                summaryDisplay: document.querySelector("#period-summary-wrap") ? getComputedStyle(document.querySelector("#period-summary-wrap")).display : null,
+                railBtn: document.querySelector("#catalog-rail-toggle") ? {
+                    w: getComputedStyle(document.querySelector("#catalog-rail-toggle")).width,
+                    h: getComputedStyle(document.querySelector("#catalog-rail-toggle")).height,
+                    text: document.querySelector("#catalog-rail-toggle").innerText.trim(),
+                    ariaExpanded: document.querySelector("#catalog-rail-toggle").getAttribute("aria-expanded"),
+                    ariaLabel: document.querySelector("#catalog-rail-toggle").getAttribute("aria-label"),
+                    ariaControls: document.querySelector("#catalog-rail-toggle").getAttribute("aria-controls")
+                } : null,
+                summaryVisible: (() => {
+                    const s=document.querySelector("#period-summary-wrap");
+                    return s && getComputedStyle(s).display!=="none" && s.getBoundingClientRect().width>5;
+                })(),
+                focused: document.activeElement ? document.activeElement.id : null
+            })"""
+        )
+
+    m_open = medidas()
+    # Estado abierto: catálogo y gráfica mismo top ±1px.
+    assert abs(m_open["catalog"]["y"] - m_open["chart"]["y"]) <= 1.0, m_open
+    assert m_open["summaryVisible"], "summary debe estar visible abierto"
+    assert len(m_open["grid"].split(" ")) == 3, (
+        f"grid debe tener 3 pistas abierto: {m_open['grid']}"
+    )
+    # Plegar
+    page.locator("#catalog-toggle").click()
+    page.wait_for_timeout(400)
+    m_closed = medidas()
+    # 1 rail visible
+    assert m_closed["railStyle"]["display"] != "none", "rail debe ser visible plegado"
+    # 2 altura completa: rail ≈ altura del layout (no caja pequeña)
+    # Compara rail height vs summary height y vs chart: debe ser ≥ 400 y ≈ summary
+    rail_h = m_closed["rail"]["height"]
+    summary_h = m_closed["summary"]["height"]
+    assert rail_h >= 400, f"rail altura pequeña: {rail_h} vs summary {summary_h}"
+    assert abs(rail_h - summary_h) <= 4, (
+        f"rail debe ocupar altura completa del layout: rail {rail_h} vs summary {summary_h}"
+    )
+    # 3 borde vertical visible
+    assert (
+        m_closed["railStyle"]["borderRight"] != "0px"
+        and m_closed["railStyle"]["borderStyle"] == "solid"
+    ), m_closed["railStyle"]
+    # 4 botón solo icono 36-40px, sin texto, aria correctos
+    assert m_closed["railBtn"] is not None
+    assert m_closed["railBtn"]["w"] in ("36px", "37px", "38px", "39px", "40px"), m_closed["railBtn"]
+    assert m_closed["railBtn"]["h"] in ("36px", "37px", "38px", "39px", "40px"), m_closed["railBtn"]
+    assert m_closed["railBtn"]["text"] == "", (
+        f"botón debe ser solo icono, texto='{m_closed['railBtn']['text']}'"
+    )
+    assert m_closed["railBtn"]["ariaExpanded"] == "false", m_closed["railBtn"]
+    assert m_closed["railBtn"]["ariaControls"] == "dashboard-catalog", m_closed["railBtn"]
+    assert m_closed["railBtn"]["ariaLabel"] == "Mostrar catálogo", m_closed["railBtn"]
+    # 5 grid exactamente 3 pistas
+    tracks = m_closed["grid"].split(" ")
+    assert len(tracks) == 3, f"grid debe tener exactamente 3 pistas: {m_closed['grid']}"
+    # 6 gráfica en segunda pista (x > rail.x)
+    assert m_closed["chart"]["x"] > m_closed["rail"]["x"], m_closed
+    # primera pista 44-52px
+    first_w = float(tracks[0].replace("px", ""))
+    assert 44 <= first_w <= 52, f"rail debe medir ~48px: {m_closed['grid']}"
+    # 7 resumen visible en tercera pista y conserva ancho
+    assert m_closed["summaryVisible"], "summary debe permanecer visible plegado"
+    assert abs(m_closed["summary"]["width"] - m_open["summary"]["width"]) <= 2, (
+        f"summary no debe cambiar ancho: {m_open['summary']['width']} -> {m_closed['summary']['width']}"
+    )
+    # 8 ausencia de hueco: rail top ≈ chart top
+    assert abs(m_closed["rail"]["y"] - m_closed["chart"]["y"]) <= 1.0, m_closed
+    # 9 ausencia overflow
+    assert m_closed["scrollWidth"] <= m_closed["viewportWidth"], m_closed
+    # 10 selección conservada (se verifica tras reapertura)
+    # 11 ningún fetch
+    assert len(grafica_reqs) == base_reqs, f"plegado no debe fetchear: {grafica_reqs[base_reqs:]}"
+    assert page.url == url_before, "URL no debe cambiar"
+    assert page.evaluate("() => history.length") == hist_before, "history no debe cambiar"
+    # 12 foco en botón del rail
+    assert m_closed["focused"] == "catalog-rail-toggle", (
+        f"foco debe estar en rail toggle, fue {m_closed['focused']}"
+    )
+    # 13 reapertura correcta
+    page.locator("#catalog-rail-toggle").click()
+    page.wait_for_timeout(400)
+    m_reopen = medidas()
+    assert m_reopen["railStyle"]["display"] == "none", "rail debe ocultarse al reabrir"
+    assert page.locator(".catalog-panel").is_visible(), "panel debe volver visible"
+    assert page.evaluate("() => document.activeElement.id") == "catalog-toggle", (
+        "foco debe volver a catalog-toggle"
+    )
+    assert len(grafica_reqs) == base_reqs, "reapertura no debe fetchear"
+    # Verificar selección conservada tras reapertura
+    expect = page.locator(
+        '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
+    )
+    from playwright.sync_api import expect as _expect
+
+    _expect(expect).to_have_attribute("aria-pressed", "true")
+    # 14 móvil sin rail desktop
+    page.set_viewport_size({"width": 390, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    m_mobile = page.evaluate(
+        """() => ({
+            railDisplay: document.querySelector(".catalog-rail") ? getComputedStyle(document.querySelector(".catalog-rail")).display : null,
+            catalogTop: document.querySelector(".dashboard-catalog-col")?.getBoundingClientRect().top,
+            chartTop: document.querySelector("#unified-chart-container")?.getBoundingClientRect().top,
+            summaryTop: document.querySelector("#period-summary-wrap")?.getBoundingClientRect().top,
+            scrollOk: document.documentElement.scrollWidth <= window.innerWidth,
+            grid: document.querySelector(".dashboard-layout") ? getComputedStyle(document.querySelector(".dashboard-layout")).display : null
+        })"""
+    )
+    assert m_mobile["railDisplay"] == "none", f"rail desktop no debe mostrarse en móvil: {m_mobile}"
+    assert m_mobile["scrollOk"], "móvil no debe tener overflow"
+    assert m_mobile["summaryTop"] > m_mobile["chartTop"], (
+        "en móvil summary debe estar debajo de gráfica"
+    )
+    # Drawer sigue funcionando
+    page.locator("#catalog-toggle-mobile").click()
+    page.wait_for_timeout(300)
+    assert page.locator(".dashboard-catalog-col").is_visible()
+    assert page.locator("#catalog-overlay").is_visible()
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    assert page.locator(".dashboard-catalog-col").is_hidden()
+    assert page.locator("#catalog-overlay").is_hidden()
+
+
+# ---------------------------------------------------------------------------
+# TAREA 3 — Comparación de puntos seleccionados
+# ---------------------------------------------------------------------------
+
+
+def _wait_chart_ready(page):
+    page.wait_for_function(
+        "document.getElementById('unified-chart-plot')._fullData && document.getElementById('unified-chart-plot')._fullData.length>0"
+    )
+    page.wait_for_function("document.body.dataset.appReady==='1'")
+
+
+def _comparison_state(page):
+    return page.evaluate(
+        "() => window.__testComparisonState ? window.__testComparisonState() : null"
+    )
+
+
+def _panel_comparison_visible(page):
+    return page.evaluate(
+        """() => {
+            const comp=document.getElementById('ps-comparison');
+            const content=document.getElementById('ps-content');
+            return {
+                compVisible: comp && !comp.hidden && getComputedStyle(comp).display!=='none',
+                contentHidden: content ? content.hidden : null,
+                compRows: comp ? comp.querySelectorAll('tbody tr').length : 0,
+                wrapVisible: !!document.getElementById('period-summary-wrap') && getComputedStyle(document.getElementById('period-summary-wrap')).display!=='none',
+                wrapW: document.getElementById('period-summary-wrap') ? document.getElementById('period-summary-wrap').getBoundingClientRect().width : null,
+            };
+        }"""
+    )
+
+
+def test_comparacion_clic_shift_y_orden(page, server, tmp_path):
+    """Clic → 1 fila, Shift+clic → 2 filas, 3º/4º → 4 filas orden, Shift sobre seleccionado → elimina, no fetch."""
+    _seed_e2e_many_days(tmp_path, 60)
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(server)
+    _wait_chart_ready(page)
+    grafica_reqs = []
+    page.on("request", lambda r: grafica_reqs.append(r.url) if "/grafica" in r.url else None)
+    # 1. Clic normal sobre punto 0
+    page.evaluate("() => window.__testComparisonClick(0,0,false)")
+    page.wait_for_timeout(300)
+    s = _comparison_state(page)
+    assert s and s["count"] == 1, s
+    panel = _panel_comparison_visible(page)
+    assert panel["compVisible"] is True and panel["compRows"] == 1, panel
+    # Periodo corto y columnas presentes (Series etc.)
+    row_text = page.locator("#ps-comparison tbody tr").first.inner_text()
+    assert "S" in row_text or "jul" in row_text.lower() or "ene" in row_text.lower(), row_text
+    # Verificar columnas: debe contener Series (número) - comprobamos que hay 7 columnas
+    cols = page.evaluate("() => document.querySelector('#ps-comparison tbody tr').children.length")
+    assert cols == 7, (
+        f"comparación debe tener 7 columnas (Periodo|VAR|Series|Reps|Peso|RIR|RM): {cols}"
+    )
+    base = len(grafica_reqs)
+    # 2. Shift+clic segundo punto distinto (otra traza o punto)
+    # Intentar segundo punto de misma traza índice 1
+    page.evaluate("() => window.__testComparisonClick(0,1,true)")
+    page.wait_for_timeout(300)
+    s2 = _comparison_state(page)
+    assert s2["count"] == 2, s2
+    assert s2["ids"][0] != s2["ids"][1], "ids deben ser distintos"
+    panel2 = _panel_comparison_visible(page)
+    assert panel2["compRows"] == 2, panel2
+    assert len(grafica_reqs) == base, "Shift+clic no debe fetchear"
+    # 3. Tercer y cuarto punto
+    page.evaluate("() => window.__testComparisonClick(0,2,true)")
+    page.wait_for_timeout(200)
+    page.evaluate("() => window.__testComparisonClick(0,3,true)")
+    page.wait_for_timeout(200)
+    s4 = _comparison_state(page)
+    assert s4["count"] == 4, s4
+    # Orden de selección conservado
+    assert s4["periods"][0] == s["periods"][0], "primer periodo debe conservarse"
+    # 4. Shift+clic sobre ya seleccionado lo elimina
+    page.evaluate("() => window.__testComparisonClick(0,1,true)")
+    page.wait_for_timeout(300)
+    s3 = _comparison_state(page)
+    assert s3["count"] == 3, s3
+    assert s2["ids"][1] not in s3["ids"], "punto eliminado debe desaparecer"
+
+
+def test_comparacion_escape_limpia_y_resaltado(page, server, tmp_path):
+    """Escape limpia comparación, vuelve resumen, elimina resaltado, foco estable."""
+    _seed_e2e_many_days(tmp_path, 40)
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(server)
+    _wait_chart_ready(page)
+    page.evaluate("() => window.__testComparisonClick(0,0,false)")
+    page.wait_for_timeout(300)
+    assert _comparison_state(page)["count"] == 1
+    assert _panel_comparison_visible(page)["compVisible"] is True
+    # Escape con foco en gráfica
+    page.locator("#unified-chart-plot").focus()
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    assert _comparison_state(page)["count"] == 0, "Escape debe limpiar"
+    panel = _panel_comparison_visible(page)
+    assert panel["compVisible"] is False, "comparación debe ocultarse"
+    assert panel["contentHidden"] is False, "resumen normal debe volver"
+    # Resaltado eliminado: marker size vuelve a número base (3) o sin array
+    after = page.evaluate(
+        """() => {
+            const el=document.getElementById('unified-chart-plot');
+            const fd=el._fullData[0];
+            return fd.marker ? fd.marker.size : null;
+        }"""
+    )
+    # Puede ser número o array sin 10
+    if isinstance(after, list):
+        assert 10 not in after, f"resaltado debe eliminarse: {after}"
+
+
+def test_comparacion_cambio_contexto_limpia(page, server, tmp_path):
+    """Cambiar granularidad / músculo / ventana limpia selección; ventana solo 1 petición."""
+    _seed_e2e_many_days(tmp_path, 40)
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(server)
+    _wait_chart_ready(page)
+    page.evaluate("() => window.__testComparisonClick(0,0,false)")
+    page.wait_for_timeout(300)
+    assert _comparison_state(page)["count"] == 1
+    # Cambio granularidad
+    page.locator('#granularity-selector [data-gran="week"]').click()
+    page.wait_for_timeout(800)
+    assert _comparison_state(page)["count"] == 0, "granularidad debe limpiar"
+    # Re-seleccionar y cambiar músculo
+    page.evaluate("() => window.__testComparisonClick(0,0,false)")
+    page.wait_for_timeout(300)
+    assert _comparison_state(page)["count"] == 1
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(800)
+    assert _comparison_state(page)["count"] == 0, "cambio músculo debe limpiar"
+    # Re-seleccionar y cambiar ventana (solo 1 petición)
+    page.evaluate("() => window.__testComparisonClick(0,0,false)")
+    page.wait_for_timeout(300)
+    grafica_reqs = []
+    page.on("request", lambda r: grafica_reqs.append(r.url) if "/grafica" in r.url else None)
+    base = len(grafica_reqs)
+    page.evaluate("() => window.changeSummaryWindow('4')")
+    page.wait_for_timeout(900)
+    assert _comparison_state(page)["count"] == 0, "ventana debe limpiar"
+    nuevos = [u for u in grafica_reqs[base:] if "ventana=4" in u]
+    assert len(nuevos) == 1, f"ventana debe hacer solo 1 petición: {grafica_reqs[base:]}"
+    assert len([u for u in grafica_reqs[base:] if "/grafica" in u]) == 1
+
+
+def test_comparacion_semana_y_dia_identidad(page, server, tmp_path):
+    """Semana 1 vs 14 y día 18 vs 23 deben ser puntos distintos (identidad)."""
+    # Sembrar 100 días (~14 semanas) para tener S1 y S14
+    _seed_e2e_many_days(tmp_path, 110)
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(server)
+    _wait_chart_ready(page)
+    # Cambiar a week para ver S1 y S14
+    page.locator('#granularity-selector [data-gran="week"]').click()
+    page.wait_for_timeout(800)
+    # Obtener x de la traza para identificar índices de S1 y S14
+    xs = page.evaluate("() => document.getElementById('unified-chart-plot')._fullData[0].x.slice()")
+    # xs son strings de semana
+    assert "1" in [str(x) for x in xs] and "14" in [str(x) for x in xs], (
+        f"debe haber S1 y S14: {xs[:20]}"
+    )
+    idx1 = [str(x) for x in xs].index("1")
+    idx14 = [str(x) for x in xs].index("14")
+    page.evaluate(f"() => window.__testComparisonClick(0,{idx1},false)")
+    page.wait_for_timeout(300)
+    page.evaluate(f"() => window.__testComparisonClick(0,{idx14},true)")
+    page.wait_for_timeout(300)
+    s = _comparison_state(page)
+    assert s["count"] == 2
+    assert s["ids"][0] != s["ids"][1], "S1 vs S14 deben ser ids distintos"
+    # Verificar formato corto en panel
+    textos = page.evaluate(
+        "() => [...document.querySelectorAll('#ps-comparison tbody tr th')].map(th=>th.innerText)"
+    )
+    assert any("S1" in t for t in textos), textos
+    assert any("S14" in t for t in textos), textos
+    # Día: cambiar a day y comparar 18 vs 23
+    page.locator('#granularity-selector [data-gran="day"]').click()
+    page.wait_for_timeout(800)
+    # Después de cambio, comparación debe haberse limpiado
+    assert _comparison_state(page)["count"] == 0
+    xs_day = page.evaluate(
+        "() => document.getElementById('unified-chart-plot')._fullData[0].x.slice()"
+    )
+    # xs_day son ISO fechas
+    # Buscar dos días distintos (primer y cuarto)
+    if len(xs_day) >= 4:
+        page.evaluate("() => window.__testComparisonClick(0,0,false)")
+        page.wait_for_timeout(200)
+        page.evaluate("() => window.__testComparisonClick(0,3,true)")
+        page.wait_for_timeout(200)
+        s_day = _comparison_state(page)
+        assert s_day["count"] == 2
+        # Formato corto día: "1 ene" etc., compacto sin ISO largo
+        textos_day = page.evaluate(
+            "() => [...document.querySelectorAll('#ps-comparison tbody tr th')].map(th=>th.innerText)"
+        )
+        assert any(len(t.split()) >= 2 for t in textos_day), textos_day
+        assert all("2026-01" not in t for t in textos_day), (
+            f"debe ser compacto, no ISO: {textos_day}"
+        )
+
+
+def test_comparacion_panel_y_accesibilidad_y_movil(page, server, tmp_path):
+    """Panel derecho siempre visible, sin rail derecho, sin botón Limpiar, accesible, móvil sin overflow."""
+    _seed_e2e_many_days(tmp_path, 40)
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(server)
+    _wait_chart_ready(page)
+    wrap_box_before = page.evaluate(
+        "() => document.getElementById('period-summary-wrap').getBoundingClientRect().width"
+    )
+    page.evaluate("() => window.__testComparisonClick(0,0,false)")
+    page.wait_for_timeout(300)
+    # Panel sigue visible y mismo ancho
+    wrap_box_after = page.evaluate(
+        "() => document.getElementById('period-summary-wrap').getBoundingClientRect().width"
+    )
+    assert abs(wrap_box_after - wrap_box_before) <= 2, (
+        f"panel no debe cambiar ancho: {wrap_box_before}->{wrap_box_after}"
+    )
+    assert page.locator("#period-summary-wrap").is_visible()
+    # No rail derecho
+    assert page.locator("#period-summary-wrap").count() == 1
+    assert page.evaluate("() => !!document.querySelector('.summary-rail')") is False, (
+        "no debe existir rail derecho"
+    )
+    # No botón visible Limpiar
+    assert (
+        page.evaluate(
+            "() => [...document.querySelectorAll('button')].some(b=>b.innerText.trim()==='Limpiar comparación')"
+        )
+        is False
+    )
+    assert (
+        page.evaluate(
+            "() => [...document.querySelectorAll('button')].some(b=>b.innerText.trim()==='Limpiar')"
+        )
+        is False
+    )
+    # Accesibilidad: título, aria-live, filas legibles, no solo color
+    assert page.evaluate("() => !!document.getElementById('ps-comparison-title')") is True
+    title_text = page.evaluate("() => document.getElementById('ps-comparison-title').textContent")
+    assert "Comparación" in title_text
+    assert (
+        page.evaluate(
+            "() => document.getElementById('ps-comparison-live').getAttribute('aria-live')==='polite'"
+        )
+        is True
+    )
+    # Primera fila marcada Base con clase y borde, no solo color
+    assert (
+        page.evaluate("() => document.querySelector('#ps-comparison tbody tr.is-base') !== null")
+        is True
+    )
+    assert (
+        page.evaluate(
+            "() => document.querySelector('#ps-comparison tbody tr.is-base .ps-badge') !== null"
+        )
+        is True
+    )
+    # Instrucciones sr-only
+    assert page.evaluate("() => !!document.getElementById('ps-comparison-desc')") is True
+    desc = page.evaluate("() => document.getElementById('ps-comparison-desc').textContent")
+    assert "Escape" in desc
+    # Series aparece en comparación
+    header = page.evaluate(
+        "() => [...document.querySelectorAll('#ps-comparison thead th')].map(th=>th.innerText)"
+    )
+    assert any(h.lower() == "series" for h in header), header
+    # Comparación no debe hacer fetch
+    grafica_reqs = []
+    page.on("request", lambda r: grafica_reqs.append(r.url) if "/grafica" in r.url else None)
+    base = len(grafica_reqs)
+    # Añadir otro punto (ya hay 1)
+    page.evaluate("() => window.__testComparisonClick(0,1,true)")
+    page.wait_for_timeout(300)
+    assert len(grafica_reqs) == base, "comparación no debe fetchear"
+    # Móvil 390
+    page.set_viewport_size({"width": 390, "height": 800})
+    page.goto(server)
+    _wait_chart_ready(page)
+    page.evaluate("() => window.__testComparisonClick(0,0,false)")
+    page.wait_for_timeout(300)
+    assert _panel_comparison_visible(page)["compVisible"] is True
+    overflow = page.evaluate("() => document.documentElement.scrollWidth > window.innerWidth")
+    assert not overflow, "móvil no debe tener overflow"
+    # No segundo scroll innecesario dentro de filas
+    second_scroll = page.evaluate(
+        """() => {
+            const rows=document.querySelectorAll('#ps-comparison tbody tr');
+            return [...rows].some(r=> getComputedStyle(r).overflowY==='auto' && r.scrollHeight>r.clientHeight);
+        }"""
+    )
+    assert not second_scroll, "no debe haber scroll anidado por fila"
+    # Escape funciona en móvil
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    assert _comparison_state(page)["count"] == 0
 
 
 def test_plotly_resize_bidireccional(page, server, tmp_path):

@@ -72,6 +72,42 @@ def get_exercises_catalog(db_path: str) -> list[str]:
         ]
 
 
+def get_exercise_valid_counts(
+    db_path: str, fecha_min: str | None = None, fecha_max: str | None = None
+) -> dict[str, int]:
+    """Cuenta series válidas (kg y reps no nulos) por ejercicio, opcionalmente acotado a ventana.
+
+    Usado por el orden dinámico compartido entre catálogo y panel.
+    """
+    if not os.path.exists(db_path):
+        return {}
+    clauses = ["kg IS NOT NULL", "reps IS NOT NULL"]
+    params: list[str] = []
+    if fecha_min is not None:
+        clauses.append("fecha >= ?")
+        params.append(fecha_min)
+    if fecha_max is not None:
+        clauses.append("fecha <= ?")
+        params.append(fecha_max)
+    with read_connection(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT ejercicio, COUNT(*) FROM training_sets WHERE {' AND '.join(clauses)} GROUP BY ejercicio",
+            params,
+        ).fetchall()
+    return {str(r[0]): int(r[1]) for r in rows}
+
+
+def sort_exercises_by_data(counts: dict[str, int], catalog_order: list[str]) -> list[str]:
+    """Ordena ejercicios por datos válidos DESC, desempate estable por catálogo.
+
+    Más datos primero, cero al final, empate por orden original del catálogo.
+    Función pura compartida entre catálogo y panel.
+    """
+    order_index = {name: idx for idx, name in enumerate(catalog_order)}
+    all_names = set(catalog_order) | set(counts.keys())
+    return sorted(all_names, key=lambda n: (-counts.get(n, 0), order_index.get(n, 999), n.lower()))
+
+
 def insert_exercise(db_path: str, ejercicio: str, grupo_muscular: str, categoria: str) -> None:
     with transaction(db_path) as conn:
         conn.execute(
@@ -631,25 +667,16 @@ def get_split_catalog(db_path: str) -> list[dict]:
     return [{"ejercicio": r[0], "grupo_muscular": r[1], "categoria": r[2] or ""} for r in rows]
 
 
-def get_dashboard_catalog(db_path: str) -> list[dict]:
+def get_dashboard_catalog(
+    db_path: str, fecha_min: str | None = None, fecha_max: str | None = None
+) -> list[dict]:
     """Catálogo agrupado por grupo muscular para el panel izquierdo del dashboard.
 
-    Devuelve una lista de grupos, cada uno con sus ejercicios ordenados
-    alfabéticamente.  El orden de los grupos sigue el de la tabla
-    ``MUSCLE_CATEGORIES`` (EMPUJE, TIRON, PIERNA, CORE) y los que no
-    pertenecen a ninguna categoría quedan al final, ordenados
-    alfabéticamente.
+    Orden dinámico compartido: ejercicios con más series válidas primero,
+    desempate estable por catálogo. Si se pasa ventana (fecha_min/max), el
+    conteo respeta esa ventana; si no, usa todo el histórico.
 
-    El resultado usa ``list[dict]`` para mantener compatibilidad con el
-    patrón existente en ``get_split_catalog``.  Cada elemento tiene::
-
-        {
-            "name": "<grupo_muscular>",
-            "exercises": [
-                {"name": "<ejercicio>", "category": "<categoria>"},
-                ...
-            ],
-        }
+    El orden de los grupos sigue el de la tabla ``MUSCLE_CATEGORIES``.
     """
     if not os.path.exists(db_path):
         return []
@@ -666,10 +693,21 @@ def get_dashboard_catalog(db_path: str) -> list[dict]:
     for cat_idx, cat in enumerate(MUSCLE_CATEGORIES):
         for muscle in cat.get("muscles", []):
             cat_order[muscle] = cat_idx
+    # Conteos para orden dinámico compartido
+    counts = get_exercise_valid_counts(db_path, fecha_min, fecha_max)
+    # Orden estable del catálogo para desempate
+    catalog_order = [r[0] for r in rows]
     groups: dict[str, list[dict]] = {}
     for ejercicio, grupo, categoria in rows:
-        groups.setdefault(grupo, []).append(
-            {"name": ejercicio, "category": categoria or ""}
+        groups.setdefault(grupo, []).append({"name": ejercicio, "category": categoria or ""})
+    # Ordena ejercicios dentro de cada grupo por datos
+    for grupo, exs in list(groups.items()):
+        groups[grupo] = sorted(
+            exs,
+            key=lambda ex: (
+                -counts.get(ex["name"], 0),
+                catalog_order.index(ex["name"]) if ex["name"] in catalog_order else 999,
+            ),
         )
     sorted_groups = sorted(
         groups.items(),

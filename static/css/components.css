@@ -363,8 +363,9 @@ input[type="number"]::-webkit-outer-spin-button {
    resúmenes, ni al agregar/eliminar ejercicios, ni al abrir/cerrar el split. */
 :root {
     --split-catalog-w: clamp(232px, 18vw, 260px);
-    /* Rail persistente del catálogo plegado (escritorio). */
+    /* Rails persistentes plegados (escritorio). */
     --catalog-collapsed-w: 48px;
+    --summary-collapsed-w: 48px;
     /* Ancho canónico del panel derecho de resumen (Fase 2). Igual que las
        dimensiones split: variable CSS como fuente de verdad; el JSON de
        design tokens valida solo colores. Escala fluida para 7 columnas. */

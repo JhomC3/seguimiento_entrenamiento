@@ -57,6 +57,99 @@ const _relayoutBound = new WeakSet();
 const _wheelBound = new WeakSet();
 const _plotResizeObserver = new WeakMap();
 
+// --- TAREA 3: comparación de puntos ---
+const COMPARISON_MAX = 8;
+let selectedComparison = []; // orden de selección
+let clickTimer = null;
+let lastFigData = null;
+const _comparisonBound = new WeakSet();
+const MESES_CORTO_JS = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+
+function formatDayShortJS(isoDate, allDates) {
+    try {
+        const s = String(isoDate);
+        const parts = s.split("-");
+        if (parts.length < 3) return s;
+        const y = parts[0], m = parseInt(parts[1],10), d = parseInt(parts[2],10);
+        const mes = MESES_CORTO_JS[m-1] || parts[1];
+        let base = `${d} ${mes}`;
+        if (Array.isArray(allDates)) {
+            const years = new Set(allDates.map(v => String(v).split("-")[0]));
+            if (years.size > 1) base += ` ${y.slice(2)}`;
+        }
+        return base;
+    } catch (_) { return String(isoDate); }
+}
+function formatWeekShortJS(semana) {
+    const n = parseInt(String(semana).trim(), 10);
+    return Number.isFinite(n) ? `S${n}` : `S${semana}`;
+}
+function formatMonthShortJS(periodo) {
+    try {
+        const s = String(periodo).trim();
+        const parts = s.split("-");
+        const y = parseInt(parts[0],10), m = parseInt(parts[1],10);
+        const mes = MESES_CORTO_JS[m-1] || parts[1];
+        return `${mes} ${String(y).slice(2)}`;
+    } catch (_) { return String(periodo); }
+}
+function getCurrentGranularity() {
+    const sel = document.querySelector('#granularity-selector [data-gran][aria-pressed="true"]');
+    return sel ? sel.dataset.gran : 'week';
+}
+function formatPeriodoCompact(periodoRaw, granularity, allX) {
+    if (granularity === 'day') return formatDayShortJS(periodoRaw, allX);
+    if (granularity === 'week') return formatWeekShortJS(periodoRaw);
+    if (granularity === 'month') return formatMonthShortJS(periodoRaw);
+    return String(periodoRaw);
+}
+function extractPointValuesJS(customdata) {
+    if (!Array.isArray(customdata)) return null;
+    try {
+        if (customdata.length === 8) {
+            return {
+                periodo: String(customdata[0]),
+                delta: String(customdata[1]),
+                series: String(customdata[2]),
+                reps: String(customdata[3]),
+                peso: String(customdata[4]),
+                rir: String(customdata[5]),
+                rm: String(customdata[6]),
+                trace: String(customdata[7]),
+            };
+        }
+        if (customdata.length >= 9) {
+            return {
+                periodo: String(customdata[0]),
+                delta: String(customdata[1]),
+                series: String(customdata[2]),
+                reps: String(customdata[3]),
+                peso: String(customdata[4]),
+                rir: String(customdata[5]),
+                rm: String(customdata[6]),
+                cobertura: String(customdata[7]),
+                trace: String(customdata[8]),
+            };
+        }
+    } catch (_) { return null; }
+    return null;
+}
+function pointComparisonIdJS(granularity, periodo, traceName) {
+    return `${String(granularity).toLowerCase()}|${String(periodo)}|${String(traceName).trim().toLowerCase()}`;
+}
+function getAllXForGranularity() {
+    const plotEl = document.getElementById('unified-chart-plot');
+    if (!plotEl || !Array.isArray(plotEl._fullData)) return null;
+    const xs = [];
+    plotEl._fullData.forEach(t => {
+        if (t.x && typeof t.x.length === 'number') {
+            // x puede ser Array o TypedArray (Int8Array) serializado por Plotly
+            for (let i = 0; i < t.x.length; i++) xs.push(t.x[i]);
+        }
+    });
+    return xs;
+}
+
 // Lista real de categorías del eje: interna de Plotly o reconstruida desde las
 // trazas en orden de aparición (mismo criterio por defecto de Plotly para
 // categoryorder). Nunca se infiere de los valores del rango.
@@ -134,6 +227,255 @@ function formatAxisRange(values, parsed) {
     // fraccionarios en ejes categoría; redondear a etiquetas destruye la
     // precisión y hace saltar el rango tras varias operaciones.
     return values;
+}
+
+function renderComparisonPanel() {
+    const wrap = document.getElementById('period-summary-wrap');
+    if (!wrap) return;
+    const content = document.getElementById('ps-content');
+    const comp = document.getElementById('ps-comparison');
+    const live = document.getElementById('ps-comparison-live');
+    if (!content || !comp) return;
+    if (selectedComparison.length === 0) {
+        content.hidden = false;
+        comp.hidden = true;
+        comp.setAttribute('aria-hidden', 'true');
+        if (live) live.textContent = '';
+        return;
+    }
+    content.hidden = true;
+    comp.hidden = false;
+    comp.removeAttribute('aria-hidden');
+    if (live) live.textContent = `${selectedComparison.length} punto${selectedComparison.length>1?'s':''} seleccionado${selectedComparison.length>1?'s':''}`;
+    const tbody = comp.querySelector('tbody');
+    if (!tbody) return;
+    // Limpiar filas existentes de forma segura
+    while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+    selectedComparison.forEach(function (rec, idx) {
+        const tr = document.createElement('tr');
+        tr.className = idx === 0 ? 'ps-comparison-row is-base' : 'ps-comparison-row';
+        if (idx === 0) tr.setAttribute('aria-label', 'Base');
+        // Periodo
+        const th = document.createElement('th');
+        th.scope = 'row';
+        const badge = document.createElement('span');
+        if (idx === 0) {
+            badge.className = 'ps-badge';
+            badge.textContent = 'Base';
+            th.appendChild(badge);
+            th.appendChild(document.createTextNode(' ' + rec.periodShort));
+        } else {
+            const label = document.createElement('span');
+            label.className = 'ps-compare-label';
+            label.textContent = `Comparado ${idx+1}`;
+            // No solo color: etiqueta textual visible
+            label.setAttribute('aria-hidden', 'true');
+            th.appendChild(label);
+            th.appendChild(document.createTextNode(' ' + rec.periodShort));
+            tr.setAttribute('aria-label', `Comparado ${idx+1} ${rec.periodShort}`);
+        }
+        if (idx===0) tr.setAttribute('aria-label', `Base ${rec.periodShort}`);
+        tr.appendChild(th);
+        // Columnas en orden: VAR | Series | Reps | Peso | RIR | RM aj.
+        const cols = [rec.delta, rec.series, rec.reps, rec.peso, rec.rir, rec.rm];
+        cols.forEach(function (val) {
+            const td = document.createElement('td');
+            td.className = 'num';
+            td.textContent = val || '—';
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+}
+
+function applyHighlight() {
+    const plotEl = document.getElementById('unified-chart-plot');
+    if (!plotEl || !plotEl._fullData) return;
+    const Plotly = window.Plotly;
+    if (!Plotly) return;
+    // Construir selectedpoints por traza
+    const perTrace = {};
+    selectedComparison.forEach(function (rec) {
+        const key = rec.curveNumber;
+        if (!(key in perTrace)) perTrace[key] = [];
+        perTrace[key].push(rec.pointNumber);
+    });
+    // Aplicar por traza: usar restyle con marker.size/line para halo visible en oscuro
+    // Guardamos tamaños originales en _originalMarker si no existe
+    if (!plotEl._originalMarker) {
+        plotEl._originalMarker = plotEl._fullData.map(function (t) {
+            return {
+                size: t.marker && t.marker.size,
+                color: t.marker && t.marker.color,
+                lineWidth: t.marker && t.marker.line && t.marker.line.width,
+                lineColor: t.marker && t.marker.line && t.marker.line.color,
+            };
+        });
+    }
+    const nTraces = plotEl._fullData.length;
+    for (let i = 0; i < nTraces; i++) {
+        const sel = perTrace[i] || null;
+        if (sel && sel.length) {
+            // Aumentar tamaño y borde para seleccionados
+            // Construir arrays de tamaño por punto
+            const trace = plotEl._fullData[i];
+            const nPoints = trace.x && typeof trace.x.length === 'number' ? trace.x.length : 0;
+            const sizes = new Array(nPoints);
+            const lineWidths = new Array(nPoints);
+            const lineColors = new Array(nPoints);
+            const baseSize = 3;
+            const selSize = 10;
+            // Color canónico: --t-detail-white (src/design_tokens.py) resuelto vía CSS, sin hex literal
+            let detailWhite = '';
+            try {
+                detailWhite = getComputedStyle(document.documentElement).getPropertyValue('--t-detail-white').trim()
+                    || getComputedStyle(document.documentElement).getPropertyValue('--t-chart-hover-text').trim();
+            } catch (_) {}
+            if (!detailWhite) detailWhite = 'white';
+            for (let p = 0; p < nPoints; p++) {
+                if (sel.indexOf(p) !== -1) {
+                    sizes[p] = selSize;
+                    lineWidths[p] = 2;
+                    lineColors[p] = detailWhite;
+                } else {
+                    sizes[p] = baseSize;
+                    lineWidths[p] = 0;
+                    lineColors[p] = 'rgba(0,0,0,0)';
+                }
+            }
+            try {
+                Plotly.restyle(plotEl, {
+                    'marker.size': [sizes],
+                    'marker.line.width': [lineWidths],
+                    'marker.line.color': [lineColors],
+                }, [i]);
+            } catch (_) {}
+        } else {
+            // Restaurar traza no seleccionada
+            const orig = plotEl._originalMarker[i];
+            if (orig) {
+                try {
+                    Plotly.restyle(plotEl, {
+                        'marker.size': [orig.size],
+                        'marker.line.width': [orig.lineWidth || 0],
+                        'marker.line.color': [orig.lineColor || 'rgba(0,0,0,0)'],
+                    }, [i]);
+                } catch (_) {}
+            }
+        }
+    }
+}
+
+function clearComparison(opts) {
+    const silent = opts && opts.silent;
+    selectedComparison = [];
+    renderComparisonPanel();
+    const plotEl = document.getElementById('unified-chart-plot');
+    if (plotEl && plotEl._fullData && window.Plotly) {
+        // Restaurar marcadores originales
+        if (plotEl._originalMarker) {
+            plotEl._fullData.forEach(function (_, i) {
+                const orig = plotEl._originalMarker[i];
+                if (!orig) return;
+                try {
+                    window.Plotly.restyle(plotEl, {
+                        'marker.size': [orig.size],
+                        'marker.line.width': [orig.lineWidth || 0],
+                        'marker.line.color': [orig.lineColor || 'rgba(0,0,0,0)'],
+                    }, [i]);
+                } catch (_) {}
+            });
+        }
+    }
+    if (!silent) {
+        const live = document.getElementById('ps-comparison-live');
+        if (live) live.textContent = 'Comparación limpiada';
+    }
+}
+
+function handlePointSelection(pointData, shiftKey) {
+    if (!pointData || !pointData.points || !pointData.points.length) return;
+    const pt = pointData.points[0];
+    const customdata = pt.customdata;
+    const vals = extractPointValuesJS(customdata);
+    if (!vals) return;
+    const plotEl = document.getElementById('unified-chart-plot');
+    const granularity = getCurrentGranularity();
+    // El identificador único incluye granularidad + periodo (x) + traza
+    const xRaw = String(pt.x);
+    const traceName = String(pt.data ? pt.data.name : vals.trace);
+    const id = pointComparisonIdJS(granularity, xRaw, traceName);
+    const allX = getAllXForGranularity();
+    const periodShort = formatPeriodoCompact(xRaw, granularity, allX);
+    const rec = {
+        id: id,
+        traceName: traceName,
+        granularity: granularity,
+        xRaw: xRaw,
+        periodShort: periodShort,
+        delta: vals.delta,
+        series: vals.series,
+        reps: vals.reps,
+        peso: vals.peso,
+        rir: vals.rir,
+        rm: vals.rm,
+        curveNumber: pt.curveNumber,
+        pointNumber: pt.pointNumber,
+    };
+    if (!shiftKey) {
+        selectedComparison = [rec];
+    } else {
+        const idx = selectedComparison.findIndex(r => r.id === id);
+        if (idx !== -1) {
+            selectedComparison.splice(idx, 1);
+            if (selectedComparison.length === 0) {
+                clearComparison();
+                return;
+            }
+        } else {
+            if (selectedComparison.length >= COMPARISON_MAX) return;
+            selectedComparison.push(rec);
+        }
+    }
+    renderComparisonPanel();
+    applyHighlight();
+}
+
+function bindComparison(plotEl) {
+    if (_comparisonBound.has(plotEl)) return;
+    // plotly_click con debounce para doble-clic (200-250ms)
+    plotEl.on('plotly_click', function (data) {
+        // Si hay timer pendiente, es segundo clic dentro de ventana -> doble clic
+        if (clickTimer) {
+            clearTimeout(clickTimer);
+            clickTimer = null;
+            // Doble clic: abrir editor/detalle existente si aplica (conservar funcionalidad)
+            // Si el flujo actual no abre editor, no hacer nada extra
+            const point = data.points && data.points[0];
+            if (point && point.x) {
+                // Intentar disparar acción existente de doble clic si está definida
+                // Por ahora no hay acción de clic simple, así que no inventamos.
+                // Solo limpiamos el highlight? No, doble clic debe conservar comparación?
+                // Spec: doble clic conserva acción existente, no limpia comparación automáticamente
+            }
+            return;
+        }
+        // Guardar evento para posible single-click tras timeout
+        const shiftKey = data.event ? !!data.event.shiftKey : false;
+        // Necesitamos capturar shiftKey del evento original
+        clickTimer = setTimeout(function () {
+            clickTimer = null;
+            handlePointSelection(data, shiftKey);
+        }, 220);
+    });
+    // Escuchar doble clic nativo para cancelar single
+    plotEl.on('plotly_doubleclick', function () {
+        if (clickTimer) {
+            clearTimeout(clickTimer);
+            clickTimer = null;
+        }
+    });
+    _comparisonBound.add(plotEl);
 }
 
 function bindHorizontalWheel(plotEl, Plotly) {
@@ -260,7 +602,27 @@ export function renderUnifiedChart() {
         if (typeof Plotly !== 'undefined') Plotly.purge(plotEl);
         plotEl.hidden = true;
         if (emptyEl) emptyEl.hidden = false;
+        if (selectedComparison.length) clearComparison({silent:true});
         return;
+    }
+
+    // Si hay comparación activa y llega nueva figura (OOB), limpiar (spec: eliminar al actualizar vía OOB)
+    if (selectedComparison.length) {
+        try {
+            const newSig = JSON.stringify(fig.data.map(t => t.name).sort());
+            const oldSig = lastFigData ? JSON.stringify(lastFigData.map(t => t.name).sort()) : null;
+            if (oldSig !== null) {
+                clearComparison({silent:true});
+            }
+        } catch (_) {}
+    }
+    try {
+        lastFigData = fig.data.map(t => ({
+            name: t.name,
+            x: Array.isArray(t.x) ? t.x.slice(0, 2) : (t.x ? [String(t.x).slice(0,2)] : []),
+        }));
+    } catch (_) {
+        lastFigData = fig.data.map(t => ({name: t.name, x: []}));
     }
 
     // Data state: hide empty div, show plot, react.
@@ -323,9 +685,8 @@ export function renderUnifiedChart() {
             // Accesibilidad: aria-label y foco visible para el gráfico
             plotEl.setAttribute('aria-label', 'Gráfica de rendimiento');
             plotEl.setAttribute('role', 'img');
-            // La gráfica es EXCLUSIVAMENTE analítica: sin handler de
-            // plotly_click. Un clic sobre un punto no navega, no abre registro
-            // ni modifica URL/selección (zoom, pan y tooltips quedan intactos).
+            plotEl.setAttribute('tabindex', '0');
+            plotEl.setAttribute('aria-describedby', 'ps-comparison-desc');
             if (!_relayoutBound.has(plotEl)) {
                 plotEl.on('plotly_relayout', function (e) {
                     // El rango Y se deja libre para que el pan con clic
@@ -334,6 +695,12 @@ export function renderUnifiedChart() {
                 _relayoutBound.add(plotEl);
             }
             bindHorizontalWheel(plotEl, Plotly);
+            bindComparison(plotEl);
+            // Restaurar highlight si aún hay selección (p. ej. tras resize)
+            if (selectedComparison.length) {
+                applyHighlight();
+                renderComparisonPanel();
+            }
         })
         .catch(function (err) {
             showChartError(err && err.message ? err.message : 'Error al renderizar la gráfica.');
@@ -352,4 +719,53 @@ export function initChartInteractions() {
             renderUnifiedChart();
         }
     });
+    // Escape limpia comparación (si gráfica o panel tienen foco, o global)
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        if (selectedComparison.length === 0) return;
+        const active = document.activeElement;
+        const inChart = active && active.closest && active.closest('#unified-chart-plot');
+        const inPanel = active && active.closest && active.closest('#period-summary-wrap');
+        const inBody = !inChart && !inPanel;
+        // Si hay drawer móvil abierto, dejar que level-cascade lo maneje primero
+        const drawerOpen = document.querySelector('.dashboard-page') && !document.querySelector('.dashboard-page').classList.contains('is-catalog-collapsed') && window.matchMedia('(max-width: 1023px)').matches;
+        if (drawerOpen) return;
+        // Limpiar comparación
+        e.preventDefault();
+        clearComparison();
+    });
+    // Limpiar comparación cuando el panel es reemplazado vía OOB (cambio de selección/ventana)
+    document.body.addEventListener('htmx:oobAfterSwap', function (e) {
+        if (e.detail.target && e.detail.target.id === 'period-summary-wrap') {
+            // Si el swap vino de /grafica, renderUnifiedChart ya limpió; si es otro OOB, asegurar
+            // que el DOM de comparación se re-crea (el nuevo panel no tiene #ps-comparison poblado)
+            // Mantener comportamiento: cualquier OOB limpia selección previa
+            if (selectedComparison.length) clearComparison({silent:true});
+            // Re-render del panel vacío se hará en próximo ciclo; asegurar que live region existe
+        }
+    });
+    // Exponer para level-cascade (cambios de granularidad/selección/ventana)
+    window.clearChartComparison = clearComparison;
+    window.getChartComparison = function () { return selectedComparison.slice(); };
+    // Helpers para tests E2E (simulan clic sin depender de coordenadas SVG)
+    window.__testComparisonClick = function (traceIdx, pointIdx, shiftKey) {
+        const plotEl = document.getElementById('unified-chart-plot');
+        if (!plotEl || !Array.isArray(plotEl._fullData)) return false;
+        const trace = plotEl._fullData[traceIdx];
+        if (!trace || !trace.x || typeof trace.x.length !== 'number' || !Array.isArray(trace.customdata)) return false;
+        const cd = trace.customdata[pointIdx];
+        const x = trace.x[pointIdx];
+        if (cd === undefined || x === undefined) return false;
+        const pt = {x: x, customdata: cd, curveNumber: traceIdx, pointNumber: pointIdx, data: trace};
+        // Simular estructura de plotly_click
+        handlePointSelection({points: [pt]}, !!shiftKey);
+        return true;
+    };
+    window.__testComparisonState = function () {
+        return {
+            count: selectedComparison.length,
+            ids: selectedComparison.map(r => r.id),
+            periods: selectedComparison.map(r => r.periodShort),
+        };
+    };
 }

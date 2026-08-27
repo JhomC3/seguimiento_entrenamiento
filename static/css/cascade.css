@@ -198,12 +198,20 @@
     .dashboard-page.is-catalog-collapsed .catalog-panel {
         display: none;
     }
-    .dashboard-page.is-catalog-collapsed .catalog-rail {
-        display: flex;
-    }
     /* Rail persistente: la primera pista NUNCA desaparece (sin hueco). */
     .dashboard-page.is-catalog-collapsed .dashboard-layout {
         grid-template-columns: var(--catalog-collapsed-w) minmax(0, 1fr) var(--summary-w);
+        align-items: stretch;
+    }
+    .dashboard-page.is-catalog-collapsed .dashboard-catalog-col {
+        align-self: stretch;
+        display: flex;
+        flex-direction: column;
+        position: static;
+        top: auto;
+        max-height: none;
+        overflow: visible;
+        min-height: 0;
     }
     /* Botón compacto del header: SOLO móvil. */
     .catalog-toggle-mobile {
@@ -230,6 +238,39 @@
     justify-content: center;
 }
 
+/* Selector de granularidad glass (translúcido, tokens existentes) */
+#granularity-selector {
+    background: var(--t-overlay-white-004);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid var(--t-surfaces-neutral-800);
+    border-radius: 8px;
+    overflow: hidden;
+}
+#granularity-selector [data-action="set-granularity"] {
+    background: transparent;
+    color: var(--t-surfaces-neutral-400);
+    border: 0;
+    transition: background 0.15s, color 0.15s;
+}
+#granularity-selector [data-action="set-granularity"]:hover {
+    color: var(--t-surfaces-neutral-100);
+    background: var(--t-overlay-white-004);
+}
+#granularity-selector [data-action="set-granularity"][aria-pressed="true"] {
+    background: var(--t-burgundy-700);
+    color: var(--t-detail-white);
+}
+#granularity-selector [data-action="set-granularity"]:focus-visible {
+    outline: 2px solid var(--t-focus-ring);
+    outline-offset: -2px;
+}
+@media (prefers-reduced-motion: reduce) {
+    #granularity-selector [data-action="set-granularity"] {
+        transition: none;
+    }
+}
+
 /* Dashboard catálogo — acordeón minimalista industrial */
 .dashboard-catalog-list {
     display: flex;
@@ -246,15 +287,38 @@
     gap: 8px;
     margin-bottom: 10px;
 }
-/* Rail persistente cuando el catálogo está plegado en escritorio. */
+/* Rail persistente cuando el catálogo está plegado en escritorio.
+   Debe comportarse como barra vertical completa, no caja pequeña. */
 .catalog-rail {
-    position: sticky;
-    top: 16px;
     display: none;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 0;
+}
+@media (min-width: 1024px) {
+    .catalog-rail {
+        min-height: 100%;
+        height: 100%;
+        width: 100%;
+        display: none;
+        align-items: flex-start;
+        justify-content: center;
+        padding-top: 8px;
+        border-right: 1px solid var(--t-surfaces-neutral-800);
+        background: transparent;
+        flex: 1;
+    }
+    .dashboard-page.is-catalog-collapsed .catalog-rail {
+        display: flex;
+    }
+    .catalog-rail .catalog-toggle {
+        width: 36px;
+        height: 36px;
+        border-color: transparent;
+        background: transparent;
+    }
+    .catalog-rail .catalog-toggle:hover {
+        background: var(--t-overlay-white-004);
+        border-color: var(--t-surfaces-neutral-800);
+        color: var(--t-surfaces-neutral-100);
+    }
 }
 @media (max-width: 1023px) {
     .catalog-rail {

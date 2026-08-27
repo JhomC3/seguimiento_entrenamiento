@@ -147,7 +147,7 @@ def test_chart_pfr_timeline_hover_incluye_resumen(setup_test_db):
     assert fig.data, "la figura debe tener datos"
     trace = fig.data[0]
     assert trace.customdata is not None
-    # customdata Fase 2: [etiqueta, Δ, series, reps, peso, rir, rm_max, nombre]
+    # customdata: [etiqueta, Δ, series, reps, peso, rir, rm, nombre] — 8 visibles, Series en 2 para comparación
     fila = trace.customdata[0]
     assert len(fila) == 8
     assert fila[2] >= "1"  # series de la semana 1 (>=2 aquí) como string
@@ -193,7 +193,7 @@ def test_chart_muscle_exercises_una_traza_por_ejercicio(setup_test_db):
     fig = chart_selection(db, ["Pectoral"], ["Press Convergente"])
     assert len(fig.data) == 2  # compilado + ejercicio
     assert fig.data[1].name == "Press Convergente"
-    # El hover muestra el nombre del ejercicio en la posición 8 (extra).
+    # El hover muestra el nombre del ejercicio en la posición 7 (extra) — 8 visibles.
     assert fig.data[1].customdata[0][7] == "Press Convergente"
     assert "<extra>%{customdata[7]}</extra>" in fig.data[1].hovertemplate
 
@@ -616,8 +616,9 @@ def test_chart_layout_estable_entre_estados(setup_test_db):
     # La leyenda vive FUERA del área de trazado (y > 1) en todos los estados.
     assert all(sig["legend_y"] > 1 for sig in signatures.values())
     assert all(sig["showlegend"] is True for sig in signatures.values())
-    # Margen superior reservado para la banda de leyenda.
-    assert reference["margin"]["t"] >= 70
+    # Margen superior reducido (48) pero suficiente para la banda de leyenda.
+    assert reference["margin"]["t"] == 48
+    assert reference["legend_y"] == 1.08
 
 
 def test_chart_global_muestra_leyenda_en_banda_superior(setup_test_db):
@@ -672,8 +673,8 @@ def test_ventana_day_datos_suficientes(tmp_path):
     fig = chart_pfr_timeline(db, "systemic", granularity="day")
     rng = fig.layout.xaxis.range
     assert rng is not None
-    # Última fecha = 2026-04-30 → inicio = 2026-02-28 (feb no tiene día 30).
-    assert list(rng) == ["2026-02-28", "2026-04-30"]
+    # Última fecha = 2026-04-30 → inicio = 2026-02-28 con padding ±1 día
+    assert list(rng) == ["2026-02-27", "2026-05-01"]
     # Todos los datos permanecen en la figura.
     assert len(fig.data[0].x) == 120
 
@@ -689,7 +690,7 @@ def test_ventana_day_cruce_de_mes(tmp_path):
     )
     _seed_days_from(db, datetime.date(2026, 1, 10), 65)  # 10-ene → 15-mar
     fig = chart_pfr_timeline(db, "systemic", granularity="day")
-    assert list(fig.layout.xaxis.range) == ["2026-01-15", "2026-03-15"]
+    assert list(fig.layout.xaxis.range) == ["2026-01-14", "2026-03-16"]
 
 
 def test_ventana_day_cruce_de_ano(tmp_path):
@@ -703,7 +704,7 @@ def test_ventana_day_cruce_de_ano(tmp_path):
     )
     _seed_days_from(db, datetime.date(2025, 11, 1), 80)  # nov-25 → ene-26
     fig = chart_pfr_timeline(db, "systemic", granularity="day")
-    assert list(fig.layout.xaxis.range) == ["2025-11-19", "2026-01-19"]
+    assert list(fig.layout.xaxis.range) == ["2025-11-18", "2026-01-20"]
 
 
 def test_ventana_day_datos_insuficientes(setup_test_db):
@@ -895,7 +896,7 @@ def test_y_solo_negativos_incluye_0_y_min(tmp_path):
 
 
 def test_y_mixtos_contiene_0_con_margen(tmp_path):
-    """Positivos y negativos: el rango contiene 0 con margen en ambos extremos."""
+    """El rendimiento por ejercicio conserva el baseline del ejercicio."""
     import datetime
 
     db = str(tmp_path / "y_mix.db")
@@ -1273,7 +1274,7 @@ def test_y_granularidades_recalculan_con_su_ventana(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Fase 2 — Tooltip canónico (8 posiciones) y RM centralizado
+# Tooltip canónico (9 posiciones) y RM centralizado
 # ---------------------------------------------------------------------------
 
 
@@ -1296,7 +1297,7 @@ def test_tooltip_customdata_8_posiciones_day(setup_test_db):
 
 
 def test_tooltip_customdata_week_y_month_labels(setup_test_db):
-    """Week → 'Semana N'; Month → nombre de mes; siempre 8 posiciones."""
+    """Week → 'Semana N'; Month → nombre de mes; siempre 8 posiciones visibles."""
     figw = chart_pfr_timeline(setup_test_db, "systemic", granularity="week")
     assert figw.data[0].customdata[0][0] == "Semana 1"
     assert len(figw.data[0].customdata[0]) == 8
@@ -1372,3 +1373,116 @@ def test_fmt_num_none_como_guion():
     assert _fmt_delta(8.44) == "+8.4%"
     assert _fmt_delta(-3.21) == "-3.2%"
     assert _fmt_delta(0.0) == "0.0%"
+
+
+# ---------------------------------------------------------------------------
+# TAREA 3 — Formato compacto y extracción segura para comparación
+# ---------------------------------------------------------------------------
+
+
+def test_format_day_short():
+    from src.charts import format_day_short
+
+    assert format_day_short("2026-07-18") == "18 jul"
+    # Confusión entre años → añade año corto
+    assert format_day_short("2026-07-18", ["2026-07-18", "2025-07-18"]) == "18 jul 26"
+    assert format_day_short("2025-07-18", ["2026-07-18", "2025-07-18"]) == "18 jul 25"
+    # Sin confusión (mismo año) no añade
+    assert format_day_short("2026-07-18", ["2026-07-18", "2026-07-23"]) == "18 jul"
+
+
+def test_format_week_short():
+    from src.charts import format_week_short
+
+    assert format_week_short(1) == "S1"
+    assert format_week_short("1") == "S1"
+    assert format_week_short(14) == "S14"
+    assert format_week_short("14") == "S14"
+
+
+def test_format_month_short():
+    from src.charts import format_month_short
+
+    assert format_month_short("2026-01") == "ene 26"
+    assert format_month_short("2026-07") == "jul 26"
+    assert format_month_short("2026-07-15") == "jul 26"
+    assert format_month_short("2025-12") == "dic 25"
+
+
+def test_extract_point_values_ok():
+    from src.charts import extract_point_values
+
+    row = ["18/07/2026", "+2.3%", "4", "6.0", "85.0", "1.5", "107.6", "Press"]
+    vals = extract_point_values(row)
+    assert vals is not None
+    assert vals["periodo"] == "18/07/2026"
+    assert vals["delta"] == "+2.3%"
+    assert vals["series"] == "4"
+    assert vals["reps"] == "6.0"
+    assert vals["peso"] == "85.0"
+    assert vals["rir"] == "1.5"
+    assert vals["rm"] == "107.6"
+    assert vals["trace"] == "Press"
+    # 7 valores visibles + trace = 8 columnas, pero los 7 requeridos están presentes
+    assert vals["series"] is not None
+
+
+def test_extract_point_values_incompleto_seguro():
+    from src.charts import extract_point_values
+
+    assert extract_point_values(None) is None
+    assert extract_point_values([]) is None
+    assert extract_point_values(["a", "b"]) is None
+    assert extract_point_values(["a"] * 7) is None
+    # 8 es mínimo
+    assert extract_point_values(["a"] * 8) is not None
+
+
+def test_point_comparison_id_unica():
+    from src.charts import point_comparison_id
+
+    # Granularidad distingue
+    assert point_comparison_id("week", "1", "Press") != point_comparison_id("day", "1", "Press")
+    # Periodo distingue S1 vs S14 y días distintos
+    assert point_comparison_id("week", "1", "Press") != point_comparison_id("week", "14", "Press")
+    assert point_comparison_id("day", "2026-07-18", "Press") != point_comparison_id(
+        "day", "2026-07-23", "Press"
+    )
+    # Traza distingue mismo periodo
+    assert point_comparison_id("week", "1", "Press") != point_comparison_id("week", "1", "Curl")
+    # Case-insensitive traza
+    assert point_comparison_id("week", "1", "Press") == point_comparison_id("week", "1", "press")
+
+
+def test_hovertemplate_contrato_8_posiciones():
+    """Contrato visible: HOVERTEMPLATE usa exactamente 8 posiciones (0..7), trace en 7."""
+    from src.charts import HOVERTEMPLATE
+
+    assert "customdata[0]" in HOVERTEMPLATE
+    assert "customdata[2]" in HOVERTEMPLATE  # Series visible en posición 2
+    assert "customdata[7]" in HOVERTEMPLATE
+    assert "customdata[8]" not in HOVERTEMPLATE
+    assert "Series %{customdata[2]}" in HOVERTEMPLATE
+
+
+def test_hover_rows_8_posiciones_y_series():
+    """_hover_rows produce 8 valores visibles; Series en índice 2 sin metadata extra."""
+    from src.charts import _hover_rows
+
+    df = pd.DataFrame(
+        [
+            {
+                "hlabel": "18 jul",
+                "crecimiento": 2.3,
+                "h_series": 4,
+                "h_reps": 6.0,
+                "h_peso": 80.0,
+                "h_rir": 1.5,
+                "h_rm": 101.3,
+            }
+        ]
+    )
+    rows = _hover_rows(df, "Press")
+    assert len(rows[0]) == 8
+    assert rows[0][2] == "4"  # Series
+    assert rows[0][7] == "Press"

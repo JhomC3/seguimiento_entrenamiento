@@ -108,9 +108,7 @@ def test_axe_populated_chart(page, server):
     if group.locator('[data-action="toggle-group"]').get_attribute("aria-expanded") != "true":
         group.locator('[data-action="toggle-group"]').click()
         page.wait_for_timeout(120)
-    page.locator(
-        '#dashboard-catalog [data-action="toggle-muscle"][data-foco="Pectoral"]'
-    ).click()
+    page.locator('#dashboard-catalog [data-action="toggle-muscle"][data-foco="Pectoral"]').click()
     page.wait_for_selector("#unified-chart-plot .main-svg", timeout=15000)
     _assert_no_violations(_run_axe(page), "gráfica con datos")
 

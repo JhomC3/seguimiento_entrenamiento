@@ -2182,13 +2182,18 @@ def test_grafica_ventana_default_y_validacion(tmp_path, monkeypatch):
     db = _seed_summary_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     c = _client()
-    # Default 8 semanas: botón aria-pressed en 8.
+    # Default 8 semanas: select con option 8 selected
     r = c.get("/grafica")
-    assert _re.search(r'data-weeks="8"[^>]*aria-pressed="true"', r.text)
-    assert not _re.search(r'data-weeks="4"[^>]*aria-pressed="true"', r.text)
-    # Ventana inválida → 400 seguro.
-    r_bad = c.get("/grafica", params={"ventana": 5})
+    assert (
+        'value="8" selected' in r.text
+        or 'value="8"  selected' in r.text
+        or _re.search(r'<option[^>]*value="8"[^>]*selected', r.text)
+    )
+    # Ventana inválida → 400 seguro (9 fuera de 1-8).
+    r_bad = c.get("/grafica", params={"ventana": 9})
     assert r_bad.status_code == 400
+    r_bad2 = c.get("/grafica", params={"ventana": 0})
+    assert r_bad2.status_code == 400
 
 
 def test_panel_global_sin_columna_rm(tmp_path, monkeypatch):

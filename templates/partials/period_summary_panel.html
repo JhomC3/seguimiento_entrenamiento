@@ -23,29 +23,26 @@
 >
     <header class="flex items-center justify-between gap-2 pl-3 pr-3 pt-3">
         <h2 class="panel-title">Resumen</h2>
-        <div
-            id="summary-window-selector"
-            class="inline-flex items-center rounded-lg border border-neutral-800 overflow-hidden"
-            role="group"
+        <div class="flex items-center gap-2">
+        <label for="summary-window-select" class="text-xs text-neutral-400">Ventana</label>
+        <select
+            id="summary-window-select"
+            class="ps-select"
+            data-action="set-summary-window"
             aria-label="Ventana del resumen"
             aria-describedby="summary-window-desc"
         >
-            {% for w in [4, 8] %}
-            <button
-                type="button"
-                data-action="set-summary-window"
-                data-weeks="{{ w }}"
-                class="ps-window"
-                aria-pressed="{{ 'true' if summary.semanas == w else 'false' }}"
-                aria-label="Ventana de {{ w }} semanas"
-            >{{ w }} sem</button>
+            {% for w in range(1, 9) %}
+            <option value="{{ w }}" {% if summary.semanas == w %}selected{% endif %}>{{ w }} semana{% if w != 1 %}s{% endif %}</option>
             {% endfor %}
+        </select>
         </div>
     </header>
     <p id="summary-window-desc" class="sr-only">
-        Resumen de las últimas 4 u 8 semanas.
+        Selecciona el número de semanas para el resumen
     </p>
 
+    <div id="ps-content">
     {% if summary.estado == "error" %}
         <div class="px-3 pb-3">
             <p class="notice notice-error" role="alert">No se pudo calcular el resumen.</p>
@@ -132,4 +129,27 @@
             {% endfor %}
         </div>
     {% endif %}
+    </div>
+    <!-- TAREA 3: comparación de puntos (siempre presente, hidden por defecto) -->
+    <div id="ps-comparison" class="ps-comparison-panel" hidden aria-hidden="true" aria-labelledby="ps-comparison-title">
+        <h3 id="ps-comparison-title" class="sr-only">Comparación de puntos</h3>
+        <p id="ps-comparison-desc" class="sr-only">Clic para seleccionar un punto. Shift y clic para añadirlo. Escape para limpiar.</p>
+        <p id="ps-comparison-live" class="sr-only" aria-live="polite"></p>
+        <div class="ps-panels">
+            <table class="ps-table ps-comparison-table" aria-describedby="ps-comparison-desc">
+                <thead>
+                    <tr>
+                        <th scope="col">Periodo</th>
+                        <th scope="col" class="num">VAR</th>
+                        <th scope="col" class="num">Series</th>
+                        <th scope="col" class="num">Reps</th>
+                        <th scope="col" class="num">Peso</th>
+                        <th scope="col" class="num">RIR</th>
+                        <th scope="col" class="num">RM aj.</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
 </aside>

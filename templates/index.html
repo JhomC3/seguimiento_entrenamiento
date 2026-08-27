@@ -58,7 +58,7 @@
                         </svg>
                     </button>
                 </header>
-                <div class="dashboard-catalog-list">
+                <div id="dashboard-catalog-list" class="dashboard-catalog-list">
                     {% include "partials/dashboard_catalog.html" %}
                 </div>
             </section>
@@ -86,10 +86,10 @@
         <!-- Columna central: gráfica (el detalle vive en el panel derecho) -->
         <main class="dashboard-analytics-col">
                 <div id="unified-chart-container" class="panel panel-spacious relative">
-                <!-- Selector granularidad compacto junto al título, fuera de #unified-chart -->
+                <!-- Selector granularidad glass, fuera del OOB de la gráfica -->
                 <div
                     id="granularity-selector"
-                    class="absolute top-3 right-3 inline-flex items-center rounded-lg border border-neutral-800 overflow-hidden z-10"
+                    class="granularity-glass absolute top-3 right-3 inline-flex items-center z-10"
                     role="group"
                     aria-label="Periodo de la gráfica"
                 >
@@ -98,7 +98,7 @@
                         type="button"
                         data-action="set-granularity"
                         data-gran="{{ g }}"
-                        class="px-3 py-1 text-xs font-medium {% if g == effective_gran %}bg-burgundy-600 text-white{% else %}text-neutral-400 hover:text-white{% endif %}"
+                        class="granularity-btn px-3 py-1 text-xs font-medium"
                         aria-pressed="{{ 'true' if g == effective_gran else 'false' }}"
                         aria-label="{{ {'day': 'Día', 'week': 'Semana', 'month': 'Mes'}[g] }}"
                     >{{ {'day': 'Día', 'week': 'Semana', 'month': 'Mes'}[g] }}</button>

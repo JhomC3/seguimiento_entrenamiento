@@ -45,9 +45,11 @@ def test_window_8_semanas() -> None:
 
 def test_window_rechaza_distintas_de_4_y_8() -> None:
     end = date(2026, 8, 15)
-    for bad in (1, 2, 3, 5, 6, 7, 9, 12, 0, -1):
+    for bad in (0, 9, 12, -1):
         with pytest.raises(ValidationError):
             calendar_window(end, bad)
+    for good in (1, 2, 3, 4, 5, 6, 7, 8):
+        assert calendar_window(end, good).weeks == good
 
 
 def test_huecos_entre_sesiones_no_afectan_ventana() -> None:
@@ -539,9 +541,8 @@ def test_empty_con_hint_de_ultimo_registro_de_seleccion(tmp_path) -> None:
     assert s.estado == "empty"
     assert s.hint != ""
     assert "05/01/2026" in s.hint
-    # Mensaje honesto: el selector solo permite 4 u 8 semanas.
     assert "Amplía" not in s.hint
-    assert "4 u 8 semanas" in s.hint
+    assert "ventanas disponibles" in s.hint
     # Selección vacía → sin hint (no aplica).
     s_global = build_period_summary(db, [], [], "week", 8)
     assert s_global.estado == "ready" and s_global.hint == ""

@@ -1258,9 +1258,7 @@ def test_dashboard_catalog_empty_group_not_shown(tmp_path):
     insert_exercise(db_path, "Press", "Pectoral", "EMPUJE")
     catalog = get_dashboard_catalog(db_path)
     for group in catalog:
-        assert len(group["exercises"]) > 0, (
-            f"Grupo {group['name']} no debería estar vacío"
-        )
+        assert len(group["exercises"]) > 0, f"Grupo {group['name']} no debería estar vacío"
 
 
 def test_dashboard_catalog_groups_exercises_alphabetical(tmp_path):

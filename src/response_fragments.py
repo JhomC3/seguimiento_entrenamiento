@@ -36,6 +36,7 @@ OOB_FRAGMENT_TARGETS = (
     "split-board",
     "history-section",
     "period-summary-wrap",
+    "dashboard-catalog-list",
 )
 
 STATIC_MARKERS = {
