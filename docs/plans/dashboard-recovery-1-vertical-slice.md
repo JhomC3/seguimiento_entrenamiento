@@ -1,12 +1,16 @@
 # Plan: Recuperación 1 — Dashboard vertical mínimo
 
+> **Estado actual:** `SUPERADO`. La implementación posterior de la Fase 2 ya incorporó el shell
+> estable, el catálogo, las granularidades, el resumen y la comparación de puntos. La cola vigente
+> está en [`MASTER-PLAN.md`](MASTER-PLAN.md). Este documento se conserva como historial técnico.
+
 **Ruta:** `docs/plans/dashboard-recovery-1-vertical-slice.md`
 **Fecha:** 2026-08-18
 **Precedente:** `docs/plans/dashboard-implementation-gap-and-recovery.md` §4 (Recuperación 1, "próximo trabajo autorizado")
 
 ## 1. Estado del plan
 
-`pendiente` — documento de diseño para implementación por un agente. No se implementa código en este plan.
+`SUPERADO` — no ejecutar como plan independiente.
 
 **Supuesto crítico de verificación:** el estado del código descrito aquí corresponde al **working tree actual de la rama** (hay cambios sin commitear en `app.py`, `src/charts.py`, `static/js/chart-interaction.js`, `static/js/level-cascade.js`, `static/css/cascade.css`, `templates/index.html`, `templates/ejercicios_row.html`, `tests/*`, entre otros — `git status`). Si se commitea antes de implementar, re-verificar las líneas citadas antes de empezar.
 

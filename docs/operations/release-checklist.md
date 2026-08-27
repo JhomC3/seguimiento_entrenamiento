@@ -9,6 +9,8 @@ the release.
       browser downloads or caches staged.
 - [ ] `docs/architecture/current-ui-contract.md` reviewed: any DOM/htmx contract
       change since last release is intentional and has its own browser test.
+- [ ] `docs/architecture/dashboard-current.md` reviewed: dashboard layout, left catalog rail,
+      permanent right summary, point comparison and OOB targets match the implementation.
 
 ## 2. Automated gates
 
@@ -67,6 +69,12 @@ export GRADLE_USER_HOME=$PWD/.gradle ANDROID_HOME=$PWD/android/sdk
 With a copied development DB and `uv run uvicorn app:app --host 127.0.0.1 --port 8000`:
 
 - [ ] Dashboard loads with charts and date navigator.
+- [ ] Dashboard desktop has exactly three tracks: catalog/rail, chart, permanent summary.
+- [ ] Only the left catalog folds; the right summary remains visible and keeps its dimensions.
+- [ ] Día/Semana/Mes render correctly and the first Día point has visual X padding.
+- [ ] A point click selects locally, Shift+click adds/removes, and Escape clears without fetch.
+- [ ] Comparison shows compact period labels, VAR, Series, Reps, Peso, RIR and RM aj.
+- [ ] Comparison is cleared when selection, granularity or summary period changes.
 - [ ] Save a session (editor becomes read-only, dot appears on the date).
 - [ ] Undo (Ctrl/Cmd+Z) restores the session.
 - [ ] Create, apply, edit, reorder and delete a template (entreno).

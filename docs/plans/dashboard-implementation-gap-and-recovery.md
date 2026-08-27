@@ -1,10 +1,20 @@
 # Dashboard — Reconciliación de implementación y recuperación de fase
 
+> **Estado documental:** histórico de la recuperación inicial. La referencia vigente del
+> dashboard está en [`docs/architecture/dashboard-current.md`](../architecture/dashboard-current.md).
+> Las tareas completadas posteriormente no deben volver a ejecutarse desde este documento.
+> **Prioridad vigente:** consultar [`MASTER-PLAN.md`](MASTER-PLAN.md); este archivo está `SUPERADO`.
+
 **Fecha:** 2026-08-18  
-**Estado:** Fuente de verdad para la ejecución a partir de ahora  
+**Estado:** Reconciliación histórica; no es la cola activa de ejecución
 **Alcance:** reconciliación entre los planes del 2026-08-17 y el código actualmente modificado.
 
 ## 1. Propósito
+
+La implementación posterior de la Fase 2 visual cerró el layout de tres columnas, el rail del
+catálogo, la granularidad temporal, el resumen periódico y la comparación de puntos. Este archivo
+se conserva para explicar el origen de esas decisiones, pero no debe usarse para inferir que esas
+partes siguen pendientes.
 
 Los planes anteriores describen el resultado deseado, pero la implementación actual es parcial. Este documento reemplaza la lista anterior como cola de ejecución: cada tarea debe pasar de `pendiente` a `implementada` únicamente con código, pruebas y verificación visual.
 

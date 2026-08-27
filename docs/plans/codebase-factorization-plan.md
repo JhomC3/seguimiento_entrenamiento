@@ -6,7 +6,10 @@
 
 ## 1. Estado del plan
 
-`pendiente` — documento rector de la factorización. La Fase 1 ya tiene su plan atómico propio (`docs/plans/app-router-modularization.md`); las Fases 2-3 se ejecutan con este documento como especificación; las Fases 4-5 son condicionales y se detallarán cuando su condición se cumpla.
+`PAUSADA` — roadmap estructural subordinado al [`MASTER-PLAN.md`](MASTER-PLAN.md). No se ejecutan
+sus fases mientras el dashboard tenga cambios funcionales sin consolidar. La Fase 1 tiene el plan
+atómico `app-router-modularization.md`; las Fases 2–3 y las fases condicionales esperan sus
+dependencias explícitas.
 
 ## 2. Objetivo
 

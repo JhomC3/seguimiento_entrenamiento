@@ -6,7 +6,9 @@
 
 ## 1. Estado del plan
 
-`pendiente` — documento de diseño para implementación por un agente. No se implementa código en este plan.
+`PAUSADA` — no iniciar hasta cerrar P0–P3 del [`MASTER-PLAN.md`](MASTER-PLAN.md). Este plan sigue
+siendo válido como refactor estructural, pero no debe ejecutarse en paralelo con cambios funcionales
+del dashboard.
 
 **Supuesto crítico:** el working tree de `feat/dashboard-ui-ux` tiene cambios sin commitear (rediseño del dashboard, Recuperación 1 parcial). Este plan exige partir de un **árbol limpio y suite verde** (F0); no se mezcla con funcionalidad nueva. Este plan se ejecuta **antes** de continuar con las Recuperaciones 2-5 del gap-doc: acumular dashboard sobre un `app.py` de ~1.400 líneas multiplica el riesgo de duplicar lógica, romper OOB y esconder errores.
 

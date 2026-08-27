@@ -1,7 +1,11 @@
 # Plan de recuperación 2–3: catálogo, granularidad y resumen del dashboard
 
+> **Estado actual:** `SUPERADO`. Sus objetivos fueron absorbidos por la implementación de la Fase 2
+> y por [`dashboard-current.md`](../architecture/dashboard-current.md). No ejecutar sus tareas otra
+> vez ni interpretarlas como pendientes. La prioridad vigente está en [`MASTER-PLAN.md`](MASTER-PLAN.md).
+
 **Fecha:** 2026-08-18  
-**Estado:** aprobado para ejecución secuencial; pendiente de implementación y validación  
+**Estado:** SUPERADO; conservado como diseño histórico
 **Alcance:** dashboard principal (`/`), su gráfica, catálogo de selección y resumen del período
 
 ## 1. Propósito

@@ -1,6 +1,11 @@
 # Current Dashboard UI Contract
 
-> **Purpose:** Behavioural contract of the live application (contract v3, cascada de
+> **Referencia actualizada:** el contrato funcional y visual vigente del dashboard está en
+> [`dashboard-current.md`](dashboard-current.md). Este documento conserva contratos históricos
+> de rutas y componentes que siguen siendo relevantes durante la migración. Cuando una sección
+> antigua contradiga `dashboard-current.md`, prevalece `dashboard-current.md`.
+
+> **Purpose:** Behavioural contract of the live application (legacy contract v3, cascada de
 > niveles). Any intentional change to IDs, `data-*` attributes, form field names, htmx
 > targets or `hx-swap-oob` markers documented here requires its own browser test and a
 > contract-change commit.
