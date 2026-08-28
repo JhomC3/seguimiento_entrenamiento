@@ -53,7 +53,7 @@
 .dashboard-page {
     width: 100%;
     max-width: none;
-    padding: 24px 24px 48px;
+    padding: 24px 24px 16px;
 }
 .dashboard-header {
     display: flex;
@@ -160,6 +160,19 @@
         transform: translateX(0);
         visibility: visible;
     }
+    .dashboard-summary-col {
+        height: auto;
+        min-height: 0;
+        max-height: none;
+        overflow: visible;
+    }
+    #ps-content {
+        overflow: visible;
+    }
+    .ps-panels {
+        overflow-y: visible;
+        max-height: none;
+    }
 }
 @media (min-width: 1024px) {
     /* Escritorio: catálogo + gráfica + panel derecho fijo (grid explícito,
@@ -180,8 +193,23 @@
         grid-column: 1;
         position: sticky;
         top: 16px;
-        max-height: calc(100vh - 32px);
-        max-height: calc(100dvh - 32px);
+        height: calc(100dvh - var(--dashboard-layout-top, 16px) - 16px);
+        max-height: calc(100dvh - var(--dashboard-layout-top, 16px) - 16px);
+        overflow-y: auto;
+        align-self: start;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+    }
+    .dashboard-catalog-col .catalog-panel {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+    .dashboard-catalog-col .dashboard-catalog-list {
+        flex: 1 1 auto;
+        min-height: 0;
         overflow-y: auto;
     }
     .dashboard-analytics-col {
@@ -191,7 +219,6 @@
         grid-column: 3;
         position: sticky;
         top: 16px;
-        height: calc(100dvh - var(--dashboard-layout-top, 16px) - 16px);
         height: calc(100vh - var(--dashboard-layout-top, 16px) - 16px);
         height: calc(100dvh - var(--dashboard-layout-top, 16px) - 16px);
     }
@@ -201,7 +228,7 @@
     /* Rail persistente: la primera pista NUNCA desaparece (sin hueco). */
     .dashboard-page.is-catalog-collapsed .dashboard-layout {
         grid-template-columns: var(--catalog-collapsed-w) minmax(0, 1fr) var(--summary-w);
-        align-items: stretch;
+        align-items: start;
     }
     .dashboard-page.is-catalog-collapsed .dashboard-catalog-col {
         align-self: stretch;

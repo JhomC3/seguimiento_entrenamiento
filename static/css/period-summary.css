@@ -5,8 +5,15 @@
    column con overflow hidden (cascade.css); .ps-panels desplaza en Y.
    El scroll X queda CONFINADO a la vista de ejercicio (:has): las vistas
    global/músculo nunca muestran barra horizontal. */
+#ps-content {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+}
 .ps-panels {
-    flex: 1 1 auto;
+    flex: 1;
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
