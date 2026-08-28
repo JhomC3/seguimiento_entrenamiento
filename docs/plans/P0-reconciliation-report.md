@@ -1,8 +1,9 @@
 # P0 — Cierre de reconciliación y separación de contaminación semántica
 
 **Fecha:** 2026-08-27
-**Estado:** P0 ejecutado, separación completa (pure + métricas/cohortes) — visual 27 files
-**Rama:** working tree actual (sin HEAD limpio), sin `git reset/checkout/clean`, sin commit/push
+**Estado:** P0 completado, separación completa (pure + métricas/cohortes)
+**Commits:** `137cde3` documentación; `2a1c7de` baseline visual Fase 2
+**Working tree:** limpio después de ambos commits; `.tmp/` ignorado y conservado
 **Evidencia:** `.tmp/semantic-contamination.patch` (1101 líneas, diff completo pre-separación), `.tmp/P0-pure-contamination.patch` (128 líneas, RIR/daily_volume) y `.tmp/P0-domain-metrics-cohortes.patch` (645 líneas, métricas/cohortes)
 
 ## Alcance revisado
@@ -47,9 +48,12 @@ Separación selectiva (sin revert de archivos completos) preservando visual. Par
 | `tests/test_charts.py:143` | `posicion_ejercicio`/`cohort` asserts | `format_*`, `extract_point_values`, `point_comparison_id`, `HOVERTEMPLATE` 8, padding, etc. |
 | `tests/test_coverage_edges.py:113` | `total_tonelaje` assert | — |
 
-Tras revert, `git status` queda en **27 M + 4 ??** (vs 30), `git diff --stat` 1593 ins / 174 del. No quedan imports ni templates rotos (`grep cohort` vacío, `uv run python -c` imports ok).
+Tras la separación, el working tree quedó en **27 M + 4 ??** (vs 30), con `git diff --stat` de
+1593 ins / 174 del. Ese estado se dividió en un commit de planificación de 11 archivos y un
+baseline visual de 20 archivos. No quedan imports ni templates rotos (`grep cohort` vacío,
+`uv run python -c` imports ok).
 
-## Estado actual del working tree (post-separación completa)
+## Estado del working tree antes de los commits
 
 ```
  M app.py
@@ -103,13 +107,17 @@ pytest --ignore=tests/e2e -q: 682 passed, 1 warning, coverage 92.96% (>90%)
 
 ## Límites claros
 
-- **Commit visual Fase 2** (listo): 27 M + 4 ?? arriba. No contiene `posicion_ejercicio`, `cohort`, `cobertura`, `is_failure_set`, `FALLO PARCIAL`, `rm_primera` etc. La comparación visual (clic/Shift/Escape, periodo corto, VAR/Series/Reps/Peso/RIR/RM, orden dinámico) no depende de cohortes.
+- **Commit visual Fase 2**: `2a1c7de`, 20 archivos. No contiene `posicion_ejercicio`, `cohort`, `cobertura`, `is_failure_set`, `FALLO PARCIAL`, `rm_primera` etc. La comparación visual (clic/Shift/Escape, periodo corto, VAR/Series/Reps/Peso/RIR/RM, orden dinámico) no depende de cohortes.
 - **Commit dominio puro** (ya separado): `.tmp/P0-pure-contamination.patch` (6 files, 128 líneas) → `domain: RIR -1 y daily_volume`
 - **Commit dominio métricas/cohortes** (ya separado): `.tmp/P0-domain-metrics-cohortes.patch` (7 files, 645 líneas) → `domain: cohortes + posicion + cobertura + weighted timeline`
-- **Commit planificación**: `docs/architecture/dashboard-current.md` + `MASTER-PLAN.md` + `dashboard-ux-refinement.md` + `docs/plans/P0-reconciliation-report.md` + estados `PAUSADA/SUPERADO` + `release-checklist.md`
+- **Commit planificación**: `137cde3`, 11 archivos: `dashboard-current.md`, `MASTER-PLAN.md`,
+  `dashboard-ux-refinement.md`, `P0-reconciliation-report.md`, los planes con estados
+  `PAUSADA`/`SUPERADO`, `current-ui-contract.md` y `release-checklist.md`.
 
 ## Cierre P0
 
-P0 puede marcarse **COMPLETADA** en `MASTER-PLAN.md:16`. Siguiente: commit independiente de planificación, luego commit visual Fase 2 (27 files) sin mezclar dominio.
+P0 está **COMPLETADA** en `MASTER-PLAN.md:16`. Los dos commits de cierre de la reconciliación
+  ya existen: `137cde3` y `2a1c7de`. P1 continúa pendiente y debe comenzar por UX-1.
 
-No se hizo commit ni push. `.tmp/` debe conservarse hasta los commits.
+No se hizo push. `.tmp/` se conserva fuera de Git como evidencia y como respaldo de los cambios de
+dominio separados.

@@ -25,13 +25,15 @@ comprobar primero su estado aquí.
 El detalle ejecutable de los nuevos requisitos está en [`dashboard-ux-refinement.md`](dashboard-ux-refinement.md).
 Sus tareas UX-1 a UX-3 son P1; UX-4 a UX-6 son P2 y dependen de las anteriores. No se ejecutan en paralelo.
 
-P1 permanece pendiente hasta cerrar P0. No se deben mezclar sus commits ni abrir nuevas
-funcionalidades durante la reconciliación. P2 es el checkpoint posterior a P1.
+P0 está cerrada. P1 permanece pendiente y debe ejecutarse de forma secuencial, sin iniciar P2 ni
+trabajo de dominio paralelo. El commit visual `2a1c7de` es un baseline de Fase 2 preparado antes de
+P1; el cierre formal de P2 queda pendiente hasta completar la validación funcional, visual y de
+contrato posterior a P1.
 
 ## P0 — Reconciliación del árbol
 
-El estado actual contiene cambios sin commit en código de dashboard y también en archivos
-semánticos. Antes de cualquier commit hay que clasificar cada cambio:
+Durante la reconciliación el working tree contenía cambios sin commit en código de dashboard y
+también en archivos semánticos. Antes de cualquier commit había que clasificar cada cambio:
 
 - visual/dashboard y comparación;
 - documentación y tests correspondientes;
@@ -41,7 +43,12 @@ Los cambios semánticos no relacionados deben revertirse de forma selectiva o se
 propio, nunca mezclarse con el commit visual. No se usa `git reset --hard` ni se revierte trabajo
 sin inspeccionar el diff.
 
-**Cierre 2026-08-27:** `git diff` revisado archivo por archivo (37→27 files), contaminación separada en `.tmp/P0-pure-contamination.patch` (RIR/daily_volume, 6 files) y `.tmp/P0-domain-metrics-cohortes.patch` (métricas/cohortes, 7 files, 645 líneas), suite base 682 passed, puertas verdes, lista visual aprobada (27 M + 4 ??). Ver `P0-reconciliation-report.md`.
+**Cierre 2026-08-27:** `git diff` revisado archivo por archivo; la contaminación fue separada en
+`.tmp/P0-pure-contamination.patch` (RIR/daily_volume, 6 archivos) y
+`.tmp/P0-domain-metrics-cohortes.patch` (métricas/cohortes, 7 archivos, 645 líneas). La
+documentación se registró en `137cde3` y el baseline visual en `2a1c7de`. El working tree quedó
+limpio, con `.tmp/` ignorado y conservado; la suite base pasó con 682 tests y 92.96% de cobertura.
+Ver `P0-reconciliation-report.md`.
 
 ## P1 — Cierre funcional del dashboard
 
@@ -63,7 +70,9 @@ entrega basada solo en un resumen textual del agente.
 - Mantener `current-ui-contract.md` como contrato histórico complementario, sin contradicciones.
 - Actualizar tests y `docs/operations/release-checklist.md`.
 - Ejecutar todos los gates frescos.
-- Hacer un único commit de Fase 2 solo después de la aprobación visual del usuario.
+- El baseline visual de Fase 2 quedó registrado en `2a1c7de` después de la aprobación del alcance.
+- Tras completar P1, actualizar contratos, pruebas y checklist; cualquier commit adicional de cierre
+  debe contener únicamente el alcance aprobado y contar con validación visual del usuario.
 
 ## P3 — Fase 3: limpieza de deuda dashboard
 
