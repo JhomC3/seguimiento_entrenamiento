@@ -954,10 +954,12 @@ def get_exercise_session_summary(db_path: str, ejercicio: str) -> pd.DataFrame:
     if df.empty:
         return df
 
+    df["tonelaje"] = df["kg"] * df["reps"]
     session_df = (
         df.groupby(["semana", "sesion", "fecha", "dia"])
         .agg(
             total_sets=("set_orden", "count"),
+            total_tonelaje=("tonelaje", "sum"),
             posicion_ejercicio=("posicion_ejercicio", "first"),
             avg_kg=("kg", "mean"),
             avg_reps=("reps", "mean"),
@@ -971,6 +973,7 @@ def get_exercise_session_summary(db_path: str, ejercicio: str) -> pd.DataFrame:
     session_df["avg_kg"] = session_df["avg_kg"].round(1)
     session_df["avg_reps"] = session_df["avg_reps"].round(1)
     session_df["avg_rm_ajustado"] = session_df["avg_rm_ajustado"].round(1)
+    session_df["total_tonelaje"] = session_df["total_tonelaje"].round(1)
     session_df["caida_pct"] = (
         (1 - session_df["rm_ultima"] / session_df["rm_primera"]) * 100
     ).round(1)
