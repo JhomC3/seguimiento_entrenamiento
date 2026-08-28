@@ -1,0 +1,113 @@
+/* chart-tooltip.css — tooltip propio UX-2 para #unified-chart-plot.
+   Suprime el hover nativo de Plotly (hoverinfo:'none' en JS) y renderiza
+   un tooltip DOM desde customdata (9 pos.). Header único con fecha,
+   bloques por traza separados por divisor sutil, valores ausentes "—".
+   Líneas continuas: sin dasharray. */
+
+.chart-tooltip {
+    position: fixed;
+    z-index: 40;
+    min-width: 148px;
+    max-width: 260px;
+    background: var(--t-chart-hover-bg);
+    border: 1px solid var(--t-chart-hover-border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px var(--t-overlay-black-050), 0 2px 8px var(--t-overlay-black-030);
+    color: var(--t-chart-hover-text);
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 11px;
+    line-height: 1.4;
+    padding: 8px 10px;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transform: translate3d(0,0,0);
+    transition: opacity 80ms ease, visibility 80ms ease;
+    will-change: left, top, opacity;
+}
+
+.chart-tooltip.is-visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.chart-tooltip__header {
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    color: var(--t-chart-hover-text);
+    padding-bottom: 6px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--t-overlay-white-008);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chart-tooltip__body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.chart-tooltip__block {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 10px;
+    align-items: baseline;
+}
+
+.chart-tooltip__trace {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 2px;
+    font-weight: 700;
+    font-size: 11px;
+}
+
+.chart-tooltip__swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    border: 1px solid var(--t-overlay-white-014);
+}
+
+.chart-tooltip__trace-name {
+    color: var(--t-chart-hover-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chart-tooltip__row {
+    display: contents;
+}
+
+.chart-tooltip__label {
+    color: var(--t-surfaces-neutral-400);
+    font-weight: 500;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.chart-tooltip__value {
+    color: var(--t-chart-hover-text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.chart-tooltip__divider {
+    height: 1px;
+    background: var(--t-overlay-white-007);
+    margin: 2px 0;
+}
+
+.chart-tooltip__block + .chart-tooltip__divider {
+    margin-top: 2px;
+}

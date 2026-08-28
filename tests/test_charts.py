@@ -96,10 +96,10 @@ def test_chart_pfr_timeline_crecimiento_base_0(setup_test_db):
     assert ys[0] == pytest.approx(0, abs=0.5)  # semana 1 = baseline
     assert ys[1] > 0  # semana 2 = crecimiento
     assert "Ciclo 1" in fig.layout.title.text
-    # Fase 2: el hovertemplate canónico ya no dice 'Crecimiento' ni 'Fecha'.
-    assert "Crecimiento" not in fig.data[0].hovertemplate
-    assert "Fecha" not in fig.data[0].hovertemplate
-    assert "Δ %{customdata[1]}" in fig.data[0].hovertemplate
+    # UX-2: sin hovertemplate nativo (tooltip propio en cliente) y la etiqueta
+    # del punto viaja en customdata con formato corto de tooltip.
+    assert fig.data[0].hovertemplate is None
+    assert fig.data[0].customdata[0][0] == "4 mayo 2026"
 
 
 def test_chart_html_header_ciclo_igual_que_semana_panel(setup_test_db):
@@ -160,14 +160,15 @@ def test_chart_pfr_timeline_hover_incluye_resumen(setup_test_db):
     assert fig.data, "la figura debe tener datos"
     trace = fig.data[0]
     assert trace.customdata is not None
-    # customdata: [etiqueta, Δ, series, reps, peso, rir, rm, cobertura, nombre]
+    # customdata (9 pos., inmutable): [etiqueta, Δ, series, reps, peso, rir,
+    # rm, cobertura, nombre] — la cobertura viaja pero NO se muestra (UX-2).
     fila = trace.customdata[0]
     assert len(fila) == 9
     assert fila[2] >= "1"  # series de la semana 1 (>=2 aquí) como string
     assert int(fila[2]) >= 2
-    for texto in ("Fallos", "Volumen", "Sueño", "Crecimiento", "Fecha"):
-        assert texto not in trace.hovertemplate
-    assert "<extra>%{customdata[8]}</extra>" in trace.hovertemplate
+    assert fila[8] == "Crecimiento"
+    # UX-2: tooltip propio en cliente; la traza no lleva hovertemplate nativo.
+    assert trace.hovertemplate is None
 
 
 def test_get_exercise_raw_data_incluye_descanso(setup_test_db):
@@ -204,11 +205,13 @@ def test_chart_muscle_exercises_una_traza_por_ejercicio(setup_test_db):
 
     db = setup_test_db
     fig = chart_selection(db, ["Pectoral"], ["Press Convergente"])
-    assert len(fig.data) == 2  # compilado + ejercicio
+    assert len(fig.data) == 2  # músculo guía (UX-2) + ejercicio
+    assert fig.data[0].name == "Pectoral"
     assert fig.data[1].name == "Press Convergente"
-    # El hover muestra el nombre del ejercicio en la posición 8 (extra).
+    # UX-2: nunca "Compilado"; el nombre viaja en customdata[8].
+    assert all(t.name != "Compilado" for t in fig.data)
     assert fig.data[1].customdata[0][8] == "Press Convergente"
-    assert "<extra>%{customdata[8]}</extra>" in fig.data[1].hovertemplate
+    assert fig.data[1].hovertemplate is None
 
 
 def test_chart_muscle_exercises_filtra_ejercicios_ajenos(setup_test_db):
@@ -300,10 +303,10 @@ def test_chart_selection_dos_musculos_ignora_ejercicios(setup_test_db):
         ([], [], ["Crecimiento"]),
         # 1 músculo, 0 ejercicios → Global + músculo
         (["Pectoral"], [], ["Global", "Pectoral"]),
-        # 1 músculo, 1 ejercicio válido → Compilado + ejercicio (D2: sin Global)
-        (["Pectoral"], ["Press Convergente"], ["Compilado", "Press Convergente"]),
-        # 1 músculo, ejercicio ajeno → solo Compilado (D2)
-        (["Pectoral"], ["Curl Bayesian"], ["Compilado"]),
+        # 1 músculo, 1 ejercicio válido → músculo guía + ejercicio (D2: sin Global)
+        (["Pectoral"], ["Press Convergente"], ["Pectoral", "Press Convergente"]),
+        # 1 músculo, ejercicio ajeno → solo el músculo (D2)
+        (["Pectoral"], ["Curl Bayesian"], ["Pectoral"]),
         # 2+ músculos → Global + músculos
         (["Pectoral", "Biceps"], [], ["Global", "Pectoral", "Biceps"]),
         # 2+ músculos, ejercicios ignorados
@@ -419,9 +422,9 @@ def test_chart_selection_day_global_musculo_ejercicio(setup_test_db):
     assert [t.name for t in fig1.data] == ["Global", "Pectoral"]
     for t in fig1.data:
         assert list(t.x) == ["2026-05-04", "2026-05-08", "2026-05-11"]
-    # Ejercicios (Compilado guía + ejercicio, sin Global — D2)
+    # Ejercicios (músculo guía + ejercicio, sin Global — D2; UX-2: sin Compilado)
     fig2 = chart_selection(setup_test_db, ["Pectoral"], ["Press Convergente"], "day")
-    assert [t.name for t in fig2.data] == ["Compilado", "Press Convergente"]
+    assert [t.name for t in fig2.data] == ["Pectoral", "Press Convergente"]
 
 
 def test_chart_selection_day_con_seleccion_persistida(setup_test_db):
@@ -434,15 +437,13 @@ def test_chart_selection_day_con_seleccion_persistida(setup_test_db):
 
 
 def test_pfr_df_day_tooltip_diario(setup_test_db):
-    """Fase 2: el hover canónico ya no menciona Fecha/Semana; la etiqueta del
-    punto (customdata[0]) es DD/MM/YYYY y trae Δ con signo."""
+    """UX-2: etiqueta tooltip '4 mayo' (sin año), 9 pos. y sin hover nativo."""
     fig = chart_selection(setup_test_db, ["Pectoral"], [], "day")
     for t in fig.data:
-        assert "Fecha" not in t.hovertemplate, t.hovertemplate
-        assert "Semana" not in t.hovertemplate, t.hovertemplate
+        assert t.hovertemplate is None
         fila = t.customdata[0]
         assert len(fila) == 9
-        assert fila[0] == "04/05/2026"
+        assert fila[0] == "4 mayo"
         assert fila[1].startswith(("+", "-")) or fila[1] == "0.0%"
 
 
@@ -494,18 +495,19 @@ def test_day_ticktext_cambio_de_ano(setup_test_db):
 
 
 def test_day_tooltip_fecha_completa(setup_test_db):
-    """Fase 2: tooltip diario muestra DD/MM/YYYY en customdata[0]; sin ISO ni
-    'Fecha' duplicada. Semana usa 'Semana N' y Mes 'Mes' (nombre)."""
+    """UX-2: day '4 mayo', week '4 mayo 2026' (lunes del ciclo), sin hover nativo."""
     fig = chart_selection(setup_test_db, ["Pectoral"], [], "day")
     for t in fig.data:
-        assert t.customdata[0][0] == "04/05/2026"
-        assert "Fecha" not in t.hovertemplate
+        assert t.customdata[0][0] == "4 mayo"
+        assert t.hovertemplate is None
     # chart_pfr_timeline también
     fig2 = chart_pfr_timeline(setup_test_db, "systemic", granularity="day")
-    assert fig2.data[0].customdata[0][0] == "04/05/2026"
-    # Week: etiqueta centralizada 'Semana 1'
+    assert fig2.data[0].customdata[0][0] == "4 mayo"
+    assert fig2.data[0].hovertemplate is None
+    # Week: lunes de la semana del ciclo con año
     figw = chart_pfr_timeline(setup_test_db, "systemic", granularity="week")
-    assert figw.data[0].customdata[0][0] == "Semana 1"
+    assert figw.data[0].customdata[0][0] == "4 mayo 2026"
+    assert figw.data[0].hovertemplate is None
 
 
 def test_day_eje_interno_sigue_iso(setup_test_db):
@@ -1292,13 +1294,13 @@ def test_y_granularidades_recalculan_con_su_ventana(tmp_path):
 
 
 def test_tooltip_customdata_8_posiciones_day(setup_test_db):
-    """Day: [etiqueta DD/MM/YYYY, Δ±, series, reps, peso, rir, rm_max, nombre]."""
+    """Day: [etiqueta '4 mayo', Δ±, series, reps, peso, rir, rm_max, cobertura, nombre] (9 pos.)."""
     from src.metrics_engine import rm_ajustado
 
     fig = chart_pfr_timeline(setup_test_db, "systemic", granularity="day")
     fila = fig.data[0].customdata[0]
     assert len(fila) == 9
-    assert fila[0] == "04/05/2026"
+    assert fila[0] == "4 mayo"
     assert fila[1].endswith("%")
     assert int(fila[2]) == 2  # 2 sets del día en la fixture
     assert float(fila[3]) == pytest.approx(6.0)
@@ -1310,27 +1312,30 @@ def test_tooltip_customdata_8_posiciones_day(setup_test_db):
 
 
 def test_tooltip_customdata_week_y_month_labels(setup_test_db):
-    """Week → 'Semana N'; Month → nombre de mes; siempre 9 posiciones."""
+    """Week → '4 mayo 2026' (lunes ciclo); Month → 'mayo 2026'; siempre 9 pos. y sin hover nativo."""
     figw = chart_pfr_timeline(setup_test_db, "systemic", granularity="week")
-    assert figw.data[0].customdata[0][0] == "Semana 1"
+    assert figw.data[0].customdata[0][0] == "4 mayo 2026"
     assert len(figw.data[0].customdata[0]) == 9
+    assert figw.data[0].hovertemplate is None
     figm = chart_pfr_timeline(setup_test_db, "systemic", granularity="month")
-    assert figm.data[0].customdata[0][0] == "Mayo"
+    assert figm.data[0].customdata[0][0] == "mayo 2026"
     assert len(figm.data[0].customdata[0]) == 9
+    assert figm.data[0].hovertemplate is None
 
 
 def test_tooltip_sin_textos_antiguos_en_figura(setup_test_db):
-    """Ni hovertemplate ni customdata contienen Volumen/Sueño/Fallos/Crecimiento."""
+    """UX-2: sin hovertemplate nativo; customdata sin Volumen/Sueño/Fallos ni unidades."""
     for gran in ("day", "week", "month"):
         fig = chart_pfr_timeline(setup_test_db, "systemic", granularity=gran)
         t = fig.data[0]
-        for texto in ("Volumen", "Sueño", "Fallos", "Crecimiento:", '"Fecha "'):
-            assert texto not in t.hovertemplate, (gran, texto)
+        assert t.hovertemplate is None, (gran, t.hovertemplate)
         for fila in t.customdata:
             joined = "|".join(str(v) for v in fila)
             assert "kg" not in joined.replace("RM aj.", ""), (gran, joined)
             assert " h" not in joined
             assert "Fallos" not in joined
+            for texto in ("Volumen", "Sueño", "Fallos", "Crecimiento:", '"Fecha "'):
+                assert texto not in joined, (gran, texto)
 
 
 def test_altura_layout_intacta(setup_test_db):

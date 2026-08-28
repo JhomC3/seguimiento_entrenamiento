@@ -113,6 +113,18 @@ def _week_bounds(semana: int, cycle_start: date | None = None) -> tuple[date, da
     return start, end
 
 
+def week_start_date(semana: int, cycle_start: date | None = None) -> date:
+    """Lunes de la semana N del ciclo (etiqueta de tooltip UX-2).
+
+    Semana 1 = lunes de la semana que contiene ``cycle_start``; si el ciclo
+    empieza a mitad de semana, la semana 1 arranca el lunes anterior.
+    ``cycle_start=None`` usa la configuración del ciclo (``parse_cycle_start()``).
+    Solo presentación: no altera las etiquetas del resumen periódico.
+    """
+    start, _ = _week_bounds(semana, cycle_start)
+    return start
+
+
 def week_intersects(
     window: Window,
     semana: int,

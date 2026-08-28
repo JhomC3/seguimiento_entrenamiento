@@ -20,6 +20,7 @@ from src.summary_service import (
     week_intersects,
     week_label,
     week_sort_key,
+    week_start_date,
 )
 
 
@@ -248,6 +249,57 @@ def test_semana_limite_inclusive() -> None:
     assert not week_intersects(w, 16, cycle_start=date(2026, 5, 4))
     # Semana 20: 2026-09-14..20 fuera
     assert not week_intersects(w, 20, cycle_start=date(2026, 5, 4))
+
+
+def test_week_start_date_semana_1() -> None:
+    # Ciclo por defecto 04/05/2026 es lunes → semana 1 arranca ese lunes.
+    assert week_start_date(1) == date(2026, 5, 4)
+    assert week_start_date(1, cycle_start=date(2026, 5, 4)) == date(2026, 5, 4)
+
+
+def test_week_start_date_semana_intermedia() -> None:
+    # Semana intermedia: 1 + (N-1)*7 días desde el lunes de la semana 1.
+    assert week_start_date(15, cycle_start=date(2026, 5, 4)) == date(2026, 8, 10)
+    assert week_start_date(10) == date(2026, 7, 6)  # default cycle_start
+    # Consistencia con _week_bounds: reutiliza el mismo lunes base.
+    from src.summary_service import _week_bounds
+
+    for semana in (1, 8, 15, 20):
+        start, _ = _week_bounds(semana, cycle_start=date(2026, 5, 4))
+        assert week_start_date(semana, cycle_start=date(2026, 5, 4)) == start
+
+
+def test_week_start_date_cruce_de_ano() -> None:
+    # Ciclo que empieza cerca de fin de año y cruza a enero.
+    ciclo = date(2025, 12, 31)  # miércoles → lunes 2025-12-29
+    assert week_start_date(1, cycle_start=ciclo) == date(2025, 12, 29)
+    assert week_start_date(2, cycle_start=ciclo) == date(2026, 1, 5)
+    assert week_start_date(3, cycle_start=ciclo) == date(2026, 1, 12)
+    # Año nuevo queda en la segunda semana, verifica que el año cambia.
+    assert week_start_date(2, cycle_start=ciclo).year == 2026
+
+
+def test_week_start_date_cycle_start_no_lunes() -> None:
+    # Si el ciclo empieza miércoles o domingo, semana 1 sigue siendo lunes anterior.
+    miercoles = date(2026, 5, 6)  # miércoles
+    domingo = date(2026, 5, 10)  # domingo
+    assert week_start_date(1, cycle_start=miercoles) == date(2026, 5, 4)
+    assert week_start_date(1, cycle_start=domingo) == date(2026, 5, 4)
+    assert week_start_date(2, cycle_start=miercoles) == date(2026, 5, 11)
+    assert week_start_date(2, cycle_start=domingo) == date(2026, 5, 11)
+    # Otro caso no lunes: martes 2026-01-06 → lunes 2026-01-05
+    assert week_start_date(1, cycle_start=date(2026, 1, 6)) == date(2026, 1, 5)
+
+
+def test_week_start_date_rechaza_semana_invalida() -> None:
+    with pytest.raises(ValidationError):
+        week_start_date(0)
+    with pytest.raises(ValidationError):
+        week_start_date(-3)
+    with pytest.raises(ValidationError):
+        week_start_date(0, cycle_start=date(2026, 5, 4))
+    with pytest.raises(ValidationError):
+        week_start_date(-1, cycle_start=date(2025, 12, 31))
 
 
 # --- C2: agregación, estados y vistas del panel ---

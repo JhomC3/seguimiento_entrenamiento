@@ -1569,7 +1569,7 @@ def test_b1_selector_nativo_accesible(page, server):
 
 
 def test_b2r2_carga_inicial_day_fechas_sin_semana(page, server):
-    """Carga inicial: selector en Día, eje con fechas reales y hover sin 'Semana'."""
+    """UX-2: Día usa fechas reales, hover sin 'Semana' y etiqueta tooltip '1 septiembre'."""
     dates = [_iso(4), _iso(6)]
     _seed_sessions(page, server, dates)
     page.goto(server)
@@ -1582,14 +1582,35 @@ def test_b2r2_carga_inicial_day_fechas_sin_semana(page, server):
     assert st["xaxis"] == "Fecha", f"eje inicial debe ser Fecha: {st['xaxis']}"
     # Fechas reales, no números de semana.
     assert all("-" in x for t in st["traces"] for x in t["x"]), st
-    # El hover no dice 'Semana' y la etiqueta del punto (cd0[0]) es fecha.
+    # UX-2: hover nativo suprimido (hovertemplate None) y etiqueta tooltip es fecha corta "1 septiembre"
     assert all("Semana" not in t["hover"] for t in st["traces"]), st
-    assert all("/" in t["cd0"][0] for t in st["traces"]), st
+    assert all(t["hover"] == "" for t in st["traces"]), st
+    assert all(
+        any(
+            m in t["cd0"][0].lower()
+            for m in [
+                "enero",
+                "febrero",
+                "marzo",
+                "abril",
+                "mayo",
+                "junio",
+                "julio",
+                "agosto",
+                "septiembre",
+                "octubre",
+                "noviembre",
+                "diciembre",
+            ]
+        )
+        for t in st["traces"]
+    ), st
+    assert all("/" not in t["cd0"][0] for t in st["traces"]), st
+    assert all("Semana" not in t["cd0"][0] for t in st["traces"]), st
 
 
 def test_b2r2_day_a_week_cambia_grafica_y_conserva_seleccion(page, server):
-    """Día→Semana: nueva petición, URL gran=week, eje a semanas, tooltip Semana,
-    y la selección de músculo + ejercicio se conserva."""
+    """UX-2: Día→Semana conserva selección, eje Semana y tooltip con fecha lunes."""
     _seed_sessions(page, server, [_iso(4), _iso(11)])
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
@@ -1612,16 +1633,38 @@ def test_b2r2_day_a_week_cambia_grafica_y_conserva_seleccion(page, server):
     # Nueva petición disparada y URL actualizada.
     assert any("gran=week" in u for u in reqs), f"no hubo request gran=week: {reqs}"
     assert "gran=week" in page.url, page.url
-    # Eje cambió a semanas y la etiqueta del punto dice 'Semana N'.
+    # UX-2: eje Semana y etiqueta tooltip es fecha lunes "1 septiembre 2026", no "Semana 1"
     assert week_state["xaxis"] == "Semana", week_state
-    assert all("Semana" in t["cd0"][0] for t in week_state["traces"]), week_state
+    assert all(
+        any(
+            m in t["cd0"][0].lower()
+            for m in [
+                "enero",
+                "febrero",
+                "marzo",
+                "abril",
+                "mayo",
+                "junio",
+                "julio",
+                "agosto",
+                "septiembre",
+                "octubre",
+                "noviembre",
+                "diciembre",
+            ]
+        )
+        for t in week_state["traces"]
+    ), week_state
+    assert all("Semana" not in t["cd0"][0] for t in week_state["traces"]), week_state
+    assert all(t["hover"] == "" for t in week_state["traces"]), week_state
     # Selección conservada (chip sigue marcado, URL con musculos+ejercicios).
     expect(_exercise_input(page, "Press")).to_have_attribute("aria-pressed", "true")
     assert "musculos=Pectoral" in page.url, page.url
     assert "ejercicios=Press" in page.url, page.url
-    # La selección y sus trazas.
+    # UX-2: músculo guía, nunca "Compilado"
     names = [t["n"] for t in week_state["traces"]]
-    assert "Compilado" in names, names
+    assert "Pectoral" in names, names
+    assert "Compilado" not in names, names
 
 
 def test_b2r2_semana_a_day_restaura_fechas_sin_descanso(page, server):
@@ -1652,8 +1695,7 @@ def test_b2r2_semana_a_day_restaura_fechas_sin_descanso(page, server):
 
 
 def test_b2r2_musculo_con_cambio_granularidad_mantiene_trazas(page, server):
-    """Seleccionar un músculo y cambiar granularidad: Global y músculo conservan
-    sus trazas y ambas usan el eje correcto."""
+    """UX-2: músculo conserva Global+músculo y tooltip fecha, no 'Semana'."""
     _seed_sessions(page, server, [_iso(4), _iso(11)])
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
@@ -1665,7 +1707,27 @@ def test_b2r2_musculo_con_cambio_granularidad_mantiene_trazas(page, server):
     week = _chart_state(page)
     names = [t["n"] for t in week["traces"]]
     assert "Global" in names and "Pectoral" in names, names
-    assert all("Semana" in t["cd0"][0] for t in week["traces"]), week
+    assert all(
+        any(
+            m in t["cd0"][0].lower()
+            for m in [
+                "enero",
+                "febrero",
+                "marzo",
+                "abril",
+                "mayo",
+                "junio",
+                "julio",
+                "agosto",
+                "septiembre",
+                "octubre",
+                "noviembre",
+                "diciembre",
+            ]
+        )
+        for t in week["traces"]
+    ), week
+    assert all("Semana" not in t["cd0"][0] for t in week["traces"]), week
 
     page.locator('#granularity-selector [data-gran="day"]').click()
     page.wait_for_timeout(700)
@@ -1677,8 +1739,7 @@ def test_b2r2_musculo_con_cambio_granularidad_mantiene_trazas(page, server):
 
 
 def test_b2r2_ejercicio_con_cambio_granularidad_conserva_seleccion(page, server):
-    """Seleccionar un ejercicio y cambiar granularidad: Global + músculo guía +
-    ejercicio conservan la selección y el eje cambia correctamente."""
+    """UX-2: ejercicio conserva músculo guía + ejercicio (sin Compilado) y eje correcto."""
     _seed_sessions(page, server, [_iso(4), _iso(11)])
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
@@ -1692,14 +1753,16 @@ def test_b2r2_ejercicio_con_cambio_granularidad_conserva_seleccion(page, server)
     page.wait_for_timeout(700)
     week = _chart_state(page)
     names = [t["n"] for t in week["traces"]]
-    assert "Compilado" in names and "Press" in names, names
+    assert "Pectoral" in names and "Press" in names, names
+    assert "Compilado" not in names, names
     assert "ejercicios=Press" in page.url, page.url
 
     page.locator('#granularity-selector [data-gran="day"]').click()
     page.wait_for_timeout(700)
     day = _chart_state(page)
     names = [t["n"] for t in day["traces"]]
-    assert "Compilado" in names and "Press" in names, names
+    assert "Pectoral" in names and "Press" in names, names
+    assert "Compilado" not in names, names
     assert day["xaxis"] == "Fecha", day
     expect(_exercise_input(page, "Press")).to_have_attribute("aria-pressed", "true")
 
@@ -4556,3 +4619,261 @@ def test_plotly_resize_bidireccional(page, server, tmp_path):
     m3 = medidas()
     assert abs(m3["svgW"] - m1["svgW"]) <= 4.0, f"no recuperó ancho: {m1} → {m3}"
     assert abs(m3["svgW"] - m3["plotW"]) <= 2.0, m3
+
+
+# --- UX-2: tooltip propio ---
+def _tooltip_state(page):
+    return page.evaluate("""() => {
+        const el=document.querySelector('.chart-tooltip');
+        if(!el) return {exists:false};
+        const blocks=[...el.querySelectorAll('.chart-tooltip__block')];
+        return {
+            exists:true,
+            hidden: el.hidden,
+            visible: el.classList.contains('is-visible'),
+            header: el.querySelector('.chart-tooltip__header')?.textContent || '',
+            blocks: blocks.length,
+            dividers: el.querySelectorAll('.chart-tooltip__divider').length,
+            swatches: el.querySelectorAll('.chart-tooltip__swatch').length,
+            swatchColors: [...el.querySelectorAll('.chart-tooltip__swatch')].map(s=>getComputedStyle(s).backgroundColor),
+            ariaLabels: blocks.map(b=>b.getAttribute('aria-label')||''),
+            traceNames: [...el.querySelectorAll('.chart-tooltip__trace-name')].map(n=>n.textContent),
+            text: el.textContent,
+            html: el.innerHTML.slice(0, 1500),
+        };
+    }""")
+
+
+def _hover_first_point(page):
+    # Hover sobre el primer punto visible (usa su bbox, evita draglayer)
+    pt_box = page.evaluate("""() => {
+        const pt=document.querySelector('#unified-chart-plot .point');
+        if(!pt) return null;
+        const r=pt.getBoundingClientRect();
+        return {x: r.left + r.width/2, y: r.top + r.height/2};
+    }""")
+    if pt_box:
+        page.mouse.move(pt_box["x"], pt_box["y"], steps=5)
+        page.wait_for_timeout(600)
+        return True
+    return False
+
+
+def test_ux2_tooltip_day_header_single_and_no_cobertura(page, server):
+    """UX-2 Día: header único '1 septiembre' + D2/A11 (swatch+nombre+aria-label por bloque)."""
+    _seed_sessions(page, server, [_iso(0), _iso(2), _iso(4)])
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_timeout(800)
+    # Seleccionar músculo para tener 2 trazas (Global + Pectoral) y tooltip con 2 bloques
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(800)
+    assert _hover_first_point(page), "no se encontró punto para hover"
+    st = _tooltip_state(page)
+    assert st["exists"] and st["visible"] and not st["hidden"], st
+    # Header único, formato día sin año (single year) -> "1 septiembre" o similar
+    assert st["header"], st
+    assert any(
+        m in st["header"].lower()
+        for m in [
+            "enero",
+            "febrero",
+            "marzo",
+            "abril",
+            "mayo",
+            "junio",
+            "julio",
+            "agosto",
+            "septiembre",
+            "octubre",
+            "noviembre",
+            "diciembre",
+        ]
+    ), st["header"]
+    assert "Semana" not in st["header"] and "S1" not in st["header"], st["header"]
+    assert "/" not in st["header"], st["header"]
+    # Header aparece una sola vez en el tooltip (no repetido por bloque)
+    assert st["text"].count(st["header"]) == 1, f"header repetido: {st['text'][:200]}"
+    # D2/A11: cada bloque muestra swatch + nombre visible 1 vez + aria-label
+    assert "Cobertura" not in st["text"], st["text"]
+    assert "Series" in st["text"], st["text"]
+    assert "VAR" in st["text"], st["text"]
+    assert st["text"].count("Global") == 1, (
+        f"Global debe aparecer 1 vez por bloque: {st['text'][:300]}"
+    )
+    assert st["text"].count("Pectoral") == 1, (
+        f"Pectoral debe aparecer 1 vez por bloque: {st['text'][:300]}"
+    )
+    assert st["traceNames"].count("Global") == 1 and st["traceNames"].count("Pectoral") == 1, st[
+        "traceNames"
+    ]
+    assert st["swatches"] == st["blocks"] == 2, st
+    assert all(
+        c and c not in ("", "rgba(0, 0, 0, 0)", "transparent") for c in st["swatchColors"]
+    ), st["swatchColors"]
+    assert st["ariaLabels"].count("Global") == 1 and st["ariaLabels"].count("Pectoral") == 1, st[
+        "ariaLabels"
+    ]
+    # 2 bloques (Global + Pectoral) separados por divider
+    assert st["blocks"] == 2, st
+    assert st["dividers"] == 1, st
+    # Líneas continuas (sin dash)
+    dash = page.evaluate(
+        "() => document.getElementById('unified-chart-plot')._fullData.map(t=>t.line?.dash)"
+    )
+    assert all(
+        d
+        in (
+            None,
+            "solid",
+            "",
+        )
+        for d in dash
+    ), dash
+
+
+def test_ux2_tooltip_week_and_month_headers(page, server):
+    """UX-2 Semana/Mes: header fecha lunes/mes año + D2/A11 por bloque."""
+    _seed_sessions(page, server, [_iso(0), _iso(7), _iso(14)])
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_timeout(800)
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(800)
+    # Semana
+    page.locator('#granularity-selector [data-gran="week"]').click()
+    page.wait_for_timeout(800)
+    assert _hover_first_point(page)
+    st = _tooltip_state(page)
+    assert st["visible"], st
+    # Semana header es fecha lunes con año, ej "1 septiembre 2026"
+    assert any(
+        m in st["header"].lower()
+        for m in [
+            "enero",
+            "febrero",
+            "marzo",
+            "abril",
+            "mayo",
+            "junio",
+            "julio",
+            "agosto",
+            "septiembre",
+            "octubre",
+            "noviembre",
+            "diciembre",
+        ]
+    ), st["header"]
+    assert "2026" in st["header"] or "2025" in st["header"], st["header"]
+    assert "Semana" not in st["text"] and "S1" not in st["text"], st["text"]
+    assert "Cobertura" not in st["text"]
+    assert st["header"].count(st["header"]) == 1
+    # D2/A11 por bloque semana
+    assert st["blocks"] == 2 and st["swatches"] == 2, st
+    assert "Global" in st["text"] and "Pectoral" in st["text"], st["text"]
+    assert st["traceNames"].count("Global") == 1 and st["traceNames"].count("Pectoral") == 1, st[
+        "traceNames"
+    ]
+    assert st["ariaLabels"].count("Global") == 1 and st["ariaLabels"].count("Pectoral") == 1, st[
+        "ariaLabels"
+    ]
+    page.mouse.move(5, 5, steps=3)
+    page.wait_for_timeout(400)
+    # Mes
+    page.locator('#granularity-selector [data-gran="month"]').click()
+    page.wait_for_timeout(800)
+    assert _hover_first_point(page)
+    st2 = _tooltip_state(page)
+    assert st2["visible"], st2
+    # Mes header ej "septiembre 2026"
+    assert any(
+        m in st2["header"].lower()
+        for m in [
+            "enero",
+            "febrero",
+            "marzo",
+            "abril",
+            "mayo",
+            "junio",
+            "julio",
+            "agosto",
+            "septiembre",
+            "octubre",
+            "noviembre",
+            "diciembre",
+        ]
+    ), st2["header"]
+    assert "2026" in st2["header"], st2["header"]
+    assert "Cobertura" not in st2["text"]
+    assert "Series" in st2["text"]
+    assert st2["blocks"] == 2 and st2["swatches"] == 2, st2
+    assert st2["traceNames"].count("Global") == 1 and st2["traceNames"].count("Pectoral") == 1, st2[
+        "traceNames"
+    ]
+
+
+def test_ux2_tooltip_cero_peticiones_y_compatible_con_comparacion(page, server):
+    """Hover no fetchea y es compatible con comparación (no la rompe)."""
+    _seed_sessions(page, server, [_iso(0), _iso(2)])
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_timeout(800)
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(800)
+    reqs = []
+    page.on("request", lambda r: reqs.append(r.url) if "/grafica" in r.url else None)
+    base = len(reqs)
+    assert _hover_first_point(page)
+    st = _tooltip_state(page)
+    assert st["visible"], st
+    page.wait_for_timeout(500)
+    assert len(reqs) == base, f"hover no debe fetchear: {reqs[base:]}"
+    # Comparación sigue funcionando tras hover
+    page.evaluate("() => window.__testComparisonClick(0,0,false)")
+    page.wait_for_timeout(400)
+    comp = page.evaluate("() => window.__testComparisonState()")
+    assert comp["count"] == 1, comp
+    # Hover de nuevo no limpia comparación
+    assert _hover_first_point(page)
+    page.wait_for_timeout(400)
+    comp2 = page.evaluate("() => window.__testComparisonState()")
+    assert comp2["count"] == 1, comp2
+    st2 = _tooltip_state(page)
+    assert st2["visible"], st2
+    # Escape limpia comparación pero no rompe tooltip
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(400)
+    assert page.evaluate("() => window.__testComparisonState().count") == 0
+    assert _hover_first_point(page)
+    assert _tooltip_state(page)["visible"]
+
+
+def test_ux2_tooltip_capturas_desktop_y_movil(page, server):
+    """Capturas 1280x800 y 390x800 con tooltip visible (sin overflow horizontal adicional)."""
+    _seed_sessions(page, server, [_iso(0), _iso(3)])
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_timeout(800)
+    _catalog_select_muscle(page, "Pectoral")
+    page.wait_for_timeout(800)
+    h_before = page.evaluate("() => document.documentElement.scrollHeight")
+    assert _hover_first_point(page)
+    assert _tooltip_state(page)["visible"]
+    h_during = page.evaluate("() => document.documentElement.scrollHeight")
+    assert h_during == h_before, "hover no debe añadir scroll vertical"
+    # Sin overflow horizontal adicional (UX-1 permite scroll vertical global en móvil)
+    assert not page.evaluate(
+        "() => document.documentElement.scrollWidth > window.innerWidth + 1"
+    ), "sin overflow horizontal adicional"
+    page.screenshot(path=".tmp/capture_ux2_desktop.png")
+    page.set_viewport_size({"width": 390, "height": 800})
+    page.wait_for_timeout(400)
+    h_before_m = page.evaluate("() => document.documentElement.scrollHeight")
+    assert _hover_first_point(page)
+    h_during_m = page.evaluate("() => document.documentElement.scrollHeight")
+    assert h_during_m == h_before_m, "hover móvil no debe añadir scroll vertical"
+    assert not page.evaluate(
+        "() => document.documentElement.scrollWidth > window.innerWidth + 1"
+    ), "sin overflow horizontal adicional en móvil"
+    page.screenshot(path=".tmp/capture_ux2_mobile.png")

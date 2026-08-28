@@ -14,8 +14,9 @@ ROOT = Path(__file__).resolve().parents[1]
 # añaden ~2 KB intencionales (Fase 2 visual).
 # Revisado 2026-08-26: TAREA 3 comparación de puntos (+~11 KB, highlight + panel)
 # requiere ~185 KB; se eleva a 190 KB para no bloquear feature (commit dedicado).
+# Revisado 2026-08-28: UX-2 tooltip propio (+2.2K CSS, +5K JS) → 85K aggregate.
 CSS_INDIVIDUAL_MAX = 32 * 1024  # tailwind.css ~16K; cada CSS componente muy por debajo
-CSS_AGGREGATE_MAX = 80 * 1024  # ~60K total
+CSS_AGGREGATE_MAX = 85 * 1024  # ~60K → 84K con tooltip
 JS_INDIVIDUAL_MAX = 64 * 1024
 JS_AGGREGATE_MAX = 190 * 1024  # ~132K → 165K Fase 2 → ~185K TAREA 3
 

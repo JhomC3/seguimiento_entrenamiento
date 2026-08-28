@@ -63,6 +63,175 @@ let selectedComparison = []; // orden de selección
 let clickTimer = null;
 let lastFigData = null;
 const _comparisonBound = new WeakSet();
+
+// --- UX-2: tooltip propio (suprime hover nativo) ---
+const _tooltipBound = new WeakSet();
+let _tooltipEl = null;
+let _tooltipHideTimer = null;
+
+function getOrCreateTooltip() {
+    if (_tooltipEl && document.body.contains(_tooltipEl)) return _tooltipEl;
+    const el = document.createElement('div');
+    el.className = 'chart-tooltip';
+    el.setAttribute('role', 'tooltip');
+    el.setAttribute('aria-hidden', 'true');
+    el.hidden = true;
+    document.body.appendChild(el);
+    _tooltipEl = el;
+    return el;
+}
+
+function hideTooltip() {
+    if (_tooltipHideTimer) {
+        clearTimeout(_tooltipHideTimer);
+        _tooltipHideTimer = null;
+    }
+    const el = _tooltipEl;
+    if (!el) return;
+    el.classList.remove('is-visible');
+    el.setAttribute('aria-hidden', 'true');
+    // Retardo para permitir transición antes de hidden
+    _tooltipHideTimer = setTimeout(function () {
+        if (!el.classList.contains('is-visible')) {
+            el.hidden = true;
+            el.textContent = '';
+        }
+    }, 90);
+}
+
+function positionTooltip(clientX, clientY) {
+    const el = _tooltipEl;
+    if (!el) return;
+    const pad = 12;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    // Medir tras contenido ya renderizado pero aún oculto (visibility hidden)
+    const rect = el.getBoundingClientRect();
+    let left = clientX + 14;
+    let top = clientY + 14;
+    if (left + rect.width + pad > vw) left = clientX - rect.width - 14;
+    if (left < pad) left = pad;
+    if (top + rect.height + pad > vh) top = clientY - rect.height - 14;
+    if (top < pad) top = pad;
+    el.style.left = left + 'px';
+    el.style.top = top + 'px';
+}
+
+function buildTooltipContent(points) {
+    if (!points || !points.length) return null;
+    // Header único: primera traza, customdata[0] ya viene formateado por backend
+    // (día "18 jul" / "18 jul 2026", semana "18 jul 2026", mes "julio 2026")
+    // No repetir por bloque, no usar "S1"/"Semana 1" ni ISO.
+    const firstVals = extractPointValuesJS(points[0].customdata);
+    const header = firstVals ? firstVals.periodo : String(points[0].x);
+    const body = document.createDocumentFragment();
+    const headerEl = document.createElement('div');
+    headerEl.className = 'chart-tooltip__header';
+    headerEl.textContent = header;
+    body.appendChild(headerEl);
+    const wrap = document.createElement('div');
+    wrap.className = 'chart-tooltip__body';
+    points.forEach(function (pt, idx) {
+        const vals = extractPointValuesJS(pt.customdata);
+        if (!vals) return;
+        if (idx > 0) {
+            const div = document.createElement('div');
+            div.className = 'chart-tooltip__divider';
+            div.setAttribute('aria-hidden', 'true');
+            wrap.appendChild(div);
+        }
+        const block = document.createElement('div');
+        block.className = 'chart-tooltip__block';
+        const traceName = vals.trace || (pt.data && pt.data.name) || '';
+        const swatchColor = (pt.data && (pt.data.line && pt.data.line.color || pt.data.marker && pt.data.marker.color)) || '';
+        block.setAttribute('role', 'group');
+        if (traceName) block.setAttribute('aria-label', traceName);
+        const traceEl = document.createElement('div');
+        traceEl.className = 'chart-tooltip__trace';
+        const swatch = document.createElement('span');
+        swatch.className = 'chart-tooltip__swatch';
+        swatch.setAttribute('aria-hidden', 'true');
+        swatch.style.background = swatchColor || 'var(--t-chart-primary)';
+        const nameEl = document.createElement('span');
+        nameEl.className = 'chart-tooltip__trace-name';
+        nameEl.textContent = traceName;
+        traceEl.appendChild(swatch);
+        traceEl.appendChild(nameEl);
+        block.appendChild(traceEl);
+        // Orden UX-2: Series, VAR, Reps, Peso, RIR, RM (sin Cobertura)
+        const rows = [
+            ['Series', vals.series],
+            ['VAR', vals.delta],
+            ['Reps', vals.reps],
+            ['Peso', vals.peso],
+            ['RIR', vals.rir],
+            ['RM', vals.rm],
+        ];
+        rows.forEach(function (pair) {
+            const label = pair[0], value = pair[1];
+            const row = document.createElement('div');
+            row.className = 'chart-tooltip__row';
+            const lab = document.createElement('span');
+            lab.className = 'chart-tooltip__label';
+            lab.textContent = label;
+            const val = document.createElement('span');
+            val.className = 'chart-tooltip__value';
+            val.textContent = value || '—';
+            row.appendChild(lab);
+            row.appendChild(val);
+            block.appendChild(row);
+        });
+        wrap.appendChild(block);
+    });
+    body.appendChild(wrap);
+    return body;
+}
+
+function showTooltip(evt) {
+    if (!evt || !evt.points || !evt.points.length) return;
+    const el = getOrCreateTooltip();
+    if (_tooltipHideTimer) {
+        clearTimeout(_tooltipHideTimer);
+        _tooltipHideTimer = null;
+    }
+    // Construir contenido
+    const content = buildTooltipContent(evt.points);
+    if (!content) return;
+    el.textContent = '';
+    el.appendChild(content);
+    el.hidden = false;
+    // Forzar layout antes de posicionar
+    el.getBoundingClientRect();
+    const clientX = evt.event ? evt.event.clientX : (evt.points[0].x || 0);
+    const clientY = evt.event ? evt.event.clientY : (evt.points[0].y || 0);
+    // Si clientX/Y no son números (p. ej. en tests), usar fallback centrado
+    const x = typeof clientX === 'number' && Number.isFinite(clientX) ? clientX : window.innerWidth / 2;
+    const y = typeof clientY === 'number' && Number.isFinite(clientY) ? clientY : window.innerHeight / 3;
+    positionTooltip(x, y);
+    el.classList.add('is-visible');
+    el.setAttribute('aria-hidden', 'false');
+}
+
+function bindTooltip(plotEl, Plotly) {
+    if (_tooltipBound.has(plotEl)) return;
+    // Suprimir hover nativo pero conservar eventos (spike v1: hovertemplate null + hoverinfo none)
+    // Usar valor único para todas las trazas (spike: Plotly.restyle(el, {hoverinfo:'none', hovertemplate:null}))
+    try {
+        if (plotEl._fullData && plotEl._fullData.length) {
+            Plotly.restyle(plotEl, {hoverinfo: 'none', hovertemplate: null});
+        }
+    } catch (_) {}
+    plotEl.on('plotly_hover', function (data) {
+        showTooltip(data);
+    });
+    plotEl.on('plotly_unhover', function () {
+        hideTooltip();
+    });
+    // También ocultar al salir del plot o al hacer scroll
+    plotEl.addEventListener('mouseleave', hideTooltip);
+    _tooltipBound.add(plotEl);
+}
+
 const MESES_CORTO_JS = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
 
 function formatDayShortJS(isoDate, allDates) {
@@ -370,6 +539,7 @@ function clearComparison(opts) {
     const silent = opts && opts.silent;
     selectedComparison = [];
     renderComparisonPanel();
+    hideTooltip();
     const plotEl = document.getElementById('unified-chart-plot');
     if (plotEl && plotEl._fullData && window.Plotly) {
         // Restaurar marcadores originales
@@ -603,6 +773,7 @@ export function renderUnifiedChart() {
         plotEl.hidden = true;
         if (emptyEl) emptyEl.hidden = false;
         if (selectedComparison.length) clearComparison({silent:true});
+        hideTooltip();
         return;
     }
 
@@ -653,6 +824,11 @@ export function renderUnifiedChart() {
             layout.xaxis.fixedrange = false;
             layout.yaxis.fixedrange = false;
             layout.xaxis.rangeslider = { visible: false };
+            // UX-2: suprimir tooltip nativo (hovertemplate ya null en servidor), conservar eventos
+            fig.data.forEach(function (t) {
+                t.hoverinfo = 'none';
+                t.hovertemplate = null;
+            });
             return Plotly.react(plotEl, fig.data, layout, {
                 displayModeBar: false,
                 scrollZoom: false,
@@ -696,6 +872,7 @@ export function renderUnifiedChart() {
             }
             bindHorizontalWheel(plotEl, Plotly);
             bindComparison(plotEl);
+            bindTooltip(plotEl, Plotly);
             // Restaurar highlight si aún hay selección (p. ej. tras resize)
             if (selectedComparison.length) {
                 applyHighlight();

@@ -5,6 +5,7 @@ from config import CICLO_NUMERO
 from src.db_connection import read_connection
 from src.design_tokens import color, palette
 from src.metrics_engine import RM_FACTOR, calculate_pfr_timeline, rm_ajustado
+from src.models import ValidationError
 from src.summary_service import (
     _PeriodTotals,
     aggregate_sets,
@@ -12,18 +13,18 @@ from src.summary_service import (
     month_label,
     totals_by_period,
     week_label,
+    week_start_date,
 )
 
-# Hovertemplate canónico de Fase 2: Δ + métricas del periodo,
-# peso corporal, sueño, fallos ni fecha duplicada. El nombre viaja en <extra>.
-HOVERTEMPLATE = (
-    "%{customdata[0]}<br>Δ %{customdata[1]}"
-    "<br>Series %{customdata[2]} · Reps %{customdata[3]}"
-    "<br>Peso %{customdata[4]} kg · RIR %{customdata[5]}"
-    "<br>RM aj. %{customdata[6]}"
-    "<br>Cobertura %{customdata[7]}"
-    "<extra>%{customdata[8]}</extra>"
-)
+# UX-2: el tooltip se renderiza en cliente (chart-interaction.js) desde el
+# customdata del servidor. La traza no define hovertemplate: se pasa
+# hoverinfo='none' en el render cliente para suprimir el tooltip nativo de
+# Plotly conservando los eventos plotly_hover/unhover (verificado en spike:
+# hoverinfo:'none' solo no basta si un hovertemplate queda activo).
+#
+# Contrato de customdata (INMUTABLE, 9 posiciones — lo consume también la
+# comparación de puntos): 1 etiqueta · 2 Δ · 3 series · 4 reps · 5 peso ·
+# 6 RIR · 7 RM aj. · 8 cobertura (viaja, no se muestra) · 9 nombre.
 
 
 def _fmt_num(value: float | None, decimals: int = 1) -> str:
@@ -148,18 +149,98 @@ def point_comparison_id(granularity: str, periodo: str, trace_name: str) -> str:
     return f"{str(granularity).lower()}|{str(periodo)}|{str(trace_name).strip().lower()}"  # noqa: RUF010
 
 
-def _hover_rows(df: pd.DataFrame, name: str) -> list[list[str]]:
+# --- UX-2: etiquetas de tooltip (presentación; no tocar las del panel) ---
+#
+# Día: "26 jul" · "26 jul 2026" si el conjunto visible abarca >1 año (año
+#       completo, a diferencia del formato de 2 dígitos de la comparación).
+# Semana: lunes de la semana del ciclo con año ("18 jul 2026").
+# Mes: "julio 2026" (nombre completo, inequívoco).
+
+_MESES_TOOLTIP = [
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+]
+
+
+def _tooltip_day_label(iso_date: str, multi_year: bool) -> str:
+    """'26 jul' o '26 jul 2026' desde 'YYYY-MM-DD'."""
+    try:
+        y_str, m_str, d_str = str(iso_date).split("-")
+        m, d = int(m_str), int(d_str)
+    except ValueError:
+        return str(iso_date)
+    mes = _MESES_TOOLTIP[m - 1] if 1 <= m <= 12 else m_str
+    return f"{d} {mes} {y_str}" if multi_year else f"{d} {mes}"
+
+
+def _tooltip_week_label(semana: int) -> str:
+    """Lunes de la semana N del ciclo: '18 jul 2026'."""
+    start = week_start_date(int(semana))
+    mes = _MESES_TOOLTIP[start.month - 1]
+    return f"{start.day} {mes} {start.year}"
+
+
+def _tooltip_month_label(periodo: str) -> str:
+    """'julio 2026' desde 'YYYY-MM'."""
+    try:
+        y_str, m_str = str(periodo).split("-")[:2]
+        m = int(m_str)
+    except ValueError:
+        return str(periodo)
+    mes = _MESES_TOOLTIP[m - 1] if 1 <= m <= 12 else m_str
+    return f"{mes} {y_str}"
+
+
+def tooltip_period_label(granularity: str, x_value, multi_year: bool = False) -> str:
+    """Etiqueta de cabecera del tooltip UX-2 según granularidad.
+
+    ``x_value`` es el valor crudo del eje X (ISO 'YYYY-MM-DD' en day, número
+    de semana en week, 'YYYY-MM' en month). ``multi_year`` añade el año en day
+    cuando el conjunto visible de fechas abarca más de un año.
+    """
+    if granularity == "day":
+        return _tooltip_day_label(str(x_value), multi_year)
+    if granularity == "week":
+        try:
+            return _tooltip_week_label(int(str(x_value).strip()))
+        except (ValidationError, ValueError):
+            return str(x_value)
+    if granularity == "month":
+        return _tooltip_month_label(str(x_value))
+    return str(x_value)
+
+
+def _hover_rows(
+    df: pd.DataFrame,
+    name: str,
+    *,
+    granularity: str = "week",
+    multi_year: bool = False,
+) -> list[list[str]]:
     """Construye las 9 posiciones canónicas del customdata por punto.
 
-    1 etiqueta · 2 Δ · 3 series · 4 reps · 5 peso · 6 RIR · 7 RM aj. ·
-    8 cobertura · 9 nombre.
+    1 etiqueta (formato tooltip UX-2) · 2 Δ · 3 series · 4 reps · 5 peso ·
+    6 RIR · 7 RM aj. · 8 cobertura (viaja; NO se muestra en el tooltip) ·
+    9 nombre. La cabecera del tooltip se deriva del periodo común (``pt.x``),
+    no de esta etiqueta.
     """
+    x_col = "semana" if granularity == "week" else "periodo"
     rows: list[list[str]] = []
     for _, r in df.iterrows():
         series_val = r.get("h_series")
         rows.append(
             [
-                str(r.get("hlabel", "—")),
+                tooltip_period_label(granularity, r[x_col], multi_year),
                 _fmt_delta(r.get("crecimiento")),
                 "—" if series_val is None or pd.isna(series_val) else str(int(series_val)),
                 _fmt_num(r.get("h_reps")),
@@ -575,6 +656,18 @@ def _y_visible_in_window(
     return out
 
 
+def _multi_year_flag(df: pd.DataFrame, granularity: str) -> bool:
+    """True si el conjunto de periodos abarca más de un año (solo day).
+
+    Se calcula a nivel de FIGURA (todas las trazas comparten el mismo flag)
+    para que la etiqueta de un mismo x sea idéntica en cualquier traza.
+    """
+    if granularity != "day" or df.empty or "periodo" not in df.columns:
+        return False
+    years = {str(v)[:4] for v in df["periodo"]}
+    return len(years) > 1
+
+
 def _pfr_trace(
     df: pd.DataFrame,
     name: str,
@@ -584,14 +677,14 @@ def _pfr_trace(
     width: float = 2.5,
     marker_size: int = 3,
     granularity: str = "week",
+    multi_year: bool = False,
 ) -> go.Scatter:
     # Eje X y etiqueta de periodo según granularidad: la serie semanal conserva
     # `semana`; day y month usan `periodo` (fecha/label cronológico real).
     x_col = "semana" if granularity == "week" else "periodo"
 
     line_color = color if alpha >= 1.0 else _hex_to_rgba(color, alpha)
-    customdata = _hover_rows(df, name)
-    hovertemplate = HOVERTEMPLATE
+    customdata = _hover_rows(df, name, granularity=granularity, multi_year=multi_year)
     return go.Scatter(
         x=df[x_col],
         y=df["crecimiento"],
@@ -601,7 +694,6 @@ def _pfr_trace(
         # Los puntos comparten la transparencia de su línea.
         marker={"size": marker_size, "color": line_color},
         customdata=customdata,
-        hovertemplate=hovertemplate,
     )
 
 
@@ -615,8 +707,8 @@ def chart_selection(
 
     - 0 músculos: línea sistémica global ("Crecimiento").
     - 1 músculo, 0 ejercicios: Global + nombre del músculo.
-    - 1 músculo, N ejercicios válidos: Compilado (guía) + ejercicios.
-      (Global se oculta en estado ejercicio — decisión D2.)
+    - 1 músculo, N ejercicios válidos: músculo (guía, UX-2: sin "Compilado")
+      + ejercicios. (Global se oculta en estado ejercicio — decisión D2.)
     - 2+ músculos: Global + músculos. Los ejercicios no aplican.
 
     Los ejercicios que no pertenecen al músculo se descartan.
@@ -627,6 +719,9 @@ def chart_selection(
     # changes may add traces outside this window, but must never resize or
     # vertically reposition the chart shell.
     reference_df = _pfr_df(db_path, "systemic", None, granularity)
+    # Flag de figura (no de traza): todas las trazas etiquetan un mismo x con
+    # el mismo formato (año completo en day solo si el dataset abarca >1 año).
+    multi_year = _multi_year_flag(reference_df, granularity)
 
     if len(musculos) == 0:
         # Estado global: línea sistémica (D3).
@@ -634,7 +729,11 @@ def chart_selection(
         if not global_df.empty:
             traces.append(
                 _pfr_trace(
-                    global_df, "Crecimiento", chart_color("primary"), granularity=granularity
+                    global_df,
+                    "Crecimiento",
+                    chart_color("primary"),
+                    granularity=granularity,
+                    multi_year=multi_year,
                 )
             )
     elif len(musculos) == 1:
@@ -642,12 +741,16 @@ def chart_selection(
         title = f"Rendimiento – {musculo}"
 
         if ejercicios:
-            # Estado ejercicio: Compilado guía + ejercicios (sin global — D2).
+            # Estado ejercicio: el músculo guía (UX-2) + ejercicios (sin global — D2).
             compiled = _pfr_df(db_path, "muscle_group", musculo, granularity)
             if not compiled.empty:
                 traces.append(
                     _pfr_trace(
-                        compiled, "Compilado", chart_color("primary"), granularity=granularity
+                        compiled,
+                        musculo,
+                        chart_color("primary"),
+                        granularity=granularity,
+                        multi_year=multi_year,
                     )
                 )
 
@@ -673,6 +776,7 @@ def chart_selection(
                         width=3.5,
                         marker_size=3,
                         granularity=granularity,
+                        multi_year=multi_year,
                     )
                 )
         else:
@@ -681,7 +785,13 @@ def chart_selection(
             global_df = _pfr_df(db_path, "systemic", None, granularity)
             if not global_df.empty:
                 traces.append(
-                    _pfr_trace(global_df, "Global", chart_color("primary"), granularity=granularity)
+                    _pfr_trace(
+                        global_df,
+                        "Global",
+                        chart_color("primary"),
+                        granularity=granularity,
+                        multi_year=multi_year,
+                    )
                 )
             compiled = _pfr_df(db_path, "muscle_group", musculo, granularity)
             if not compiled.empty:
@@ -695,13 +805,20 @@ def chart_selection(
                         width=3.5,
                         marker_size=3,
                         granularity=granularity,
+                        multi_year=multi_year,
                     )
                 )
     elif len(musculos) >= 2:
         global_df = _pfr_df(db_path, "systemic", None, granularity)
         if not global_df.empty:
             traces.append(
-                _pfr_trace(global_df, "Global", chart_color("primary"), granularity=granularity)
+                _pfr_trace(
+                    global_df,
+                    "Global",
+                    chart_color("primary"),
+                    granularity=granularity,
+                    multi_year=multi_year,
+                )
             )
         for idx, musculo in enumerate(musculos):
             df = _pfr_df(db_path, "muscle_group", musculo, granularity)
@@ -710,7 +827,14 @@ def chart_selection(
             color = EXERCISE_PALETTE[idx % len(EXERCISE_PALETTE)]
             traces.append(
                 _pfr_trace(
-                    df, musculo, color, alpha=0.4, width=3.5, marker_size=3, granularity=granularity
+                    df,
+                    musculo,
+                    color,
+                    alpha=0.4,
+                    width=3.5,
+                    marker_size=3,
+                    granularity=granularity,
+                    multi_year=multi_year,
                 )
             )
 
@@ -867,16 +991,19 @@ def chart_pfr_timeline(
 
     fig = go.Figure()
 
+    multi_year = _multi_year_flag(periodic, granularity)
     if granularity == "day":
         periods = [str(v) for v in periodic[x_col].tolist()]
         tickvals, ticktext = _day_tick_subset(periods, max_ticks=8)
-        customdata_vals = _hover_rows(periodic, "Crecimiento")
+        customdata_vals = _hover_rows(
+            periodic, "Crecimiento", granularity=granularity, multi_year=multi_year
+        )
         x_tickvals = tickvals
         x_ticktext = ticktext
     else:
         x_tickvals = periodic[x_col].tolist()
         x_ticktext = [str(v) for v in periodic[x_col]]
-        customdata_vals = _hover_rows(periodic, "Crecimiento")
+        customdata_vals = _hover_rows(periodic, "Crecimiento", granularity=granularity)
 
     fig.add_trace(
         go.Scatter(
@@ -887,7 +1014,6 @@ def chart_pfr_timeline(
             line={"color": chart_color("primary"), "width": 2.5},
             marker={"size": 8, "color": chart_color("primary")},
             customdata=customdata_vals,
-            hovertemplate=HOVERTEMPLATE,
         )
     )
 
