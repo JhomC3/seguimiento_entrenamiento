@@ -297,7 +297,7 @@ BASELINE_FECHA = "2026-01-05"  # Semana 1 del ciclo: baseline lejos de las venta
 def _seed_baselines(db) -> None:
     """Baseline semana 1: Press banca rm=100, Curl rm=50 (valores redondos)."""
     _set(db, BASELINE_FECHA, "Press banca", kg=80.0, reps=8, rir=1.0, orden=1)
-    # rm_ajustado(80,8,1)=80*(1+0.0333*10)=106.64 → baseline por ejercicio.
+    # rm_ajustado(80,8,1)=80*(1+0.0333*9)=103.976 → baseline por ejercicio.
     _set(db, BASELINE_FECHA, "Curl", kg=40.0, reps=8, rir=1.0, orden=1)
 
 

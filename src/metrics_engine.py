@@ -3,16 +3,24 @@ import pandas as pd
 from src.db_connection import read_connection
 
 RM_FACTOR = 0.0333
+MISSING_PERFORMANCE_FULL_WEIGHT_DAYS = 7
+MISSING_PERFORMANCE_MAX_DAYS = 14
 
 
 def rm_ajustado(kg: float, reps: float, rir: float = 0.0) -> float:
-    """RM ajustado: kg * (1 + 0.0333 * (reps + 1 + rir))."""
-    return kg * (1 + RM_FACTOR * (reps + 1 + rir))
+    """Estima el 1RM con las repeticiones efectivas hasta el fallo.
+
+    Para RIR normal, las repeticiones efectivas son ``reps + RIR``. Un RIR
+    negativo representa una fracción de la siguiente repetición fallida:
+    ``-0.5`` equivale a media repetición adicional y ``-1`` a ninguna.
+    """
+    effective_reps = reps + (rir if rir >= 0 else 1 + rir)
+    return kg * (1 + RM_FACTOR * effective_reps)
 
 
 def is_failure_set(reps: float, rir: float | None) -> bool:
-    """True si la serie llegó al fallo (RIR <= 0) o tuvo rep parcial (reps decimal)."""
-    return (rir is not None and rir <= 0) or (reps % 1 != 0)
+    """True si hubo fallo negativo o una repetición parcial."""
+    return (rir is not None and rir < 0) or (reps % 1 != 0)
 
 
 # Palabras clave para identificar ejercicios compuestos (multiarticulares)
@@ -36,6 +44,56 @@ def is_compound(exercise_name: str) -> bool:
     return any(kw in name_lower for kw in COMPOUND_KEYWORDS)
 
 
+def _weighted_group_timeline(
+    df: pd.DataFrame, start_date: pd.Timestamp, end_date: pd.Timestamp, group_column: str
+) -> pd.DataFrame:
+    """Calcula grupos con roster fijo, pesos por series y cobertura observada."""
+    dates = pd.date_range(start=start_date, end=end_date, freq="D")
+    rows: list[pd.DataFrame] = []
+    for group_name, group in df.groupby(group_column):
+        roster = group.groupby("ejercicio").size().astype(float)
+        weights = roster / roster.sum()
+        exercise_daily = group.groupby(["fecha_dt", "ejercicio"])["perf_rel"].mean()
+        pivot = exercise_daily.unstack("ejercicio").reindex(dates)
+        observed = pivot.notna()
+        carried = pivot.ffill(limit=MISSING_PERFORMANCE_MAX_DAYS)
+
+        # No asumimos que un ejercicio omitido sea un cero. Conservamos su
+        # último rendimiento, pero reducimos gradualmente su peso después de
+        # una semana para evitar saltos cuando cambia la selección de ejercicios.
+        freshness = pd.DataFrame(index=dates, columns=pivot.columns, dtype=float)
+        for exercise in pivot.columns:
+            last_observed = pd.Series(dates, index=dates).where(observed[exercise]).ffill()
+            age_days = (pd.Series(dates, index=dates) - last_observed).dt.days
+            freshness[exercise] = (
+                1.0
+                - (age_days - MISSING_PERFORMANCE_FULL_WEIGHT_DAYS).clip(lower=0)
+                / (MISSING_PERFORMANCE_MAX_DAYS - MISSING_PERFORMANCE_FULL_WEIGHT_DAYS)
+            ).clip(lower=0, upper=1)
+        effective_weights = freshness.where(carried.notna()).mul(weights, axis=1)
+        available_weight = effective_weights.sum(axis=1)
+        score = carried.mul(effective_weights).sum(axis=1).div(available_weight.replace(0, pd.NA))
+        score = pd.to_numeric(score, errors="coerce")
+        observed_weight = observed.mul(weights, axis=1).sum(axis=1)
+        rows.append(
+            pd.DataFrame(
+                {
+                    "fecha_dt": dates,
+                    "grupo_calculo": str(group_name),
+                    "rendimiento_grupo": score.astype(float),
+                    "cobertura_grupo": pd.to_numeric(
+                        observed_weight / weights.sum() * 100, errors="coerce"
+                    ),
+                }
+            )
+        )
+    if not rows:
+        return pd.DataFrame(
+            columns=["fecha_dt", "grupo_calculo", "rendimiento_grupo", "cobertura_grupo"]
+        )
+    return pd.concat(rows, ignore_index=True)
+
+
 def get_exercises_baselines(db_path: str) -> dict[str, float]:
     """
     Calcula el RM_a base de cada ejercicio (promedio de la semana 1).
@@ -56,7 +114,8 @@ def get_exercises_baselines(db_path: str) -> dict[str, float]:
 
     # Calcular RM_a de cada set
     rir_safe = df["rir"].fillna(0)
-    df["rm_ajustado"] = df["kg"] * (1 + RM_FACTOR * (df["reps"] + 1 + rir_safe))
+    effective_reps = df["reps"] + rir_safe.where(rir_safe >= 0, 1 + rir_safe)
+    df["rm_ajustado"] = df["kg"] * (1 + RM_FACTOR * effective_reps)
 
     # Para cada ejercicio, encontrar su primera semana disponible y promediar
     for exercise, group in df.groupby("ejercicio"):
@@ -88,9 +147,6 @@ def calculate_pfr_timeline(
     if df.empty:
         return pd.DataFrame()
 
-    # Obtener baselines para calcular rendimiento relativo %
-    baselines = get_exercises_baselines(db_path)
-
     # Parsear fechas reales y ordenar de forma cronológica
     df["fecha_dt"] = pd.to_datetime(df["fecha"], format="%Y-%m-%d", errors="coerce")
     df = df.dropna(subset=["fecha_dt"]).sort_values("fecha_dt").reset_index(drop=True)
@@ -100,9 +156,13 @@ def calculate_pfr_timeline(
 
     # Calcular RM_a individual de cada set
     rir_safe = df["rir"].fillna(0)
-    df["rm_ajustado"] = df["kg"] * (1 + RM_FACTOR * (df["reps"] + 1 + rir_safe))
+    effective_reps = df["reps"] + rir_safe.where(rir_safe >= 0, 1 + rir_safe)
+    df["rm_ajustado"] = df["kg"] * (1 + RM_FACTOR * effective_reps)
 
-    # Calcular Rendimiento Relativo (%) respecto al baseline
+    # La gráfica de progreso compara el ejercicio consigo mismo. La posición
+    # y el número de serie se reservan para el análisis contextual del detalle,
+    # no para redefinir el progreso global cuando cambia el orden de la sesión.
+    baselines = get_exercises_baselines(db_path)
     df["perf_rel"] = df.apply(
         lambda r: (
             (r["rm_ajustado"] / baselines[r["ejercicio"]] * 100)
@@ -127,7 +187,7 @@ def calculate_pfr_timeline(
         return pd.DataFrame()
 
     # --- AGRUPACIÓN DIARIA (SESIONES REALES) ---
-    daily_sessions = (
+    daily_base = (
         df_filtered.groupby("fecha_dt")
         .agg(
             semana=("semana", "first"),
@@ -136,11 +196,41 @@ def calculate_pfr_timeline(
             sets_totales=("set_orden", "count"),
             avg_rir=("rir", "mean"),
             sets_fallo=("es_fallo", "sum"),
-            # Rendimiento promedio del día (fuerza relativa en %)
-            rendimiento=("perf_rel", "mean"),
         )
         .reset_index()
     )
+    if filter_type == "systemic":
+        # Un peso igual por grupo muscular evita que un grupo con más
+        # ejercicios/series domine la métrica global. El roster de cada grupo
+        # permanece fijo y los ausentes se arrastran temporalmente.
+        group_daily = _weighted_group_timeline(
+            df_filtered,
+            daily_base["fecha_dt"].min(),
+            daily_base["fecha_dt"].max(),
+            "grupo_muscular",
+        )
+        daily_sessions = daily_base.copy()
+        group_mean = group_daily.groupby("fecha_dt")["rendimiento_grupo"].mean()
+        coverage_mean = group_daily.groupby("fecha_dt")["cobertura_grupo"].mean()
+        daily_sessions["rendimiento"] = daily_sessions["fecha_dt"].map(group_mean)
+        daily_sessions["cobertura"] = daily_sessions["fecha_dt"].map(coverage_mean)
+    elif filter_type == "muscle_group":
+        group_daily = _weighted_group_timeline(
+            df_filtered,
+            daily_base["fecha_dt"].min(),
+            daily_base["fecha_dt"].max(),
+            "grupo_muscular",
+        )
+        daily_sessions = daily_base.copy()
+        group_score = group_daily.groupby("fecha_dt")["rendimiento_grupo"].mean()
+        group_coverage = group_daily.groupby("fecha_dt")["cobertura_grupo"].mean()
+        daily_sessions["rendimiento"] = daily_sessions["fecha_dt"].map(group_score)
+        daily_sessions["cobertura"] = daily_sessions["fecha_dt"].map(group_coverage)
+    else:
+        daily_sessions = daily_base.copy()
+        exercise_mean = df_filtered.groupby("fecha_dt")["perf_rel"].mean()
+        daily_sessions["rendimiento"] = daily_sessions["fecha_dt"].map(exercise_mean)
+        daily_sessions["cobertura"] = 100.0
 
     # --- GENERAR CRONOLOGÍA DE DÍAS CONTINUOS (PARA EL DECAIMIENTO DE FATIGA) ---
     start_date = daily_sessions["fecha_dt"].min()

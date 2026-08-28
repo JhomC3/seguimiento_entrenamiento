@@ -16,14 +16,13 @@ from src.summary_service import (
 
 # Hovertemplate canónico de Fase 2: Δ + métricas del periodo,
 # peso corporal, sueño, fallos ni fecha duplicada. El nombre viaja en <extra>.
-# Contrato 8 posiciones: 0 etiqueta, 1 Δ, 2 series, 3 reps, 4 peso, 5 RIR, 6 RM aj., 7 nombre.
-# La comparación reutiliza customdata[2] (Series) sin alterar el tooltip visible.
 HOVERTEMPLATE = (
     "%{customdata[0]}<br>Δ %{customdata[1]}"
     "<br>Series %{customdata[2]} · Reps %{customdata[3]}"
     "<br>Peso %{customdata[4]} kg · RIR %{customdata[5]}"
     "<br>RM aj. %{customdata[6]}"
-    "<extra>%{customdata[7]}</extra>"
+    "<br>Cobertura %{customdata[7]}"
+    "<extra>%{customdata[8]}</extra>"
 )
 
 
@@ -104,10 +103,10 @@ def format_month_short(periodo: str) -> str:
 
 
 def extract_point_values(customdata: list | tuple | None) -> dict | None:
-    """Extrae los valores visibles del customdata canónico (8 posiciones).
+    """Extrae los valores visibles del customdata canónico (8 u 9 posiciones).
 
-    Contrato visible 8: [etiqueta, Δ, series, reps, peso, rir, rm, trace]
-    La comparación usa series en posición 2 sin metadata extra.
+    8 pos. (legado): [etiqueta, Δ, series, reps, peso, rir, rm, trace]
+    9 pos. (actual): [etiqueta, Δ, series, reps, peso, rir, rm, cobertura, trace]
     Retorna None si incompleto.
     """
     if not isinstance(customdata, (list, tuple)):
@@ -126,6 +125,21 @@ def extract_point_values(customdata: list | tuple | None) -> dict | None:
             }
         except Exception:  # noqa: BLE001
             return None
+    if len(customdata) >= 9:
+        try:
+            return {
+                "periodo": str(customdata[0]),
+                "delta": str(customdata[1]),
+                "series": str(customdata[2]),
+                "reps": str(customdata[3]),
+                "peso": str(customdata[4]),
+                "rir": str(customdata[5]),
+                "rm": str(customdata[6]),
+                "cobertura": str(customdata[7]),
+                "trace": str(customdata[8]),
+            }
+        except Exception:  # noqa: BLE001
+            return None
     return None
 
 
@@ -135,10 +149,10 @@ def point_comparison_id(granularity: str, periodo: str, trace_name: str) -> str:
 
 
 def _hover_rows(df: pd.DataFrame, name: str) -> list[list[str]]:
-    """Construye las 8 posiciones canónicas del customdata por punto.
+    """Construye las 9 posiciones canónicas del customdata por punto.
 
-    1 etiqueta · 2 Δ · 3 series · 4 reps · 5 peso · 6 RIR · 7 RM aj. · 8 nombre.
-    Contrato visible: series en posición 2, reutilizado por comparación sin metadata extra.
+    1 etiqueta · 2 Δ · 3 series · 4 reps · 5 peso · 6 RIR · 7 RM aj. ·
+    8 cobertura · 9 nombre.
     """
     rows: list[list[str]] = []
     for _, r in df.iterrows():
@@ -152,6 +166,7 @@ def _hover_rows(df: pd.DataFrame, name: str) -> list[list[str]]:
                 _fmt_num(r.get("h_peso")),
                 _fmt_num(r.get("h_rir")),
                 _fmt_num(r.get("h_rm")),
+                _fmt_num(r.get("h_cobertura"), 0),
                 name,
             ]
         )
@@ -180,27 +195,46 @@ def _hover_totals_for(
 
 
 def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
-    """Retorna datos crudos con RM y RM ajustado calculados."""
+    """Retorna datos del ejercicio con contexto de posición y serie.
+
+    La posición se deriva del orden de la primera serie de cada ejercicio en
+    la sesión, de modo que ejercicios hechos en distinto estado de fatiga no
+    se mezclen en la misma cohorte comparativa.
+    """
     with read_connection(db_path) as conn:
         df = pd.read_sql_query(
             """
-            SELECT semana, dia, fecha, set_orden, kg, reps, rir, descanso_seg
+            SELECT semana, dia, fecha, set_orden, ejercicio, kg, reps, rir, descanso_seg
             FROM training_sets
-            WHERE ejercicio = ? AND kg IS NOT NULL AND reps IS NOT NULL
+            WHERE kg IS NOT NULL AND reps IS NOT NULL
             ORDER BY semana, fecha, set_orden
         """,
             conn,
-            params=[ejercicio],
         )
 
     if df.empty:
         return df
 
     df["fecha_dt"] = pd.to_datetime(df["fecha"], format="%Y-%m-%d", errors="coerce")
+    session_keys = ["semana", "fecha"]
     df["sesion"] = df.groupby("semana")["fecha_dt"].transform(
         lambda x: x.rank(method="dense").astype(int)
     )
-    df["serie"] = df.groupby(["semana", "sesion"]).cumcount() + 1
+    first_order = df.groupby(session_keys + ["ejercicio"], as_index=False)["set_orden"].min()
+    first_order["posicion_ejercicio"] = (
+        first_order.groupby(session_keys)["set_orden"]
+        .rank(method="dense", ascending=True)
+        .astype(int)
+    )
+    df = df.merge(
+        first_order.drop(columns=["set_orden"]),
+        on=session_keys + ["ejercicio"],
+        how="left",
+    )
+    df["serie"] = df.groupby(["semana", "fecha", "ejercicio"]).cumcount() + 1
+    df = df[df["ejercicio"].str.lower() == ejercicio.lower()].copy()
+    if df.empty:
+        return df
 
     rir_safe = df["rir"].fillna(0)
     df["rm"] = (df["kg"] * (1 + RM_FACTOR * df["reps"])).round(1)
@@ -223,6 +257,7 @@ def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
             "fecha_dt",
             "dia",
             "set_orden",
+            "posicion_ejercicio",
             "kg",
             "reps",
             "rir",
@@ -231,6 +266,36 @@ def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
             "rm_ajustado",
         ]
     ]
+
+
+def get_exercise_cohort_summary(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """Resume cohortes homogéneas: posición del ejercicio y serie ordinal.
+
+    El baseline de cada cohorte es su primera observación cronológica. La
+    mediana describe el nivel típico y reduce el efecto de una sesión atípica.
+    """
+    if raw_df.empty:
+        return raw_df
+    work = raw_df.sort_values(["fecha_dt", "serie"]).copy()
+    rows: list[dict[str, object]] = []
+    for (position, series), group in work.groupby(["posicion_ejercicio", "serie"], sort=True):
+        group = group.sort_values("fecha_dt")
+        baseline = float(group.iloc[0]["rm_ajustado"])
+        current = float(group.iloc[-1]["rm_ajustado"])
+        median = float(group["rm_ajustado"].median())
+        rows.append(
+            {
+                "posicion_ejercicio": int(position),  # type: ignore[call-overload]
+                "serie": int(series),  # type: ignore[call-overload]
+                "observaciones": len(group),
+                "baseline_rm": round(baseline, 1),
+                "rm_mediana": round(median, 1),
+                "rm_ultima": round(current, 1),
+                "crecimiento_pct": round((current / baseline - 1) * 100, 1) if baseline else None,
+                "ultima_fecha": group.iloc[-1]["fecha"],
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 def _pfr_df(
@@ -279,6 +344,7 @@ def _pfr_df(
                     "h_peso": None,
                     "h_rir": None,
                     "h_rm": None,
+                    "h_cobertura": None,
                 }
             )
         return pd.Series(
@@ -289,6 +355,7 @@ def _pfr_df(
                 "h_peso": t.peso_medio,
                 "h_rir": t.rir_medio,
                 "h_rm": t.rm_max,
+                "h_cobertura": row.get("cobertura"),
             }
         )
 
@@ -296,7 +363,9 @@ def _pfr_df(
         # calculate_pfr_timeline devuelve una cronología continua con los días de
         # descanso rellenados (rendimiento ffill, sets_totales=0). Solo mostramos
         # días con entrenamiento real: sin inventar puntos de descanso (req. 2-3).
-        result = df[df["sets_totales"] > 0][["fecha_dt", "rendimiento", "sets_totales"]].copy()
+        result = df[df["sets_totales"] > 0][
+            ["fecha_dt", "rendimiento", "sets_totales", "cobertura"]
+        ].copy()
         result = result.rename(columns={"sets_totales": "series"})
         result["periodo"] = result["fecha_dt"].dt.strftime("%Y-%m-%d")
         result = result.sort_values("periodo")
@@ -311,6 +380,7 @@ def _pfr_df(
             .agg(
                 rendimiento=("rendimiento", "mean"),
                 series=("sets_totales", "sum"),
+                cobertura=("cobertura", "mean"),
             )
             .reset_index()
             .sort_values("periodo")
@@ -325,6 +395,7 @@ def _pfr_df(
         .agg(
             rendimiento=("rendimiento", "mean"),
             series=("sets_totales", "sum"),
+            cobertura=("cobertura", "mean"),
         )
         .reset_index()
         .dropna(subset=["semana"])
@@ -878,48 +949,21 @@ def chart_pfr_timeline(
 
 
 def get_exercise_session_summary(db_path: str, ejercicio: str) -> pd.DataFrame:
-    """Resumen por sesión: total sets, tonelaje, kg y reps promedio."""
-    with read_connection(db_path) as conn:
-        df = pd.read_sql_query(
-            """
-            SELECT semana, dia, fecha, set_orden, kg, reps, rir
-            FROM training_sets
-            WHERE ejercicio = ? AND kg IS NOT NULL AND reps IS NOT NULL
-            ORDER BY semana, fecha, set_orden
-        """,
-            conn,
-            params=[ejercicio],
-        )
-
+    """Resumen por sesión con rendimiento y caída intraejercicio."""
+    df = get_exercise_raw_data(db_path, ejercicio)
     if df.empty:
         return df
-
-    df["fecha_dt"] = pd.to_datetime(df["fecha"], format="%Y-%m-%d", errors="coerce")
-    df["sesion"] = df.groupby("semana")["fecha_dt"].transform(
-        lambda x: x.rank(method="dense").astype(int)
-    )
-    df["tonelaje"] = df["kg"] * df["reps"]
-    # RM ajustado centralizado (única fuente: metrics_engine.rm_ajustado).
-    df["rm_ajustado"] = df.apply(
-        lambda r: round(
-            rm_ajustado(
-                float(r["kg"]),
-                float(r["reps"]),
-                0.0 if pd.isna(r["rir"]) else float(r["rir"]),
-            ),
-            1,
-        ),
-        axis=1,
-    )
 
     session_df = (
         df.groupby(["semana", "sesion", "fecha", "dia"])
         .agg(
             total_sets=("set_orden", "count"),
-            total_tonelaje=("tonelaje", "sum"),
+            posicion_ejercicio=("posicion_ejercicio", "first"),
             avg_kg=("kg", "mean"),
             avg_reps=("reps", "mean"),
             avg_rm_ajustado=("rm_ajustado", "mean"),
+            rm_primera=("rm_ajustado", "first"),
+            rm_ultima=("rm_ajustado", "last"),
         )
         .reset_index()
     )
@@ -927,6 +971,10 @@ def get_exercise_session_summary(db_path: str, ejercicio: str) -> pd.DataFrame:
     session_df["avg_kg"] = session_df["avg_kg"].round(1)
     session_df["avg_reps"] = session_df["avg_reps"].round(1)
     session_df["avg_rm_ajustado"] = session_df["avg_rm_ajustado"].round(1)
-    session_df["total_tonelaje"] = session_df["total_tonelaje"].round(1)
+    session_df["caida_pct"] = (
+        (1 - session_df["rm_ultima"] / session_df["rm_primera"]) * 100
+    ).round(1)
+    session_df["rm_primera"] = session_df["rm_primera"].round(1)
+    session_df["rm_ultima"] = session_df["rm_ultima"].round(1)
     session_df = session_df.sort_values(["semana", "sesion"]).reset_index(drop=True)
     return session_df

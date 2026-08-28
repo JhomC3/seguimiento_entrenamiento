@@ -212,7 +212,8 @@ export function recalcRM() {
         const rirRaw = rirEl ? rirEl.value : '';
         const rir = rirRaw ? parseFloat(rirRaw) : 0;
         if (!isNaN(kg) && !isNaN(reps)) {
-            cell.textContent = fmtNum(kg * (1 + 0.0333 * (reps + 1 + rir)));
+            const effectiveReps = reps + (rir >= 0 ? rir : 1 + rir);
+            cell.textContent = fmtNum(kg * (1 + 0.0333 * effectiveReps));
         } else {
             cell.textContent = '—';
         }

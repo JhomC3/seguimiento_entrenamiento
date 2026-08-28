@@ -50,7 +50,8 @@ def chart_db(tmp_path):
 
 
 def _rm_ajustado(kg, reps, rir=0.0):
-    return kg * (1 + 0.0333 * (reps + 1 + rir))
+    effective_reps = reps + (rir if rir >= 0 else 1 + rir)
+    return kg * (1 + 0.0333 * effective_reps)
 
 
 # ---------------------------------------------------------------------------

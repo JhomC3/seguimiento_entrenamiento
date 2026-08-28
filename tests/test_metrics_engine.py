@@ -4,7 +4,7 @@ from src.metrics_engine import RM_FACTOR, is_failure_set, rm_ajustado
 
 
 def test_rm_ajustado_escalar():
-    assert rm_ajustado(90, 7, 1.2) == 90 * (1 + 0.0333 * (7 + 1 + 1.2))
+    assert rm_ajustado(90, 7, 1.2) == 90 * (1 + 0.0333 * (7 + 1.2))
 
 
 def test_factor_constante():
@@ -19,7 +19,7 @@ def test_editor_js_usa_misma_constante_rm():
 
 
 def test_is_failure_set():
-    assert is_failure_set(5.0, 0.0)  # fallo limpio
+    assert not is_failure_set(5.0, 0.0)  # sin reserva, pero completada
     assert is_failure_set(4.5, None)  # rep parcial (reps decimal)
     assert is_failure_set(5.0, -1.0)  # forzada
     assert not is_failure_set(5.0, 2.0)  # con reserva
@@ -29,10 +29,9 @@ def test_is_failure_set():
 def test_rm_ajustado_con_rir_negativo_sigue_positivo():
     # RIR negativo (forzadas) nunca hace negativo el RM estimado.
     assert rm_ajustado(100, 10, -5) > 0
-    # Semántica acordada: RIR negativo registra la serie pero NO infla el RM
-    # por encima del fallo limpio (RIR 0).
-    assert rm_ajustado(100, 10, -1) < rm_ajustado(100, 10, 0)
-    assert rm_ajustado(100, 10, -1) > rm_ajustado(100, 10, -2)
+    # -0.5 equivale a media repetición fallida; -1, a ninguna parte adicional.
+    assert rm_ajustado(100, 10, -0.5) > rm_ajustado(100, 10, -1)
+    assert rm_ajustado(100, 10, -1) == rm_ajustado(100, 10, 0)
 
 
 def test_pfr_timeline_cuenta_sets_fallo(tmp_path):
@@ -59,7 +58,7 @@ def test_pfr_timeline_cuenta_sets_fallo(tmp_path):
     conn.close()
     tl = calculate_pfr_timeline(db)
     day = tl[tl["fecha_dt"] == "2026-05-04"]
-    assert int(day.iloc[0]["sets_fallo"]) == 2  # rir=0 y reps decimal
+    assert int(day.iloc[0]["sets_fallo"]) == 1  # solo la serie parcial
 
 
 def test_pfr_timeline_filtra_por_categoria(tmp_path):

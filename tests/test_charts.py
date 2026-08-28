@@ -7,6 +7,7 @@ from src.charts import (
     _pfr_df,
     chart_pfr_timeline,
     chart_selection,
+    get_exercise_cohort_summary,
     get_exercise_raw_data,
     get_exercise_session_summary,
 )
@@ -126,8 +127,8 @@ def test_get_exercise_raw_data(setup_test_db):
     )
     # RM for 85kg x 6reps sin RIR: 85 * (1 + 0.0333 * 6) = 101.983 -> 102.0
     assert df.iloc[0]["rm"] == 102.0
-    # RM ajustado para RIR 1.0: 85 * (1 + 0.0333 * (6 + 1 + 1)) = 107.644 -> 107.6
-    assert df.iloc[0]["rm_ajustado"] == 107.6
+    # RM ajustado para RIR 1.0: 85 * (1 + 0.0333 * (6 + 1)) = 104.811 -> 104.8
+    assert df.iloc[0]["rm_ajustado"] == 104.8
     assert df.iloc[0]["fecha"] == "2026-05-04"
 
 
@@ -138,7 +139,19 @@ def test_get_exercise_session_summary(setup_test_db):
     assert len(df) == 3  # 3 sesiones únicas (Sem1-Lun, Sem1-Vie, Sem2-Lun)
     s1 = df[df["sesion"] == 1].iloc[0]
     assert s1["total_sets"] == 2
-    assert s1["avg_rm_ajustado"] == pytest.approx(106.2, abs=0.1)
+    assert s1["avg_rm_ajustado"] == pytest.approx(103.4, abs=0.1)
+    assert s1["posicion_ejercicio"] == 1
+    assert s1["rm_primera"] == pytest.approx(104.8, abs=0.1)
+    assert s1["rm_ultima"] == pytest.approx(102.0, abs=0.1)
+    assert s1["caida_pct"] == pytest.approx(2.7, abs=0.1)
+
+
+def test_get_exercise_cohort_summary_agrupa_posicion_y_serie(setup_test_db):
+    raw = get_exercise_raw_data(setup_test_db, "Press Convergente")
+    cohorts = get_exercise_cohort_summary(raw)
+    first = cohorts[(cohorts["posicion_ejercicio"] == 1) & (cohorts["serie"] == 1)].iloc[0]
+    assert first["observaciones"] == 3
+    assert first["baseline_rm"] == pytest.approx(104.8, abs=0.1)
 
 
 def test_chart_pfr_timeline_hover_incluye_resumen(setup_test_db):
@@ -147,14 +160,14 @@ def test_chart_pfr_timeline_hover_incluye_resumen(setup_test_db):
     assert fig.data, "la figura debe tener datos"
     trace = fig.data[0]
     assert trace.customdata is not None
-    # customdata: [etiqueta, Δ, series, reps, peso, rir, rm, nombre] — 8 visibles, Series en 2 para comparación
+    # customdata: [etiqueta, Δ, series, reps, peso, rir, rm, cobertura, nombre]
     fila = trace.customdata[0]
-    assert len(fila) == 8
+    assert len(fila) == 9
     assert fila[2] >= "1"  # series de la semana 1 (>=2 aquí) como string
     assert int(fila[2]) >= 2
     for texto in ("Fallos", "Volumen", "Sueño", "Crecimiento", "Fecha"):
         assert texto not in trace.hovertemplate
-    assert "<extra>%{customdata[7]}</extra>" in trace.hovertemplate
+    assert "<extra>%{customdata[8]}</extra>" in trace.hovertemplate
 
 
 def test_get_exercise_raw_data_incluye_descanso(setup_test_db):
@@ -193,9 +206,9 @@ def test_chart_muscle_exercises_una_traza_por_ejercicio(setup_test_db):
     fig = chart_selection(db, ["Pectoral"], ["Press Convergente"])
     assert len(fig.data) == 2  # compilado + ejercicio
     assert fig.data[1].name == "Press Convergente"
-    # El hover muestra el nombre del ejercicio en la posición 7 (extra) — 8 visibles.
-    assert fig.data[1].customdata[0][7] == "Press Convergente"
-    assert "<extra>%{customdata[7]}</extra>" in fig.data[1].hovertemplate
+    # El hover muestra el nombre del ejercicio en la posición 8 (extra).
+    assert fig.data[1].customdata[0][8] == "Press Convergente"
+    assert "<extra>%{customdata[8]}</extra>" in fig.data[1].hovertemplate
 
 
 def test_chart_muscle_exercises_filtra_ejercicios_ajenos(setup_test_db):
@@ -428,7 +441,7 @@ def test_pfr_df_day_tooltip_diario(setup_test_db):
         assert "Fecha" not in t.hovertemplate, t.hovertemplate
         assert "Semana" not in t.hovertemplate, t.hovertemplate
         fila = t.customdata[0]
-        assert len(fila) == 8
+        assert len(fila) == 9
         assert fila[0] == "04/05/2026"
         assert fila[1].startswith(("+", "-")) or fila[1] == "0.0%"
 
@@ -1284,7 +1297,7 @@ def test_tooltip_customdata_8_posiciones_day(setup_test_db):
 
     fig = chart_pfr_timeline(setup_test_db, "systemic", granularity="day")
     fila = fig.data[0].customdata[0]
-    assert len(fila) == 8
+    assert len(fila) == 9
     assert fila[0] == "04/05/2026"
     assert fila[1].endswith("%")
     assert int(fila[2]) == 2  # 2 sets del día en la fixture
@@ -1293,17 +1306,17 @@ def test_tooltip_customdata_8_posiciones_day(setup_test_db):
     assert float(fila[5]) == pytest.approx((1.0 + 0.0) / 2)
     # rm_max = rm_ajustado de la serie top: (85kg, reps 6, rir 1) vía metrics_engine.
     assert float(fila[6]) == pytest.approx(rm_ajustado(85.0, 6.0, 1.0), abs=0.15)
-    assert fila[7] == "Crecimiento"
+    assert fila[8] == "Crecimiento"
 
 
 def test_tooltip_customdata_week_y_month_labels(setup_test_db):
-    """Week → 'Semana N'; Month → nombre de mes; siempre 8 posiciones visibles."""
+    """Week → 'Semana N'; Month → nombre de mes; siempre 9 posiciones."""
     figw = chart_pfr_timeline(setup_test_db, "systemic", granularity="week")
     assert figw.data[0].customdata[0][0] == "Semana 1"
-    assert len(figw.data[0].customdata[0]) == 8
+    assert len(figw.data[0].customdata[0]) == 9
     figm = chart_pfr_timeline(setup_test_db, "systemic", granularity="month")
     assert figm.data[0].customdata[0][0] == "Mayo"
-    assert len(figm.data[0].customdata[0]) == 8
+    assert len(figm.data[0].customdata[0]) == 9
 
 
 def test_tooltip_sin_textos_antiguos_en_figura(setup_test_db):
@@ -1452,37 +1465,3 @@ def test_point_comparison_id_unica():
     assert point_comparison_id("week", "1", "Press") != point_comparison_id("week", "1", "Curl")
     # Case-insensitive traza
     assert point_comparison_id("week", "1", "Press") == point_comparison_id("week", "1", "press")
-
-
-def test_hovertemplate_contrato_8_posiciones():
-    """Contrato visible: HOVERTEMPLATE usa exactamente 8 posiciones (0..7), trace en 7."""
-    from src.charts import HOVERTEMPLATE
-
-    assert "customdata[0]" in HOVERTEMPLATE
-    assert "customdata[2]" in HOVERTEMPLATE  # Series visible en posición 2
-    assert "customdata[7]" in HOVERTEMPLATE
-    assert "customdata[8]" not in HOVERTEMPLATE
-    assert "Series %{customdata[2]}" in HOVERTEMPLATE
-
-
-def test_hover_rows_8_posiciones_y_series():
-    """_hover_rows produce 8 valores visibles; Series en índice 2 sin metadata extra."""
-    from src.charts import _hover_rows
-
-    df = pd.DataFrame(
-        [
-            {
-                "hlabel": "18 jul",
-                "crecimiento": 2.3,
-                "h_series": 4,
-                "h_reps": 6.0,
-                "h_peso": 80.0,
-                "h_rir": 1.5,
-                "h_rm": 101.3,
-            }
-        ]
-    )
-    rows = _hover_rows(df, "Press")
-    assert len(rows[0]) == 8
-    assert rows[0][2] == "4"  # Series
-    assert rows[0][7] == "Press"

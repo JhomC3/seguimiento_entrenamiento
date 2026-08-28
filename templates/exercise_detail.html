@@ -15,10 +15,13 @@
                         <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Ses</th>
                         <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Fecha</th>
                         <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Día</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Posición</th>
                         <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Series</th>
-                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Tonelaje (kg)</th>
                         <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Kg Prom</th>
                         <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Reps Prom</th>
+                        <th class="py-2.5 px-3 font-bold text-burgundy-400 uppercase tracking-wider whitespace-nowrap">RMₐ 1ª</th>
+                        <th class="py-2.5 px-3 font-bold text-burgundy-400 uppercase tracking-wider whitespace-nowrap">RMₐ última</th>
+                        <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider whitespace-nowrap">Caída</th>
                         <th class="py-2.5 px-3 font-bold text-burgundy-400 uppercase tracking-wider whitespace-nowrap">RMₐ Prom</th>
                     </tr>
                 </thead>
@@ -29,13 +32,47 @@
                         <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ s.sesion }}</td>
                         <td class="py-2.5 px-3 text-neutral-400 whitespace-nowrap">{{ s.fecha }}</td>
                         <td class="py-2.5 px-3 text-neutral-400 whitespace-nowrap">{{ s.dia[:3] }}</td>
+                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ s.posicion_ejercicio }}</td>
                         <td class="py-2.5 px-3 font-bold text-white whitespace-nowrap">{{ s.total_sets }}</td>
-                        <td class="py-2.5 px-3 font-bold text-burgundy-400 whitespace-nowrap">{{ "%.1f"|format(s.total_tonelaje) }}</td>
                         <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ "%.1f"|format(s.avg_kg) }}</td>
                         <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ "%.1f"|format(s.avg_reps) }}</td>
+                        <td class="py-2.5 px-3 font-bold text-burgundy-400 whitespace-nowrap">{{ "%.1f"|format(s.rm_primera) }}</td>
+                        <td class="py-2.5 px-3 font-bold text-burgundy-400 whitespace-nowrap">{{ "%.1f"|format(s.rm_ultima) }}</td>
+                        <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ "%.1f"|format(s.caida_pct) }}%</td>
                         <td class="py-2.5 px-3 font-bold text-burgundy-400 whitespace-nowrap">{{ "%.1f"|format(s.avg_rm_ajustado) }}</td>
                     </tr>
                     {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if cohort_summary %}
+    <div class="panel panel-spacious">
+        <h3 class="panel-title panel-title-neon panel-title-divider">Comparación de series homogéneas</h3>
+        <p class="text-xs text-neutral-400 mb-3">Mismo ejercicio, misma posición dentro de la sesión y mismo número de serie. El crecimiento compara la última observación con el baseline de esa cohorte.</p>
+        <div class="overflow-x-auto rounded-lg border border-neutral-800 bg-matte-950 shadow-sm">
+            <table class="w-full text-left border-collapse text-xs">
+                <thead><tr class="bg-neutral-900 border-b border-neutral-800">
+                    <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider">Posición</th>
+                    <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider">Serie</th>
+                    <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider">Observaciones</th>
+                    <th class="py-2.5 px-3 font-bold text-burgundy-400 uppercase tracking-wider">Baseline RMₐ</th>
+                    <th class="py-2.5 px-3 font-bold text-burgundy-400 uppercase tracking-wider">RMₐ mediana</th>
+                    <th class="py-2.5 px-3 font-bold text-burgundy-400 uppercase tracking-wider">RMₐ última</th>
+                    <th class="py-2.5 px-3 font-bold text-neutral-400 uppercase tracking-wider">Crecimiento</th>
+                </tr></thead>
+                <tbody class="divide-y divide-neutral-800/50">
+                {% for c in cohort_summary %}<tr class="hover:bg-neutral-800/30 transition-colors">
+                    <td class="py-2.5 px-3 text-neutral-300">{{ c.posicion_ejercicio }}</td>
+                    <td class="py-2.5 px-3 text-neutral-300">{{ c.serie }}</td>
+                    <td class="py-2.5 px-3 text-neutral-300">{{ c.observaciones }}</td>
+                    <td class="py-2.5 px-3 font-bold text-burgundy-400">{{ "%.1f"|format(c.baseline_rm) }}</td>
+                    <td class="py-2.5 px-3 font-bold text-burgundy-400">{{ "%.1f"|format(c.rm_mediana) }}</td>
+                    <td class="py-2.5 px-3 font-bold text-burgundy-400">{{ "%.1f"|format(c.rm_ultima) }}</td>
+                    <td class="py-2.5 px-3 text-neutral-300">{{ "%.1f"|format(c.crecimiento_pct) }}%</td>
+                </tr>{% endfor %}
                 </tbody>
             </table>
         </div>
@@ -74,7 +111,7 @@
                         <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ "%g"|format(r.reps) }}</td>
                         <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">
                             {{ "%g"|format(r.rir) if r.rir is not none else "—" }}
-                            {% if r.rir is not none and r.rir <= 0 %}<span class="text-xs font-black text-burgundy-400 ml-1">{{ 'FORZADA' if r.rir < 0 else 'FALLO' }}</span>{% endif %}
+                            {% if r.rir is not none and r.rir < 0 %}<span class="text-xs font-black text-burgundy-400 ml-1">FALLO PARCIAL</span>{% endif %}
                         </td>
                         <td class="py-2.5 px-3 font-medium text-neutral-300 whitespace-nowrap">{{ "%g"|format(r.descanso_seg) if r.descanso_seg is not none else "—" }}</td>
                         <td class="py-2.5 px-3 font-bold text-burgundy-400 whitespace-nowrap">{{ "%g"|format(r.rm) }}</td>

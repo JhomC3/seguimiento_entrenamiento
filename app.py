@@ -17,6 +17,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from config import CICLO_START, DB_PATH, HC_SYNC_TOKEN, MUSCLE_CATEGORIES
 from src.charts import (
     chart_pfr_timeline,
+    get_exercise_cohort_summary,
     get_exercise_raw_data,
     get_exercise_session_summary,
 )
@@ -1306,6 +1307,7 @@ def _exercise_detail_html(request, ejercicio):
 
     raw_df = get_exercise_raw_data(DB_PATH, ejercicio)
     session_df = get_exercise_session_summary(DB_PATH, ejercicio)
+    cohort_df = get_exercise_cohort_summary(raw_df)
     return _render_body(
         templates.TemplateResponse(
             request=request,
@@ -1314,6 +1316,9 @@ def _exercise_detail_html(request, ejercicio):
                 "raw_data": raw_df.to_dict(orient="records") if not raw_df.empty else [],
                 "session_summary": (
                     session_df.to_dict(orient="records") if not session_df.empty else []
+                ),
+                "cohort_summary": (
+                    cohort_df.to_dict(orient="records") if not cohort_df.empty else []
                 ),
                 "ejercicio": ejercicio,
             },
