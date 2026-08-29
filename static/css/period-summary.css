@@ -3,8 +3,9 @@
    el Δ usa signo textual (la información nunca depende solo del color). */
 /* UNA sola zona de scroll vertical (bloque A): el contenedor externo es flex
    column con overflow hidden (cascade.css); .ps-panels desplaza en Y.
-   El scroll X queda CONFINADO a la vista de ejercicio (:has): las vistas
-   global/músculo nunca muestran barra horizontal. */
+   El scroll X queda confinado a tablas históricas de 7 columnas (ps-table--exercise)
+   — global, músculo y ejercicio usan el mismo ancho y desplazan horizontalmente
+   dentro de .ps-panels cuando no caben. */
 #ps-content {
     display: flex;
     flex: 1;
@@ -106,9 +107,9 @@
     border-collapse: collapse;
     font-size: 13px;
 }
-/* La vista de EJERCICIO (7 columnas) no cabe en --summary-w del escritorio:
-   se desplaza horizontalmente dentro de .ps-panels. Las vistas global y
-   músculo (5-6 columnas) caben y NUNCA fuerzan scroll. */
+/* Las tablas históricas (7 columnas: Periodo, VAR, Series, Reps, Peso, RIR, RM)
+   no caben en --summary-w del escritorio: se desplazan horizontalmente dentro
+   de .ps-panels. Todas las vistas históricas usan ps-table--exercise. */
 .ps-table--exercise {
     min-width: 460px;
 }
@@ -137,8 +138,8 @@
     text-align: left;
     border-bottom: 1px solid var(--t-surfaces-neutral-800);
 }
-/* Los nombres largos de ejercicio envuelven en lugar de forzar ancho: las
-   vistas global/músculo caben SIEMPRE sin scroll horizontal. */
+/* Los nombres largos de ejercicio envuelven; las tablas históricas de 7 columnas
+   desplazan horizontalmente dentro de .ps-panels cuando no caben. */
 .ps-table tbody th {
     word-break: break-word;
     min-width: 0;
@@ -162,49 +163,47 @@
     font-weight: 700;
     color: var(--t-surfaces-neutral-100);
 }
-/* TAREA 3: comparación de puntos */
-.ps-comparison-panel {
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 auto;
-    min-height: 0;
+/* UX-3 revisada: fila histórica + highlight sutil + detalle */
+.ps-row.is-selected {
+    background: var(--t-overlay-white-004);
+    border-left: 2px solid var(--t-burgundy-400);
 }
-.ps-comparison-panel[hidden] {
+.ps-row.is-selected th {
+    font-weight: 600;
+}
+.ps-row-toggle {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    padding: 0;
+}
+.ps-row-toggle:focus-visible {
+    outline: 2px solid var(--t-focus-ring);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+.ps-detail[hidden] {
     display: none !important;
 }
-.ps-comparison-table {
-    min-width: 0;
+.ps-detail td {
+    background: var(--t-surfaces-neutral-900);
+    overflow: visible;
 }
-.ps-badge {
-    display: inline-flex;
-    align-items: center;
-    font-size: 9px;
-    font-weight: 800;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    background: var(--t-burgundy-700);
-    color: var(--t-detail-white);
-    padding: 2px 6px;
-    border-radius: 999px;
-    margin-right: 6px;
-    vertical-align: middle;
+.ps-detail-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 7px;
+    margin: 0;
+    list-style: none;
+    font-size: 12px;
+    color: var(--t-surfaces-neutral-300);
 }
-.ps-compare-label {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--t-surfaces-neutral-400);
-    margin-right: 6px;
-}
-.ps-comparison-row.is-base {
-    border-left: 3px solid var(--t-burgundy-400);
-}
-.ps-comparison-row.is-base th {
-    font-weight: 700;
-}
-@media (prefers-reduced-motion: reduce) {
-    .ps-comparison-row {
-        transition: none;
-    }
+.ps-detail {
+    overflow: visible;
 }

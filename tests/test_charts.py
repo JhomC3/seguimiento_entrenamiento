@@ -245,13 +245,17 @@ def test_chart_muscle_exercises_ejercicios_mas_tenues(setup_test_db):
     # El compilado es sólido (borgoña, alpha 1) y protagonista.
     assert compilado.line.color == "#e56d88"
     assert compilado.line.width == 2.5
-    # El ejercicio individual: línea translúcida (alpha 0.4) y gruesa (3.5).
+    assert compilado.mode == "lines"
+    assert compilado.line.dash in ("solid", None)
+    # El ejercicio individual: línea translúcida (alpha 0.4) y gruesa (3.5), sin marcadores.
     assert ejercicio.line.color.startswith("rgba(")
     assert ejercicio.line.color.endswith(", 0.4)")
     assert ejercicio.line.width == 3.5
-    # Los puntos comparten la misma transparencia que su línea.
-    assert ejercicio.marker.color == ejercicio.line.color
-    assert ejercicio.marker.size == 3
+    assert ejercicio.mode == "lines"
+    assert ejercicio.line.dash == "solid"
+    assert getattr(ejercicio, "marker", None) is None or getattr(
+        ejercicio.marker, "size", None
+    ) in (None, 0)
 
 
 def test_chart_selection_dos_musculos_global_mas_tenues(setup_test_db):
@@ -1470,3 +1474,23 @@ def test_point_comparison_id_unica():
     assert point_comparison_id("week", "1", "Press") != point_comparison_id("week", "1", "Curl")
     # Case-insensitive traza
     assert point_comparison_id("week", "1", "Press") == point_comparison_id("week", "1", "press")
+
+
+def test_todas_las_trazas_son_lineas_continuas_sin_puntos(setup_test_db):
+    for gran in ("day", "week", "month"):
+        for musculos, ejercicios in [
+            ([], []),
+            (["Pectoral"], []),
+            (["Pectoral"], ["Press Convergente"]),
+        ]:
+            fig = chart_selection(setup_test_db, musculos, ejercicios, gran)
+            for trace in fig.data:
+                assert trace.mode == "lines", f"{gran} {musculos}/{ejercicios} mode {trace.mode}"
+                assert trace.line.dash in ("solid", None), f"{gran} dash {trace.line.dash}"
+                assert getattr(trace, "marker", None) is None or getattr(
+                    trace.marker, "size", None
+                ) in (None, 0)
+        fig2 = chart_pfr_timeline(setup_test_db, "systemic", granularity=gran)
+        for trace in fig2.data:
+            assert trace.mode == "lines"
+            assert trace.line.dash == "solid"

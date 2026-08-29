@@ -21,6 +21,7 @@ class DateDay:
     label: str
     has_data: bool
     selected: bool
+    aria_label: str = ""
 
 
 @dataclass(frozen=True)

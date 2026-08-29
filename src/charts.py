@@ -688,11 +688,9 @@ def _pfr_trace(
     return go.Scatter(
         x=df[x_col],
         y=df["crecimiento"],
-        mode="lines+markers",
+        mode="lines",
         name=name,
-        line={"color": line_color, "width": width},
-        # Los puntos comparten la transparencia de su línea.
-        marker={"size": marker_size, "color": line_color},
+        line={"color": line_color, "width": width, "dash": "solid"},
         customdata=customdata,
     )
 
@@ -1009,10 +1007,9 @@ def chart_pfr_timeline(
         go.Scatter(
             x=periodic[x_col],
             y=periodic["crecimiento"],
-            mode="lines+markers",
+            mode="lines",
             name="Crecimiento",
-            line={"color": chart_color("primary"), "width": 2.5},
-            marker={"size": 8, "color": chart_color("primary")},
+            line={"color": chart_color("primary"), "width": 2.5, "dash": "solid"},
             customdata=customdata_vals,
         )
     )

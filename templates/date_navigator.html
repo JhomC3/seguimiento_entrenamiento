@@ -9,7 +9,8 @@
                 data-action="select-date"
                 data-iso="{{ d.iso }}"
                 class="date-num {% if d.selected %}selected{% endif %}"
-                title="{{ d.iso }}"
+                title="{{ d.aria_label if d.aria_label else d.iso }}"
+                aria-label="{{ d.aria_label if d.aria_label else d.iso }}"
             >
                 {{ d.label }}
                 {% if d.has_data %}<span class="date-dot"></span>{% endif %}

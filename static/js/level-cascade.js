@@ -128,9 +128,13 @@ function popupIsOpen() {
     return popup && popup.open;
 }
 
+function clearHighlightAndDetails() {
+    if (window.clearChartHighlight) window.clearChartHighlight({silent:true});
+    if (window.closeAllDetails) window.closeAllDetails();
+}
 function deselectAll() {
     cancelPending();
-    if (window.clearChartComparison) window.clearChartComparison({silent:true});
+    clearHighlightAndDetails();
     selectedMuscles = new Set();
     selectedExercises = new Set();
     markMuscles();
@@ -140,7 +144,7 @@ function deselectAll() {
 }
 
 function clickMuscle(muscle, shift) {
-    if (window.clearChartComparison) window.clearChartComparison({silent:true});
+    clearHighlightAndDetails();
     if (shift) {
         if (selectedMuscles.has(muscle)) {
             selectedMuscles.delete(muscle);
@@ -170,7 +174,7 @@ function clickMuscle(muscle, shift) {
 }
 
 function clickExercise(ejercicio, shift, padre) {
-    if (window.clearChartComparison) window.clearChartComparison({silent:true});
+    clearHighlightAndDetails();
     if (shift) {
         if (selectedExercises.has(ejercicio)) {
             selectedExercises.delete(ejercicio);
@@ -232,7 +236,7 @@ function markGranularity() {
 function changeGranularity(g) {
     if (!['day', 'week', 'month'].includes(g)) return;
     if (g === getGranularity()) return;
-    if (window.clearChartComparison) window.clearChartComparison({silent:true});
+    clearHighlightAndDetails();
     setGranularity(g);
     cancelPending();
     refreshChart();
@@ -266,11 +270,13 @@ function markSummaryWindow() {
         });
 }
 
+// Deuda futura: summary-window-select / changeSummaryWindow / ventana de /grafica se conserva en esta tarea;
+// su eliminación se hará en tarea independiente (ver docs/architecture/dashboard-current.md)
 function changeSummaryWindow(weeks) {
     const s = String(weeks);
     if (!['1','2','3','4','5','6','7','8'].includes(s)) return;
     if (s === getSummaryWindow()) return;
-    if (window.clearChartComparison) window.clearChartComparison({silent:true});
+    clearHighlightAndDetails();
     const sel = document.getElementById('summary-window-select');
     if (sel) sel.value = s;
     document
@@ -292,6 +298,8 @@ function activateSummaryTab(index, focus) {
         const panel = document.getElementById(t.getAttribute('aria-controls'));
         if (panel) panel.hidden = !isTarget;
     });
+    // Al cambiar tab, cerrar detalles que dejan de ser visibles para no conservar obsoletos
+    clearHighlightAndDetails();
     if (focus) target.focus();
 }
 
@@ -405,6 +413,15 @@ export function initLevelCascade() {
     document.addEventListener('click', function (e) {
         const el = e.target.closest('[data-action]');
         if (!el) return;
+        if (el.dataset.action === 'toggle-period-detail') {
+            e.preventDefault();
+            const expanded = el.getAttribute('aria-expanded') === 'true';
+            el.setAttribute('aria-expanded', String(!expanded));
+            const det = document.getElementById(el.getAttribute('aria-controls') || '');
+            if (det) det.hidden = expanded;
+            // No fetch, solo local
+            return;
+        }
         if (el.dataset.action === 'toggle-muscle') {
             // Native checkbox activation supplies the accessible checked state;
             // only row-level clicks need their default suppressed.
@@ -458,7 +475,7 @@ export function initLevelCascade() {
 
     window.addEventListener('popstate', function () {
         cancelPending();
-        if (window.clearChartComparison) window.clearChartComparison({silent:true});
+        clearHighlightAndDetails();
         restoreFromURL();
         if (!selectedMuscles.size) {
             refreshChart();
@@ -477,14 +494,13 @@ export function initLevelCascade() {
             e.preventDefault();
             return;
         }
-        // Comparación tiene prioridad sobre deselección de músculos
-        if (window.clearChartComparison) {
-            const cur = window.getChartComparison ? window.getChartComparison() : [];
-            if (cur && cur.length) {
-                window.clearChartComparison();
-                e.preventDefault();
-                return;
-            }
+        // Prioridad existente: dialog/drawer > highlight+acordeón > deselección músculos
+        const hasHighlight = window.getChartHighlight ? window.getChartHighlight().length > 0 : false;
+        const hasOpenDetail = !!document.querySelector('#period-summary-wrap .ps-row-toggle[aria-expanded="true"]');
+        if (hasHighlight || hasOpenDetail) {
+            clearHighlightAndDetails();
+            e.preventDefault();
+            return;
         }
         if (selectedMuscles.size) deselectAll();
     });

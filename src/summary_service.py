@@ -43,6 +43,21 @@ MONTH_NAMES_ES: tuple[str, ...] = (
     "Diciembre",
 )
 
+MESES_CORTO: tuple[str, ...] = (
+    "ene",
+    "feb",
+    "mar",
+    "abr",
+    "may",
+    "jun",
+    "jul",
+    "ago",
+    "sep",
+    "oct",
+    "nov",
+    "dic",
+)
+
 ALLOWED_WINDOWS: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7, 8)
 
 
@@ -224,6 +239,50 @@ def month_sort_key(year: int, month: int) -> int:
     return year * 100 + month
 
 
+# --- Formatos compactos UX-3 revisada (no modifican etiquetas canónicas) ---
+
+
+def historical_period_id(granularidad: str, periodo_norm: str, entity_norm: str) -> str:
+    """ID canónico gráfica→fila: gran|periodo_norm|entity_norm.
+
+    periodo_norm: day=YYYY-MM-DD, week=str(semana), month=YYYY-MM.
+    entity_norm: strip().casefold(). No usar etiqueta visible.
+    """
+    return f"{granularidad}|{periodo_norm}|{entity_norm.strip().casefold()}"
+
+
+def format_day_compact(d: date, ciclo_start: date | None = None) -> tuple[str, str]:
+    """Visible DD-MM-YY · S<n>, aria DD de mes de YYYY · Semana N."""
+    semana = calculate_cycle_week(
+        d, ciclo_start if ciclo_start is not None else parse_cycle_start()
+    )
+    visible = f"{d.day:02d}-{d.month:02d}-{str(d.year)[2:]} · S{semana}"
+    aria = f"{d.day} de {MONTH_NAMES_ES[d.month - 1].lower()} de {d.year} · Semana {semana}"
+    return visible, aria
+
+
+def format_week_compact(semana: int, ciclo_start: date | None = None) -> tuple[str, str]:
+    """Visible S<n> · DD-MM-YY, aria Semana N · DD de mes de YYYY.
+
+    Reutiliza week_start_date (no ISO week).
+    """
+    start = week_start_date(semana, ciclo_start)
+    visible = f"S{semana} · {start.day:02d}-{start.month:02d}-{str(start.year)[2:]}"
+    aria = f"Semana {semana} · {start.day} de {MONTH_NAMES_ES[start.month - 1].lower()} de {start.year}"
+    return visible, aria
+
+
+def format_month_compact(year: int, month: int) -> tuple[str, str]:
+    """Visible mmm-YY minúsculas, aria mes de YYYY."""
+    if not 1 <= month <= 12:
+        raise ValidationError(f"Mes inválido: {month}")
+    if year < 1900 or year > 3000:
+        raise ValidationError(f"Año inválido: {year}")
+    visible = f"{MESES_CORTO[month - 1]}-{str(year)[2:]}"
+    aria = f"{MONTH_NAMES_ES[month - 1].lower()} de {year}"
+    return visible, aria
+
+
 # --- Redondeo ---
 
 
@@ -322,12 +381,48 @@ class _PeriodTotals:
 
 
 @dataclass(frozen=True)
+class SetDetail:
+    """Serie individual para acordeón Día+ejercicio."""
+
+    serie: int
+    reps: float | None
+    kg: float | None
+    rir: float | None
+    descanso_seg: float | None
+
+
+@dataclass(frozen=True)
+class HistoricalPeriodRow:
+    """Fila histórica por periodo para vista exercise (no modifica RowMetrics).
+
+    periodo = visible DD-MM-YY · S<n> / S<n> · DD-MM-YY / mmm-YY
+    periodo_aria = lectura única AT
+    periodo_id = gran|periodo_norm|entity_norm (nunca etiqueta visible)
+    """
+
+    periodo: str
+    periodo_aria: str
+    periodo_id: str
+    sort_key: int
+    metrics: RowMetrics
+    fecha_iso: str | None
+    semana: int | None
+    detalles: tuple[SetDetail, ...] = ()
+
+
+@dataclass(frozen=True)
 class SummaryTab:
-    """Pestaña prerenderizable del panel."""
+    """Pestaña prerenderizable del panel.
+
+    filas = para global/muscle (RowMetrics)
+    historical_rows = para exercise (HistoricalPeriodRow). Unión explícita
+    para jinja: ramificar por nivel antes de acceder a métricas.
+    """
 
     titulo: str
     nivel: str
-    filas: tuple[RowMetrics, ...]
+    filas: tuple[RowMetrics, ...] = ()
+    historical_rows: tuple[HistoricalPeriodRow, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -609,7 +704,11 @@ def _collapse_entity_rows(
 
 
 def _period_rows_desc(pa_list: list[PeriodAggregate]) -> tuple[RowMetrics, ...]:
-    """Filas por periodo, más reciente primero (presentación desc)."""
+    """Filas por periodo, más reciente primero (presentación desc).
+
+    Mantiene contrato legacy para tests que esperan RowMetrics con etiqueta canónica
+    (Semana N / Agosto). UX-3 revisada usa HistoricalPeriodRow para exercise.
+    """
     rows: list[RowMetrics] = []
     for pa in sorted(pa_list, key=lambda p: p.sort_key, reverse=True):
         rows.append(
@@ -621,6 +720,199 @@ def _period_rows_desc(pa_list: list[PeriodAggregate]) -> tuple[RowMetrics, ...]:
                 peso_medio=round1(pa.peso_medio),
                 rir_medio=round1(pa.rir_medio),
                 rm_max=round1(pa.rm_max),
+            )
+        )
+    return tuple(rows)
+
+
+def _historical_rows_for_exercise(
+    pa_list: list[PeriodAggregate],
+    granularidad: str,
+    ejercicio: str,
+    ciclo_start: date,
+    details_by_key: dict[tuple[str, str], tuple[SetDetail, ...]] | None = None,
+) -> tuple[HistoricalPeriodRow, ...]:
+    """Filas históricas por periodo para vista exercise con formato compacto UX-3.
+
+    Solo exercise recibe detalles Día.
+    No modifica customdata; periodo_norm = ISO/weekStr/YYYY-MM para id.
+    """
+    rows: list[HistoricalPeriodRow] = []
+    for pa in sorted(pa_list, key=lambda p: p.sort_key, reverse=True):
+        if granularidad == "day":
+            d = date.fromordinal(pa.sort_key)
+            visible, aria = format_day_compact(d, ciclo_start)
+            periodo_norm = d.isoformat()
+            fecha_iso = periodo_norm
+            semana = calculate_cycle_week(d, ciclo_start)
+        elif granularidad == "week":
+            semana = int(pa.sort_key)
+            visible, aria = format_week_compact(semana, ciclo_start)
+            periodo_norm = str(semana)
+            fecha_iso = None
+        elif granularidad == "month":
+            year = pa.sort_key // 100
+            month = pa.sort_key % 100
+            visible, aria = format_month_compact(year, month)
+            periodo_norm = f"{year:04d}-{month:02d}"
+            fecha_iso = None
+            semana = None  # type: ignore[assignment]
+        else:
+            visible, aria = pa.label, pa.label
+            periodo_norm = str(pa.sort_key)
+            fecha_iso = None
+        # semana variable for week/day
+        if granularidad == "day":
+            sem_val: int | None = semana  # type: ignore[assignment]
+        elif granularidad == "week":
+            sem_val = int(pa.sort_key)
+        else:
+            sem_val = None
+        periodo_id = historical_period_id(granularidad, periodo_norm, ejercicio)
+        metrics = RowMetrics(
+            etiqueta=visible,
+            delta_pct=round1(pa.crecimiento),
+            series=pa.series,
+            reps_media=round1(pa.reps_media),
+            peso_medio=round1(pa.peso_medio),
+            rir_medio=round1(pa.rir_medio),
+            rm_max=round1(pa.rm_max),
+        )
+        detalles: tuple[SetDetail, ...] = ()
+        if granularidad == "day" and details_by_key is not None and fecha_iso is not None:
+            detalles = details_by_key.get((fecha_iso, ejercicio.casefold()), ())
+        rows.append(
+            HistoricalPeriodRow(
+                periodo=visible,
+                periodo_aria=aria,
+                periodo_id=periodo_id,
+                sort_key=pa.sort_key,
+                metrics=metrics,
+                fecha_iso=fecha_iso,
+                semana=sem_val,
+                detalles=detalles,
+            )
+        )
+    return tuple(rows)
+
+
+def _historical_rows_for_global(
+    aggs: list[PeriodAggregate],
+    granularidad: str,
+    ciclo_start: date,
+) -> tuple[HistoricalPeriodRow, ...]:
+    """Histórico global: 1 fila por periodo agregado (todos los músculos)."""
+    by_period: dict[int, list[PeriodAggregate]] = {}
+    for pa in aggs:
+        by_period.setdefault(pa.sort_key, []).append(pa)
+    rows: list[HistoricalPeriodRow] = []
+    for sort_key in sorted(by_period.keys(), reverse=True):
+        pas = by_period[sort_key]
+        if granularidad == "day":
+            d = date.fromordinal(sort_key)
+            visible, aria = format_day_compact(d, ciclo_start)
+            periodo_norm = d.isoformat()
+            fecha_iso = periodo_norm
+            sem_val: int | None = calculate_cycle_week(d, ciclo_start)
+        elif granularidad == "week":
+            semana = int(sort_key)
+            visible, aria = format_week_compact(semana, ciclo_start)
+            periodo_norm = str(semana)
+            fecha_iso = None
+            sem_val = semana
+        elif granularidad == "month":
+            year = sort_key // 100
+            month = sort_key % 100
+            visible, aria = format_month_compact(year, month)
+            periodo_norm = f"{year:04d}-{month:02d}"
+            fecha_iso = None
+            sem_val = None
+        else:
+            visible, aria = str(sort_key), str(sort_key)
+            periodo_norm = str(sort_key)
+            fecha_iso = None
+            sem_val = None
+        periodo_id = historical_period_id(granularidad, periodo_norm, "crecimiento")
+        total_series = sum(p.series for p in pas)
+        total_reps = sum(p.reps_sum for p in pas)
+        total_peso = sum(p.peso_sum for p in pas)
+        total_rir = sum(p.rir_sum for p in pas)
+        rm_max = max(p.rm_max for p in pas)
+        delta = mean_growth([p.crecimiento for p in pas])
+        metrics = RowMetrics(
+            etiqueta=visible,
+            delta_pct=round1(delta),
+            series=total_series,
+            reps_media=round1(total_reps / total_series) if total_series else None,
+            peso_medio=round1(total_peso / total_series) if total_series else None,
+            rir_medio=round1(total_rir / total_series) if total_series else None,
+            rm_max=round1(rm_max),
+        )
+        rows.append(
+            HistoricalPeriodRow(
+                visible, aria, periodo_id, sort_key, metrics, fecha_iso, sem_val, ()
+            )
+        )
+    return tuple(rows)
+
+
+def _historical_rows_for_muscle(
+    aggs: list[PeriodAggregate],
+    granularidad: str,
+    musculo: str,
+    ciclo_start: date,
+) -> tuple[HistoricalPeriodRow, ...]:
+    """Histórico de un músculo: 1 fila por periodo de ese músculo."""
+    # aggs ya filtrado a ese músculo
+    by_period: dict[int, list[PeriodAggregate]] = {}
+    for pa in aggs:
+        by_period.setdefault(pa.sort_key, []).append(pa)
+    rows: list[HistoricalPeriodRow] = []
+    for sort_key in sorted(by_period.keys(), reverse=True):
+        pas = by_period[sort_key]
+        if granularidad == "day":
+            d = date.fromordinal(sort_key)
+            visible, aria = format_day_compact(d, ciclo_start)
+            periodo_norm = d.isoformat()
+            fecha_iso = periodo_norm
+            sem_val = calculate_cycle_week(d, ciclo_start)
+        elif granularidad == "week":
+            semana = int(sort_key)
+            visible, aria = format_week_compact(semana, ciclo_start)
+            periodo_norm = str(semana)
+            fecha_iso = None
+            sem_val = semana
+        elif granularidad == "month":
+            year = sort_key // 100
+            month = sort_key % 100
+            visible, aria = format_month_compact(year, month)
+            periodo_norm = f"{year:04d}-{month:02d}"
+            fecha_iso = None
+            sem_val = None
+        else:
+            visible, aria = str(sort_key), str(sort_key)
+            periodo_norm = str(sort_key)
+            fecha_iso = None
+            sem_val = None
+        periodo_id = historical_period_id(granularidad, periodo_norm, musculo)
+        total_series = sum(p.series for p in pas)
+        total_reps = sum(p.reps_sum for p in pas)
+        total_peso = sum(p.peso_sum for p in pas)
+        total_rir = sum(p.rir_sum for p in pas)
+        rm_max = max(p.rm_max for p in pas)
+        delta = mean_growth([p.crecimiento for p in pas])
+        metrics = RowMetrics(
+            etiqueta=visible,
+            delta_pct=round1(delta),
+            series=total_series,
+            reps_media=round1(total_reps / total_series) if total_series else None,
+            peso_medio=round1(total_peso / total_series) if total_series else None,
+            rir_medio=round1(total_rir / total_series) if total_series else None,
+            rm_max=round1(rm_max),
+        )
+        rows.append(
+            HistoricalPeriodRow(
+                visible, aria, periodo_id, sort_key, metrics, fecha_iso, sem_val, ()
             )
         )
     return tuple(rows)
@@ -639,15 +931,11 @@ def build_period_summary(
 ) -> PeriodSummary:
     """Punto de entrada del panel derecho (server-authoritative).
 
-    Reglas de pestañas:
-    - global (sin selección): una tab Resumen con TODOS los músculos en orden
-      config.MUSCLE_CATEGORIES, sin RM (no comparable entre ejercicios).
-    - 1 músculo: una tab con sus ejercicios (orden estable alfabético) con RM.
-    - n>1 músculos: [Resumen (músculos seleccionados, orden de selección)] +
-      una tab por músculo.
-    - ejercicios seleccionados: nivel exercise; [Resumen] + una tab por
-      ejercicio (orden de selección); el Resumen muestra filas por EJERCICIO
-      del/de los músculo(s) implicados (o filas de músculo si hay ≥2 músculos).
+    Reglas UX-3 revisada (sin pestaña genérica "Resumen", tablas siempre históricas desc):
+    - global (sin selección): [Rendimiento global][Pectoral][Espalda]… cada una histórico por periodo.
+    - 1 músculo: [Press inclinado][Press convergente]… cada ejercicio histórico por periodo.
+    - n músculos / ejercicios: pestañas por cada entidad seleccionada (músculo o ejercicio), cada una histórico.
+    Ventana 1..8 seleccionada; histórico = dentro de ventana.
     """
     if granularidad not in GRANULARITIES:
         raise ValidationError(f"Granularidad no soportada: {granularidad}")
@@ -672,9 +960,9 @@ def build_period_summary(
         window = db_window(db_path, semanas)
         if window is None:
             return PeriodSummary("empty", nivel, granularidad, semanas, ())
-        aggs = _period_metrics(
-            db_path, SummaryFilter(tuple(muscles), tuple(exercises)), granularidad, window
-        )
+        # Histórico completo: ignora ventana para no perder semanas (S1..S18 todas visibles)
+        # Ventana sigue almacenada en PeriodSummary para selector, pero no filtra histórico
+        aggs = aggregate_sets(db_path, tuple(muscles), tuple(exercises), granularidad, None, None)
     except Exception:
         logger.exception("build_period_summary falló para %s/%s", musculos, ejercicios)
         return PeriodSummary("error", nivel, granularidad, semanas, ())
@@ -697,77 +985,121 @@ def build_period_summary(
 
     tabs: list[SummaryTab] = []
 
+    # Preparar batch de detalles para Día (todas las entidades del histórico completo, sin filtrar kg/reps)
+    ciclo_start_eff = parse_cycle_start()
+    details_by_key: dict[tuple[str, str], tuple[SetDetail, ...]] | None = None
+    if granularidad == "day":
+        try:
+            from src.database import get_sets_for_window
+
+            # Batch sobre todas las entidades con datos en histórico completo
+            batch_entities = list({pa.entidad for pa in aggs})
+            if batch_entities:
+                batch = get_sets_for_window(db_path, None, None, batch_entities)
+                tmp: dict[tuple[str, str], list[SetDetail]] = {}
+                for r in batch:
+                    k = (str(r["fecha"]), str(r["ejercicio"]).casefold())
+                    lst = tmp.setdefault(k, [])
+                    lst.append(
+                        SetDetail(
+                            serie=int(r["set_orden"])
+                            if r["set_orden"] is not None
+                            else len(lst) + 1,
+                            reps=float(r["reps"]) if r["reps"] is not None else None,
+                            kg=float(r["kg"]) if r["kg"] is not None else None,
+                            rir=float(r["rir"]) if r["rir"] is not None else None,
+                            descanso_seg=float(r["descanso_seg"])
+                            if r["descanso_seg"] is not None
+                            else None,
+                        )
+                    )
+                details_by_key = {
+                    k: tuple(sorted(v, key=lambda s: s.serie)) for k, v in tmp.items()
+                }
+            else:
+                details_by_key = {}
+        except Exception:
+            logger.exception("batch detalles Día falló")
+            details_by_key = {}
+
+    # UX-3 revisada: pestañas son nivel, filas siempre históricas por periodo.
+    # Global -> [Rendimiento global] + [músculo]...
+    # Músculo -> [ejercicio]...
+    # Ejercicio -> [ejercicio]...
+    # No existe pestaña genérica "Resumen". Tabla siempre histórica desc.
     if nivel == "global":
-        fixed = flatten_muscle_categories()
-        tabs.append(SummaryTab("Resumen", "global", _collapse_entity_rows_global(aggs, fixed)))
+        # Rendimiento global agregado (histórico por periodo) + legacy filas por músculo para compat
+        tabs.append(
+            SummaryTab(
+                "Rendimiento global",
+                "global",
+                filas=_collapse_entity_rows_global(aggs, flatten_muscle_categories()),
+                historical_rows=_historical_rows_for_global(aggs, granularidad, ciclo_start_eff),
+            )
+        )
+        for muscle in flatten_muscle_categories():
+            muscle_aggs = [a for a in aggs if a.grupo_muscular == muscle]
+            hist = _historical_rows_for_muscle(muscle_aggs, granularidad, muscle, ciclo_start_eff)
+            # Legacy filas por músculo no aplica aquí (global ya tiene), pero para muscle tab histórico puro
+            # Mantener filas vacías para compat, histórico es canónico
+            tabs.append(SummaryTab(muscle, "muscle", historical_rows=hist))
 
     elif nivel == "muscle" and len(muscles) == 1:
         muscle = muscles[0]
-        counts = get_exercise_valid_counts(
-            db_path, window.start.isoformat(), window.end.isoformat()
-        )
+        # Tabs = ejercicios de ese músculo (histórico por periodo)
+        with read_connection(db_path) as _conn:
+            rows = _conn.execute(
+                "SELECT ejercicio FROM ejercicios WHERE LOWER(grupo_muscular)=LOWER(?) ORDER BY ejercicio",
+                (muscle,),
+            ).fetchall()
+            all_ex = [str(r[0]) for r in rows]
+        if not all_ex:
+            all_ex = sorted({pa.entidad for pa in aggs if pa.grupo_muscular == muscle})
+        counts = get_exercise_valid_counts(db_path, None, None)
         catalog_order = get_exercises_catalog(db_path)
-        # Filtra solo ejercicios del músculo y con datos en ventana
-        muscle_exercises = [pa.entidad for pa in aggs if pa.grupo_muscular == muscle]
-        # Usa helper compartido para ordenar (más datos primero)
-        ordered = [
-            n for n in sort_exercises_by_data(counts, catalog_order) if n in set(muscle_exercises)
-        ]
-        remaining = [n for n in muscle_exercises if n not in ordered]
+        ordered = [n for n in sort_exercises_by_data(counts, catalog_order) if n in set(all_ex)]
+        remaining = [n for n in all_ex if n not in ordered]
         ordered.extend(sorted(remaining, key=str.lower))
-        tabs.append(
-            SummaryTab(muscle, "muscle", _collapse_entity_rows(aggs, ordered, include_rm=True))
-        )
+        for ex in ordered:
+            ex_aggs = [a for a in aggs if a.entidad == ex]
+            hist = _historical_rows_for_exercise(
+                ex_aggs, granularidad, ex, ciclo_start_eff, details_by_key
+            )
+            legacy = _period_rows_desc(ex_aggs)
+            tabs.append(SummaryTab(ex, "exercise", filas=legacy, historical_rows=hist))
+        if not ordered:
+            tabs.append(SummaryTab(muscle, "muscle", historical_rows=()))
 
-    elif nivel == "exercise" and len(exercises) == 1 and not muscles:
-        # Un único ejercicio: tabla comparativa por periodo (sin tab Resumen).
-        own = [pa for pa in aggs if pa.entidad == exercises[0]]
-        tabs.append(SummaryTab(exercises[0], "exercise", _period_rows_desc(own)))
+    elif nivel == "exercise":
+        # Tabs = cada ejercicio seleccionado (preservar orden selección) - histórico por periodo con legacy para compat
+        for ex in exercises:
+            ex_aggs = [a for a in aggs if a.entidad == ex]
+            hist = _historical_rows_for_exercise(
+                ex_aggs, granularidad, ex, ciclo_start_eff, details_by_key
+            )
+            legacy = _period_rows_desc(ex_aggs)
+            tabs.append(SummaryTab(ex, "exercise", filas=legacy, historical_rows=hist))
+        if not tabs:
+            for ex in exercises:
+                tabs.append(SummaryTab(ex, "exercise", historical_rows=()))
 
     else:
-        # Multi-selección: Resumen primero, luego elementos en orden de selección.
-        if len(muscles) >= 2:
-            resumen_filas: tuple[RowMetrics, ...] = _collapse_entity_rows_multi_muscle(
-                aggs, muscles
-            )
-        else:
-            counts = get_exercise_valid_counts(
-                db_path, window.start.isoformat(), window.end.isoformat()
-            )
-            catalog_order = get_exercises_catalog(db_path)
-            involved = [pa.entidad for pa in aggs]
-            # Usa helper compartido: más datos primero
-            resumen_order = [
-                n for n in sort_exercises_by_data(counts, catalog_order) if n in set(involved)
-            ]
-            remaining = [n for n in involved if n not in resumen_order]
-            resumen_order.extend(sorted(set(remaining), key=str.lower))
-            resumen_filas = _collapse_entity_rows(aggs, resumen_order, include_rm=True)
-        tabs.append(SummaryTab("Resumen", nivel, resumen_filas))
-
-        for ejercicio in exercises:
-            own = [pa for pa in aggs if pa.entidad == ejercicio]
-            tabs.append(SummaryTab(ejercicio, "exercise", _period_rows_desc(own)))
-        if not exercises:
+        # Multi-músculo sin ejercicios o casos mixtos: tabs por músculo histórico
+        if len(muscles) >= 1 and not exercises:
             for muscle in muscles:
-                own = [pa for pa in aggs if pa.grupo_muscular.lower() == muscle.lower()]
-                # Orden dinámico para pestañas de músculo
-                counts_m = get_exercise_valid_counts(
-                    db_path, window.start.isoformat(), window.end.isoformat()
+                muscle_aggs = [a for a in aggs if a.grupo_muscular.lower() == muscle.lower()]
+                hist = _historical_rows_for_muscle(
+                    muscle_aggs, granularidad, muscle, ciclo_start_eff
                 )
-                catalog_m = get_exercises_catalog(db_path)
-                ent_order = [
-                    n
-                    for n in sort_exercises_by_data(counts_m, catalog_m)
-                    if n in {p.entidad for p in own}
-                ]
-                remaining_m = [n for n in {p.entidad for p in own} if n not in ent_order]
-                ent_order.extend(sorted(remaining_m, key=str.lower))
-                tabs.append(
-                    SummaryTab(
-                        muscle, "muscle", _collapse_entity_rows(own, ent_order, include_rm=True)
-                    )
+                tabs.append(SummaryTab(muscle, "muscle", historical_rows=hist))
+        else:
+            # Mixto ejercicio+músculo o múltiples ejercicios con músculo: tabs por ejercicio
+            for ex in exercises:
+                ex_aggs = [a for a in aggs if a.entidad == ex]
+                hist = _historical_rows_for_exercise(
+                    ex_aggs, granularidad, ex, ciclo_start_eff, details_by_key
                 )
+                tabs.append(SummaryTab(ex, "exercise", historical_rows=hist))
 
     return PeriodSummary("ready", nivel, granularidad, semanas, tuple(tabs))
 

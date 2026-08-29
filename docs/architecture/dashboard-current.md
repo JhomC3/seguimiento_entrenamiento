@@ -65,46 +65,33 @@ El modo Día aplica padding visual al rango X, sin inventar puntos ni modificar 
 El rango Y se calcula con datos reales. La altura del shell usa el contrato CSS existente y el
 `ResizeObserver` mantiene ancho y alto de Plotly sincronizados.
 
-## 4. Selección de puntos y comparación
+## 4. Tabla histórica única y selección local (UX-3 revisada 2026-08-29)
 
-La selección de puntos es local y no genera peticiones HTTP.
+**Decisión de producto (corregida 2026-08-29):** la gráfica respeta la ventana seleccionada 1..8; la tabla histórica del panel muestra **todos los periodos disponibles del ciclo** (`aggregate_sets(...,None,None)`). `No modificar las 9 posiciones de customdata`; el periodo
+normalizado para vínculo gráfica→tabla se obtiene de `pt.x` (no de `customdata[0]`).
 
-- Clic simple: reemplaza la comparación por un punto.
-- `Shift` + clic: añade un punto.
-- `Shift` + clic sobre un punto seleccionado: lo elimina.
-- Se admiten hasta 8 puntos.
-- El orden es el orden de selección.
-- `Escape`: limpia la comparación y restaura el resumen normal.
-- Doble clic conserva la acción previa si existía; no se inventa una acción nueva.
+La tabla única es `#period-summary-wrap #ps-content .ps-table` (sin `#ps-comparison`, sin pestaña `Resumen`).
+Jerarquía: Global → `[Rendimiento global][Pectoral][Espalda]…` → cada pestaña histórico por periodo;
+Músculo → `[Press inclinado][Press convergente]…` → cada ejercicio histórico por periodo;
+Ejercicio → `[Ejercicio]…` → histórico por periodo. Solo `exercise+Día` tiene acordeón desplegable con series.
 
-La identidad de un punto es:
+Formatos (sin `Semana 17`/`Base`/`Comparado`/`2026-08-27` visible; ISO solo `data-*`/aria):
+- Día: `DD-MM-YY · S<n>` ej `27-08-26 · S17` (`week_start_date` reutilizado, no ISO week), aria `27 de agosto de 2026 · Semana 17`.
+- Semana: `S<n> · DD-MM-YY` (lunes de `week_start_date(n,ciclo_start)`).
+- Mes: `mmm-YY` minúsculas ej `ago-26`, aria `agosto de 2026`.
+`·` no genera overflow; `fecha_iso` nunca texto visible; `DD-MM-YY` siempre 2 dígitos.
 
-```text
-granularidad + periodo + nombre de traza
-```
+Selección local sin fetch, solo tab `exercise` Día:
+- Clic reemplaza highlight, `Shift+clic` añade (solo dentro del tab activo, sin cambiar tab/selección).
+- `Escape` conserva prioridad existente (diálogo/drawer > highlight+acordeón); sin diálogo/drawer limpia highlight sutil (no solo color, `data-selected`+clase) y cierra acordeones.
+- ID canónico `gran|periodo_norm|entity_norm` con `periodo_norm` = `YYYY-MM-DD`/`str(semana)`/`YYYY-MM`, entidad `strip().casefold()`, idéntico Python/JS, en `data-period-id`. No usar etiqueta visible. Si no encuentra fila, no error.
 
-La comparación se muestra dentro de `#period-summary-wrap`, sin ocultar ni reemplazar su raíz.
-La tabla de comparación contiene:
+Detalle Día+ejercicio: una query batch `LOWER(ejercicio) IN (...)` sin filtro de fechas (todo el ciclo) y sin `kg/reps IS NOT NULL` (mostrar `—` si falta; excluir solo sin fecha/ejercicio),
+SSR de `SetDetail` dentro de histórico completo, cerrado por defecto
+(`aria-expanded=false`, `hidden`, sin scroll propio — solo `.ps-panels` desplaza).
 
-```text
-Periodo | VAR | Series | Reps | Peso | RIR | RM aj.
-```
-
-La primera fila es `Base`; las siguientes son `Comparado 2`, `Comparado 3`, etc. Las etiquetas
-son compactas:
-
-- día: `18 jul` o `18 jul 26` si hay más de un año;
-- semana: `S1`, `S14`;
-- mes: `ene 26`.
-
-Al cambiar selección, granularidad, periodo o recibir una nueva figura OOB, se limpia la comparación
-porque los puntos anteriores ya no pertenecen necesariamente a la figura actual.
-
-La implementación presente muestra etiquetas `Base`/`Comparado N`; su eliminación y el orden
-descendente por periodo son objetivos pendientes de UX-3 en
-[`dashboard-ux-refinement.md`](../plans/dashboard-ux-refinement.md). El detalle diario contextual
-y la semántica exacta de `actual` frente a `inicio` también quedan pendientes de implementación y
-validación funcional/visual.
+Al cambiar selección/granularidad/ventana (ventana solo afecta gráfica) o nueva figura OOB, se limpia highlight y se cierran
+acordeones; no se conserva detalle obsoleto. Antigua tabla comparativa eliminada.
 
 ## 5. Resumen periódico
 

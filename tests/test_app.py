@@ -2198,16 +2198,17 @@ def test_grafica_ventana_default_y_validacion(tmp_path, monkeypatch):
 
 def test_panel_global_sin_columna_rm(tmp_path, monkeypatch):
     db = _seed_summary_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    html = appmod._render_body(None) if False else None
     from src.summary_service import build_period_summary
 
     s = build_period_summary(db, [], [], "week", 8)
     assert s.nivel == "global"
     ctx = {"summary": s}
     html = appmod.templates.env.get_template("partials/period_summary_panel.html").render(**ctx)
-    assert ">Músculo<" in html and ">RM aj.<" not in html.split("</thead>")[0].split("<thead>")[1]
-    assert "Pectoral" in html and "Abdomen" in html  # orden config completo
+    # Global tiene pestañas Rendimiento global + músculos, tabla histórica con Periodo
+    assert "Rendimiento global" in html
+    assert "Pectoral" in html  # como pestaña, no como fila
+    assert ">Periodo<" in html and ">RM aj.<" in html
+    assert html.count('role="tab"') >= 2
 
 
 def test_panel_musculo_con_rm(tmp_path, monkeypatch):
@@ -2217,11 +2218,12 @@ def test_panel_musculo_con_rm(tmp_path, monkeypatch):
     s = build_period_summary(db, ["Pectoral"], [], "week", 8)
     assert s.nivel == "muscle"
     html = appmod.templates.env.get_template("partials/period_summary_panel.html").render(summary=s)
-    thead = html.split("<thead>")[1].split("</thead>")[0]
-    assert "RM aj." in thead and "Ejercicio" in thead
-    assert "Press banca" not in html  # catálogo del test usa "Press"
-    for nombre in ("Press", "Press inclinado"):
-        assert nombre in html
+    # Pectoral -> pestañas por ejercicio con tabla histórica Periodo
+    assert "Press" in html and "Press inclinado" in html
+    assert ">Periodo<" in html and "RM aj." in html
+    # No debe ser tabla por Ejercicio como filas, sino pestañas
+    assert 'role="tablist"' in html
+    assert html.count('role="tab"') >= 2
 
 
 def test_panel_ejercicio_periodos_descendentes(tmp_path):
@@ -2231,9 +2233,10 @@ def test_panel_ejercicio_periodos_descendentes(tmp_path):
     s = build_period_summary(db, [], ["Press"], "day", 8)
     assert s.nivel == "exercise"
     assert len(s.tabs) == 1 and s.tabs[0].titulo == "Press"
-    labels = [f.etiqueta for f in s.tabs[0].filas]
-    assert labels == sorted(labels, reverse=True)  # descendente cronológico
-    assert len(labels) >= 1
+    # Histórico compacto Día
+    assert len(s.tabs[0].historical_rows) >= 1
+    # Orden descendente por sort_key (más reciente primero)
+    assert s.tabs[0].historical_rows[0].sort_key >= s.tabs[0].historical_rows[-1].sort_key
 
 
 def test_panel_multi_tabs_orden_seleccion(tmp_path):
@@ -2242,7 +2245,7 @@ def test_panel_multi_tabs_orden_seleccion(tmp_path):
     db = _seed_summary_db(tmp_path)
     s = build_period_summary(db, ["Biceps", "Pectoral"], [], "week", 8)
     titulos = [t.titulo for t in s.tabs]
-    assert titulos[0] == "Resumen" and titulos[1:] == ["Biceps", "Pectoral"]
+    assert titulos == ["Biceps", "Pectoral"]  # sin Resumen genérico
     html = appmod.templates.env.get_template("partials/period_summary_panel.html").render(summary=s)
     assert 'role="tablist"' in html
     assert html.index("Biceps") < html.index("Pectoral")

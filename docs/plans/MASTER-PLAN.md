@@ -14,7 +14,7 @@ comprobar primero su estado aquí.
 | Prioridad | Línea | Estado | Documento rector | Dependencia |
 |---|---|---|---|---|
 | P0 | Reconciliar working tree y separar contaminación semántica | COMPLETADA | Este documento + `P0-reconciliation-report.md` | Ninguna |
-| P1 | Cerrar comparación de puntos y refinamiento visual del dashboard | PENDIENTE | `dashboard-ux-refinement.md` | P0 |
+| P1 | Cerrar comparación de puntos y refinamiento visual del dashboard (UX-3 revisada: tabla histórica única + detalle Día+ejercicio) | PENDIENTE | `dashboard-ux-refinement.md` | P0 |
 | P2 | Actualizar contratos, pruebas y hacer commit de Fase 2 | PENDIENTE | Este documento | P1 |
 | P3 | Retirar deuda Fase 3 del dashboard | PENDIENTE | Este documento | P2 |
 | P4 | Modularizar `app.py` en routers | PAUSADA | `app-router-modularization.md` | P2/P3 |
@@ -24,6 +24,10 @@ comprobar primero su estado aquí.
 
 El detalle ejecutable de los nuevos requisitos está en [`dashboard-ux-refinement.md`](dashboard-ux-refinement.md).
 Sus tareas UX-1 a UX-3 son P1; UX-4 a UX-6 son P2 y dependen de las anteriores. No se ejecutan en paralelo.
+
+**Decisión P1 revisada 2026-08-29 (corrige contradicción):** UX-3 absorbe únicamente el acordeón de detalle por
+ejercicio en Día (batch, todo el ciclo, sin filtro `kg/reps`). UX-4 P2 queda para detalle jerárquico
+músculo→ejercicio→series en multi-selección y Semana/Mes. **Gráfica respeta ventana 1..8; Historial muestra todo el ciclo disponible** (`aggregate_sets(...,None,None)`).
 
 P0 está cerrada. P1 permanece pendiente y debe ejecutarse de forma secuencial, sin iniciar P2 ni
 trabajo de dominio paralelo. El commit visual `2a1c7de` es un baseline de Fase 2 preparado antes de
@@ -50,15 +54,18 @@ documentación se registró en `137cde3` y el baseline visual en `2a1c7de`. El w
 limpio, con `.tmp/` ignorado y conservado; la suite base pasó con 682 tests y 92.96% de cobertura.
 Ver `P0-reconciliation-report.md`.
 
-## P1 — Cierre funcional del dashboard
+## P1 — Cierre funcional del dashboard (UX-3 revisada)
 
 Orden de trabajo atómico:
 
 1. Catálogo izquierdo alineado y rail vertical completo; el resumen derecho permanece siempre visible.
 2. Gráfica Día con padding solo visual y espacio superior revisado.
 3. Controles Día/Semana/Mes con estilo glass real y contraste AA.
-4. Comparación de puntos: clic, `Shift + clic`, múltiples puntos y `Escape`.
-5. Comparación con periodo corto, VAR, Series, Reps, Peso, RIR y RM ajustado.
+4. UX-3 revisada (P1): tabla histórica única en `#period-summary-wrap` con **todo el historial del ciclo** (no solo ventana 1..8),
+   sin tabla secundaria `#ps-comparison` y sin pestaña `Resumen`. Global `[Rendimiento global][Músculo]…`, Músculo `[Ejercicio]…`, cada una histórico por periodo desc con formato `DD-MM-YY · S<n>` / `S<n> · DD-MM-YY` / `mmm-YY`
+   (sin `Semana 17`/`Base`/`Comparado`), orden desc, selección local sin fetch. Detalle desplegable
+   solo Día+ejercicio (batch todo el ciclo, `SetDetail`), cerrado por defecto, `aria-expanded`/`aria-controls`.
+5. Comparación previa con periodo corto, VAR, Series, Reps, Peso, RIR y RM ajustado queda superada por tabla única.
 6. Orden dinámico compartido entre catálogo y resumen.
 
 Cada punto requiere evidencia Playwright a 1280×800 y 390×800, además de tests. No se acepta una

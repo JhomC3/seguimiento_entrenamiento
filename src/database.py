@@ -142,6 +142,54 @@ def get_sets_by_fecha(db_path: str, fecha: str) -> list[dict]:
     ]
 
 
+def get_sets_for_window(
+    db_path: str,
+    fecha_min: str | None,
+    fecha_max: str | None,
+    ejercicios: list[str],
+) -> list[dict]:
+    """Batch para acordeón Día+ejercicio: series dentro de ventana, sin filtrar kg/reps nulos.
+
+    Solo excluye filas sin fecha/ejercicio estructuralmente inexistentes.
+    Mostrará '—' si falta valor; no filtra por kg/reps/rir NULL.
+    """
+    if not ejercicios:
+        return []
+    clauses = ["fecha IS NOT NULL", "ejercicio IS NOT NULL", "ejercicio != ''"]
+    params: list[str] = []
+    if fecha_min is not None:
+        clauses.append("fecha >= ?")
+        params.append(fecha_min)
+    if fecha_max is not None:
+        clauses.append("fecha <= ?")
+        params.append(fecha_max)
+    uniq = list(dict.fromkeys(e.strip() for e in ejercicios if e.strip()))
+    if not uniq:
+        return []
+    placeholders = ",".join("?" for _ in uniq)
+    clauses.append(f"LOWER(ejercicio) IN ({placeholders})")
+    params.extend(e.lower() for e in uniq)
+    with read_connection(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT fecha, ejercicio, set_orden, reps, kg, rir, descanso_seg "
+            f"FROM training_sets WHERE {' AND '.join(clauses)} "
+            f"ORDER BY fecha DESC, ejercicio, set_orden",
+            params,
+        ).fetchall()
+    return [
+        {
+            "fecha": r[0],
+            "ejercicio": r[1],
+            "set_orden": r[2],
+            "reps": r[3],
+            "kg": r[4],
+            "rir": r[5],
+            "descanso_seg": r[6],
+        }
+        for r in rows
+    ]
+
+
 def delete_session_by_fecha(db_path: str, fecha: str) -> int:
     with transaction(db_path) as conn:
         cur = conn.execute("DELETE FROM training_sets WHERE fecha = ?", (fecha,))

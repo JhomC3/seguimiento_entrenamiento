@@ -175,6 +175,7 @@ def build_date_navigator(
     today: date,
     grupo: str | None = None,
     ejercicio: str | None = None,
+    granularity: str = "day",
 ) -> DateNavigatorViewModel:
     """Navigator with a bounded 31-day window centered on the selection.
 
@@ -186,16 +187,40 @@ def build_date_navigator(
     end = _end_of_next_month(today)
     start = max(ciclo_start, selected - timedelta(days=15))
     limit_end = min(end, selected + timedelta(days=15))
+    MONTHS_ES = [
+        "enero",
+        "febrero",
+        "marzo",
+        "abril",
+        "mayo",
+        "junio",
+        "julio",
+        "agosto",
+        "septiembre",
+        "octubre",
+        "noviembre",
+        "diciembre",
+    ]
     dates = []
     d = start
     while d <= limit_end:
         iso = d.strftime("%Y-%m-%d")
+        if granularity == "day":
+            semana = calculate_cycle_week(d, ciclo_start)
+            label_visible = f"S{semana} \u00b7 {d.day:02d}-{d.month:02d}-{str(d.year)[2:]}"
+            label_aria = f"Semana {semana} \u00b7 {d.day} de {MONTHS_ES[d.month - 1]} de {d.year}"
+            label = label_visible
+            aria_label = label_aria
+        else:
+            label = f"{d.day}/{d.month}" if d.day == 1 else str(d.day)
+            aria_label = label
         dates.append(
             DateDay(
                 iso=iso,
-                label=f"{d.day}/{d.month}" if d.day == 1 else str(d.day),
+                label=label,
                 has_data=iso in data_dates,
                 selected=d == selected,
+                aria_label=aria_label,
             )
         )
         d += timedelta(days=1)

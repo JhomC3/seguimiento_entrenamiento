@@ -262,9 +262,16 @@ def _navigator_html(
     fecha_iso: str,
     grupo: str | None = None,
     ejercicio: str | None = None,
+    granularity: str = "day",
 ) -> str:
     vm = build_date_navigator(
-        DB_PATH, fecha_iso, CICLO_START_DATE, date.today(), grupo=grupo, ejercicio=ejercicio
+        DB_PATH,
+        fecha_iso,
+        CICLO_START_DATE,
+        date.today(),
+        grupo=grupo,
+        ejercicio=ejercicio,
+        granularity=granularity,
     )
     return _render_body(
         templates.TemplateResponse(
@@ -557,7 +564,7 @@ def read_index(request: Request, gran: str = Query(default="day")):
                 "Rendimiento",
                 chart_pfr_timeline(DB_PATH, "systemic", "", granularity=granularity),
             ),
-            "navigator_html": _navigator_html(request, fecha),
+            "navigator_html": _navigator_html(request, fecha, granularity=granularity),
             "editor_html": _editor_html(request, fecha),
             "dia": day_from_date(_fecha_date),
             "fecha_display": fecha_display(fecha),
@@ -603,7 +610,7 @@ def registro_page(request: Request, fecha: str = Query(default="")):
         fecha = _date.today().isoformat()
     fecha_date = _date.fromisoformat(fecha)
     context = {
-        "navigator_html": _navigator_html(request, fecha),
+        "navigator_html": _navigator_html(request, fecha, granularity="day"),
         "nutrition_templates_html": _plantillas_alimentacion_list_html(request, fecha),
         "nutrition_editor_html": _nutrition_editor_html(request, fecha),
         "editor_html": _editor_html(request, fecha),
@@ -633,7 +640,7 @@ def editor_popup(request: Request, fecha: str = Query(...)):
             request=request,
             name="editor_popup.html",
             context={
-                "navigator_html": _navigator_html(request, fecha),
+                "navigator_html": _navigator_html(request, fecha, granularity="day"),
                 "nutrition_templates_html": _plantillas_alimentacion_list_html(request, fecha),
                 "nutrition_editor_html": _nutrition_editor_html(request, fecha),
                 "editor_html": _editor_html(request, fecha),
