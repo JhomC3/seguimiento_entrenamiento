@@ -2177,18 +2177,12 @@ def test_grafica_incluye_panel_oob(tmp_path, monkeypatch):
 
 
 def test_grafica_ventana_default_y_validacion(tmp_path, monkeypatch):
-    import re as _re
-
     db = _seed_summary_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     c = _client()
-    # Default 8 semanas: select con option 8 selected
+    # La ventana técnica por defecto es 8, pero ya no se expone como control.
     r = c.get("/grafica")
-    assert (
-        'value="8" selected' in r.text
-        or 'value="8"  selected' in r.text
-        or _re.search(r'<option[^>]*value="8"[^>]*selected', r.text)
-    )
+    assert 'id="summary-window-select"' not in r.text
     # Ventana inválida → 400 seguro (9 fuera de 1-8).
     r_bad = c.get("/grafica", params={"ventana": 9})
     assert r_bad.status_code == 400
@@ -2198,16 +2192,16 @@ def test_grafica_ventana_default_y_validacion(tmp_path, monkeypatch):
 
 def test_panel_global_sin_columna_rm(tmp_path, monkeypatch):
     db = _seed_summary_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    html = appmod._render_body(None) if False else None
     from src.summary_service import build_period_summary
 
     s = build_period_summary(db, [], [], "week", 8)
     assert s.nivel == "global"
     ctx = {"summary": s}
     html = appmod.templates.env.get_template("partials/period_summary_panel.html").render(**ctx)
-    assert ">Músculo<" in html and ">RM aj.<" not in html.split("</thead>")[0].split("<thead>")[1]
-    assert "Pectoral" in html and "Abdomen" in html  # orden config completo
+    # Global tiene una única pestaña Global, con tabla histórica por periodo.
+    assert ">Global<" in html
+    assert html.count('role="tab"') == 1
+    assert ">Periodo<" in html and ">RM aj.<" in html
 
 
 def test_panel_musculo_con_rm(tmp_path, monkeypatch):
@@ -2217,11 +2211,12 @@ def test_panel_musculo_con_rm(tmp_path, monkeypatch):
     s = build_period_summary(db, ["Pectoral"], [], "week", 8)
     assert s.nivel == "muscle"
     html = appmod.templates.env.get_template("partials/period_summary_panel.html").render(summary=s)
-    thead = html.split("<thead>")[1].split("</thead>")[0]
-    assert "RM aj." in thead and "Ejercicio" in thead
-    assert "Press banca" not in html  # catálogo del test usa "Press"
-    for nombre in ("Press", "Press inclinado"):
-        assert nombre in html
+    # Pectoral ocupa una única pestaña con tabla histórica por periodo.
+    assert ">Pectoral<" in html
+    assert ">Periodo<" in html and "RM aj." in html
+    # El nav se conserva aunque solo haya una pestaña.
+    assert 'role="tablist"' in html
+    assert html.count('role="tab"') == 1
 
 
 def test_panel_ejercicio_periodos_descendentes(tmp_path):
@@ -2231,9 +2226,10 @@ def test_panel_ejercicio_periodos_descendentes(tmp_path):
     s = build_period_summary(db, [], ["Press"], "day", 8)
     assert s.nivel == "exercise"
     assert len(s.tabs) == 1 and s.tabs[0].titulo == "Press"
-    labels = [f.etiqueta for f in s.tabs[0].filas]
-    assert labels == sorted(labels, reverse=True)  # descendente cronológico
-    assert len(labels) >= 1
+    # Histórico compacto Día
+    assert len(s.tabs[0].historical_rows) >= 1
+    # Orden descendente por sort_key (más reciente primero)
+    assert s.tabs[0].historical_rows[0].sort_key >= s.tabs[0].historical_rows[-1].sort_key
 
 
 def test_panel_multi_tabs_orden_seleccion(tmp_path):
@@ -2242,7 +2238,7 @@ def test_panel_multi_tabs_orden_seleccion(tmp_path):
     db = _seed_summary_db(tmp_path)
     s = build_period_summary(db, ["Biceps", "Pectoral"], [], "week", 8)
     titulos = [t.titulo for t in s.tabs]
-    assert titulos[0] == "Resumen" and titulos[1:] == ["Biceps", "Pectoral"]
+    assert titulos == ["Biceps", "Pectoral"]  # sin Resumen genérico
     html = appmod.templates.env.get_template("partials/period_summary_panel.html").render(summary=s)
     assert 'role="tablist"' in html
     assert html.index("Biceps") < html.index("Pectoral")

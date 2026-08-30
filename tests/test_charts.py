@@ -166,7 +166,7 @@ def test_chart_pfr_timeline_hover_incluye_resumen(setup_test_db):
     assert len(fila) == 9
     assert fila[2] >= "1"  # series de la semana 1 (>=2 aquí) como string
     assert int(fila[2]) >= 2
-    assert fila[8] == "Crecimiento"
+    assert fila[8] == "Global"
     # UX-2: tooltip propio en cliente; la traza no lleva hovertemplate nativo.
     assert trace.hovertemplate is None
 
@@ -245,13 +245,17 @@ def test_chart_muscle_exercises_ejercicios_mas_tenues(setup_test_db):
     # El compilado es sólido (borgoña, alpha 1) y protagonista.
     assert compilado.line.color == "#e56d88"
     assert compilado.line.width == 2.5
-    # El ejercicio individual: línea translúcida (alpha 0.4) y gruesa (3.5).
+    assert compilado.mode == "lines"
+    assert compilado.line.dash in ("solid", None)
+    # El ejercicio individual: línea translúcida (alpha 0.4) y gruesa (3.5), sin marcadores.
     assert ejercicio.line.color.startswith("rgba(")
     assert ejercicio.line.color.endswith(", 0.4)")
     assert ejercicio.line.width == 3.5
-    # Los puntos comparten la misma transparencia que su línea.
-    assert ejercicio.marker.color == ejercicio.line.color
-    assert ejercicio.marker.size == 3
+    assert ejercicio.mode == "lines"
+    assert ejercicio.line.dash == "solid"
+    assert getattr(ejercicio, "marker", None) is None or getattr(
+        ejercicio.marker, "size", None
+    ) in (None, 0)
 
 
 def test_chart_selection_dos_musculos_global_mas_tenues(setup_test_db):
@@ -300,7 +304,7 @@ def test_chart_selection_dos_musculos_ignora_ejercicios(setup_test_db):
     "musculos, ejercicios, expected_names",
     [
         # 0 músculos → sistémica (D3)
-        ([], [], ["Crecimiento"]),
+        ([], [], ["Global"]),
         # 1 músculo, 0 ejercicios → Global + músculo
         (["Pectoral"], [], ["Global", "Pectoral"]),
         # 1 músculo, 1 ejercicio válido → músculo guía + ejercicio (D2: sin Global)
@@ -351,7 +355,7 @@ def test_chart_semantics_global_systemic(setup_test_db):
 
     fig = chart_pfr_timeline(setup_test_db, "systemic")
     assert len(fig.data) >= 1
-    assert fig.data[0].name == "Crecimiento"
+    assert fig.data[0].name == "Global"
 
 
 # ---------------------------------------------------------------------------
@@ -415,7 +419,7 @@ def test_chart_selection_day_global_musculo_ejercicio(setup_test_db):
     fechas, el eje X se titula 'Fecha' y los nombres son los canónicos."""
     # Global (0 músculos)
     fig0 = chart_selection(setup_test_db, [], [], "day")
-    assert [t.name for t in fig0.data] == ["Crecimiento"]
+    assert [t.name for t in fig0.data] == ["Global"]
     assert fig0.layout.xaxis.title.text == "Fecha"
     # Sistema Global y Compilado (músculo)
     fig1 = chart_selection(setup_test_db, ["Pectoral"], [], "day")
@@ -1308,7 +1312,7 @@ def test_tooltip_customdata_8_posiciones_day(setup_test_db):
     assert float(fila[5]) == pytest.approx((1.0 + 0.0) / 2)
     # rm_max = rm_ajustado de la serie top: (85kg, reps 6, rir 1) vía metrics_engine.
     assert float(fila[6]) == pytest.approx(rm_ajustado(85.0, 6.0, 1.0), abs=0.15)
-    assert fila[8] == "Crecimiento"
+    assert fila[8] == "Global"
 
 
 def test_tooltip_customdata_week_y_month_labels(setup_test_db):
@@ -1319,6 +1323,7 @@ def test_tooltip_customdata_week_y_month_labels(setup_test_db):
     assert figw.data[0].hovertemplate is None
     figm = chart_pfr_timeline(setup_test_db, "systemic", granularity="month")
     assert figm.data[0].customdata[0][0] == "mayo 2026"
+    assert figm.layout.xaxis.ticktext[0] == "05-26"
     assert len(figm.data[0].customdata[0]) == 9
     assert figm.data[0].hovertemplate is None
 
@@ -1421,10 +1426,10 @@ def test_format_week_short():
 def test_format_month_short():
     from src.charts import format_month_short
 
-    assert format_month_short("2026-01") == "ene 26"
-    assert format_month_short("2026-07") == "jul 26"
-    assert format_month_short("2026-07-15") == "jul 26"
-    assert format_month_short("2025-12") == "dic 25"
+    assert format_month_short("2026-01") == "01-26"
+    assert format_month_short("2026-07") == "07-26"
+    assert format_month_short("2026-07-15") == "07-26"
+    assert format_month_short("2025-12") == "12-25"
 
 
 def test_extract_point_values_ok():
@@ -1470,3 +1475,23 @@ def test_point_comparison_id_unica():
     assert point_comparison_id("week", "1", "Press") != point_comparison_id("week", "1", "Curl")
     # Case-insensitive traza
     assert point_comparison_id("week", "1", "Press") == point_comparison_id("week", "1", "press")
+
+
+def test_todas_las_trazas_son_lineas_continuas_sin_puntos(setup_test_db):
+    for gran in ("day", "week", "month"):
+        for musculos, ejercicios in [
+            ([], []),
+            (["Pectoral"], []),
+            (["Pectoral"], ["Press Convergente"]),
+        ]:
+            fig = chart_selection(setup_test_db, musculos, ejercicios, gran)
+            for trace in fig.data:
+                assert trace.mode == "lines", f"{gran} {musculos}/{ejercicios} mode {trace.mode}"
+                assert trace.line.dash in ("solid", None), f"{gran} dash {trace.line.dash}"
+                assert getattr(trace, "marker", None) is None or getattr(
+                    trace.marker, "size", None
+                ) in (None, 0)
+        fig2 = chart_pfr_timeline(setup_test_db, "systemic", granularity=gran)
+        for trace in fig2.data:
+            assert trace.mode == "lines"
+            assert trace.line.dash == "solid"

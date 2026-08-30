@@ -18,29 +18,12 @@
 <aside
     id="period-summary-wrap"
     class="dashboard-summary-col panel panel-default"
-    aria-label="Resumen por periodo"
+    aria-label="Historial por periodo"
     {% if oob %}hx-swap-oob="outerHTML"{% endif %}
 >
     <header class="flex items-center justify-between gap-2 pl-3 pr-3 pt-3">
-        <h2 class="panel-title">Resumen</h2>
-        <div class="flex items-center gap-2">
-        <label for="summary-window-select" class="text-xs text-neutral-400">Ventana</label>
-        <select
-            id="summary-window-select"
-            class="ps-select"
-            data-action="set-summary-window"
-            aria-label="Ventana del resumen"
-            aria-describedby="summary-window-desc"
-        >
-            {% for w in range(1, 9) %}
-            <option value="{{ w }}" {% if summary.semanas == w %}selected{% endif %}>{{ w }} semana{% if w != 1 %}s{% endif %}</option>
-            {% endfor %}
-        </select>
-        </div>
+        <h2 class="panel-title">Historial</h2>
     </header>
-    <p id="summary-window-desc" class="sr-only">
-        Selecciona el número de semanas para el resumen
-    </p>
 
     <div id="ps-content">
     {% if summary.estado == "error" %}
@@ -48,12 +31,11 @@
             <p class="notice notice-error" role="alert">No se pudo calcular el resumen.</p>
         </div>
     {% elif summary.estado == "empty" or not summary.tabs %}
-        <div class="px-3 pb-3">
-            <p class="text-xs text-neutral-400" role="status">Sin datos para esta selección.</p>
-            {% if summary.hint %}<p class="text-xs text-neutral-400 pt-1">{{ summary.hint }}</p>{% endif %}
+        <div class="ps-panels">
+            <p class="text-xs text-neutral-400 px-3 py-2" role="status">Sin datos para esta selección.</p>
+            {% if summary.hint %}<p class="text-xs text-neutral-400 px-3">{{ summary.hint }}</p>{% endif %}
         </div>
     {% else %}
-        {% if summary.tabs | length > 1 %}
         <nav
             class="ps-tabs"
             role="tablist"
@@ -73,83 +55,68 @@
             >{{ t.titulo }}</button>
             {% endfor %}
         </nav>
-        {% endif %}
 
         <div class="ps-panels">
             {% for t in summary.tabs %}
+            {% set outer_idx = loop.index0 %}
             <section
                 role="tabpanel"
-                id="ps-panel-{{ loop.index0 }}"
-                aria-labelledby="ps-tab-{{ loop.index0 }}"
+                id="ps-panel-{{ outer_idx }}"
+                aria-labelledby="ps-tab-{{ outer_idx }}"
                 tabindex="0"
                 class="ps-panel"
+                data-nivel="{{ t.nivel }}"
                 {% if not loop.first %}hidden{% endif %}
             >
-                {% if not t.filas %}
-                    <p class="text-xs text-neutral-400 px-2 py-2" role="status">Sin datos para esta selección.</p>
-                {% else %}
-                    <table class="ps-table {% if t.nivel == 'exercise' %}ps-table--exercise{% endif %}">
+                {% if t.historical_rows %}
+                    {# Histórica por periodo (global/músculo/ejercicio). Ejercicio Día tiene acordeón #}
+                    <table class="ps-table ps-table--exercise">
                         <thead>
                             <tr>
-                                {% if t.nivel == "global" %}
-                                    <th scope="col">Músculo</th><th scope="col" class="num">Δ</th>
-                                    <th scope="col" class="num">Series</th><th scope="col" class="num">Reps</th>
-                                    <th scope="col" class="num col-rir" title="RIR medio">RIR</th>
-                                {% elif t.nivel == "muscle" %}
-                                    <th scope="col">Ejercicio</th><th scope="col" class="num">Δ</th>
-                                    <th scope="col" class="num">Series</th><th scope="col" class="num">Reps</th>
-                                    <th scope="col" class="num col-rir" title="RIR medio">RIR</th><th scope="col" class="num">RM aj.</th>
-                                {% else %}
-                                    <th scope="col">{{ t.titulo }}</th><th scope="col" class="num">Δ</th>
-                                    <th scope="col" class="num">Series</th><th scope="col" class="num">Reps</th>
-                                    <th scope="col" class="num col-peso" title="Peso medio (kg)">Peso</th><th scope="col" class="num col-rir" title="RIR medio">RIR</th><th scope="col" class="num">RM aj.</th>
-                                {% endif %}
+                                <th scope="col">Periodo</th><th scope="col" class="num">Δ</th>
+                                <th scope="col" class="num">Series</th><th scope="col" class="num">Reps</th>
+                                <th scope="col" class="num col-peso" title="Peso medio (kg)">Peso</th><th scope="col" class="num col-rir" title="RIR medio">RIR</th><th scope="col" class="num">RM aj.</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for f in t.filas %}
-                            <tr>
-                                <th scope="row">{{ f.etiqueta }}</th>
-                                <td class="num">{% if f.delta_pct is none %}—{% else %}<span class="ps-delta" title="Variación media de rendimiento">{{ "+" if f.delta_pct > 0 }}{{ f.delta_pct }}%</span>{% endif %}</td>
-                                <td class="num">{{ f.series if f.series is not none else "—" }}</td>
-                                <td class="num">{{ f.reps_media if f.reps_media is not none else "—" }}</td>
-                                {% if t.nivel == "exercise" %}
-                                    <td class="num col-peso">{{ f.peso_medio if f.peso_medio is not none else "—" }}</td>
-                                {% endif %}
-                                <td class="num col-rir">{{ f.rir_medio if f.rir_medio is not none else "—" }}</td>
-                                {% if t.nivel != "global" %}
-                                    <td class="num">{{ f.rm_max if f.rm_max is not none else "—" }}</td>
-                                {% endif %}
+                            {% for row in t.historical_rows %}
+                            <tr class="ps-row" data-period-id="{{ row.periodo_id }}" data-sort-key="{{ row.sort_key }}"{% if row.fecha_iso %} data-fecha="{{ row.fecha_iso }}"{% endif %}>
+                                <th scope="row">
+                                    {% if summary.granularidad == 'day' and row.detalles and t.nivel == 'exercise' %}
+                                    <button type="button" class="ps-row-toggle" data-action="toggle-period-detail" aria-expanded="false" aria-controls="ps-detail-{{ loop.index0 }}-{{ outer_idx }}">
+                                        <span aria-hidden="true">{{ row.periodo }}</span><span class="sr-only">{{ row.periodo_aria }}</span>
+                                    </button>
+                                    {% else %}
+                                    <span aria-hidden="true">{{ row.periodo }}</span><span class="sr-only">{{ row.periodo_aria }}</span>
+                                    {% endif %}
+                                </th>
+                                <td class="num">{% if row.metrics.delta_pct is none %}—{% else %}<span class="ps-delta" title="Variación media de rendimiento">{{ "+" if row.metrics.delta_pct > 0 }}{{ row.metrics.delta_pct }}%</span>{% endif %}</td>
+                                <td class="num">{{ row.metrics.series if row.metrics.series is not none else "—" }}</td>
+                                <td class="num">{{ row.metrics.reps_media if row.metrics.reps_media is not none else "—" }}</td>
+                                <td class="num col-peso">{{ row.metrics.peso_medio if row.metrics.peso_medio is not none else "—" }}</td>
+                                <td class="num col-rir">{{ row.metrics.rir_medio if row.metrics.rir_medio is not none else "—" }}</td>
+                                <td class="num">{{ row.metrics.rm_max if row.metrics.rm_max is not none else "—" }}</td>
                             </tr>
+                            {% if summary.granularidad == 'day' and row.detalles and t.nivel == 'exercise' %}
+                            <tr id="ps-detail-{{ loop.index0 }}-{{ outer_idx }}" class="ps-detail" hidden>
+                                <td colspan="7">
+                                    <ul class="ps-detail-list">
+                                        {% for d in row.detalles %}
+                                        <li>Serie {{ d.serie }} · {{ d.reps if d.reps is not none else "—" }} reps · {{ d.kg if d.kg is not none else "—" }} kg · RIR {{ d.rir if d.rir is not none else "—" }}{% if d.descanso_seg is not none %} · {{ d.descanso_seg }}s{% endif %}</li>
+                                        {% endfor %}
+                                    </ul>
+                                </td>
+                            </tr>
+                            {% endif %}
                             {% endfor %}
                         </tbody>
                     </table>
+                {% else %}
+                    <p class="text-xs text-neutral-400 px-2 py-2" role="status">Sin datos para esta selección.</p>
                 {% endif %}
             </section>
             {% endfor %}
         </div>
     {% endif %}
-    </div>
-    <!-- TAREA 3: comparación de puntos (siempre presente, hidden por defecto) -->
-    <div id="ps-comparison" class="ps-comparison-panel" hidden aria-hidden="true" aria-labelledby="ps-comparison-title">
-        <h3 id="ps-comparison-title" class="sr-only">Comparación de puntos</h3>
-        <p id="ps-comparison-desc" class="sr-only">Clic para seleccionar un punto. Shift y clic para añadirlo. Escape para limpiar.</p>
-        <p id="ps-comparison-live" class="sr-only" aria-live="polite"></p>
-        <div class="ps-panels">
-            <table class="ps-table ps-comparison-table" aria-describedby="ps-comparison-desc">
-                <thead>
-                    <tr>
-                        <th scope="col">Periodo</th>
-                        <th scope="col" class="num">VAR</th>
-                        <th scope="col" class="num">Series</th>
-                        <th scope="col" class="num">Reps</th>
-                        <th scope="col" class="num">Peso</th>
-                        <th scope="col" class="num">RIR</th>
-                        <th scope="col" class="num">RM aj.</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        </div>
     </div>
 </aside>

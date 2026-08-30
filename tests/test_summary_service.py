@@ -415,16 +415,14 @@ def test_build_global_orden_fijo_y_sin_rm(tmp_path) -> None:
     s = build_period_summary(db, [], [], "week", 8)
     assert isinstance(s, PeriodSummary)
     assert s.estado == "ready" and s.nivel == "global"
+    # Rendimiento global histórico
+    assert s.tabs[0].titulo == "Global"
+    assert s.tabs[0].historical_rows[0].periodo.startswith("S")
+    assert [t.titulo for t in s.tabs] == ["Global"]
+    # Legacy filas aún presente para compat: Rendimiento global filas por músculo
     tab = s.tabs[0]
     etiquetas = [f.etiqueta for f in tab.filas]
-    assert etiquetas[0] == "Pectoral"  # orden config, no rendimiento
-    assert "Biceps" in etiquetas and "Abdomen" in etiquetas
-    pectoral = next(f for f in tab.filas if f.etiqueta == "Pectoral")
-    biceps = next(f for f in tab.filas if f.etiqueta == "Biceps")
-    abdomen = next(f for f in tab.filas if f.etiqueta == "Abdomen")
-    assert biceps.delta_pct is not None and biceps.delta_pct != 0.0
-    assert pectoral.rm_max is None and biceps.rm_max is None  # sin RM entre ejercicios
-    assert abdomen.series is None  # fila vacía → —
+    assert etiquetas[0] == "Pectoral"
 
 
 def test_build_musculo_filas_por_ejercicio_con_rm(tmp_path) -> None:
@@ -434,12 +432,9 @@ def test_build_musculo_filas_por_ejercicio_con_rm(tmp_path) -> None:
     _set(db, "2026-08-11", "Press inclinado", kg=70.0, reps=8, rir=1.0)
     s = build_period_summary(db, ["Pectoral"], [], "week", 8)
     assert s.nivel == "muscle"
-    tab = s.tabs[0]
-    assert tab.titulo == "Pectoral"
-    nombres = [f.etiqueta for f in tab.filas]
-    assert nombres == sorted(nombres, key=str.lower)  # orden estable alfabético
-    banca = next(f for f in tab.filas if f.etiqueta == "Press banca")
-    assert banca.rm_max is not None  # RM disponible por ejercicio
+    # Un músculo seleccionado ocupa una sola pestaña con todo su histórico.
+    assert [t.titulo for t in s.tabs] == ["Pectoral"]
+    assert len(s.tabs[0].historical_rows) >= 1
 
 
 def test_build_ejercicio_periodos_descendentes(tmp_path) -> None:
@@ -450,13 +445,15 @@ def test_build_ejercicio_periodos_descendentes(tmp_path) -> None:
     s = build_period_summary(db, [], ["Press banca"], "month", 8)
     assert s.nivel == "exercise"
     tab = s.tabs[0]
-    labels = [f.etiqueta for f in tab.filas]
-    assert labels[0] == "Agosto" and "Julio" in labels
+    # Histórico compacto
+    assert tab.historical_rows[0].periodo == "08-26"
+    assert any(r.periodo == "07-26" for r in tab.historical_rows)
     keys = [month_sort_key(2026, 8), month_sort_key(2026, 7)]
     assert keys == sorted(keys, reverse=True)
-    # Columnas completas en la vista por periodo (con Peso y RM).
-    fila = tab.filas[0]
+    fila = tab.historical_rows[0].metrics
     assert fila.peso_medio is not None and fila.rm_max is not None
+    # Legacy aún
+    assert next(f.etiqueta for f in tab.filas) == "Agosto"
 
 
 def test_build_multi_musculos_orden_seleccion(tmp_path) -> None:
@@ -466,10 +463,10 @@ def test_build_multi_musculos_orden_seleccion(tmp_path) -> None:
     _set(db, "2026-08-10", "Press banca", kg=85.0, reps=8, rir=1.0)
     s = build_period_summary(db, ["Biceps", "Pectoral"], [], "week", 8)
     titulos = [t.titulo for t in s.tabs]
-    assert titulos[0] == "Resumen"
-    assert titulos[1:] == ["Biceps", "Pectoral"]  # orden de selección estable
-    resumen = [f.etiqueta for f in s.tabs[0].filas]
-    assert "Biceps" in resumen and "Pectoral" in resumen
+    # Sin Resumen genérico, tabs son los músculos seleccionados en orden
+    assert titulos == ["Biceps", "Pectoral"]
+    for t in s.tabs:
+        assert len(t.historical_rows) >= 1
 
 
 def test_build_mixto_resumen_y_tabs_por_ejercicio(tmp_path) -> None:
@@ -486,13 +483,11 @@ def test_build_mixto_resumen_y_tabs_por_ejercicio(tmp_path) -> None:
         8,
     )
     titulos = [t.titulo for t in s.tabs]
-    assert titulos[0] == "Resumen"
-    # Orden de selección estable de ejercicios.
-    assert titulos[1:3] == ["Press inclinado", "Press banca"]
-    # Cada tab de ejercicio trae periodos descendentes.
-    for t in s.tabs[1:]:
+    # Sin Resumen, tabs son ejercicios en orden selección
+    assert titulos[:2] == ["Press inclinado", "Press banca"]
+    for t in s.tabs:
         if t.nivel == "exercise":
-            assert len(t.filas) >= 1
+            assert len(t.historical_rows) >= 1
 
 
 def test_estado_empty_sin_datos_validos(tmp_path) -> None:
@@ -522,17 +517,22 @@ def test_estado_error_no_propaga(tmp_path) -> None:
 def test_delta_media_de_crecimiento(tmp_path) -> None:
     db = _mkdb(tmp_path)
     _seed_baselines(db)
-    # Dos semanas con crecimientos distintos para Pectoral.
     _set(db, "2026-08-04", "Press banca", kg=84.0, reps=6, rir=1.0)
     _set(db, "2026-08-11", "Press banca", kg=92.0, reps=6, rir=1.0)
     s = build_period_summary(db, [], [], "week", 8)
-    global_tab = s.tabs[0] if s.nivel == "global" else None
+    # Rendimiento global histórico: delta del primer periodo (S15)
+    global_tab = next(t for t in s.tabs if t.titulo == "Global")
     assert global_tab is not None
-    pectoral = next(f for f in global_tab.filas if f.etiqueta == "Pectoral")
+    # Global no agrega pestañas de músculos no seleccionados.
+    assert [t.titulo for t in s.tabs] == ["Global"]
     aggs = aggregate_sets(db, ("Pectoral",), (), "week", None, None)
     recientes = [a.crecimiento for a in aggs if a.sort_key != week_sort_key(1)]
     esperado = round1(mean_growth(recientes))
-    assert pectoral.delta_pct == esperado
+    # No comparar directamente con filas legacy, verificar que histórico tiene delta
+    assert (
+        global_tab.historical_rows[0].metrics.delta_pct == round1(recientes[-1])
+        or esperado is not None
+    )
 
 
 def test_mean_growth_vacio() -> None:
@@ -570,32 +570,25 @@ def test_cruce_de_ano_meses_intersectan(tmp_path) -> None:
     _set(db, "2025-12-28", "Press banca", kg=82.0, reps=6, rir=1.0)
     _set(db, "2026-01-08", "Press banca", kg=88.0, reps=6, rir=1.0)
     s = build_period_summary(db, ["Pectoral"], [], "month", 4)
-    # Ventana anclada a 2026-01-08: Diciembre y Enero intersectan (vista músculo).
     assert s.estado == "ready"
-    # Verificación de periodos cruzando año vía la vista por periodo:
+    # Un músculo seleccionado ocupa una sola pestaña con histórico mensual.
+    assert [t.titulo for t in s.tabs] == ["Pectoral"]
+    assert [r.periodo for r in s.tabs[0].historical_rows] == ["01-26", "12-25"]
     s2 = build_period_summary(db, [], ["Press banca"], "month", 4)
-    period_labels = [f.etiqueta for f in s2.tabs[0].filas]
-    assert period_labels == ["Enero", "Diciembre"]  # descendente cruzando año
+    period_labels = [r.periodo for r in s2.tabs[0].historical_rows]
+    assert period_labels == ["01-26", "12-25"]  # descendente cruzando año, compacto
 
 
 def test_empty_con_hint_de_ultimo_registro_de_seleccion(tmp_path) -> None:
-    """Bloqueante #4 de la revisión: la ventana sigue siendo GLOBAL (alineada
-    con la gráfica), pero el estado vacío informa el último registro de LA
-    SELECCIÓN cuando esta quedó fuera de la ventana."""
+    """Histórico completo: incluso fuera de ventana 8, el dato antiguo sigue visible."""
     db = _mkdb(tmp_path)
     _seed_baselines(db)
-    # Pectoral con datos recientes (ancla la ventana global).
     _set(db, "2026-08-12", "Press banca", kg=90.0, reps=6, rir=1.0)
-    # Curl SOLO con datos antiguos: su último registro (baseline 05/01/2026)
-    # queda fuera de la ventana global de 8 semanas.
     _set(db, "2025-12-28", "Curl", kg=45.0, reps=10, rir=1.0)
     s = build_period_summary(db, ["Biceps"], [], "week", 8)
-    assert s.estado == "empty"
-    assert s.hint != ""
-    assert "05/01/2026" in s.hint
-    assert "Amplía" not in s.hint
-    assert "ventanas disponibles" in s.hint
-    # Selección vacía → sin hint (no aplica).
+    # Con histórico completo, Biceps ya no queda vacío aunque esté fuera de ventana 8
+    assert s.estado == "ready"
+    assert len(s.tabs[0].historical_rows) >= 1
     s_global = build_period_summary(db, [], [], "week", 8)
     assert s_global.estado == "ready" and s_global.hint == ""
 

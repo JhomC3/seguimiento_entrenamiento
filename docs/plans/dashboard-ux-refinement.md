@@ -53,40 +53,30 @@ continuas: no usar patrones discontinuos ni variantes tipo `_._`.
 Tests unitarios y E2E deben comprobar ausencia de fechas/semana/nombre repetidos, ausencia de
 Cobertura, presencia de Series y trazas continuas en global, músculo, ejercicio, día y semana.
 
-## UX-3 — Comparación sin etiquetas redundantes
+## UX-3 — Tabla histórica única (revisada, reemplaza comparativa)
 
-**Prioridad:** P1.
+**Prioridad:** P1 — absorbe acordeón Día+ejercicio de la antigua UX-4. Decisión 2026-08-29 (corregida).
+**Histórico = todo el ciclo disponible (gráfica respeta ventana 1..8, tabla no).**
+**Jerarquía:** sin selección → [Global] → histórico por periodo · músculo(s) → una pestaña por músculo → histórico por periodo · ejercicio(s) → una pestaña por ejercicio → histórico por periodo · Ejercicio+Día → fila desplegable → series.
 
-- Un punto no muestra `Base`.
-- Varios puntos no muestran `Comparado 2`, `Comparado 3`, etc.
-- La presentación se ordena siempre de forma descendente por periodo, sin importar el orden de clic.
-- `Escape` limpia; no añadir botón visible de limpieza.
-- Mantener Series en la comparación.
-- Usar `VAR`, `RM`, `RIR`, `S1` y `S14` cuando sean inequívocos.
+- Eliminar tabla secundaria `#ps-comparison`/`.ps-comparison-table`/`Base`/`Comparado N`. No existe pestaña genérica `Resumen`. Clic/`Shift+clic` no crea tabla.
+- `Escape` conserva prioridad existente (diálogo/drawer > highlight+acordeón); sin diálogo/drawer limpia highlight sutil + cierra acordeones. Sin botón visible de limpieza.
+- Tabla única `#period-summary-wrap` con estados `ready/empty/error`, orden desc, scroll único en `.ps-panels` (detalle sin scroll propio). Pestañas siempre horizontales, scroll horizontal si no caben, sin romper layout.
+- **Global sin selección:** `[Global]` como única pestaña, activa por defecto, con el histórico global por periodo. El `nav[role=tablist]` siempre se renderiza, incluso con una sola pestaña.
+- **Músculo(s) seleccionado(s):** una pestaña por cada músculo seleccionado, cada una con todo su histórico; primera activa y cambio local sin fetch.
+- **Ejercicio(s) seleccionado(s):** una pestaña por cada ejercicio seleccionado, cada una con todo su histórico; si también hay músculos seleccionados, prevalecen los ejercicios.
+- **Ejercicio:** histórico por periodo (`S17 · 27-08-26` / `S17 · 24-08-26` / `08-26`), orden desc, **todos los periodos del ciclo** (no solo ventana). No reemplazar histórico por lista de entidades.
+- Formato minimalista homogéneo: Día y semana `S<n> · DD-MM-YY`, Mes `MM-YY` (`08-26`). No `Semana 17`/`Base`/`2026-08-27` visible (ISO solo `data-*`/aria). `aria-label` largo único (`Semana 17 · 27 de agosto de 2026`) sin duplicar lectura visible (`aria-hidden`).
+- ID canónico gráfica→fila: `gran|periodo_norm|entity_norm` donde `periodo_norm` es `YYYY-MM-DD` (Día, `pt.x` normalizado), `str(semana)` (Semana), `YYYY-MM` (Mes) — **nunca `customdata[0]` (tooltip). No modificar las 9 posiciones de `customdata`. Entidad `strip().casefold()`. Python y JS idénticos, `week_start_date` reutilizado.
+- Detalle Día+ejercicio: una query batch `LOWER(ejercicio) IN (...)` sin filtro de fechas y sin `kg/reps IS NOT NULL` (mostrar `—` si falta, excluir solo sin fecha/ejercicio). SSR de `SetDetail` para todo el ciclo, acordeón solo `exercise+Día`, cerrado por defecto, `aria-expanded`/`aria-controls`, sin scroll anidado.
 
-La prueba debe demostrar que seleccionar 14 y luego 1, o 1 y luego 14, produce siempre 14 antes
-que 1.
+## UX-4 — Detalle diario contextual jerárquico (pendiente)
 
-## UX-4 — Detalle diario contextual en acordeón
+**Prioridad:** P2; depende de UX-3 revisada.
 
-**Prioridad:** P2; depende de UX-2 y UX-3.
-
-Con granularidad Día y un punto seleccionado, el resumen derecho muestra únicamente el día elegido:
-
-```text
-25 jul
-  Pectoral                         3 series
-    Press Convergente              2 series
-      Serie 1 · 8 reps · 80 kg · RIR 1
-      Serie 2 · 6 reps · 85 kg · RIR 0
-    Contractor                     1 serie
-```
-
-Niveles: músculo → ejercicio → series. Los grupos comienzan cerrados. Cada nivel es nativo o
-accesible, con `aria-expanded` y `aria-controls`. No se crea scroll anidado por acordeón.
-
-Con varios músculos seleccionados, todos se conservan y el usuario puede cambiar entre ellos sin
-perder la selección. No se mezclan datos de días distintos.
+UX-3 incorpora únicamente acordeón por ejercicio en Día. Queda pendiente para UX-4 el detalle
+jerárquico completo músculo→ejercicio→series en multi-selección y Semana/Mes.
+No crear scroll anidado. Conservar selección al cambiar contexto.
 
 ## UX-5 — Resumen temporal inequívoco
 

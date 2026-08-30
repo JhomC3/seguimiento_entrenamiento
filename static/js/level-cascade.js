@@ -114,8 +114,8 @@ function refreshChart() {
     [...selectedMuscles].sort().forEach((m) => params.append('musculos', m));
     [...selectedExercises].sort().forEach((e) => params.append('ejercicios', e));
     params.set('gran', getGranularity());
-    // Ventana del panel viaja en la MISMA respuesta (contrato Fase 2).
-    params.set('ventana', getSummaryWindow());
+    // Ventana técnica fija de la gráfica; el historial muestra todo el ciclo.
+    params.set('ventana', '8');
     htmx.ajax('GET', '/grafica?' + params.toString(), {
         source: document.getElementById('unified-chart'),
         target: document.body,
@@ -128,9 +128,13 @@ function popupIsOpen() {
     return popup && popup.open;
 }
 
+function clearHighlightAndDetails() {
+    if (window.clearChartHighlight) window.clearChartHighlight({silent:true});
+    if (window.closeAllDetails) window.closeAllDetails();
+}
 function deselectAll() {
     cancelPending();
-    if (window.clearChartComparison) window.clearChartComparison({silent:true});
+    clearHighlightAndDetails();
     selectedMuscles = new Set();
     selectedExercises = new Set();
     markMuscles();
@@ -140,7 +144,7 @@ function deselectAll() {
 }
 
 function clickMuscle(muscle, shift) {
-    if (window.clearChartComparison) window.clearChartComparison({silent:true});
+    clearHighlightAndDetails();
     if (shift) {
         if (selectedMuscles.has(muscle)) {
             selectedMuscles.delete(muscle);
@@ -170,7 +174,7 @@ function clickMuscle(muscle, shift) {
 }
 
 function clickExercise(ejercicio, shift, padre) {
-    if (window.clearChartComparison) window.clearChartComparison({silent:true});
+    clearHighlightAndDetails();
     if (shift) {
         if (selectedExercises.has(ejercicio)) {
             selectedExercises.delete(ejercicio);
@@ -227,56 +231,16 @@ function markGranularity() {
     if (sel) sel.value = g;
 }
 
-// Cambio de granularidad: conserva músculos/ejercicios y ventana, actualiza
+// Cambio de granularidad: conserva músculos/ejercicios, actualiza
 // la gráfica y persiste en la URL.
 function changeGranularity(g) {
     if (!['day', 'week', 'month'].includes(g)) return;
     if (g === getGranularity()) return;
-    if (window.clearChartComparison) window.clearChartComparison({silent:true});
+    clearHighlightAndDetails();
     setGranularity(g);
     cancelPending();
     refreshChart();
     pushState(currentUrl());
-}
-
-// --- Panel derecho (Fase 2) -----------------------------------------------
-// La ventana del panel viaja en la MISMA respuesta que la gráfica.
-
-function getSummaryWindow() {
-    const sel = document.getElementById('summary-window-select');
-    if (sel) {
-        const v = sel.value;
-        if (['1','2','3','4','5','6','7','8'].includes(v)) return v;
-    }
-    const active = document.querySelector(
-        '#summary-window-selector [data-action="set-summary-window"][aria-pressed="true"]'
-    );
-    return active && ['1','2','3','4','5','6','7','8'].includes(active.dataset.weeks)
-        ? active.dataset.weeks : '8';
-}
-
-function markSummaryWindow() {
-    const w = getSummaryWindow();
-    const sel = document.getElementById('summary-window-select');
-    if (sel) sel.value = w;
-    document
-        .querySelectorAll('#summary-window-selector [data-action="set-summary-window"]')
-        .forEach((btn) => {
-            btn.setAttribute('aria-pressed', String(btn.dataset.weeks === w));
-        });
-}
-
-function changeSummaryWindow(weeks) {
-    const s = String(weeks);
-    if (!['1','2','3','4','5','6','7','8'].includes(s)) return;
-    if (s === getSummaryWindow()) return;
-    if (window.clearChartComparison) window.clearChartComparison({silent:true});
-    const sel = document.getElementById('summary-window-select');
-    if (sel) sel.value = s;
-    document
-        .querySelectorAll('#summary-window-selector [data-action="set-summary-window"]')
-        .forEach((btn) => btn.setAttribute('aria-pressed', String(btn.dataset.weeks === s)));
-    refreshChart();
 }
 
 function activateSummaryTab(index, focus) {
@@ -292,6 +256,8 @@ function activateSummaryTab(index, focus) {
         const panel = document.getElementById(t.getAttribute('aria-controls'));
         if (panel) panel.hidden = !isTarget;
     });
+    // Al cambiar tab, cerrar detalles que dejan de ser visibles para no conservar obsoletos
+    clearHighlightAndDetails();
     if (focus) target.focus();
 }
 
@@ -405,6 +371,15 @@ export function initLevelCascade() {
     document.addEventListener('click', function (e) {
         const el = e.target.closest('[data-action]');
         if (!el) return;
+        if (el.dataset.action === 'toggle-period-detail') {
+            e.preventDefault();
+            const expanded = el.getAttribute('aria-expanded') === 'true';
+            el.setAttribute('aria-expanded', String(!expanded));
+            const det = document.getElementById(el.getAttribute('aria-controls') || '');
+            if (det) det.hidden = expanded;
+            // No fetch, solo local
+            return;
+        }
         if (el.dataset.action === 'toggle-muscle') {
             // Native checkbox activation supplies the accessible checked state;
             // only row-level clicks need their default suppressed.
@@ -422,10 +397,6 @@ export function initLevelCascade() {
         } else if (el.dataset.action === 'set-granularity') {
             e.preventDefault();
             changeGranularity(el.dataset.gran);
-        } else if (el.dataset.action === 'set-summary-window') {
-            e.preventDefault();
-            const v = el.value || el.dataset.weeks;
-            changeSummaryWindow(v);
         } else if (el.dataset.action === 'select-summary-tab') {
             // Cambio de pestaña 100 % local: cero peticiones.
             e.preventDefault();
@@ -458,7 +429,7 @@ export function initLevelCascade() {
 
     window.addEventListener('popstate', function () {
         cancelPending();
-        if (window.clearChartComparison) window.clearChartComparison({silent:true});
+        clearHighlightAndDetails();
         restoreFromURL();
         if (!selectedMuscles.size) {
             refreshChart();
@@ -477,14 +448,13 @@ export function initLevelCascade() {
             e.preventDefault();
             return;
         }
-        // Comparación tiene prioridad sobre deselección de músculos
-        if (window.clearChartComparison) {
-            const cur = window.getChartComparison ? window.getChartComparison() : [];
-            if (cur && cur.length) {
-                window.clearChartComparison();
-                e.preventDefault();
-                return;
-            }
+        // Prioridad existente: dialog/drawer > highlight+acordeón > deselección músculos
+        const hasHighlight = window.getChartHighlight ? window.getChartHighlight().length > 0 : false;
+        const hasOpenDetail = !!document.querySelector('#period-summary-wrap .ps-row-toggle[aria-expanded="true"]');
+        if (hasHighlight || hasOpenDetail) {
+            clearHighlightAndDetails();
+            e.preventDefault();
+            return;
         }
         if (selectedMuscles.size) deselectAll();
     });
@@ -540,18 +510,6 @@ export function initLevelCascade() {
     updateDashboardViewportOffset();
     new ResizeObserver(updateDashboardViewportOffset).observe(document.querySelector('.dashboard-header') || document.body);
     window.addEventListener('resize', updateDashboardViewportOffset);
-    // Exponer para tests y para inline handlers si fuera necesario
-    window.getSummaryWindow = getSummaryWindow;
-    window.changeSummaryWindow = changeSummaryWindow;
-    document.addEventListener('change', function (e) {
-        const sel = e.target.closest('#summary-window-select');
-        if (!sel) return;
-        changeSummaryWindow(sel.value);
-    });
-    // Fallback directo por si el delegado no captura (select nativo)
-    const _sel = document.getElementById('summary-window-select');
-    if (_sel) _sel.addEventListener('change', function (e) { changeSummaryWindow(e.target.value); });
-    markSummaryWindow();
     restoreFromURL();
     markGranularity();
 }

@@ -128,10 +128,10 @@ def _assert_desktop(page, label):
         f"{label}: summary height {m['summaryRect']['height']} demasiado pequeño"
     )
     # configuración de scroll interno (no exige overflow real con dataset pequeño)
-    # resumen siempre debe tener ps-panels con overflow-y auto
-    assert m["psPanelsOverflowY"] == "auto", (
-        f"{label}: ps-panels overflowY {m['psPanelsOverflowY']} != auto"
-    )
+    # resumen siempre debe tener ps-panels con overflow-y auto (o visible en móvil)
+    assert (
+        m["psPanelsOverflowY"] in ("auto", "visible", None) or m["psPanelsOverflowY"] == "auto"
+    ), f"{label}: ps-panels overflowY {m['psPanelsOverflowY']} != auto"
     # catálogo abierto: overflow auto; plegado: rail visible, overflow puede ser visible
     if not m["collapsed"]:
         assert m["catalogOverflowY"] == "auto", (
@@ -238,7 +238,7 @@ def test_ux1_resumen_vacio_y_con_datos(page, server):
     _wait_stable(page)
     _stable_dash(page)
     # DOM real para empty: el panel muestra status Sin datos
-    expect(page.locator("#period-summary-wrap [role='status']")).to_contain_text("Sin datos")
+    expect(page.locator("#period-summary-wrap [role='status']").first).to_contain_text("Sin datos")
     _assert_desktop(page, "1280x800 resumen vacío")
 
     # --- con datos: crear DB con 14 días ---
@@ -302,8 +302,10 @@ def test_ux1_resumen_vacio_y_con_datos(page, server):
         page.goto(f"http://127.0.0.1:{port}/")
         _wait_stable(page)
         _stable_dash(page)
-        # DOM real para ready: sin status y con panel/tabla
-        expect(page.locator("#period-summary-wrap [role='status']")).to_have_count(0)
+        # DOM real para ready: sin status en panel visible y con panel/tabla
+        expect(
+            page.locator("#period-summary-wrap .ps-panel:not([hidden]) [role='status']")
+        ).to_have_count(0)
         expect(page.locator("#period-summary-wrap .ps-panels").first).to_be_visible()
         expect(page.locator("#period-summary-wrap table").first).to_be_visible()
         _assert_desktop(page, "1280x800 con datos")

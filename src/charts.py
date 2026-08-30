@@ -90,17 +90,26 @@ def format_week_short(semana: int | str) -> str:
 
 
 def format_month_short(periodo: str) -> str:
-    """Etiqueta compacta de mes: 'ene 26' desde '2026-01' o '2026-01-15'."""
+    """Etiqueta compacta de mes: '01-26' desde '2026-01' o '2026-01-15'."""
     try:
         s = str(periodo).strip()
         # acepta 'YYYY-MM' o 'YYYY-MM-DD' o 'YYYY-MM' con separador '-'
         parts = s.split("-")
         y = int(parts[0])
         m = int(parts[1])
-        mes = _MESES_CORTO[m - 1] if 1 <= m <= 12 else parts[1]
-        return f"{mes} {str(y)[2:]}"
+        return f"{m:02d}-{str(y)[2:]}"
     except Exception:  # noqa: BLE001
         return str(periodo)
+
+
+def _month_tick_label(periodo: object) -> str:
+    """Formatea ticks mensuales tanto en clave ``YYYYMM`` como ``YYYY-MM``."""
+    value = str(periodo)
+    if "-" in value:
+        return format_month_short(value)
+    if len(value) == 6 and value.isdigit():
+        return format_month_short(f"{value[:4]}-{value[4:]}")
+    return value
 
 
 def extract_point_values(customdata: list | tuple | None) -> dict | None:
@@ -688,11 +697,9 @@ def _pfr_trace(
     return go.Scatter(
         x=df[x_col],
         y=df["crecimiento"],
-        mode="lines+markers",
+        mode="lines",
         name=name,
-        line={"color": line_color, "width": width},
-        # Los puntos comparten la transparencia de su línea.
-        marker={"size": marker_size, "color": line_color},
+        line={"color": line_color, "width": width, "dash": "solid"},
         customdata=customdata,
     )
 
@@ -705,7 +712,7 @@ def chart_selection(
 ) -> go.Figure:
     """Gráfica de la selección actual:
 
-    - 0 músculos: línea sistémica global ("Crecimiento").
+    - 0 músculos: línea sistémica global ("Global").
     - 1 músculo, 0 ejercicios: Global + nombre del músculo.
     - 1 músculo, N ejercicios válidos: músculo (guía, UX-2: sin "Compilado")
       + ejercicios. (Global se oculta en estado ejercicio — decisión D2.)
@@ -730,7 +737,7 @@ def chart_selection(
             traces.append(
                 _pfr_trace(
                     global_df,
-                    "Crecimiento",
+                    "Global",
                     chart_color("primary"),
                     granularity=granularity,
                     multi_year=multi_year,
@@ -884,7 +891,7 @@ def chart_selection(
         tickvals, ticktext = _day_tick_subset(all_periods, max_ticks=8)
     elif all_x and isinstance(all_x[0], int):
         tickvals = sorted(set(all_x))
-        ticktext = [str(v) for v in tickvals]
+        ticktext = [_month_tick_label(v) for v in tickvals]
     else:
         tickvals = sorted({str(v) for v in all_x})
         ticktext = [str(v) for v in tickvals]
@@ -996,23 +1003,26 @@ def chart_pfr_timeline(
         periods = [str(v) for v in periodic[x_col].tolist()]
         tickvals, ticktext = _day_tick_subset(periods, max_ticks=8)
         customdata_vals = _hover_rows(
-            periodic, "Crecimiento", granularity=granularity, multi_year=multi_year
+            periodic, "Global", granularity=granularity, multi_year=multi_year
         )
         x_tickvals = tickvals
         x_ticktext = ticktext
     else:
         x_tickvals = periodic[x_col].tolist()
-        x_ticktext = [str(v) for v in periodic[x_col]]
-        customdata_vals = _hover_rows(periodic, "Crecimiento", granularity=granularity)
+        x_ticktext = (
+            [_month_tick_label(v) for v in periodic[x_col]]
+            if granularity == "month"
+            else [str(v) for v in periodic[x_col]]
+        )
+        customdata_vals = _hover_rows(periodic, "Global", granularity=granularity)
 
     fig.add_trace(
         go.Scatter(
             x=periodic[x_col],
             y=periodic["crecimiento"],
-            mode="lines+markers",
-            name="Crecimiento",
-            line={"color": chart_color("primary"), "width": 2.5},
-            marker={"size": 8, "color": chart_color("primary")},
+            mode="lines",
+            name="Global",
+            line={"color": chart_color("primary"), "width": 2.5, "dash": "solid"},
             customdata=customdata_vals,
         )
     )
