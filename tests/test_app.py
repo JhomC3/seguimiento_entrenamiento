@@ -2198,11 +2198,10 @@ def test_panel_global_sin_columna_rm(tmp_path, monkeypatch):
     assert s.nivel == "global"
     ctx = {"summary": s}
     html = appmod.templates.env.get_template("partials/period_summary_panel.html").render(**ctx)
-    # Global tiene pestañas Rendimiento global + músculos, tabla histórica con Periodo
-    assert "Rendimiento global" in html
-    assert "Pectoral" in html  # como pestaña, no como fila
+    # Global tiene una única pestaña Global, con tabla histórica por periodo.
+    assert ">Global<" in html
+    assert html.count('role="tab"') == 1
     assert ">Periodo<" in html and ">RM aj.<" in html
-    assert html.count('role="tab"') >= 2
 
 
 def test_panel_musculo_con_rm(tmp_path, monkeypatch):
@@ -2212,12 +2211,12 @@ def test_panel_musculo_con_rm(tmp_path, monkeypatch):
     s = build_period_summary(db, ["Pectoral"], [], "week", 8)
     assert s.nivel == "muscle"
     html = appmod.templates.env.get_template("partials/period_summary_panel.html").render(summary=s)
-    # Pectoral -> pestañas por ejercicio con tabla histórica Periodo
-    assert "Press" in html and "Press inclinado" in html
+    # Pectoral ocupa una única pestaña con tabla histórica por periodo.
+    assert ">Pectoral<" in html
     assert ">Periodo<" in html and "RM aj." in html
-    # No debe ser tabla por Ejercicio como filas, sino pestañas
+    # El nav se conserva aunque solo haya una pestaña.
     assert 'role="tablist"' in html
-    assert html.count('role="tab"') >= 2
+    assert html.count('role="tab"') == 1
 
 
 def test_panel_ejercicio_periodos_descendentes(tmp_path):

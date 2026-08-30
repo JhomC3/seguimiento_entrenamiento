@@ -71,13 +71,13 @@ El rango Y se calcula con datos reales. La altura del shell usa el contrato CSS 
 normalizado para vínculo gráfica→tabla se obtiene de `pt.x` (no de `customdata[0]`).
 
 La tabla única es `#period-summary-wrap #ps-content .ps-table` (sin `#ps-comparison`, sin pestaña `Resumen`).
-Jerarquía: sin selección → `[Rendimiento global]`; músculo(s) → una pestaña por músculo; ejercicio(s) → una pestaña por ejercicio; cada pestaña muestra el histórico por periodo;
-Ejercicio → `[Ejercicio]…` → histórico por periodo. Solo `exercise+Día` tiene acordeón desplegable con series.
+Jerarquía: sin selección → `[Global]`; músculo(s) → una pestaña por músculo; ejercicio(s) → una pestaña por ejercicio; cada pestaña muestra el histórico por periodo;
+Ejercicio(s) → una pestaña por ejercicio → histórico por periodo. Solo `exercise+Día` tiene acordeón desplegable con series.
 
 Formatos (sin `Semana 17`/`Base`/`Comparado`/`2026-08-27` visible; ISO solo `data-*`/aria):
-- Día: `DD-MM-YY · S<n>` ej `27-08-26 · S17` (`week_start_date` reutilizado, no ISO week), aria `27 de agosto de 2026 · Semana 17`.
+- Día: `S<n> · DD-MM-YY` ej `S17 · 27-08-26` (`week_start_date` reutilizado, no ISO week), aria `Semana 17 · 27 de agosto de 2026`.
 - Semana: `S<n> · DD-MM-YY` (lunes de `week_start_date(n,ciclo_start)`).
-- Mes: `mmm-YY` minúsculas ej `ago-26`, aria `agosto de 2026`.
+- Mes: `MM-YY` ej `08-26`, aria `agosto de 2026`.
 `·` no genera overflow; `fecha_iso` nunca texto visible; `DD-MM-YY` siempre 2 dígitos.
 
 Selección local sin fetch, solo tab `exercise` Día:

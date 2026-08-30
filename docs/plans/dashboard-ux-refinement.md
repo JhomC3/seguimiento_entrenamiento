@@ -57,16 +57,16 @@ Cobertura, presencia de Series y trazas continuas en global, músculo, ejercicio
 
 **Prioridad:** P1 — absorbe acordeón Día+ejercicio de la antigua UX-4. Decisión 2026-08-29 (corregida).
 **Histórico = todo el ciclo disponible (gráfica respeta ventana 1..8, tabla no).**
-**Jerarquía:** sin selección → [Rendimiento global] → histórico por periodo · músculo(s) → una pestaña por músculo → histórico por periodo · ejercicio(s) → una pestaña por ejercicio → histórico por periodo · Ejercicio+Día → fila desplegable → series.
+**Jerarquía:** sin selección → [Global] → histórico por periodo · músculo(s) → una pestaña por músculo → histórico por periodo · ejercicio(s) → una pestaña por ejercicio → histórico por periodo · Ejercicio+Día → fila desplegable → series.
 
 - Eliminar tabla secundaria `#ps-comparison`/`.ps-comparison-table`/`Base`/`Comparado N`. No existe pestaña genérica `Resumen`. Clic/`Shift+clic` no crea tabla.
 - `Escape` conserva prioridad existente (diálogo/drawer > highlight+acordeón); sin diálogo/drawer limpia highlight sutil + cierra acordeones. Sin botón visible de limpieza.
 - Tabla única `#period-summary-wrap` con estados `ready/empty/error`, orden desc, scroll único en `.ps-panels` (detalle sin scroll propio). Pestañas siempre horizontales, scroll horizontal si no caben, sin romper layout.
-- **Global sin selección:** `[Rendimiento global]` como única pestaña, activa por defecto, con el histórico global por periodo.
+- **Global sin selección:** `[Global]` como única pestaña, activa por defecto, con el histórico global por periodo. El `nav[role=tablist]` siempre se renderiza, incluso con una sola pestaña.
 - **Músculo(s) seleccionado(s):** una pestaña por cada músculo seleccionado, cada una con todo su histórico; primera activa y cambio local sin fetch.
 - **Ejercicio(s) seleccionado(s):** una pestaña por cada ejercicio seleccionado, cada una con todo su histórico; si también hay músculos seleccionados, prevalecen los ejercicios.
-- **Ejercicio:** histórico por periodo (`S17 · 24-08-26` / `27-08-26 · S17` / `ago-26`), orden desc, **todos los periodos del ciclo** (no solo ventana). No reemplazar histórico por lista de entidades.
-- Formato minimalista: Día `DD-MM-YY · S<n>` (ej `27-08-26 · S17`), Semana `S<n> · DD-MM-YY` con `week_start_date(n,ciclo_start)` reutilizado (no ISO week), Mes `mmm-YY` minúsculas (`ago-26`). No `Semana 17`/`Base`/`2026-08-27` visible (ISO solo `data-*`/aria). `aria-label` largo único (`27 de agosto de 2026 · Semana 17`) sin duplicar lectura visible (`aria-hidden`).
+- **Ejercicio:** histórico por periodo (`S17 · 27-08-26` / `S17 · 24-08-26` / `08-26`), orden desc, **todos los periodos del ciclo** (no solo ventana). No reemplazar histórico por lista de entidades.
+- Formato minimalista homogéneo: Día y semana `S<n> · DD-MM-YY`, Mes `MM-YY` (`08-26`). No `Semana 17`/`Base`/`2026-08-27` visible (ISO solo `data-*`/aria). `aria-label` largo único (`Semana 17 · 27 de agosto de 2026`) sin duplicar lectura visible (`aria-hidden`).
 - ID canónico gráfica→fila: `gran|periodo_norm|entity_norm` donde `periodo_norm` es `YYYY-MM-DD` (Día, `pt.x` normalizado), `str(semana)` (Semana), `YYYY-MM` (Mes) — **nunca `customdata[0]` (tooltip). No modificar las 9 posiciones de `customdata`. Entidad `strip().casefold()`. Python y JS idénticos, `week_start_date` reutilizado.
 - Detalle Día+ejercicio: una query batch `LOWER(ejercicio) IN (...)` sin filtro de fechas y sin `kg/reps IS NOT NULL` (mostrar `—` si falta, excluir solo sin fecha/ejercicio). SSR de `SetDetail` para todo el ciclo, acordeón solo `exercise+Día`, cerrado por defecto, `aria-expanded`/`aria-controls`, sin scroll anidado.
 

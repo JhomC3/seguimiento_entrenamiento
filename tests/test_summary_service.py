@@ -416,9 +416,9 @@ def test_build_global_orden_fijo_y_sin_rm(tmp_path) -> None:
     assert isinstance(s, PeriodSummary)
     assert s.estado == "ready" and s.nivel == "global"
     # Rendimiento global histórico
-    assert s.tabs[0].titulo == "Rendimiento global"
+    assert s.tabs[0].titulo == "Global"
     assert s.tabs[0].historical_rows[0].periodo.startswith("S")
-    assert [t.titulo for t in s.tabs] == ["Rendimiento global"]
+    assert [t.titulo for t in s.tabs] == ["Global"]
     # Legacy filas aún presente para compat: Rendimiento global filas por músculo
     tab = s.tabs[0]
     etiquetas = [f.etiqueta for f in tab.filas]
@@ -446,8 +446,8 @@ def test_build_ejercicio_periodos_descendentes(tmp_path) -> None:
     assert s.nivel == "exercise"
     tab = s.tabs[0]
     # Histórico compacto
-    assert tab.historical_rows[0].periodo == "ago-26"
-    assert any(r.periodo == "jul-26" for r in tab.historical_rows)
+    assert tab.historical_rows[0].periodo == "08-26"
+    assert any(r.periodo == "07-26" for r in tab.historical_rows)
     keys = [month_sort_key(2026, 8), month_sort_key(2026, 7)]
     assert keys == sorted(keys, reverse=True)
     fila = tab.historical_rows[0].metrics
@@ -521,10 +521,10 @@ def test_delta_media_de_crecimiento(tmp_path) -> None:
     _set(db, "2026-08-11", "Press banca", kg=92.0, reps=6, rir=1.0)
     s = build_period_summary(db, [], [], "week", 8)
     # Rendimiento global histórico: delta del primer periodo (S15)
-    global_tab = next(t for t in s.tabs if t.titulo == "Rendimiento global")
+    global_tab = next(t for t in s.tabs if t.titulo == "Global")
     assert global_tab is not None
     # Global no agrega pestañas de músculos no seleccionados.
-    assert [t.titulo for t in s.tabs] == ["Rendimiento global"]
+    assert [t.titulo for t in s.tabs] == ["Global"]
     aggs = aggregate_sets(db, ("Pectoral",), (), "week", None, None)
     recientes = [a.crecimiento for a in aggs if a.sort_key != week_sort_key(1)]
     esperado = round1(mean_growth(recientes))
@@ -573,10 +573,10 @@ def test_cruce_de_ano_meses_intersectan(tmp_path) -> None:
     assert s.estado == "ready"
     # Un músculo seleccionado ocupa una sola pestaña con histórico mensual.
     assert [t.titulo for t in s.tabs] == ["Pectoral"]
-    assert [r.periodo for r in s.tabs[0].historical_rows] == ["ene-26", "dic-25"]
+    assert [r.periodo for r in s.tabs[0].historical_rows] == ["01-26", "12-25"]
     s2 = build_period_summary(db, [], ["Press banca"], "month", 4)
     period_labels = [r.periodo for r in s2.tabs[0].historical_rows]
-    assert period_labels == ["ene-26", "dic-25"]  # descendente cruzando año, compacto
+    assert period_labels == ["01-26", "12-25"]  # descendente cruzando año, compacto
 
 
 def test_empty_con_hint_de_ultimo_registro_de_seleccion(tmp_path) -> None:

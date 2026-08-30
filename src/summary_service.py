@@ -252,12 +252,12 @@ def historical_period_id(granularidad: str, periodo_norm: str, entity_norm: str)
 
 
 def format_day_compact(d: date, ciclo_start: date | None = None) -> tuple[str, str]:
-    """Visible DD-MM-YY · S<n>, aria DD de mes de YYYY · Semana N."""
+    """Visible S<n> · DD-MM-YY, aria Semana N · DD de mes de YYYY."""
     semana = calculate_cycle_week(
         d, ciclo_start if ciclo_start is not None else parse_cycle_start()
     )
-    visible = f"{d.day:02d}-{d.month:02d}-{str(d.year)[2:]} · S{semana}"
-    aria = f"{d.day} de {MONTH_NAMES_ES[d.month - 1].lower()} de {d.year} · Semana {semana}"
+    visible = f"S{semana} · {d.day:02d}-{d.month:02d}-{str(d.year)[2:]}"
+    aria = f"Semana {semana} · {d.day} de {MONTH_NAMES_ES[d.month - 1].lower()} de {d.year}"
     return visible, aria
 
 
@@ -273,12 +273,12 @@ def format_week_compact(semana: int, ciclo_start: date | None = None) -> tuple[s
 
 
 def format_month_compact(year: int, month: int) -> tuple[str, str]:
-    """Visible mmm-YY minúsculas, aria mes de YYYY."""
+    """Visible MM-YY, aria mes de YYYY."""
     if not 1 <= month <= 12:
         raise ValidationError(f"Mes inválido: {month}")
     if year < 1900 or year > 3000:
         raise ValidationError(f"Año inválido: {year}")
-    visible = f"{MESES_CORTO[month - 1]}-{str(year)[2:]}"
+    visible = f"{month:02d}-{str(year)[2:]}"
     aria = f"{MONTH_NAMES_ES[month - 1].lower()} de {year}"
     return visible, aria
 
@@ -395,7 +395,7 @@ class SetDetail:
 class HistoricalPeriodRow:
     """Fila histórica por periodo para vista exercise (no modifica RowMetrics).
 
-    periodo = visible DD-MM-YY · S<n> / S<n> · DD-MM-YY / mmm-YY
+    periodo = visible S<n> · DD-MM-YY / S<n> · DD-MM-YY / MM-YY
     periodo_aria = lectura única AT
     periodo_id = gran|periodo_norm|entity_norm (nunca etiqueta visible)
     """
@@ -932,7 +932,7 @@ def build_period_summary(
     """Punto de entrada del panel derecho (server-authoritative).
 
     Reglas UX-3 revisada (sin pestaña genérica "Resumen", tablas siempre históricas desc):
-    - global (sin selección): una sola tab Rendimiento global, histórico por periodo.
+    - global (sin selección): una sola tab Global, histórico por periodo.
     - uno o varios músculos: una tab por músculo seleccionado, cada una con su histórico.
     - uno o varios ejercicios: una tab por ejercicio seleccionado, cada una con su histórico.
       Las selecciones de ejercicio tienen prioridad sobre las de músculo.
@@ -1017,7 +1017,7 @@ def build_period_summary(
             details_by_key = {}
 
     # UX-3 revisada: pestañas son nivel, filas siempre históricas por periodo.
-    # Global -> [Rendimiento global]
+    # Global -> [Global]
     # Músculo -> una tab por músculo seleccionado
     # Ejercicio -> una tab por ejercicio seleccionado
     # No existe pestaña genérica "Resumen". Tabla siempre histórica desc.
@@ -1025,7 +1025,7 @@ def build_period_summary(
         # Rendimiento global agregado (histórico por periodo) + legacy filas por músculo para compat
         tabs.append(
             SummaryTab(
-                "Rendimiento global",
+                "Global",
                 "global",
                 filas=_collapse_entity_rows_global(aggs, flatten_muscle_categories()),
                 historical_rows=_historical_rows_for_global(aggs, granularidad, ciclo_start_eff),

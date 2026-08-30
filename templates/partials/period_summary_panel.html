@@ -36,7 +36,6 @@
             {% if summary.hint %}<p class="text-xs text-neutral-400 px-3">{{ summary.hint }}</p>{% endif %}
         </div>
     {% else %}
-        {% if summary.tabs | length > 1 %}
         <nav
             class="ps-tabs"
             role="tablist"
@@ -56,7 +55,6 @@
             >{{ t.titulo }}</button>
             {% endfor %}
         </nav>
-        {% endif %}
 
         <div class="ps-panels">
             {% for t in summary.tabs %}
