@@ -2177,18 +2177,12 @@ def test_grafica_incluye_panel_oob(tmp_path, monkeypatch):
 
 
 def test_grafica_ventana_default_y_validacion(tmp_path, monkeypatch):
-    import re as _re
-
     db = _seed_summary_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     c = _client()
-    # Default 8 semanas: select con option 8 selected
+    # La ventana técnica por defecto es 8, pero ya no se expone como control.
     r = c.get("/grafica")
-    assert (
-        'value="8" selected' in r.text
-        or 'value="8"  selected' in r.text
-        or _re.search(r'<option[^>]*value="8"[^>]*selected', r.text)
-    )
+    assert 'id="summary-window-select"' not in r.text
     # Ventana inválida → 400 seguro (9 fuera de 1-8).
     r_bad = c.get("/grafica", params={"ventana": 9})
     assert r_bad.status_code == 400

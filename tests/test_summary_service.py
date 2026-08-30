@@ -418,9 +418,7 @@ def test_build_global_orden_fijo_y_sin_rm(tmp_path) -> None:
     # Rendimiento global histórico
     assert s.tabs[0].titulo == "Rendimiento global"
     assert s.tabs[0].historical_rows[0].periodo.startswith("S")
-    assert "Pectoral" in [t.titulo for t in s.tabs] and "Biceps" in [t.titulo for t in s.tabs]
-    pectoral_tab = next(t for t in s.tabs if t.titulo == "Pectoral")
-    assert len(pectoral_tab.historical_rows) >= 1
+    assert [t.titulo for t in s.tabs] == ["Rendimiento global"]
     # Legacy filas aún presente para compat: Rendimiento global filas por músculo
     tab = s.tabs[0]
     etiquetas = [f.etiqueta for f in tab.filas]
@@ -434,12 +432,9 @@ def test_build_musculo_filas_por_ejercicio_con_rm(tmp_path) -> None:
     _set(db, "2026-08-11", "Press inclinado", kg=70.0, reps=8, rir=1.0)
     s = build_period_summary(db, ["Pectoral"], [], "week", 8)
     assert s.nivel == "muscle"
-    # Pectoral -> pestañas por ejercicio con histórico
-    assert len(s.tabs) >= 2
-    assert {t.titulo for t in s.tabs} >= {"Press banca", "Press inclinado"}
-    for t in s.tabs:
-        assert len(t.historical_rows) >= 1
-        assert t.historical_rows[0].metrics.rm_max is not None
+    # Un músculo seleccionado ocupa una sola pestaña con todo su histórico.
+    assert [t.titulo for t in s.tabs] == ["Pectoral"]
+    assert len(s.tabs[0].historical_rows) >= 1
 
 
 def test_build_ejercicio_periodos_descendentes(tmp_path) -> None:
@@ -528,15 +523,14 @@ def test_delta_media_de_crecimiento(tmp_path) -> None:
     # Rendimiento global histórico: delta del primer periodo (S15)
     global_tab = next(t for t in s.tabs if t.titulo == "Rendimiento global")
     assert global_tab is not None
-    # Pectoral histórico también por periodo
-    pectoral_tab = next(t for t in s.tabs if t.titulo == "Pectoral")
-    assert pectoral_tab.historical_rows[0].metrics.delta_pct is not None
+    # Global no agrega pestañas de músculos no seleccionados.
+    assert [t.titulo for t in s.tabs] == ["Rendimiento global"]
     aggs = aggregate_sets(db, ("Pectoral",), (), "week", None, None)
     recientes = [a.crecimiento for a in aggs if a.sort_key != week_sort_key(1)]
     esperado = round1(mean_growth(recientes))
     # No comparar directamente con filas legacy, verificar que histórico tiene delta
     assert (
-        pectoral_tab.historical_rows[0].metrics.delta_pct == round1(recientes[-1])
+        global_tab.historical_rows[0].metrics.delta_pct == round1(recientes[-1])
         or esperado is not None
     )
 
@@ -577,8 +571,9 @@ def test_cruce_de_ano_meses_intersectan(tmp_path) -> None:
     _set(db, "2026-01-08", "Press banca", kg=88.0, reps=6, rir=1.0)
     s = build_period_summary(db, ["Pectoral"], [], "month", 4)
     assert s.estado == "ready"
-    # Vista Pectoral ahora son pestañas por ejercicio, cada una con histórico mensual
-    assert any(t.titulo == "Press banca" for t in s.tabs)
+    # Un músculo seleccionado ocupa una sola pestaña con histórico mensual.
+    assert [t.titulo for t in s.tabs] == ["Pectoral"]
+    assert [r.periodo for r in s.tabs[0].historical_rows] == ["ene-26", "dic-25"]
     s2 = build_period_summary(db, [], ["Press banca"], "month", 4)
     period_labels = [r.periodo for r in s2.tabs[0].historical_rows]
     assert period_labels == ["ene-26", "dic-25"]  # descendente cruzando año, compacto

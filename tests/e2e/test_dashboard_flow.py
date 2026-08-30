@@ -3623,25 +3623,11 @@ def test_tabs_cero_peticiones(page, server, tmp_path):
 
 
 def test_ventana_cambio_una_peticion(page, server, tmp_path):
-    """Selector 1-8 semanas (select nativo): un fetch con ventana=N; default 8."""
+    """La ventana técnica es fija y no se expone como selector."""
     _seed_e2e_many_days(tmp_path, 40)
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    grafica_reqs = []
-    page.on("request", lambda r: grafica_reqs.append(r.url) if "/grafica" in r.url else None)
-    sel = page.locator("#summary-window-select")
-    expect(sel).to_be_visible()
-    assert sel.input_value() == "8"
-    base = len(grafica_reqs)
-    # Usa el handler global directamente para evitar flakiness del evento change nativo
-    page.evaluate("() => window.changeSummaryWindow('4')")
-    page.wait_for_timeout(800)
-    nuevos = [u for u in grafica_reqs[base:] if "ventana=4" in u]
-    assert len(nuevos) == 1, grafica_reqs[base:]
-    assert (
-        sel.input_value() == "4"
-        or page.evaluate("() => document.getElementById('summary-window-select').value") == "4"
-    )
+    expect(page.locator("#summary-window-select")).to_have_count(0)
 
 
 def test_back_forward_restaura_grafica_y_panel(page, server, tmp_path):
@@ -3702,20 +3688,11 @@ def test_rapido_doble_clic_sin_errores(page, server, tmp_path):
 
 
 def test_panel_botones_ventana_estado_por_aria(page, server, tmp_path):
-    """El selector es un <select> nativo glass; el estilo no depende de clases de color."""
+    """El panel no renderiza el control obsoleto de ventana."""
     _seed_e2e_many_days(tmp_path, 40)
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    sel = page.locator("#summary-window-select")
-    expect(sel).to_be_visible()
-    assert "ps-select" in (sel.get_attribute("class") or "")
-    # Opciones 1-8
-    opts = sel.locator("option")
-    assert opts.count() == 8
-    assert sel.input_value() == "8"
-    sel.select_option("4")
-    page.wait_for_timeout(600)
-    assert sel.input_value() == "4"
+    expect(page.locator("#summary-window-select")).to_have_count(0)
 
 
 def test_tabla_ejercicio_scroll_horizontal_390px(page, server, tmp_path):
@@ -3884,15 +3861,9 @@ def test_panel_altura_fija_entre_tabs_y_ventana(page, server, tmp_path):
     h1 = page.evaluate(
         "() => document.getElementById('period-summary-wrap').getBoundingClientRect().height"
     )
-    page.evaluate("() => window.changeSummaryWindow('4')")
-    page.wait_for_timeout(700)
-    h2 = page.evaluate(
-        "() => document.getElementById('period-summary-wrap').getBoundingClientRect().height"
-    )
     assert abs(h1 - h0) <= 1.0, f"tab cambió altura: {h0} → {h1}"
-    assert abs(h2 - h0) <= 1.0, f"ventana cambió altura: {h0} → {h2}"
     # Altura fija basada en viewport (~calc(100dvh-32px) = 768 aquí).
-    assert 600 <= h2 <= 800, f"altura fuera de rango viewport: {h2}"
+    assert 600 <= h1 <= 800, f"altura fuera de rango viewport: {h1}"
 
 
 def test_catalogo_plegable_accesible(page, server, tmp_path):
@@ -4436,17 +4407,6 @@ def test_comparacion_cambio_contexto_limpia(page, server, tmp_path):
     _catalog_select_muscle(page, "Pectoral")
     page.wait_for_timeout(800)
     assert _comparison_state(page)["count"] == 0, "cambio músculo debe limpiar"
-    # Ventana solo 1 petición
-    page.evaluate("() => window.__testComparisonClick(0,0,false)")
-    page.wait_for_timeout(300)
-    grafica_reqs = []
-    page.on("request", lambda r: grafica_reqs.append(r.url) if "/grafica" in r.url else None)
-    base = len(grafica_reqs)
-    page.evaluate("() => window.changeSummaryWindow('4')")
-    page.wait_for_timeout(900)
-    assert _comparison_state(page)["count"] == 0, "ventana debe limpiar"
-    nuevos = [u for u in grafica_reqs[base:] if "ventana=4" in u]
-    assert len(nuevos) == 1, f"ventana debe hacer solo 1 petición: {grafica_reqs[base:]}"
 
 
 def test_comparacion_semana_y_dia_identidad(page, server, tmp_path):

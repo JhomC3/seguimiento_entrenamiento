@@ -71,8 +71,7 @@ El rango Y se calcula con datos reales. La altura del shell usa el contrato CSS 
 normalizado para vínculo gráfica→tabla se obtiene de `pt.x` (no de `customdata[0]`).
 
 La tabla única es `#period-summary-wrap #ps-content .ps-table` (sin `#ps-comparison`, sin pestaña `Resumen`).
-Jerarquía: Global → `[Rendimiento global][Pectoral][Espalda]…` → cada pestaña histórico por periodo;
-Músculo → `[Press inclinado][Press convergente]…` → cada ejercicio histórico por periodo;
+Jerarquía: sin selección → `[Rendimiento global]`; músculo(s) → una pestaña por músculo; ejercicio(s) → una pestaña por ejercicio; cada pestaña muestra el histórico por periodo;
 Ejercicio → `[Ejercicio]…` → histórico por periodo. Solo `exercise+Día` tiene acordeón desplegable con series.
 
 Formatos (sin `Semana 17`/`Base`/`Comparado`/`2026-08-27` visible; ISO solo `data-*`/aria):

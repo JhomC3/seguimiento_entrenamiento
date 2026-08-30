@@ -932,20 +932,14 @@ def build_period_summary(
     """Punto de entrada del panel derecho (server-authoritative).
 
     Reglas UX-3 revisada (sin pestaña genérica "Resumen", tablas siempre históricas desc):
-    - global (sin selección): [Rendimiento global][Pectoral][Espalda]… cada una histórico por periodo.
-    - 1 músculo: [Press inclinado][Press convergente]… cada ejercicio histórico por periodo.
-    - n músculos / ejercicios: pestañas por cada entidad seleccionada (músculo o ejercicio), cada una histórico.
-    Ventana 1..8 seleccionada; histórico = dentro de ventana.
+    - global (sin selección): una sola tab Rendimiento global, histórico por periodo.
+    - uno o varios músculos: una tab por músculo seleccionado, cada una con su histórico.
+    - uno o varios ejercicios: una tab por ejercicio seleccionado, cada una con su histórico.
+      Las selecciones de ejercicio tienen prioridad sobre las de músculo.
+    Ventana técnica fija de 8 semanas para la gráfica; el histórico muestra todo el ciclo.
     """
     if granularidad not in GRANULARITIES:
         raise ValidationError(f"Granularidad no soportada: {granularidad}")
-    # Import compartido para orden dinámico (evita circular y asegura disponibilidad)
-    from src.database import (
-        get_exercise_valid_counts,
-        get_exercises_catalog,
-        sort_exercises_by_data,
-    )
-
     muscles = _dedupe_keep_order(musculos)
     exercises = _dedupe_keep_order(ejercicios)
 
@@ -1023,9 +1017,9 @@ def build_period_summary(
             details_by_key = {}
 
     # UX-3 revisada: pestañas son nivel, filas siempre históricas por periodo.
-    # Global -> [Rendimiento global] + [músculo]...
-    # Músculo -> [ejercicio]...
-    # Ejercicio -> [ejercicio]...
+    # Global -> [Rendimiento global]
+    # Músculo -> una tab por músculo seleccionado
+    # Ejercicio -> una tab por ejercicio seleccionado
     # No existe pestaña genérica "Resumen". Tabla siempre histórica desc.
     if nivel == "global":
         # Rendimiento global agregado (histórico por periodo) + legacy filas por músculo para compat
@@ -1037,39 +1031,6 @@ def build_period_summary(
                 historical_rows=_historical_rows_for_global(aggs, granularidad, ciclo_start_eff),
             )
         )
-        for muscle in flatten_muscle_categories():
-            muscle_aggs = [a for a in aggs if a.grupo_muscular == muscle]
-            hist = _historical_rows_for_muscle(muscle_aggs, granularidad, muscle, ciclo_start_eff)
-            # Legacy filas por músculo no aplica aquí (global ya tiene), pero para muscle tab histórico puro
-            # Mantener filas vacías para compat, histórico es canónico
-            tabs.append(SummaryTab(muscle, "muscle", historical_rows=hist))
-
-    elif nivel == "muscle" and len(muscles) == 1:
-        muscle = muscles[0]
-        # Tabs = ejercicios de ese músculo (histórico por periodo)
-        with read_connection(db_path) as _conn:
-            rows = _conn.execute(
-                "SELECT ejercicio FROM ejercicios WHERE LOWER(grupo_muscular)=LOWER(?) ORDER BY ejercicio",
-                (muscle,),
-            ).fetchall()
-            all_ex = [str(r[0]) for r in rows]
-        if not all_ex:
-            all_ex = sorted({pa.entidad for pa in aggs if pa.grupo_muscular == muscle})
-        counts = get_exercise_valid_counts(db_path, None, None)
-        catalog_order = get_exercises_catalog(db_path)
-        ordered = [n for n in sort_exercises_by_data(counts, catalog_order) if n in set(all_ex)]
-        remaining = [n for n in all_ex if n not in ordered]
-        ordered.extend(sorted(remaining, key=str.lower))
-        for ex in ordered:
-            ex_aggs = [a for a in aggs if a.entidad == ex]
-            hist = _historical_rows_for_exercise(
-                ex_aggs, granularidad, ex, ciclo_start_eff, details_by_key
-            )
-            legacy = _period_rows_desc(ex_aggs)
-            tabs.append(SummaryTab(ex, "exercise", filas=legacy, historical_rows=hist))
-        if not ordered:
-            tabs.append(SummaryTab(muscle, "muscle", historical_rows=()))
-
     elif nivel == "exercise":
         # Tabs = cada ejercicio seleccionado (preservar orden selección) - histórico por periodo con legacy para compat
         for ex in exercises:
@@ -1084,22 +1045,11 @@ def build_period_summary(
                 tabs.append(SummaryTab(ex, "exercise", historical_rows=()))
 
     else:
-        # Multi-músculo sin ejercicios o casos mixtos: tabs por músculo histórico
-        if len(muscles) >= 1 and not exercises:
-            for muscle in muscles:
-                muscle_aggs = [a for a in aggs if a.grupo_muscular.lower() == muscle.lower()]
-                hist = _historical_rows_for_muscle(
-                    muscle_aggs, granularidad, muscle, ciclo_start_eff
-                )
-                tabs.append(SummaryTab(muscle, "muscle", historical_rows=hist))
-        else:
-            # Mixto ejercicio+músculo o múltiples ejercicios con músculo: tabs por ejercicio
-            for ex in exercises:
-                ex_aggs = [a for a in aggs if a.entidad == ex]
-                hist = _historical_rows_for_exercise(
-                    ex_aggs, granularidad, ex, ciclo_start_eff, details_by_key
-                )
-                tabs.append(SummaryTab(ex, "exercise", historical_rows=hist))
+        # Uno o varios músculos: una tab por cada músculo seleccionado.
+        for muscle in muscles:
+            muscle_aggs = [a for a in aggs if a.grupo_muscular.lower() == muscle.lower()]
+            hist = _historical_rows_for_muscle(muscle_aggs, granularidad, muscle, ciclo_start_eff)
+            tabs.append(SummaryTab(muscle, "muscle", historical_rows=hist))
 
     return PeriodSummary("ready", nivel, granularidad, semanas, tuple(tabs))
 

@@ -23,25 +23,7 @@
 >
     <header class="flex items-center justify-between gap-2 pl-3 pr-3 pt-3">
         <h2 class="panel-title">Historial</h2>
-        <div class="flex items-center gap-2">
-        {# Deuda futura: summary-window-select se conserva en esta tarea; su eliminación se hará en tarea independiente (ver docs) #}
-        <label for="summary-window-select" class="text-xs text-neutral-400">Ventana</label>
-        <select
-            id="summary-window-select"
-            class="ps-select"
-            data-action="set-summary-window"
-            aria-label="Ventana del resumen"
-            aria-describedby="summary-window-desc"
-        >
-            {% for w in range(1, 9) %}
-            <option value="{{ w }}" {% if summary.semanas == w %}selected{% endif %}>{{ w }} semana{% if w != 1 %}s{% endif %}</option>
-            {% endfor %}
-        </select>
-        </div>
     </header>
-    <p id="summary-window-desc" class="sr-only">
-        Selecciona el número de semanas para el resumen
-    </p>
 
     <div id="ps-content">
     {% if summary.estado == "error" %}

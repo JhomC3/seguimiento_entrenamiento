@@ -62,7 +62,7 @@ Orden de trabajo atómico:
 2. Gráfica Día con padding solo visual y espacio superior revisado.
 3. Controles Día/Semana/Mes con estilo glass real y contraste AA.
 4. UX-3 revisada (P1): tabla histórica única en `#period-summary-wrap` con **todo el historial del ciclo** (no solo ventana 1..8),
-   sin tabla secundaria `#ps-comparison` y sin pestaña `Resumen`. Global `[Rendimiento global][Músculo]…`, Músculo `[Ejercicio]…`, cada una histórico por periodo desc con formato `DD-MM-YY · S<n>` / `S<n> · DD-MM-YY` / `mmm-YY`
+   sin tabla secundaria `#ps-comparison` y sin pestaña `Resumen`. Sin selección: `[Rendimiento global]`; músculo(s): una pestaña por músculo; ejercicio(s): una pestaña por ejercicio. Cada pestaña muestra el histórico completo por periodo desc con formato `DD-MM-YY · S<n>` / `S<n> · DD-MM-YY` / `mmm-YY`.
    (sin `Semana 17`/`Base`/`Comparado`), orden desc, selección local sin fetch. Detalle desplegable
    solo Día+ejercicio (batch todo el ciclo, `SetDetail`), cerrado por defecto, `aria-expanded`/`aria-controls`.
 5. Comparación previa con periodo corto, VAR, Series, Reps, Peso, RIR y RM ajustado queda superada por tabla única.

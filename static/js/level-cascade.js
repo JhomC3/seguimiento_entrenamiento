@@ -114,8 +114,8 @@ function refreshChart() {
     [...selectedMuscles].sort().forEach((m) => params.append('musculos', m));
     [...selectedExercises].sort().forEach((e) => params.append('ejercicios', e));
     params.set('gran', getGranularity());
-    // Ventana del panel viaja en la MISMA respuesta (contrato Fase 2).
-    params.set('ventana', getSummaryWindow());
+    // Ventana técnica fija de la gráfica; el historial muestra todo el ciclo.
+    params.set('ventana', '8');
     htmx.ajax('GET', '/grafica?' + params.toString(), {
         source: document.getElementById('unified-chart'),
         target: document.body,
@@ -231,7 +231,7 @@ function markGranularity() {
     if (sel) sel.value = g;
 }
 
-// Cambio de granularidad: conserva músculos/ejercicios y ventana, actualiza
+// Cambio de granularidad: conserva músculos/ejercicios, actualiza
 // la gráfica y persiste en la URL.
 function changeGranularity(g) {
     if (!['day', 'week', 'month'].includes(g)) return;
@@ -241,48 +241,6 @@ function changeGranularity(g) {
     cancelPending();
     refreshChart();
     pushState(currentUrl());
-}
-
-// --- Panel derecho (Fase 2) -----------------------------------------------
-// La ventana del panel viaja en la MISMA respuesta que la gráfica.
-
-function getSummaryWindow() {
-    const sel = document.getElementById('summary-window-select');
-    if (sel) {
-        const v = sel.value;
-        if (['1','2','3','4','5','6','7','8'].includes(v)) return v;
-    }
-    const active = document.querySelector(
-        '#summary-window-selector [data-action="set-summary-window"][aria-pressed="true"]'
-    );
-    return active && ['1','2','3','4','5','6','7','8'].includes(active.dataset.weeks)
-        ? active.dataset.weeks : '8';
-}
-
-function markSummaryWindow() {
-    const w = getSummaryWindow();
-    const sel = document.getElementById('summary-window-select');
-    if (sel) sel.value = w;
-    document
-        .querySelectorAll('#summary-window-selector [data-action="set-summary-window"]')
-        .forEach((btn) => {
-            btn.setAttribute('aria-pressed', String(btn.dataset.weeks === w));
-        });
-}
-
-// Deuda futura: summary-window-select / changeSummaryWindow / ventana de /grafica se conserva en esta tarea;
-// su eliminación se hará en tarea independiente (ver docs/architecture/dashboard-current.md)
-function changeSummaryWindow(weeks) {
-    const s = String(weeks);
-    if (!['1','2','3','4','5','6','7','8'].includes(s)) return;
-    if (s === getSummaryWindow()) return;
-    clearHighlightAndDetails();
-    const sel = document.getElementById('summary-window-select');
-    if (sel) sel.value = s;
-    document
-        .querySelectorAll('#summary-window-selector [data-action="set-summary-window"]')
-        .forEach((btn) => btn.setAttribute('aria-pressed', String(btn.dataset.weeks === s)));
-    refreshChart();
 }
 
 function activateSummaryTab(index, focus) {
@@ -439,10 +397,6 @@ export function initLevelCascade() {
         } else if (el.dataset.action === 'set-granularity') {
             e.preventDefault();
             changeGranularity(el.dataset.gran);
-        } else if (el.dataset.action === 'set-summary-window') {
-            e.preventDefault();
-            const v = el.value || el.dataset.weeks;
-            changeSummaryWindow(v);
         } else if (el.dataset.action === 'select-summary-tab') {
             // Cambio de pestaña 100 % local: cero peticiones.
             e.preventDefault();
@@ -556,18 +510,6 @@ export function initLevelCascade() {
     updateDashboardViewportOffset();
     new ResizeObserver(updateDashboardViewportOffset).observe(document.querySelector('.dashboard-header') || document.body);
     window.addEventListener('resize', updateDashboardViewportOffset);
-    // Exponer para tests y para inline handlers si fuera necesario
-    window.getSummaryWindow = getSummaryWindow;
-    window.changeSummaryWindow = changeSummaryWindow;
-    document.addEventListener('change', function (e) {
-        const sel = e.target.closest('#summary-window-select');
-        if (!sel) return;
-        changeSummaryWindow(sel.value);
-    });
-    // Fallback directo por si el delegado no captura (select nativo)
-    const _sel = document.getElementById('summary-window-select');
-    if (_sel) _sel.addEventListener('change', function (e) { changeSummaryWindow(e.target.value); });
-    markSummaryWindow();
     restoreFromURL();
     markGranularity();
 }

@@ -29,41 +29,6 @@
 #period-summary-wrap.panel::before {
     display: none;
 }
-/* Selector de ventana 1–8 semanas: nativo <select> glass */
-.ps-select {
-    appearance: none;
-    -webkit-appearance: none;
-    background: var(--t-overlay-white-004);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid var(--t-surfaces-neutral-800);
-    border-radius: 8px;
-    color: var(--t-surfaces-neutral-300);
-    font-size: 12px;
-    font-weight: 600;
-    padding: 4px 28px 4px 8px;
-    min-width: 110px;
-    cursor: pointer;
-    background-image: linear-gradient(45deg, transparent 50%, var(--t-surfaces-neutral-400) 50%),
-        linear-gradient(135deg, var(--t-surfaces-neutral-400) 50%, transparent 50%);
-    background-position: calc(100% - 14px) calc(50% - 2px), calc(100% - 10px) calc(50% - 2px);
-    background-size: 4px 4px, 4px 4px;
-    background-repeat: no-repeat;
-}
-.ps-select:hover {
-    border-color: var(--t-surfaces-neutral-700);
-    color: var(--t-surfaces-neutral-100);
-}
-.ps-select:focus-visible {
-    outline: 2px solid var(--t-focus-ring);
-    outline-offset: 2px;
-}
-@media (prefers-reduced-motion: reduce) {
-    .ps-select {
-        transition: none;
-    }
-}
-
 .ps-tabs {
     display: flex;
     gap: 4px;
