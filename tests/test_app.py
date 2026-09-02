@@ -223,11 +223,20 @@ def test_plantilla_eliminar(tmp_path, monkeypatch):
     assert "Aún no hay entrenos" in r.text
 
 
-def test_plantilla_aplicar_rellena_con_ultimos_valores(tmp_path, monkeypatch):
+def test_plantilla_aplicar_rellena_con_la_sesion_coincidente(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     insert_exercise(db, "Curl", "Biceps", "TIRON")
-    save_session(db, _fecha(-3), [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
-    save_session(db, _fecha(-2), [{"ejercicio": "Curl", "kg": 16, "reps": 10, "rir": 0}])
+    # La plantilla es una sesión completa: solo la fecha con Press+Curl juntos
+    # puede rellenar los valores; la sesión posterior solo de Curl no mezcla.
+    save_session(
+        db,
+        _fecha(-3),
+        [
+            {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
+            {"ejercicio": "Curl", "kg": 16, "reps": 10, "rir": 0},
+        ],
+    )
+    save_session(db, _fecha(-2), [{"ejercicio": "Curl", "kg": 20, "reps": 12, "rir": 1}])
     monkeypatch.setattr(appmod, "DB_PATH", db)
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "Mi Empuje", "ejercicio": ["Press", "Curl"]})
@@ -2295,3 +2304,146 @@ def test_read_index_renderiza_panel_server_side(tmp_path, monkeypatch):
     main_close = body.index("</main>")
     ps = body.index('id="period-summary-wrap"')
     assert layout_open < main_close < ps
+
+
+# ---------------------------------------------------------------------------
+# Diario: página independiente (GET /diario, alias /registro) + CSV restaurado
+# ---------------------------------------------------------------------------
+
+
+def test_diario_serves_standalone_workspace(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/diario")
+    assert r.status_code == 200
+    body = r.text
+    assert 'id="daily-page"' in body
+    assert 'id="date-navigator"' in body
+    assert 'id="daily-date-title"' in body
+    assert 'role="tablist"' in body
+    assert 'id="daily-training-view"' in body
+    assert 'id="daily-food-view"' in body
+    assert 'id="session-editor"' in body
+    assert 'id="nutrition-panel"' in body
+    assert 'id="cardio-day"' in body
+    # Diálogos compactos (plantillas, altas) en lugar de secciones verticales.
+    assert 'id="training-templates-dialog"' in body
+    assert 'id="food-templates-dialog"' in body
+    assert 'id="exercise-create-dialog"' in body
+    assert 'id="food-create-dialog"' in body
+    # app-config con CSRF y mapas de catálogo (nunca {}).
+    assert 'id="app-config" type="application/json"' in body
+    assert '"csrf_token"' in body
+    assert "categoria_map" in body
+    assert "alimento_map" in body
+    assert 'id="app-config" type="application/json">{}</script>' not in body
+
+
+def test_registro_remains_compatibility_alias(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/registro")
+    assert r.status_code == 200
+    assert 'id="daily-page"' in r.text
+
+
+def test_diario_header_has_no_semana(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/diario")
+    assert r.status_code == 200
+    assert "Semana" not in r.text
+
+
+def test_diario_carousel_uses_compact_format(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/diario")
+    assert r.status_code == 200
+    body = r.text
+    # Sin etiquetas "S{week}" ni aria "Semana X" en los días del carrusel.
+    assert re.search(r"S\d+ \u00b7", body) is None
+    for m in re.finditer(r'aria-label="(\d{2}/\d{2}/\d{2})"', body):
+        assert re.fullmatch(r"\d{2}/\d{2}/\d{2}", m.group(1))
+    # El título de fecha es corto (dd/mm/aa).
+    assert re.search(r'<h2 id="daily-date-title">\d{2}/\d{2}/\d{2}</h2>', body)
+
+
+def test_diario_vista_entrenamiento_by_default(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/diario")
+    assert 'data-vista="entrenamiento"' in r.text
+    assert 'id="daily-training-view" class="daily-view" role="tabpanel"' in r.text
+    assert 'id="daily-food-view" class="daily-view" role="tabpanel" hidden' in r.text
+
+
+def test_diario_vista_alimentacion_activates_food_view(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/diario", params={"vista": "alimentacion"})
+    assert r.status_code == 200
+    assert 'data-vista="alimentacion"' in r.text
+    assert 'id="daily-food-view" class="daily-view" role="tabpanel"' in r.text
+    assert 'id="daily-training-view" class="daily-view" role="tabpanel" hidden' in r.text
+
+
+def test_diario_vista_invalida_vuelve_a_entrenamiento(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/diario", params={"vista": "basura"})
+    assert r.status_code == 200
+    assert 'data-vista="entrenamiento"' in r.text
+    assert 'id="daily-training-view" class="daily-view" role="tabpanel"' in r.text
+    assert 'id="daily-food-view" class="daily-view" role="tabpanel" hidden' in r.text
+
+
+def test_diario_navigator_fragment(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/diario/navigator", params={"fecha": _fecha()})
+    assert r.status_code == 200
+    assert r.text.count("<!DOCTYPE html>") == 0
+    assert 'id="date-navigator"' in r.text
+    assert "Semana" not in r.text
+
+
+def test_export_csv_restored(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    save_session(db, _fecha(), [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/exportar/csv")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/csv")
+    assert "ejercicio" in r.text
+    assert "Press" in r.text
+
+
+def test_export_nutrition_csv_restored(tmp_path, monkeypatch):
+    from src.database import replace_diario_by_fecha
+
+    db = _setup_db(tmp_path)
+    replace_diario_by_fecha(
+        db,
+        _fecha(),
+        [
+            {
+                "alimento": "Avena",
+                "cantidad_g": 120.0,
+                "kcal": 467.0,
+                "carbohidratos": 82.0,
+                "fibra": 12.0,
+                "proteina": 20.0,
+                "grasa": 8.0,
+                "hierro": 5.0,
+                "calcio": 65.0,
+                "vitamina_c": 0.0,
+                "vitamina_a": 0.0,
+            }
+        ],
+    )
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/alimentacion/exportar/csv")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/csv")
+    assert "Avena" in r.text

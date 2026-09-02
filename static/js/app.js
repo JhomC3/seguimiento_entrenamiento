@@ -17,6 +17,7 @@ import { initPanelCollapse } from './panel-collapse.js';
 import { initNutritionRowSortable } from './row-sortable.js';
 import { getCsrfToken, setAlimentoMap, setCategoriaMap, setCicloStart, setCsrfToken } from './state.js';
 import { initSplits } from './splits.js';
+import { initDiario } from './diario.js';
 import { initEntrenoDnD, initTemplateActions, initTemplateSortable } from './templates.js';
 
 function loadConfig() {
@@ -53,6 +54,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // htmx.ajax a #history-section/#unified-chart, que no existen en otras
     // páginas y caerían al body, reemplazando la página completa).
     const isDashboard = !!document.getElementById('dashboard-catalog');
+    const isDiario = !!document.getElementById('daily-page');
     if (isDashboard) {
         initChartInteractions();
         // La cascada restaura el estado de la URL ANTES del render inicial:
@@ -77,6 +79,21 @@ document.addEventListener('DOMContentLoaded', function () {
         initTemplateSortable();
         initEntrenoDnD();
         fitRowsToPanel();
+    }
+    if (isDiario) {
+        initDateNavigation();
+        initEditorActions();
+        initTemplateActions();
+        initNutritionEditor();
+        initNutritionRowSortable(refreshNutritionRowsOrder, ensureNutritionEditable);
+        initNutritionTemplatesDnD();
+        initPanelCollapse();
+        syncEditorFromContent();
+        initEditorRowSortable();
+        initTemplateSortable();
+        initEntrenoDnD();
+        fitRowsToPanel();
+        initDiario();
     }
     initSplits();
     scheduleNotices();

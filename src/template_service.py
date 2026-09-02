@@ -2,7 +2,7 @@ from src.database import (
     delete_plantilla,
     find_plantilla_by_nombre,
     get_ejercicio_categoria,
-    get_last_session_sets,
+    get_last_template_session_sets,
     get_plantilla,
     insert_plantilla,
     update_plantilla,
@@ -137,19 +137,20 @@ def apply_template_rows(db_path: str, plantilla_id: int) -> list[TrainingSetInpu
     if plantilla is None:
         raise NotFoundError("La plantilla no existe.")
     rows: list[TrainingSetInput] = []
-    for ej in plantilla["ejercicios"]:
-        sets = get_last_session_sets(db_path, ej)
-        if sets:
-            for s in sets:
-                rows.append(
-                    TrainingSetInput(
-                        ejercicio=s["ejercicio"],
-                        kg=s["kg"],
-                        reps=s["reps"],
-                        rir=s["rir"],
-                        descanso_seg=s.get("descanso_seg", ""),
-                    )
-                )
-        else:
-            rows.append(TrainingSetInput(ejercicio=ej, kg="", reps="", rir=""))
+    sets = get_last_template_session_sets(db_path, plantilla["ejercicios"])
+    if sets:
+        rows.extend(
+            TrainingSetInput(
+                ejercicio=s["ejercicio"],
+                kg=s["kg"],
+                reps=s["reps"],
+                rir=s["rir"],
+                descanso_seg=s.get("descanso_seg", ""),
+            )
+            for s in sets
+        )
+    else:
+        rows.extend(
+            TrainingSetInput(ejercicio=ej, kg="", reps="", rir="") for ej in plantilla["ejercicios"]
+        )
     return rows

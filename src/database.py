@@ -422,6 +422,46 @@ def get_last_session_sets(db_path: str, ejercicio: str) -> list[dict]:
     ]
 
 
+def get_last_template_session_sets(db_path: str, ejercicios: list[str]) -> list[dict]:
+    """Get the latest complete session matching one workout template.
+
+    Exercise-by-exercise lookups make unrelated Full Body/Torso/Legs sessions
+    bleed into each other. A template identifies one ordered workout, so its
+    carry-over values must come from one matching date.
+    """
+    expected = [str(e).strip().casefold() for e in ejercicios if str(e).strip()]
+    if not expected:
+        return []
+    with read_connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT fecha, ejercicio, set_orden, reps, kg, rir, descanso_seg "
+            "FROM training_sets WHERE fecha IS NOT NULL ORDER BY fecha DESC, set_orden"
+        ).fetchall()
+    by_date: dict[str, list[tuple]] = {}
+    for row in rows:
+        by_date.setdefault(str(row[0]), []).append(row)
+    for session_rows in by_date.values():
+        sequence: list[str] = []
+        for row in session_rows:
+            name = str(row[1]).strip().casefold()
+            if not sequence or sequence[-1] != name:
+                sequence.append(name)
+        if sequence != expected:
+            continue
+        return [
+            {
+                "ejercicio": row[1],
+                "set_orden": row[2],
+                "reps": row[3],
+                "kg": row[4],
+                "rir": row[5],
+                "descanso_seg": row[6],
+            }
+            for row in session_rows
+        ]
+    return []
+
+
 # ---------------------------------------------------------------------------
 # Alimentación: catálogo y diario
 # ---------------------------------------------------------------------------

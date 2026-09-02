@@ -176,11 +176,17 @@ def build_date_navigator(
     grupo: str | None = None,
     ejercicio: str | None = None,
     granularity: str = "day",
+    variant: str = "dashboard",
 ) -> DateNavigatorViewModel:
     """Navigator with a bounded 31-day window centered on the selection.
 
     La ventana se recorta a [ciclo_start, fin del mes siguiente a hoy]; el
     salto preciso (input date) y las flechas navegan el centro de la ventana.
+
+    ``variant``: ``"dashboard"`` conserva el formato UX-3 (semana + fecha
+    explícita con ``granularity``); ``"daily"`` usa etiquetas compactas
+    (día, ``día/mes`` el primero de mes; aria ``dd/mm/aa``) sin la palabra
+    "Semana", para la página independiente del Diario.
     """
     selected = parse_form_date(fecha_iso)
     data_dates = fechas_con_datos(db_path, grupo, ejercicio)
@@ -205,7 +211,10 @@ def build_date_navigator(
     d = start
     while d <= limit_end:
         iso = d.strftime("%Y-%m-%d")
-        if granularity == "day":
+        if variant == "daily":
+            label = f"{d.day}/{d.month}" if d.day == 1 else str(d.day)
+            aria_label = f"{d.day:02d}/{d.month:02d}/{d.year % 100:02d}"
+        elif granularity == "day":
             semana = calculate_cycle_week(d, ciclo_start)
             label_visible = f"S{semana} \u00b7 {d.day:02d}-{d.month:02d}-{str(d.year)[2:]}"
             label_aria = f"Semana {semana} \u00b7 {d.day} de {MONTHS_ES[d.month - 1]} de {d.year}"

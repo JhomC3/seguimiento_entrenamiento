@@ -19,10 +19,17 @@ const DIA_MAP = {
 let inFlightIso = null;
 
 function updateDateTitle(iso) {
-    const el = document.getElementById('session-date-title');
-    if (!el) return;
     const [y, m, d] = iso.split('-').map(Number);
     const fecha = new Date(Date.UTC(y, m - 1, d));
+    // Página independiente del Diario: título propio en formato corto, sin semana.
+    const dailyTitle = document.getElementById('daily-date-title');
+    if (dailyTitle) {
+        dailyTitle.textContent =
+            String(d).padStart(2, '0') + '/' + String(m).padStart(2, '0') + '/' + String(y % 100).padStart(2, '0');
+        return;
+    }
+    const el = document.getElementById('session-date-title');
+    if (!el) return;
     const h3 = el.querySelector('h3');
     if (h3) h3.textContent = DIA_MAP[fecha.getUTCDay()] + ' ' + d + '/' + m + '/' + String(y % 100).padStart(2, '0');
     const span = el.querySelector('span');
@@ -62,6 +69,24 @@ export function doNav(iso, force) {
         jobs.push(
             htmx.ajax('GET', `/alimentacion/editor?fecha=${iso}`, { target: '#nutrition-editor-wrap', swap: 'innerHTML' })
         );
+    }
+    // Diario: las flechas navegan la ventana (15 días por salto); el carrusel
+    // se regenera en cada navegación para que la fecha seleccionada quede
+    // siempre visible y nunca se salga de la ventana. El ajax usa como source
+    // el propio carrusel: htmx encola las peticiones por elemento fuente con
+    // política "last", y un tercer ajax desde body habría descartado el de
+    // alimentación en cola (dejando la fecha del editor de comida atrasada).
+    if (document.getElementById('daily-page')) {
+        const navEl = document.getElementById('date-navigator');
+        if (navEl) {
+            jobs.push(
+                htmx.ajax('GET', `/diario/navigator?fecha=${iso}`, {
+                    source: navEl,
+                    target: '#date-navigator',
+                    swap: 'outerHTML',
+                })
+            );
+        }
     }
     Promise.all(jobs)
         .then(function () {
@@ -162,6 +187,21 @@ export function initDateNavigation() {
 
     const sel = document.querySelector('.date-num.selected');
     if (sel) sel.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'auto' });
+
+    // Diario: el carrusel se regenera tras cada navegación (las flechas saltan
+    // la ventana ±15 días); al re-crearse los botones hay que volver a anclar
+    // la vista a la selección para que siga visible.
+    if (document.getElementById('daily-page')) {
+        document.body.addEventListener('htmx:afterSwap', function (e) {
+            const target = e.detail && e.detail.target;
+            if (target && target.id === 'date-navigator') {
+                const selected = document.querySelector('.date-num.selected');
+                if (selected) {
+                    selected.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+                }
+            }
+        });
+    }
 }
 
 export function updateDateDot(fecha, has) {

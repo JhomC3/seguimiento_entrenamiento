@@ -119,32 +119,145 @@ def test_delete_template(db):
     assert get_plantillas(db) == []
 
 
-def test_apply_template_usa_ultimo_realizado(db):
-    save_session(db, "2026-01-10", [TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1)])
+def test_apply_template_usa_sesion_coincidente_no_mezcla(db):
+    # Una plantilla identifica una sesión completa: la sesión de torso (Press +
+    # Curl) es la única que coincide; la sesión posterior solo de Curl no debe
+    # colarse en los valores de Press.
     save_session(
         db,
-        "2026-01-12",
+        "2026-03-01",
+        [
+            TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
+            TrainingSetInput(ejercicio="Curl", kg=20, reps=10, rir=0),
+        ],
+    )
+    save_session(db, "2026-03-05", [TrainingSetInput(ejercicio="Curl", kg=22, reps=12, rir=1)])
+    pid = save_template(db, TemplateInput(nombre="Torso", ejercicios=["Press", "Curl"])).id
+    rows = apply_template_rows(db, pid)
+    assert [(r.ejercicio, r.kg, r.reps, r.rir) for r in rows] == [
+        ("Press", 80, 8, 1),
+        ("Curl", 20, 10, 0),
+    ]
+
+
+def test_apply_template_dos_plantillas_no_comparten_valores(db):
+    save_session(
+        db,
+        "2026-03-01",
+        [
+            TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
+            TrainingSetInput(ejercicio="Curl", kg=20, reps=10, rir=0),
+        ],
+    )
+    save_session(
+        db,
+        "2026-03-03",
+        [
+            TrainingSetInput(ejercicio="Jalon", kg=60, reps=10, rir=2),
+            TrainingSetInput(ejercicio="Curl", kg=18, reps=12, rir=1),
+        ],
+    )
+    pid_b = save_template(db, TemplateInput(nombre="Jalon", ejercicios=["Jalon", "Curl"])).id
+    rows = apply_template_rows(db, pid_b)
+    assert [(r.ejercicio, r.kg, r.reps, r.rir) for r in rows] == [
+        ("Jalon", 60, 10, 2),
+        ("Curl", 18, 12, 1),
+    ]
+
+
+def test_apply_template_conserva_multiples_series(db):
+    save_session(
+        db,
+        "2026-03-01",
         [
             TrainingSetInput(ejercicio="Press", kg=85, reps=6, rir=2),
             TrainingSetInput(ejercicio="Press", kg=85, reps=5, rir=3),
+            TrainingSetInput(ejercicio="Curl", kg=20, reps=10, rir=0),
         ],
     )
-    save_session(db, "2026-01-13", [TrainingSetInput(ejercicio="Curl", kg=20, reps=10, rir=0)])
     pid = save_template(db, TemplateInput(nombre="T", ejercicios=["Press", "Curl"])).id
     rows = apply_template_rows(db, pid)
-    assert len(rows) == 3
-    assert (rows[0].ejercicio, rows[0].kg, rows[0].reps, rows[0].rir) == ("Press", 85, 6, 2)
-    assert (rows[1].ejercicio, rows[1].kg, rows[1].reps, rows[1].rir) == ("Press", 85, 5, 3)
-    assert (rows[2].ejercicio, rows[2].kg, rows[2].reps, rows[2].rir) == ("Curl", 20, 10, 0)
+    assert [r.kg for r in rows] == [85, 85, 20]
+    assert [r.reps for r in rows] == [6, 5, 10]
 
 
-def test_apply_template_ultimo_realizado_cada_ejercicio(db):
+def test_apply_template_conserva_rir_y_descanso(db):
+    save_session(
+        db,
+        "2026-03-01",
+        [
+            TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1, descanso_seg=120),
+            TrainingSetInput(ejercicio="Curl", kg=20, reps=10, rir=0, descanso_seg=60),
+        ],
+    )
+    pid = save_template(db, TemplateInput(nombre="T", ejercicios=["Press", "Curl"])).id
+    rows = apply_template_rows(db, pid)
+    assert [(r.rir, r.descanso_seg) for r in rows] == [(1, 120), (0, 60)]
+
+
+def test_apply_template_elige_la_fecha_mas_reciente(db):
+    save_session(
+        db,
+        "2026-03-01",
+        [
+            TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
+            TrainingSetInput(ejercicio="Curl", kg=20, reps=10, rir=0),
+        ],
+    )
+    save_session(
+        db,
+        "2026-03-08",
+        [
+            TrainingSetInput(ejercicio="Press", kg=85, reps=6, rir=2),
+            TrainingSetInput(ejercicio="Curl", kg=22, reps=10, rir=1),
+        ],
+    )
+    pid = save_template(db, TemplateInput(nombre="T", ejercicios=["Press", "Curl"])).id
+    rows = apply_template_rows(db, pid)
+    assert [(r.kg, r.reps) for r in rows] == [(85, 6), (22, 10)]
+
+
+def test_apply_template_sin_sesion_coincidente_deja_filas_vacias(db):
+    # Press y Curl nunca se entrenaron juntos en el mismo día: aplicar la
+    # plantilla no debe mezclar sus últimos registros por separado.
     save_session(db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=100, reps=5, rir=1)])
     save_session(db, "2026-02-11", [TrainingSetInput(ejercicio="Curl", kg=18, reps=12, rir=1)])
     save_session(db, "2026-02-12", [TrainingSetInput(ejercicio="Press", kg=102, reps=5, rir=2)])
     pid = save_template(db, TemplateInput(nombre="T", ejercicios=["Curl", "Press"])).id
     rows = apply_template_rows(db, pid)
-    assert [r.kg for r in rows] == [18, 102]
+    assert [(r.ejercicio, r.kg, r.reps, r.rir) for r in rows] == [
+        ("Curl", "", "", ""),
+        ("Press", "", "", ""),
+    ]
+
+
+def test_apply_template_conserva_el_orden_de_la_plantilla(db):
+    save_session(
+        db,
+        "2026-03-01",
+        [
+            TrainingSetInput(ejercicio="Curl", kg=20, reps=10, rir=0),
+            TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
+            TrainingSetInput(ejercicio="Fondos", kg=50, reps=9, rir=2),
+        ],
+    )
+    pid = save_template(db, TemplateInput(nombre="T", ejercicios=["Curl", "Press", "Fondos"])).id
+    rows = apply_template_rows(db, pid)
+    assert [r.ejercicio for r in rows] == ["Curl", "Press", "Fondos"]
+
+
+def test_apply_template_case_insensitive(db):
+    save_session(
+        db,
+        "2026-03-01",
+        [
+            TrainingSetInput(ejercicio="Press", kg=80, reps=8, rir=1),
+            TrainingSetInput(ejercicio="Curl", kg=20, reps=10, rir=0),
+        ],
+    )
+    pid = save_template(db, TemplateInput(nombre="T", ejercicios=["press", "CURL"])).id
+    rows = apply_template_rows(db, pid)
+    assert [r.ejercicio for r in rows] == ["Press", "Curl"]
 
 
 def test_apply_template_sin_historial_deja_fila_vacia(db):

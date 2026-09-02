@@ -263,6 +263,7 @@ def _navigator_html(
     grupo: str | None = None,
     ejercicio: str | None = None,
     granularity: str = "day",
+    variant: str = "dashboard",
 ) -> str:
     vm = build_date_navigator(
         DB_PATH,
@@ -272,6 +273,7 @@ def _navigator_html(
         grupo=grupo,
         ejercicio=ejercicio,
         granularity=granularity,
+        variant=variant,
     )
     return _render_body(
         templates.TemplateResponse(
@@ -284,6 +286,16 @@ def _navigator_html(
             },
         )
     )
+
+
+def _daily_app_config() -> dict[str, object]:
+    """Shared config for the standalone daily page and its editors."""
+    return {
+        "categoria_map": get_ejercicio_categoria(DB_PATH),
+        "alimento_map": _alimento_preview_map(),
+        "ciclo_start": CICLO_START_DATE.isoformat(),
+        "csrf_token": make_csrf_token(get_csrf_secret()),
+    }
 
 
 def _editor_html(
@@ -444,10 +456,7 @@ def _alimento_preview_map() -> dict[str, dict[str, float]]:
 
 
 def _nutrition_app_config() -> dict:
-    return {
-        "alimento_map": _alimento_preview_map(),
-        "csrf_token": make_csrf_token(get_csrf_secret()),
-    }
+    return _daily_app_config()
 
 
 def _nutrition_fecha_display(fecha_iso: str) -> str:
@@ -601,16 +610,23 @@ def _cardio_day_html(request: Request, fecha: str) -> str:
     )
 
 
+@app.get("/diario", response_class=HTMLResponse)
 @app.get("/registro", response_class=HTMLResponse)
-def registro_page(request: Request, fecha: str = Query(default="")):
-    """Página dedicada de registro diario: navegador + editores + cardio."""
+def diario_page(
+    request: Request,
+    fecha: str = Query(default=""),
+    vista: str = Query(default="entrenamiento"),
+):
+    """Standalone daily workspace; ``/registro`` remains a compatibility alias."""
     from datetime import date as _date
 
     if not fecha:
         fecha = _date.today().isoformat()
+    if vista not in {"entrenamiento", "alimentacion"}:
+        vista = "entrenamiento"
     fecha_date = _date.fromisoformat(fecha)
     context = {
-        "navigator_html": _navigator_html(request, fecha, granularity="day"),
+        "navigator_html": _navigator_html(request, fecha, variant="daily"),
         "nutrition_templates_html": _plantillas_alimentacion_list_html(request, fecha),
         "nutrition_editor_html": _nutrition_editor_html(request, fecha),
         "editor_html": _editor_html(request, fecha),
@@ -620,13 +636,21 @@ def registro_page(request: Request, fecha: str = Query(default="")):
         "plantillas_html": _plantillas_list_html(request),
         "dia": day_from_date(fecha_date),
         "fecha_display": fecha_display(fecha),
-        "semana": calculate_cycle_week(fecha_date, CICLO_START_DATE),
+        "daily_date_title": f"{fecha_date.day:02d}/{fecha_date.month:02d}/{fecha_date.year % 100:02d}",
+        "vista": vista,
+        "app_config_json": _daily_app_config(),
     }
     return HTMLResponse(
         content=_render_body(
-            templates.TemplateResponse(request=request, name="registro.html", context=context)
+            templates.TemplateResponse(request=request, name="diario.html", context=context)
         )
     )
+
+
+@app.get("/diario/navigator", response_class=HTMLResponse)
+def diario_navigator(request: Request, fecha: str = Query(...)):
+    """Fragmento del carrusel de fechas del Diario (variante compacta)."""
+    return HTMLResponse(content=_navigator_html(request, fecha, variant="daily"))
 
 
 @app.get("/editor/popup", response_class=HTMLResponse)
@@ -772,6 +796,7 @@ def ejercicio_nuevo(
     form_html = _exercise_form_html(request)
     return HTMLResponse(
         content=notice_success
+        + app_config_oob(_daily_app_config())
         + fragment_oob(templates, request, "exercise-create", form_html, swap="outerHTML")
     )
 
@@ -1476,6 +1501,37 @@ async def health_sync_ingest(request: Request):
                 for r in result.rejected
             ],
         }
+    )
+
+
+@app.get("/exportar/csv", response_class=Response)
+def export_csv():
+    """CSV completo de training_sets (export de compatibilidad)."""
+    with read_connection(DB_PATH) as conn:
+        df = pd.read_sql_query("SELECT * FROM training_sets ORDER BY fecha, set_orden", conn)
+    csv = "\ufeff" + df.to_csv(index=False)
+    return Response(
+        content=csv,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="entrenamientos.csv"'},
+    )
+
+
+@app.get("/alimentacion/exportar/csv", response_class=Response)
+def export_nutrition_csv():
+    """CSV completo de diario_alimentacion (export de compatibilidad)."""
+    with read_connection(DB_PATH) as conn:
+        df = pd.read_sql_query(
+            "SELECT fecha, orden, alimento, cantidad_g, kcal, carbohidratos, fibra, "
+            "proteina, grasa, hierro, calcio, vitamina_c, vitamina_a, origen "
+            "FROM diario_alimentacion ORDER BY fecha, orden",
+            conn,
+        )
+    csv = "\ufeff" + df.to_csv(index=False)
+    return Response(
+        content=csv,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="alimentacion.csv"'},
     )
 
 
