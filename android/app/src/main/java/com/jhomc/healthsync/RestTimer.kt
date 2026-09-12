@@ -25,7 +25,7 @@ class RestTimer {
         private set
 
     /** Lo que debe cerrar el llamante antes de abrir lo nuevo (o null). */
-    data class ToClose(val intervalId: Long, uuid: String, startElapsed: Long)
+    data class ToClose(val intervalId: Long, val uuid: String, val startElapsed: Long)
 
     fun pendingClose(): ToClose? = running?.let { ToClose(it.intervalId, it.uuid, it.startElapsed) }
 
