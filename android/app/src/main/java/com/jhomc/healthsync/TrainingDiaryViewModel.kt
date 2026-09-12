@@ -293,7 +293,8 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         val cur = drafts[index]
         fun shift(raw: String, step: Double): String {
             val base = raw.trim().replace(",", ".").toDoubleOrNull() ?: 0.0
-            val next = (base + step).coerceAtLeast(0.0)
+            // Redondeo a 1 decimal: con pasos de 0.1 el binario acumula error.
+            val next = (kotlin.math.round((base + step) * 10) / 10.0).coerceAtLeast(0.0)
             return if (next % 1.0 == 0.0) next.toLong().toString() else next.toString()
         }
         drafts[index] = when (field) {

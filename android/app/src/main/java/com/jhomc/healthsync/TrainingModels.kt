@@ -119,7 +119,7 @@ data class CardioSession(
 const val KG_STEP = 1.0
 const val KG_STEP_LONG = 5.0
 const val REPS_STEP = 1.0
-const val RIR_STEP = 0.5
+const val RIR_STEP = 0.1
 const val VEL_STEP = 0.5
 const val DIF_STEP = 0.5
 
