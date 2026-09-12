@@ -182,17 +182,18 @@ def test_chart_muscle_exercises_compilado_solo(setup_test_db):
 
     db = setup_test_db
     fig = chart_selection(db, ["Pectoral"], [])
-    assert len(fig.data) == 2  # Global + músculo translúcido
+    assert len(fig.data) == 3  # Global + músculo translúcido + RIR
     names = [t.name for t in fig.data]
     assert "Global" in names
     assert "Pectoral" in names
+    assert "RIR" in names
 
 
 def test_chart_un_musculo_mantiene_global_y_nombra_musculo(setup_test_db):
     from src.charts import chart_selection
 
     fig = chart_selection(setup_test_db, ["Pectoral"], [])
-    global_trace, muscle_trace = fig.data
+    global_trace, muscle_trace = fig.data[0], fig.data[1]
     assert global_trace.name == "Global"
     assert global_trace.line.color == "#e56d88"
     assert muscle_trace.name == "Pectoral"
@@ -205,9 +206,10 @@ def test_chart_muscle_exercises_una_traza_por_ejercicio(setup_test_db):
 
     db = setup_test_db
     fig = chart_selection(db, ["Pectoral"], ["Press Convergente"])
-    assert len(fig.data) == 2  # músculo guía (UX-2) + ejercicio
+    assert len(fig.data) == 3  # músculo guía (UX-2) + ejercicio + RIR
     assert fig.data[0].name == "Pectoral"
     assert fig.data[1].name == "Press Convergente"
+    assert fig.data[2].name == "RIR"
     # UX-2: nunca "Compilado"; el nombre viaja en customdata[8].
     assert all(t.name != "Compilado" for t in fig.data)
     assert fig.data[1].customdata[0][8] == "Press Convergente"
@@ -219,8 +221,8 @@ def test_chart_muscle_exercises_filtra_ejercicios_ajenos(setup_test_db):
 
     db = setup_test_db
     fig = chart_selection(db, ["Pectoral"], ["Press Convergente", "Curl Bayesian"])
-    # "Curl Bayesian" pertenece a Biceps: se descarta, quedan compilado + Press
-    assert len(fig.data) == 2
+    # "Curl Bayesian" pertenece a Biceps: se descarta, quedan compilado + Press + RIR
+    assert len(fig.data) == 3
     names = [t.name for t in fig.data]
     assert "Curl Bayesian" not in names
 
@@ -273,13 +275,13 @@ def test_chart_selection_dos_musculos_global_mas_tenues(setup_test_db):
     conn.commit()
     conn.close()
     fig = chart_selection(db, ["Pectoral", "Biceps"], [])
-    # Global sólido (referencia) + un músculo tenue por cada seleccionado.
-    assert len(fig.data) == 3
+    # Global sólido (referencia) + un músculo tenue por cada seleccionado + RIR.
+    assert len(fig.data) == 4
     global_trace = fig.data[0]
     assert global_trace.name == "Global"
     assert global_trace.line.color == "#e56d88"
     assert global_trace.line.width == 2.5
-    for trace in fig.data[1:]:
+    for trace in fig.data[1:-1]:
         assert trace.line.color.startswith("rgba(")
         assert trace.line.color.endswith(", 0.4)")
         assert trace.line.width == 3.5
@@ -338,6 +340,116 @@ def test_chart_semantics_decision_matrix(setup_test_db, musculos, ejercicios, ex
     names = [t.name for t in fig.data]
     for name in expected_names:
         assert name in names, f"Expected '{name}' in {names}"
+    # La traza RIR acompaña a todos los estados con datos.
+    assert "RIR" in names, f"RIR ausente en {names}"
+
+
+# ---------------------------------------------------------------------------
+# RIR medio en la principal: traza única pooled, eje derecho, siempre presente
+# ---------------------------------------------------------------------------
+
+
+def _rir_db(tmp_path):
+    """DB con RIR divergente por músculo: Pectoral=1, Espalda=5 (misma semana)."""
+    import sqlite3
+
+    from src.database import insert_exercise
+
+    db = str(tmp_path / "rir.db")
+    init_db(db)
+    insert_exercise(db, "Press", "Pectoral", "EMPUJE")
+    insert_exercise(db, "Remo", "Espalda", "JALON")
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) "
+        "VALUES (1, 'LUNES', '2026-05-04', 1, 'Press', 8, 80, 1),"
+        "       (1, 'LUNES', '2026-05-04', 1, 'Remo', 8, 60, 5)"
+    )
+    conn.commit()
+    conn.close()
+    return db
+
+
+def _rir_trace(fig):
+    matches = [t for t in fig.data if t.name == "RIR"]
+    assert len(matches) == 1, f"una sola traza RIR: {[t.name for t in fig.data]}"
+    return matches[0]
+
+
+@pytest.mark.parametrize("gran", ["day", "week", "month"])
+def test_rir_presente_en_todos_estados_y_granularidades(tmp_path, gran):
+    db = _rir_db(tmp_path)
+    for musculos, ejercicios in (
+        ([], []),
+        (["Pectoral"], []),
+        (["Pectoral"], ["Press"]),
+        (["Pectoral", "Espalda"], []),
+    ):
+        fig = chart_selection(db, musculos, ejercicios, gran)
+        rir = _rir_trace(fig)
+        assert rir.yaxis == "y2"
+        assert rir.line.dash == "dash"
+        assert rir.line.color == "rgba(255, 255, 255, 0.35)"
+        assert len(rir.customdata[0]) == 9
+        assert rir.customdata[0][8] == "RIR"
+        assert rir.hovertemplate is None
+
+
+def test_rir_sigue_al_ambito_seleccionado(tmp_path):
+    db = _rir_db(tmp_path)
+    global_rir = _rir_trace(chart_selection(db, [], [], "week"))
+    assert list(global_rir.y) == [pytest.approx(3.0)]  # pooled (1+5)/2
+    assert list(global_rir.x) == [1]
+    pectoral_rir = _rir_trace(chart_selection(db, ["Pectoral"], [], "week"))
+    assert list(pectoral_rir.y) == [pytest.approx(1.0)]
+    ejercicio_rir = _rir_trace(chart_selection(db, ["Pectoral"], ["Press"], "week"))
+    assert list(ejercicio_rir.y) == [pytest.approx(1.0)]
+    # El tooltip lleva el RIR en la posición 6 del contrato de 9.
+    assert ejercicio_rir.customdata[0][5] == "1.0"
+
+
+def test_rir_ausente_cuenta_como_cero(tmp_path):
+    import sqlite3
+
+    from src.database import insert_exercise
+
+    db = str(tmp_path / "rir_null.db")
+    init_db(db)
+    insert_exercise(db, "Press", "Pectoral", "EMPUJE")
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) "
+        "VALUES (1, 'LUNES', '2026-05-04', 1, 'Press', 8, 80, NULL)"
+    )
+    conn.commit()
+    conn.close()
+    # Misma semántica que el hover (fillna 0): la línea marca 0.0, no hueco.
+    rir = _rir_trace(chart_selection(db, [], [], "week"))
+    assert list(rir.y) == [pytest.approx(0.0)]
+
+
+def test_rir_eje_derecho_ajustado(tmp_path):
+    db = _rir_db(tmp_path)
+    fig = chart_selection(db, ["Pectoral"], [], "week")
+    y2 = fig.layout.yaxis2
+    assert y2.overlaying == "y"
+    assert y2.side == "right"
+    assert y2.showgrid is False
+    lo, hi = y2.range
+    assert lo < 1.0 < hi  # ajustado al dato, sin base en 0
+    assert hi - lo < 5
+    # El eje principal conserva su línea base 0 (el RIR no lo contamina).
+    assert fig.layout.yaxis.range[0] <= 0
+
+
+def test_rir_sin_datos_no_inventa(tmp_path):
+    from src.database import init_db as _init
+
+    db = str(tmp_path / "rir_empty.db")
+    _init(db)
+    fig = chart_selection(db, ["Pectoral"], [], "week")
+    assert len(fig.data) == 0
+    assert [t.name for t in fig.data] == []
 
 
 def test_chart_semantics_empty_db(tmp_path):
@@ -416,26 +528,28 @@ def test_pfr_df_day_datos_nulos_no_rompen(setup_test_db, tmp_path):
 
 def test_chart_selection_day_global_musculo_ejercicio(setup_test_db):
     """Contratos Global/músculo/ejercicio intactos con gran=day: las trazas usan
-    fechas, el eje X se titula 'Fecha' y los nombres son los canónicos."""
+    fechas, el eje X no lleva título (lo indica el selector) y los nombres son
+    los canónicos."""
     # Global (0 músculos)
     fig0 = chart_selection(setup_test_db, [], [], "day")
-    assert [t.name for t in fig0.data] == ["Global"]
-    assert fig0.layout.xaxis.title.text == "Fecha"
+    assert [t.name for t in fig0.data] == ["Global", "RIR"]
+    assert not fig0.layout.xaxis.title.text
+    assert not fig0.layout.yaxis.title.text
     # Sistema Global y Compilado (músculo)
     fig1 = chart_selection(setup_test_db, ["Pectoral"], [], "day")
-    assert [t.name for t in fig1.data] == ["Global", "Pectoral"]
+    assert [t.name for t in fig1.data] == ["Global", "Pectoral", "RIR"]
     for t in fig1.data:
         assert list(t.x) == ["2026-05-04", "2026-05-08", "2026-05-11"]
     # Ejercicios (músculo guía + ejercicio, sin Global — D2; UX-2: sin Compilado)
     fig2 = chart_selection(setup_test_db, ["Pectoral"], ["Press Convergente"], "day")
-    assert [t.name for t in fig2.data] == ["Pectoral", "Press Convergente"]
+    assert [t.name for t in fig2.data] == ["Pectoral", "Press Convergente", "RIR"]
 
 
 def test_chart_selection_day_con_seleccion_persistida(setup_test_db):
     """Granularidad day con músculo+ejercicio persistentes: tanto el Compilado
     como el ejercicio realmente comparten el eje de fechas diario."""
     fig = chart_selection(setup_test_db, ["Pectoral"], ["Press Convergente"], "day")
-    assert len(fig.data) == 2
+    assert len(fig.data) == 3
     for t in fig.data:
         assert list(t.x) == ["2026-05-04", "2026-05-08", "2026-05-11"]
 
@@ -448,6 +562,8 @@ def test_pfr_df_day_tooltip_diario(setup_test_db):
         fila = t.customdata[0]
         assert len(fila) == 9
         assert fila[0] == "4 mayo"
+        if t.name == "RIR":
+            continue
         assert fila[1].startswith(("+", "-")) or fila[1] == "0.0%"
 
 
@@ -455,7 +571,7 @@ def test_pfr_trace_week_inmutable(setup_test_db):
     """Regresión: la agregación semanal no cambia: eje X = semanas (1,2), no
     fechas diarias, mismo nº de puntos (2 semanas)."""
     fig = chart_selection(setup_test_db, ["Pectoral"], [], "week")
-    assert [t.name for t in fig.data] == ["Global", "Pectoral"]
+    assert [t.name for t in fig.data] == ["Global", "Pectoral", "RIR"]
     assert len(fig.data[0].x) == 2
     # Los valores X de la semana son números de semana, no fechas 'YYYY-MM-DD'.
     for t in fig.data:
@@ -533,7 +649,7 @@ def test_day_global_musculo_ejercicio_ticktext_consistente(setup_test_db):
     """Global/músculo/ejercicio comparten el mismo ticktext compacto."""
     fig = chart_selection(setup_test_db, ["Pectoral"], ["Press Convergente"], "day")
     assert fig.layout.xaxis.ticktext == ("04", "08", "11")
-    assert fig.layout.xaxis.title.text == "Fecha"
+    assert not fig.layout.xaxis.title.text
 
 
 def test_day_tick_cantidad_no_equals_puntos(tmp_path):
@@ -596,10 +712,6 @@ def _layout_signature(fig) -> dict:
             "t": margin.t,
             "b": margin.b,
         },
-        "legend_y": fig.layout.legend.y,
-        "legend_orientation": fig.layout.legend.orientation,
-        "legend_xanchor": fig.layout.legend.xanchor,
-        "legend_yanchor": fig.layout.legend.yanchor,
         "showlegend": fig.layout.showlegend,
         "dragmode": fig.layout.dragmode,
     }
@@ -607,8 +719,9 @@ def _layout_signature(fig) -> dict:
 
 def test_chart_layout_estable_entre_estados(setup_test_db):
     """Global, 1 músculo, 1 músculo+ejercicio y 2 músculos comparten EXACTAMENTE
-    el mismo margen y configuración de leyenda: seleccionar o deseleccionar no
-    redimensiona ni reposiciona el panel de la gráfica."""
+    el mismo margen y altura: seleccionar o deseleccionar no redimensiona ni
+    reposiciona el panel de la gráfica. Sin leyenda ni títulos (el tooltip
+    cristal es el único identificador de traza)."""
     import sqlite3
 
     db = setup_test_db
@@ -632,21 +745,20 @@ def test_chart_layout_estable_entre_estados(setup_test_db):
     reference = signatures["global"]
     for name, sig in signatures.items():
         assert sig == reference, f"{name} difiere del global:\n{sig}\nvs\n{reference}"
-    # La leyenda vive FUERA del área de trazado (y > 1) en todos los estados.
-    assert all(sig["legend_y"] > 1 for sig in signatures.values())
-    assert all(sig["showlegend"] is True for sig in signatures.values())
-    # Margen superior reducido (48) pero suficiente para la banda de leyenda.
-    assert reference["margin"]["t"] == 48
-    assert reference["legend_y"] == 1.08
+    # Sin leyenda en ningún estado; sin títulos de eje (los indica el selector).
+    assert all(sig["showlegend"] is False for sig in signatures.values())
+    # r44 reserva sitio a los ticks del eje RIR derecho, idéntico en estados.
+    assert reference["margin"] == {"l": 48, "r": 44, "t": 20, "b": 28}
+    for name, fig in states.items():
+        assert not fig.layout.xaxis.title.text, name
+        assert not fig.layout.yaxis.title.text, name
 
 
-def test_chart_global_muestra_leyenda_en_banda_superior(setup_test_db):
-    """El modo global también renderiza leyenda: la banda superior nunca pasa
-    de vacía a ocupada (esa transición era la que encogía la gráfica)."""
+def test_chart_global_sin_leyenda(setup_test_db):
+    """El modo global tampoco renderiza leyenda: sin banda superior reservada,
+    el área de trazado es máxima y estable entre estados."""
     fig = chart_pfr_timeline(setup_test_db, "systemic", granularity="day")
-    assert fig.layout.showlegend is True
-    assert fig.layout.legend.orientation == "h"
-    assert fig.layout.legend.y > 1
+    assert fig.layout.showlegend is False
     # Misma firma que la figura de selección muscular.
     sel = chart_selection(setup_test_db, ["Pectoral"], [], "day")
     assert _layout_signature(fig) == _layout_signature(sel)
@@ -1487,11 +1599,17 @@ def test_todas_las_trazas_son_lineas_continuas_sin_puntos(setup_test_db):
             fig = chart_selection(setup_test_db, musculos, ejercicios, gran)
             for trace in fig.data:
                 assert trace.mode == "lines", f"{gran} {musculos}/{ejercicios} mode {trace.mode}"
-                assert trace.line.dash in ("solid", None), f"{gran} dash {trace.line.dash}"
+                if trace.name == "RIR":
+                    assert trace.line.dash == "dash", trace.line.dash
+                else:
+                    assert trace.line.dash in ("solid", None), f"{gran} dash {trace.line.dash}"
                 assert getattr(trace, "marker", None) is None or getattr(
                     trace.marker, "size", None
                 ) in (None, 0)
         fig2 = chart_pfr_timeline(setup_test_db, "systemic", granularity=gran)
         for trace in fig2.data:
             assert trace.mode == "lines"
-            assert trace.line.dash == "solid"
+            if trace.name == "RIR":
+                assert trace.line.dash == "dash"
+            else:
+                assert trace.line.dash == "solid"

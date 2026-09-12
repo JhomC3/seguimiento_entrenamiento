@@ -1854,8 +1854,8 @@ def test_nivel_acepta_granularidad_y_rechaza_invalida(tmp_path, monkeypatch):
     r = client.get("/nivel", params={"tipo": "musculo", "gran": "quincena"})
 
 
-def _index_xaxis_title(html: str) -> str:
-    """Extrae el título del eje X de la gráfica sistémica server-renderizada."""
+def _index_chart_layout(html: str) -> dict:
+    """Extrae el layout de la gráfica sistémica server-renderizada."""
     import json as _json
     import re as _re
 
@@ -1863,12 +1863,21 @@ def _index_xaxis_title(html: str) -> str:
     assert m, "no hay unified-chart-data en /"
     dat = _json.loads(m.group(1))
     assert dat.get("layout"), f"figura sin layout (¿sin datos?): {list(dat)}"
-    return dat["layout"]["xaxis"]["title"]["text"]
+    return dat["layout"]
+
+
+def _index_sin_titulos_ni_leyenda(html: str) -> None:
+    """La gráfica no lleva títulos de eje ni leyenda (los indica el selector;
+    el tooltip identifica trazas)."""
+    layout = _index_chart_layout(html)
+    assert not layout["xaxis"].get("title", {}).get("text")
+    assert not layout["yaxis"].get("title", {}).get("text")
+    assert layout.get("showlegend") is False
 
 
 def test_index_renderiza_grafica_con_gran_de_url(tmp_path, monkeypatch):
-    """La carga inicial respeta gran de la URL: el eje server-renderizado usa
-    la misma granularidad que el selector (day→Fecha, week→Semana, month→Mes)."""
+    """La carga inicial respeta gran de la URL: los ticks server-renderizados
+    usan la granularidad del selector, sin títulos de eje ni leyenda."""
     from src.models import TrainingSetInput
     from src.training_service import save_session
 
@@ -1876,14 +1885,13 @@ def test_index_renderiza_grafica_con_gran_de_url(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "DB_PATH", db)
     save_session(db, _fecha(), [TrainingSetInput("Press", 80, 8, 1)])
     client = _client()
-    casos = {"day": "Fecha", "week": "Semana", "month": "Mes"}
-    for gran, esperado in casos.items():
+    for gran in ("day", "week", "month"):
         r = client.get("/", params={"gran": gran})
         assert r.status_code == 200, (gran, r.status_code)
-        assert _index_xaxis_title(r.text) == esperado, gran
-    # Sin parámetro → default day.
+        _index_sin_titulos_ni_leyenda(r.text)
+    # Sin parámetro → default day, también sin títulos.
     r = client.get("/")
-    assert _index_xaxis_title(r.text) == "Fecha"
+    _index_sin_titulos_ni_leyenda(r.text)
 
 
 def test_index_selector_y_grafica_sin_estados_contradictorios(tmp_path, monkeypatch):
@@ -1896,16 +1904,15 @@ def test_index_selector_y_grafica_sin_estados_contradictorios(tmp_path, monkeypa
     monkeypatch.setattr(appmod, "DB_PATH", db)
     save_session(db, _fecha(), [TrainingSetInput("Press", 80, 8, 1)])
     client = _client()
-    eje_por_gran = {"day": "Fecha", "week": "Semana", "month": "Mes"}
-    for gran, eje in eje_por_gran.items():
+    for gran in ("day", "week", "month"):
         html = client.get("/", params={"gran": gran}).text
         activos = re.findall(
             r'data-action="set-granularity"[^>]*data-gran="([a-z]+)"[^>]*aria-pressed="true"',
             html,
         )
-        # Exactamente un botón activo y coincide con el eje de la gráfica.
+        # Exactamente un botón activo y coincide con la granularidad pedida.
         assert activos == [gran], f"gran={gran}: selector activo {activos}"
-        assert _index_xaxis_title(html) == eje, f"gran={gran}"
+        _index_sin_titulos_ni_leyenda(html)
 
 
 def test_index_gran_invalida_error_seguro(tmp_path, monkeypatch):

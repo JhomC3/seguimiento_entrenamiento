@@ -125,7 +125,8 @@ function refreshChart() {
 
 function popupIsOpen() {
     const popup = document.getElementById('editor-popup');
-    return popup && popup.open;
+    if (popup) return !!popup.open;
+    return !!document.querySelector('dialog[open]');
 }
 
 function clearHighlightAndDetails() {
@@ -287,6 +288,11 @@ function updateDashboardViewportOffset() {
     if (!page || !anchor) return;
     const top = anchor.getBoundingClientRect().top;
     page.style.setProperty('--dashboard-layout-top', `${Math.max(0, top)}px`);
+    const header = document.querySelector('.dashboard-header');
+    if (header) {
+        const headerH = Math.ceil(header.getBoundingClientRect().height + 32);
+        page.style.setProperty('--dashboard-header-h', `${Math.max(60, headerH)}px`);
+    }
 }
 
 // --- Catálogo: máquina de estado única (rail desktop / drawer móvil) -------
@@ -510,6 +516,18 @@ export function initLevelCascade() {
     updateDashboardViewportOffset();
     new ResizeObserver(updateDashboardViewportOffset).observe(document.querySelector('.dashboard-header') || document.body);
     window.addEventListener('resize', updateDashboardViewportOffset);
+    // Cambio de breakpoint: re-sincroniza drawer/rail sin perder selección.
+    let _lastMobile = window.matchMedia('(max-width: 1023px)').matches;
+    window.addEventListener('resize', function () {
+        const isMobile = window.matchMedia('(max-width: 1023px)').matches;
+        if (isMobile === _lastMobile) return;
+        _lastMobile = isMobile;
+        const pageEl = document.querySelector('.dashboard-page');
+        if (!pageEl) return;
+        const collapsed = pageEl.classList.contains('is-catalog-collapsed');
+        setCatalogCollapsed(isMobile ? true : collapsed);
+        updateDashboardViewportOffset();
+    });
     restoreFromURL();
     markGranularity();
 }

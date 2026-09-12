@@ -400,14 +400,14 @@ def test_click_en_punto_no_navega_ni_cambia_estado(page, server):
     Día/Semana/Mes NO navega, NO abre popup, NO llama /semana/primer-entreno,
     NO modifica URL ni granularidad ni selección."""
     _open_popup(page, server)
-    page.locator(f'#popup-body .date-num[data-iso="{_iso(4)}"]').click()
+    page.locator(f'#date-navigator .date-num[data-iso="{_iso(4)}"]').click()
     _wait_editor_settled(page)
     _fill_row(page, 0)
     page.click('#edit-actions button[type="submit"]')
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.click("#popup-close")
+    page.goto(server)
 
     _catalog_select_muscle(page, "Pectoral")
 
@@ -419,7 +419,7 @@ def test_click_en_punto_no_navega_ni_cambia_estado(page, server):
         lambda r: primer_requests.append(r.url) if "primer-entreno" in r.url else None,
     )
 
-    for gran, eje in (("day", "Fecha"), ("week", "Semana"), ("month", "Mes")):
+    for gran in ("day", "week", "month"):
         page.locator(f'#granularity-selector [data-gran="{gran}"]').click()
         page.wait_for_timeout(500)
         url_before = page.url
@@ -446,7 +446,7 @@ def test_click_en_punto_no_navega_ni_cambia_estado(page, server):
         assert not page.locator("#editor-popup[open]").count(), gran
         assert primer_requests == [], f"{gran}: llamó primer-entreno {primer_requests}"
         st = _chart_state(page)
-        assert st["xaxis"] == eje, f"{gran}: eje cambió a {st['xaxis']}"
+        assert st["xshape"] == gran, f"{gran}: forma X cambió a {st['xshape']}"
         assert f"gran={gran}" in page.url
         expect(
             page.locator(
@@ -469,7 +469,7 @@ def test_back_forward_granularidad_tras_clics_en_puntos(page, server):
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.click("#popup-close")
+    page.goto(server)
 
     _catalog_select_muscle(page, "Pectoral")
 
@@ -503,7 +503,7 @@ def test_back_forward_granularidad_tras_clics_en_puntos(page, server):
         page.locator('#granularity-selector [data-gran="week"][aria-pressed="true"]')
     ).to_be_visible(timeout=5000)
     st = _chart_state(page)
-    assert st["xaxis"] == "Semana", st
+    assert st["xshape"] == "week", st
     expect(
         page.locator(
             '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
@@ -533,7 +533,7 @@ def test_cascade_musculo_persistente_y_multi_traza(page, server):
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.click("#popup-close")
+    page.goto(server)
 
     # Grupos del catálogo siempre visibles (Pectoral, Biceps).
     group = page.locator('#dashboard-catalog .db-group[data-group="Pectoral"]')
@@ -616,9 +616,11 @@ def test_mobile_viewport_renders(page, server):
 
 def test_keyboard_day_shift_updates_editor(page, server):
     _open_popup(page, server)
-    page.locator("#popup-body .today-btn").click()
+    page.locator("#date-navigator .today-btn").click()
     _wait_editor_settled(page)
     fecha = page.input_value("#session-form input[name='fecha']")
+    # El navigator del Diario se regenera tras el click: re-anclar el foco.
+    page.locator("#date-navigator .today-btn").focus()
     page.keyboard.press("ArrowRight")
     page.wait_for_function(
         "(expected) => document.querySelector(\"#session-form input[name='fecha']\").value !== expected",
@@ -726,7 +728,7 @@ def test_recarga_mantiene_musculo_y_ejercicios_seleccionados(page, server):
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.click("#popup-close")
+    page.goto(server)
 
     _catalog_select_muscle(page, "Pectoral")
     muscle_input = page.locator(
@@ -777,14 +779,14 @@ def test_multimusculo_con_shift_click_mantiene_global(page, server):
         "Entrenamiento guardado", timeout=2000
     )
     # Sesión del segundo músculo (día distinto) para que su traza tenga datos.
-    page.locator(f'#popup-body .date-num[data-iso="{_iso(1)}"]').click()
+    page.locator(f'#date-navigator .date-num[data-iso="{_iso(1)}"]').click()
     page.wait_for_timeout(400)
     _fill_row(page, 0, ejercicio="Curl", kg="12", reps="10", rir="1")
     page.click('#edit-actions button[type="submit"]')
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.click("#popup-close")
+    page.goto(server)
 
     pectoral = page.locator(
         '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
@@ -850,7 +852,7 @@ def test_multiejercicios_con_shift_click(page, server):
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.click("#popup-close")
+    page.goto(server)
 
     _catalog_select_muscle(page, "Pectoral")
     exercise_chip = page.locator('#dashboard-catalog .db-exercise-row[data-foco="Press"]')
@@ -1191,12 +1193,12 @@ def _granularity_select(page):
 
 
 def _seed_sessions(page, server, dates, ejercicio="Press"):
-    """Guarda una sesión de `ejercicio` en cada fecha (ISO) usando el popup.
-    Luego cierra el popup y devuelve la página en el dashboard."""
+    """Guarda una sesión de `ejercicio` en cada fecha (ISO) usando /diario.
+    Luego vuelve al dashboard."""
     _open_popup(page, server)
     for iso in dates:
-        page.locator(f'#popup-body .date-num[data-iso="{iso}"]').click()
-        expect(page.locator(f'#popup-body .date-num[data-iso="{iso}"]')).to_have_class(
+        page.locator(f'#date-navigator .date-num[data-iso="{iso}"]').click()
+        expect(page.locator(f'#date-navigator .date-num[data-iso="{iso}"]')).to_have_class(
             re.compile(r"\bselected\b")
         )
         expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
@@ -1271,7 +1273,7 @@ def test_b1_cambiar_granularidad_persiste_url_y_seleccion(page, server):
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.click("#popup-close")
+    page.goto(server)
 
     _catalog_select_muscle(page, "Pectoral")
     chip = page.locator('#dashboard-catalog .db-exercise-row[data-foco="Press"]')
@@ -1346,7 +1348,7 @@ def test_recarga_granularidad_sincroniza_grafica_y_selector(page, server):
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.click("#popup-close")
+    page.goto(server)
 
     # Seleccionar el músculo UNA vez: persiste entre recargas y cambios de gran.
     _catalog_select_muscle(page, "Pectoral")
@@ -1356,7 +1358,7 @@ def test_recarga_granularidad_sincroniza_grafica_y_selector(page, server):
         )
     ).to_have_attribute("aria-pressed", "true")
 
-    for gran, eje in (("week", "Semana"), ("month", "Mes")):
+    for gran in ("week", "month"):
         page.locator(f'#granularity-selector [data-gran="{gran}"]').click()
         page.wait_for_timeout(600)
         assert f"gran={gran}" in page.url
@@ -1368,16 +1370,19 @@ def test_recarga_granularidad_sincroniza_grafica_y_selector(page, server):
             page.locator(f'#granularity-selector [data-gran="{gran}"][aria-pressed="true"]')
         ).to_be_visible(timeout=5000)
         page.wait_for_function(
-            """(eje) => {
+            """(gran) => {
                 const el = document.getElementById('unified-chart-plot');
-                return el && el._fullLayout && el._fullLayout.xaxis
-                    && el._fullLayout.xaxis.title.text === eje;
+                if (!el || !el._fullData || !el._fullData.length) return false;
+                const x0 = String(el._fullData[0].x[0]);
+                return gran === 'day' ? /^\\d{4}-\\d{2}-\\d{2}$/.test(x0)
+                    : gran === 'week' ? /^\\d+$/.test(x0)
+                    : /^\\d{4}-\\d{2}$/.test(x0);
             }""",
-            arg=eje,
+            arg=gran,
             timeout=8000,
         )
         st = _chart_state(page)
-        assert st["xaxis"] == eje, f"gráfica debe usar {eje}: {st}"
+        assert st["xshape"] == gran, f"gráfica debe usar {gran}: {st}"
         assert f"gran={gran}" in page.url, page.url
         # La selección de músculo también se conserva junto a la granularidad.
         expect(
@@ -1391,8 +1396,8 @@ def test_recarga_granularidad_sincroniza_grafica_y_selector(page, server):
     page.wait_for_function("document.body.dataset.appReady === '1'")
     page.wait_for_function(
         "() => { const el = document.getElementById('unified-chart-plot');"
-        " return el && el._fullLayout && el._fullLayout.xaxis"
-        " && el._fullLayout.xaxis.title.text === 'Semana'; }",
+        " return el && el._fullData && el._fullData.length"
+        " && /^\\d+$/.test(String(el._fullData[0].x[0])); }",
         timeout=8000,
     )
     expect(
@@ -1440,10 +1445,16 @@ def test_sin_flicker_de_granularidad_al_cargar(page, server, tmp_path):
                         '#granularity-selector [aria-pressed="true"]'
                     );
                     const plot = document.getElementById('unified-chart-plot');
+                    let shape = null;
+                    if (plot && plot._fullData && plot._fullData.length && plot._fullData[0].x.length) {
+                        const x0 = String(plot._fullData[0].x[0]);
+                        shape = /^\\d{4}-\\d{2}-\\d{2}$/.test(x0) ? 'day'
+                            : /^\\d+$/.test(x0) ? 'week'
+                            : /^\\d{4}-\\d{2}$/.test(x0) ? 'month' : '?';
+                    }
                     window.__flickerLog.push({
                         gran: pressed ? pressed.dataset.gran : null,
-                        axis: plot && plot._fullLayout && plot._fullLayout.xaxis
-                            ? plot._fullLayout.xaxis.title.text : null,
+                        axis: shape,
                     });
                 } catch (e) {}
             };
@@ -1485,13 +1496,13 @@ def test_sin_flicker_de_granularidad_al_cargar(page, server, tmp_path):
     page.wait_for_function("document.body.dataset.appReady === '1'")
     page.wait_for_function(
         "() => { const el=document.getElementById('unified-chart-plot');"
-        " return el && el._fullLayout && el._fullLayout.xaxis"
-        " && el._fullLayout.xaxis.title.text === 'Semana'; }",
+        " return el && el._fullData && el._fullData.length"
+        " && /^\\d+$/.test(String(el._fullData[0].x[0])); }",
         timeout=8000,
     )
     st = flicker_state()
     axes = [e["axis"] for e in st["log"] if e["axis"]]
-    assert axes and set(axes) == {"Semana"}, f"eje pasó por otro valor: {st['log']}"
+    assert axes and set(axes) == {"week"}, f"eje pasó por otro valor: {st['log']}"
     assert not grafica_requests, f"carga directa no debe pedir /grafica: {grafica_requests}"
     assert all(e["gran"] == "week" for e in st["log"]), f"Día visible: {st['log']}"
 
@@ -1500,13 +1511,13 @@ def test_sin_flicker_de_granularidad_al_cargar(page, server, tmp_path):
     page.wait_for_function("document.body.dataset.appReady === '1'")
     page.wait_for_function(
         "() => { const el=document.getElementById('unified-chart-plot');"
-        " return el && el._fullLayout && el._fullLayout.xaxis"
-        " && el._fullLayout.xaxis.title.text === 'Mes'; }",
+        " return el && el._fullData && el._fullData.length"
+        " && /^\\d{4}-\\d{2}$/.test(String(el._fullData[0].x[0])); }",
         timeout=8000,
     )
     st = flicker_state()
     axes_m = [e["axis"] for e in st["log"] if e["axis"]]
-    assert axes_m and set(axes_m) == {"Mes"}, f"eje pasó por otro valor: {st['log']}"
+    assert axes_m and set(axes_m) == {"month"}, f"eje pasó por otro valor: {st['log']}"
     assert not grafica_requests, f"carga directa no debe pedir /grafica: {grafica_requests}"
     assert all(e["gran"] == "month" for e in st["log"]), f"Día visible: {st['log']}"
 
@@ -1532,7 +1543,7 @@ def test_sin_flicker_de_granularidad_al_cargar(page, server, tmp_path):
     # de /grafica (músculo+week) pinta la gráfica directamente.
     assert len(grafica_requests) == 1, f"doble render con selección: {grafica_requests}"
     assert all(e["gran"] == "week" for e in st["log"]), f"Día visible: {st['log']}"
-    assert all(e["axis"] != "Fecha" for e in st["log"]), f"eje Día visible: {st['log']}"
+    assert all(e["axis"] != "day" for e in st["log"]), f"eje Día visible: {st['log']}"
     expect(
         page.locator(
             '#dashboard-catalog .db-group[data-group="Pectoral"] [data-action="toggle-muscle"]'
@@ -1564,7 +1575,7 @@ def test_sin_flicker_de_granularidad_al_cargar(page, server, tmp_path):
     # Un solo render: exactamente UNA petición /grafica tras la recarga.
     assert len(grafica_requests) == 1, f"doble render con ejercicio: {grafica_requests}"
     assert all(e["gran"] == "month" for e in st["log"]), f"Día visible: {st['log']}"
-    assert all(e["axis"] != "Fecha" for e in st["log"]), f"eje Día visible: {st['log']}"
+    assert all(e["axis"] != "day" for e in st["log"]), f"eje Día visible: {st['log']}"
     assert "musculos=Pectoral" in page.url and "ejercicios=Press" in page.url
 
     # 5) Back/forward restaura sin estados contradictorios.
@@ -1575,13 +1586,18 @@ def test_sin_flicker_de_granularidad_al_cargar(page, server, tmp_path):
         """() => {
             const p = document.querySelector('#granularity-selector [aria-pressed="true"]');
             const el = document.getElementById('unified-chart-plot');
-            return { gran: p ? p.dataset.gran : null,
-                axis: el && el._fullLayout && el._fullLayout.xaxis
-                    ? el._fullLayout.xaxis.title.text : null };
+            let shape = null;
+            if (el && el._fullData && el._fullData.length && el._fullData[0].x.length) {
+                const x0 = String(el._fullData[0].x[0]);
+                shape = /^\\d{4}-\\d{2}-\\d{2}$/.test(x0) ? 'day'
+                    : /^\\d+$/.test(x0) ? 'week'
+                    : /^\\d{4}-\\d{2}$/.test(x0) ? 'month' : '?';
+            }
+            return { gran: p ? p.dataset.gran : null, axis: shape };
         }"""
     )
     assert st_back["gran"] == "week", st_back
-    assert st_back["axis"] in ("Semana", None), st_back
+    assert st_back["axis"] in ("week", None), st_back
 
 
 def test_b1_selector_nativo_accesible(page, server):
@@ -1616,7 +1632,7 @@ def test_b2r2_carga_inicial_day_fechas_sin_semana(page, server):
     ).to_be_visible(timeout=5000)
     st = _chart_state(page)
     assert st.get("empty") is not True, st
-    assert st["xaxis"] == "Fecha", f"eje inicial debe ser Fecha: {st['xaxis']}"
+    assert st["xshape"] == "day", f"eje inicial debe ser día: {st['xshape']}"
     # Fechas reales, no números de semana.
     assert all("-" in x for t in st["traces"] for x in t["x"]), st
     # UX-2: hover nativo suprimido (hovertemplate None) y etiqueta tooltip es fecha corta "1 septiembre"
@@ -1661,7 +1677,7 @@ def test_b2r2_day_a_week_cambia_grafica_y_conserva_seleccion(page, server):
     page.on("request", lambda r: reqs.append(r.url) if "/grafica" in r.url else None)
 
     day_state = _chart_state(page)
-    assert day_state["xaxis"] == "Fecha", day_state
+    assert day_state["xshape"] == "day", day_state
 
     page.locator('#granularity-selector [data-gran="week"]').click()
     page.wait_for_timeout(700)
@@ -1671,7 +1687,7 @@ def test_b2r2_day_a_week_cambia_grafica_y_conserva_seleccion(page, server):
     assert any("gran=week" in u for u in reqs), f"no hubo request gran=week: {reqs}"
     assert "gran=week" in page.url, page.url
     # UX-2: eje Semana y etiqueta tooltip es fecha lunes "1 septiembre 2026", no "Semana 1"
-    assert week_state["xaxis"] == "Semana", week_state
+    assert week_state["xshape"] == "week", week_state
     assert all(
         any(
             m in t["cd0"][0].lower()
@@ -1771,7 +1787,7 @@ def test_b2r2_musculo_con_cambio_granularidad_mantiene_trazas(page, server):
     day = _chart_state(page)
     names = [t["n"] for t in day["traces"]]
     assert "Global" in names and "Pectoral" in names, names
-    assert day["xaxis"] == "Fecha", day
+    assert day["xshape"] == "day", day
     assert "musculos=Pectoral" in page.url, page.url
 
 
@@ -1800,7 +1816,7 @@ def test_b2r2_ejercicio_con_cambio_granularidad_conserva_seleccion(page, server)
     names = [t["n"] for t in day["traces"]]
     assert "Pectoral" in names and "Press" in names, names
     assert "Compilado" not in names, names
-    assert day["xaxis"] == "Fecha", day
+    assert day["xshape"] == "day", day
     expect(_exercise_input(page, "Press")).to_have_attribute("aria-pressed", "true")
 
 
@@ -2910,8 +2926,7 @@ def test_lazy_plotly_single_request_and_shell_stable(page, server):
         "Entrenamiento guardado", timeout=3000
     )
     _wait_editor_settled(page)
-    page.click("#popup-close")
-    page.wait_for_selector("#editor-popup", state="hidden", timeout=5000)
+    page.goto(server)
 
     # La gráfica con datos se pide vía la cascada del catálogo (Press = Pectoral).
     _catalog_select_muscle(page, "Pectoral")
@@ -2978,9 +2993,6 @@ def test_cls_stable_shell_and_history(page, server):
 # ---------------------------------------------------------------------------
 
 
-def test_popup_dialog_focus_roundtrip(page, server):
-    """Abrir el popup mueve el foco dentro; cerrarlo lo devuelve al botón."""
-    page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
     trigger = page.locator('[data-action="open-editor-popup"]')
     trigger.focus()
@@ -4722,29 +4734,26 @@ def test_ux2_tooltip_day_header_single_and_no_cobertura(page, server):
     assert st["traceNames"].count("Global") == 1 and st["traceNames"].count("Pectoral") == 1, st[
         "traceNames"
     ]
-    assert st["swatches"] == st["blocks"] == 2, st
+    assert st["ariaLabels"].count("RIR") == 1, st["ariaLabels"]
+    assert st["swatches"] == st["blocks"] == 3, st
     assert all(
         c and c not in ("", "rgba(0, 0, 0, 0)", "transparent") for c in st["swatchColors"]
     ), st["swatchColors"]
     assert st["ariaLabels"].count("Global") == 1 and st["ariaLabels"].count("Pectoral") == 1, st[
         "ariaLabels"
     ]
-    # 2 bloques (Global + Pectoral) separados por divider
-    assert st["blocks"] == 2, st
-    assert st["dividers"] == 1, st
-    # Líneas continuas (sin dash)
+    # 3 bloques (Global + Pectoral + RIR) separados por dividers
+    assert st["blocks"] == 3, st
+    assert st["dividers"] == 2, st
+    # PFR en continuo; solo el RIR va en discontinuo translúcido
     dash = page.evaluate(
-        "() => document.getElementById('unified-chart-plot')._fullData.map(t=>t.line?.dash)"
+        "() => document.getElementById('unified-chart-plot')._fullData.map(t=>({n:t.name, d:t.line?.dash}))"
     )
-    assert all(
-        d
-        in (
-            None,
-            "solid",
-            "",
-        )
-        for d in dash
-    ), dash
+    for entry in dash:
+        if entry["n"] == "RIR":
+            assert entry["d"] == "dash", dash
+        else:
+            assert entry["d"] in (None, "solid", ""), dash
 
 
 def test_ux2_tooltip_week_and_month_headers(page, server):
@@ -4783,8 +4792,8 @@ def test_ux2_tooltip_week_and_month_headers(page, server):
     assert "Semana" not in st["text"] and "S1" not in st["text"], st["text"]
     assert "Cobertura" not in st["text"]
     assert st["header"].count(st["header"]) == 1
-    # D2/A11 por bloque semana
-    assert st["blocks"] == 2 and st["swatches"] == 2, st
+    # D2/A11 por bloque semana (+ bloque RIR)
+    assert st["blocks"] == 3 and st["swatches"] == 3, st
     assert "Global" in st["text"] and "Pectoral" in st["text"], st["text"]
     assert st["traceNames"].count("Global") == 1 and st["traceNames"].count("Pectoral") == 1, st[
         "traceNames"
@@ -4821,7 +4830,7 @@ def test_ux2_tooltip_week_and_month_headers(page, server):
     assert "2026" in st2["header"], st2["header"]
     assert "Cobertura" not in st2["text"]
     assert "Series" in st2["text"]
-    assert st2["blocks"] == 2 and st2["swatches"] == 2, st2
+    assert st2["blocks"] == 3 and st2["swatches"] == 3, st2
     assert st2["traceNames"].count("Global") == 1 and st2["traceNames"].count("Pectoral") == 1, st2[
         "traceNames"
     ]

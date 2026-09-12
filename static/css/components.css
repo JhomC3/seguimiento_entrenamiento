@@ -302,6 +302,26 @@ input[type="number"]::-webkit-outer-spin-button {
     border-radius: 6px;
 }
 
+.unified-chart-header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    padding-left: 12px;
+    margin-bottom: 8px;
+}
+.unified-chart-title {
+    font-size: 14px;
+    font-weight: 900;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--t-burgundy-400);
+    text-shadow: var(--t-glow-neon-title);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* ---------- Avisos ---------- */
 #notice-container {
     position: fixed;

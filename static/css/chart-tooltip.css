@@ -1,15 +1,14 @@
-/* chart-tooltip.css — tooltip propio UX-2 para #unified-chart-plot.
-   Suprime el hover nativo de Plotly (hoverinfo:'none' en JS) y renderiza
-   un tooltip DOM desde customdata (9 pos.). Header único con fecha,
-   bloques por traza separados por divisor sutil, valores ausentes "—".
-   Líneas continuas: sin dasharray. */
+/* chart-tooltip.css — tooltip propio de los plots (customdata del servidor):
+   cristal translúcido, altura fija por gráfica, a la izquierda del cursor. */
 
 .chart-tooltip {
     position: fixed;
     z-index: 40;
     min-width: 148px;
     max-width: 260px;
-    background: var(--t-chart-hover-bg);
+    background: var(--t-overlay-neutral-900-055);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border: 1px solid var(--t-chart-hover-border);
     border-radius: 8px;
     box-shadow: 0 8px 24px var(--t-overlay-black-050), 0 2px 8px var(--t-overlay-black-030);

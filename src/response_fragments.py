@@ -23,6 +23,9 @@ OOB_FRAGMENT_TARGETS = (
     "unified-chart-header",
     "unified-chart-data",
     "unified-chart-empty",
+    "nutrition-trend-header",
+    "nutrition-trend-data",
+    "nutrition-trend-empty",
     "date-navigator",
     "session-history",
     "nutrition-editor-wrap",
@@ -165,11 +168,12 @@ def fragment_oob(
 
 
 def chart_header_oob(title: str) -> str:
-    """OOB for the chart panel header (title + ciclo). outerHTML swap."""
+    """OOB for the chart panel header. Fixed "Rendimiento" title (the ``title``
+    arg is kept for signature compatibility but never rendered)."""
     return (
         '<div id="unified-chart-header" hx-swap-oob="outerHTML" '
-        'class="flex items-baseline gap-2 min-w-0 pl-3 mb-3">'
-        '<h2 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title truncate">Rendimiento</h2>'
+        'class="unified-chart-header">'
+        '<h2 class="unified-chart-title">Rendimiento</h2>'
         "</div>"
     )
 
@@ -193,6 +197,16 @@ def chart_empty_oob(visible: bool, message: str = "Sin datos") -> str:
         f'<div id="unified-chart-empty" hx-swap-oob="outerHTML"'
         f' class="chart-empty"{hidden}>'
         f"{message}</div>"
+    )
+
+
+def nutrition_trend_header_oob(title: str = "Nutrición") -> str:
+    """OOB del encabezado de la gráfica de tendencia nutricional."""
+    return (
+        '<div id="nutrition-trend-header" hx-swap-oob="outerHTML" '
+        'class="unified-chart-header">'
+        f'<h2 class="unified-chart-title">{title}</h2>'
+        "</div>"
     )
 
 

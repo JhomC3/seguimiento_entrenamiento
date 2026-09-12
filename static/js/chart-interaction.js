@@ -96,13 +96,13 @@ function hideTooltip() {
     }, 90);
 }
 
-function positionTooltip(clientX, clientY) {
+function positionTooltip(clientX, clientY, plotTop) {
     const el = _tooltipEl;
     if (!el) return;
     const pad = 12;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    // Medir tras contenido ya renderizado pero aún oculto (visibility hidden)
+    // Izquierda del cursor; arriba fijo de la gráfica (no sigue al punto).
     const rect = el.getBoundingClientRect();
     let left = clientX + 14;
     let top = clientY + 14;
@@ -119,8 +119,7 @@ function buildTooltipContent(points) {
     // Header único: primera traza, customdata[0] ya viene formateado por backend
     // (día "18 jul" / "18 jul 2026", semana "18 jul 2026", mes "julio 2026")
     // No repetir por bloque, no usar "S1"/"Semana 1" ni ISO.
-    const firstVals = extractPointValuesJS(points[0].customdata);
-    const header = firstVals ? firstVals.periodo : String(points[0].x);
+    const header = tooltipHeaderFor(points);
     const body = document.createDocumentFragment();
     const headerEl = document.createElement('div');
     headerEl.className = 'chart-tooltip__header';
@@ -129,8 +128,8 @@ function buildTooltipContent(points) {
     const wrap = document.createElement('div');
     wrap.className = 'chart-tooltip__body';
     points.forEach(function (pt, idx) {
-        const vals = extractPointValuesJS(pt.customdata);
-        if (!vals) return;
+        const shaped = tooltipRowsFor(pt);
+        if (!shaped) return;
         if (idx > 0) {
             const div = document.createElement('div');
             div.className = 'chart-tooltip__divider';
@@ -139,7 +138,7 @@ function buildTooltipContent(points) {
         }
         const block = document.createElement('div');
         block.className = 'chart-tooltip__block';
-        const traceName = vals.trace || (pt.data && pt.data.name) || '';
+        const traceName = shaped.trace || (pt.data && pt.data.name) || '';
         const swatchColor = (pt.data && (pt.data.line && pt.data.line.color || pt.data.marker && pt.data.marker.color)) || '';
         block.setAttribute('role', 'group');
         if (traceName) block.setAttribute('aria-label', traceName);
@@ -170,7 +169,16 @@ function buildTooltipContent(points) {
             row.className = 'chart-tooltip__row';
             const lab = document.createElement('span');
             lab.className = 'chart-tooltip__label';
-            lab.textContent = label;
+            if (shaped.single && rowIdx === 0) {
+                const dot = document.createElement('span');
+                dot.className = 'chart-tooltip__swatch';
+                dot.setAttribute('aria-hidden', 'true');
+                dot.style.background = swatchColor || 'var(--t-chart-primary)';
+                dot.style.display = 'inline-block';
+                dot.style.marginRight = '6px';
+                lab.appendChild(dot);
+            }
+            lab.appendChild(document.createTextNode(label));
             const val = document.createElement('span');
             val.className = 'chart-tooltip__value';
             val.textContent = value || '—';
@@ -184,7 +192,7 @@ function buildTooltipContent(points) {
     return body;
 }
 
-function showTooltip(evt) {
+function showTooltip(evt, plotEl) {
     if (!evt || !evt.points || !evt.points.length) return;
     const el = getOrCreateTooltip();
     if (_tooltipHideTimer) {
@@ -204,7 +212,7 @@ function showTooltip(evt) {
     // Si clientX/Y no son números (p. ej. en tests), usar fallback centrado
     const x = typeof clientX === 'number' && Number.isFinite(clientX) ? clientX : window.innerWidth / 2;
     const y = typeof clientY === 'number' && Number.isFinite(clientY) ? clientY : window.innerHeight / 3;
-    positionTooltip(x, y);
+    positionTooltip(x, y, plotEl ? plotEl.getBoundingClientRect().top : null);
     el.classList.add('is-visible');
     el.setAttribute('aria-hidden', 'false');
 }
@@ -219,7 +227,7 @@ function bindTooltip(plotEl, Plotly) {
         }
     } catch (_) {}
     plotEl.on('plotly_hover', function (data) {
-        showTooltip(data);
+        showTooltip(data, plotEl);
     });
     plotEl.on('plotly_unhover', function () {
         hideTooltip();
@@ -523,10 +531,12 @@ function bindHorizontalWheel(plotEl, Plotly) {
     _wheelBound.add(plotEl);
 }
 
-export function renderUnifiedChart() {
-    const dataEl = document.getElementById('unified-chart-data');
-    const plotEl = document.getElementById('unified-chart-plot');
-    const emptyEl = document.getElementById('unified-chart-empty');
+export function renderPlotFromIds(dataId, plotId, emptyId, opts) {
+    const dataEl = document.getElementById(dataId);
+    const plotEl = document.getElementById(plotId);
+    const emptyEl = emptyId ? document.getElementById(emptyId) : null;
+    const useTooltip = !opts || opts.tooltip !== false;
+    const useHighlight = !opts || opts.highlight !== false;
     if (!dataEl || !plotEl) return;
 
     let fig = null;
@@ -546,15 +556,19 @@ export function renderUnifiedChart() {
         if (typeof Plotly !== 'undefined') Plotly.purge(plotEl);
         plotEl.hidden = true;
         if (emptyEl) emptyEl.hidden = false;
-        clearChartHighlight({silent:true});
-        closeAllDetails();
-        hideTooltip();
+        if (useHighlight) {
+            clearChartHighlight({silent:true});
+            closeAllDetails();
+        }
+        if (useTooltip) hideTooltip();
         return;
     }
 
     // Nueva figura OOB: limpiar highlight previo (puntos ya no pertenecen)
-    clearChartHighlight({silent:true});
-    closeAllDetails();
+    if (useHighlight) {
+        clearChartHighlight({silent:true});
+        closeAllDetails();
+    }
 
     // Data state: hide empty div, show plot, react.
     if (emptyEl) emptyEl.hidden = true;
@@ -584,11 +598,14 @@ export function renderUnifiedChart() {
             layout.xaxis.fixedrange = false;
             layout.yaxis.fixedrange = false;
             layout.xaxis.rangeslider = { visible: false };
-            // UX-2: suprimir tooltip nativo (hovertemplate ya null en servidor), conservar eventos
-            fig.data.forEach(function (t) {
-                t.hoverinfo = 'none';
-                t.hovertemplate = null;
-            });
+            if (useTooltip) {
+                // UX-2: suprimir tooltip nativo y conservar eventos (ambas
+                // gráficas sirven customdata para el tooltip cristal propio).
+                fig.data.forEach(function (t) {
+                    t.hoverinfo = 'none';
+                    t.hovertemplate = null;
+                });
+            }
             return Plotly.react(plotEl, fig.data, layout, {
                 displayModeBar: false,
                 scrollZoom: false,
@@ -630,12 +647,16 @@ export function renderUnifiedChart() {
                 _relayoutBound.add(plotEl);
             }
             bindHorizontalWheel(plotEl, Plotly);
-            bindHighlight(plotEl);
-            bindTooltip(plotEl, Plotly);
+            if (useHighlight) bindHighlight(plotEl);
+            if (useTooltip) bindTooltip(plotEl, Plotly);
         })
         .catch(function (err) {
             showChartError(err && err.message ? err.message : 'Error al renderizar la gráfica.');
         });
+}
+
+export function renderUnifiedChart() {
+    renderPlotFromIds('unified-chart-data', 'unified-chart-plot', 'unified-chart-empty');
 }
 
 export function initChartInteractions() {

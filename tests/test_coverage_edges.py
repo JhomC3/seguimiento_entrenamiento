@@ -61,7 +61,8 @@ def _rm_ajustado(kg, reps, rir=0.0):
 
 def test_chart_pfr_systemic_has_data_and_continuous_timeline(chart_db):
     fig = chart_pfr_timeline(chart_db, "systemic", title="Rendimiento Global – Todo el Cuerpo")
-    assert len(fig.data) == 1
+    assert len(fig.data) == 2  # Global + RIR
+    assert [t.name for t in fig.data] == ["Global", "RIR"]
     assert fig.layout.title.text == "Rendimiento Global – Todo el Cuerpo"
     df = calculate_pfr_timeline(chart_db, "systemic")
     assert not df.empty

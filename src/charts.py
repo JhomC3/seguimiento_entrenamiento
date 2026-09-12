@@ -1,3 +1,5 @@
+from datetime import date as _date
+
 import pandas as pd
 import plotly.graph_objects as go
 
@@ -282,6 +284,61 @@ def _hover_totals_for(
         exercises = ()
     aggs = aggregate_sets(db_path, muscles, exercises, granularity, None, None)
     return totals_by_period(aggs)
+
+
+RIR_TRACE_NAME = "RIR"
+RIR_LINE_ALPHA = 0.35
+
+
+def _pooled_rir_by_key(
+    db_path: str, musculos: list[str], ejercicios: list[str], granularity: str
+) -> dict[int, float]:
+    """RIR medio pooled por periodo para el ámbito seleccionado.
+
+    Reutiliza el camino ÚNICO (aggregate_sets → totals_by_period): misma
+    población y misma semántica que el hover (RIR ausente cuenta como 0).
+    Claves normalizadas por granularidad (ordinal / nº semana / YYYYMM),
+    compatibles con el marco X de las trazas PFR.
+    """
+    aggs = aggregate_sets(db_path, list(musculos), list(ejercicios), granularity, None, None)
+    return {key: totals.rir_medio for key, totals in totals_by_period(aggs).items()}
+
+
+def _rir_trace(by_key: dict[int, float], granularity: str, multi_year: bool) -> go.Scatter | None:
+    """Traza única de RIR medio sobre el eje Y derecho (discreta, al fondo).
+
+    Blanco translúcido discontinuo: legible sin competir con las trazas de
+    rendimiento. customdata de 9 pos. (contrato del tooltip cristal) con solo
+    el RIR relleno; nombre "RIR". Sin datos → None (no se inventa).
+    """
+    if not by_key:
+        return None
+    keys = sorted(by_key)
+    if granularity == "day":
+        xs: list = [_date.fromordinal(k).isoformat() for k in keys]
+    elif granularity == "month":
+        xs = [f"{k // 100}-{k % 100:02d}" for k in keys]
+    else:
+        xs = keys
+    ys = [by_key[k] for k in keys]
+    labels = [tooltip_period_label(granularity, x, multi_year) for x in xs]
+    customdata = [
+        [label, "—", "—", "—", "—", _fmt_num(value, 1), "—", "—", RIR_TRACE_NAME]
+        for label, value in zip(labels, ys)
+    ]
+    return go.Scatter(
+        x=xs,
+        y=ys,
+        mode="lines",
+        name=RIR_TRACE_NAME,
+        yaxis="y2",
+        line={
+            "color": _hex_to_rgba(chart_color("hover.text"), RIR_LINE_ALPHA),
+            "width": 2.5,
+            "dash": "dash",
+        },
+        customdata=customdata,
+    )
 
 
 def get_exercise_raw_data(db_path: str, ejercicio: str) -> pd.DataFrame:
@@ -719,6 +776,10 @@ def chart_selection(
     - 2+ músculos: Global + músculos. Los ejercicios no aplican.
 
     Los ejercicios que no pertenecen al músculo se descartan.
+
+    En todos los estados se añade la traza "RIR" (RIR medio pooled del ámbito
+    seleccionado, eje Y derecho, blanco translúcido discontinuo): existe
+    siempre que el ámbito tenga series.
     """
     traces: list[go.Scatter] = []
     title = "Rendimiento – Cuerpo entero"
@@ -729,6 +790,8 @@ def chart_selection(
     # Flag de figura (no de traza): todas las trazas etiquetan un mismo x con
     # el mismo formato (año completo en day solo si el dataset abarca >1 año).
     multi_year = _multi_year_flag(reference_df, granularity)
+    # Ámbito del RIR: sigue a la selección como las trazas PFR.
+    rir_scope: tuple[list[str], list[str]] = ([], [])
 
     if len(musculos) == 0:
         # Estado global: línea sistémica (D3).
@@ -767,6 +830,7 @@ def chart_selection(
                     (musculo,),
                 ).fetchall()
             valid = {str(r[0]).lower() for r in rows}
+            rir_scope = ([musculo], [e for e in ejercicios if e.lower() in valid])
             for idx, ejercicio in enumerate(ejercicios):
                 if ejercicio.lower() not in valid:
                     continue
@@ -789,6 +853,7 @@ def chart_selection(
         else:
             # Estado muscular: misma jerarquía que 2+ músculos:
             # Global sólido + músculo identificado y translúcido.
+            rir_scope = ([musculo], [])
             global_df = _pfr_df(db_path, "systemic", None, granularity)
             if not global_df.empty:
                 traces.append(
@@ -816,6 +881,7 @@ def chart_selection(
                     )
                 )
     elif len(musculos) >= 2:
+        rir_scope = (list(musculos), [])
         global_df = _pfr_df(db_path, "systemic", None, granularity)
         if not global_df.empty:
             traces.append(
@@ -856,7 +922,6 @@ def chart_selection(
     # condicionan el rango Y (los históricos fuera de la ventana permanecen en
     # la traza para pan/zoom, pero no afectan la escala vertical inicial).
     all_x = [v for t in traces for v in t.x]
-    x_title = {"week": "Semana", "day": "Fecha", "month": "Mes"}[granularity]
     initial_range = _initial_x_range(all_x, granularity)
 
     y_visible: list[float] = []
@@ -885,6 +950,23 @@ def chart_selection(
     y_bottom = min(0.0, y_min) - y_padding_lo
     y_top = max(0.0, y_max) + y_padding_hi
 
+    # RIR medio del ámbito seleccionado: traza única sobre el eje derecho.
+    # Fuera de la escala Y principal a propósito (unidades distintas); existe
+    # siempre que el ámbito tenga series (ausente = 0, como el hover).
+    rir = _rir_trace(_pooled_rir_by_key(db_path, *rir_scope, granularity), granularity, multi_year)
+    rir_range: list | None = None
+    if rir is not None:
+        fig.add_trace(rir)
+        rir_range = _tight_range(
+            [
+                float(v)
+                for v in _y_visible_in_window(list(rir.x), list(rir.y), initial_range, granularity)
+                if v is not None and not pd.isna(v)
+            ],
+            0.15,
+            0.5,
+        )
+
     # Eje X: tickmode array con subconjunto para no apiñar (day: máx 8 etiquetas)
     if granularity == "day":
         all_periods = sorted({str(v) for v in all_x})
@@ -897,7 +979,6 @@ def chart_selection(
         ticktext = [str(v) for v in tickvals]
 
     xaxis_cfg: dict = {
-        "title": x_title,
         "tickmode": "array",
         "tickvals": tickvals,
         "ticktext": ticktext,
@@ -915,7 +996,6 @@ def chart_selection(
         title={"text": title, "font": {"color": chart_color("hover.text"), "size": 14}},
         xaxis=xaxis_cfg,
         yaxis={
-            "title": "Crecimiento (%)",
             "range": [y_bottom, y_top],
             "showgrid": False,
             "zerolinecolor": chart_color("grid"),
@@ -925,31 +1005,33 @@ def chart_selection(
         paper_bgcolor=chart_color("background"),
         font={"color": chart_color("axes")},
         height=450,
-        # Reserve a fixed top band for the horizontal legend so adding or
-        # removing traces never changes the chart shell or plot width.
-        margin={"l": 60, "r": 20, "t": 48, "b": 50},
+        # Sin leyenda ni títulos: el tooltip cristal es el único identificador
+        # de traza. La estabilidad del shell entre estados la dan los márgenes
+        # y la altura idénticos (ver test_chart_layout_estable_entre_estados).
+        # r44 reserva sitio a los ticks del eje RIR derecho.
+        margin={"l": 48, "r": 44, "t": 20, "b": 28},
         hovermode="x unified",
         hoverlabel={
             "bgcolor": chart_color("hover.bg"),
             "font": {"color": chart_color("hover.text"), "size": 12},
             "bordercolor": chart_color("grid"),
         },
-        # La leyenda SIEMPRE visible (también con 1 traza): vive en la banda
-        # superior reservada, así que el área de trazado no cambia de tamaño
-        # al pasar de modo global a selección y viceversa.
-        showlegend=True,
-        legend={
-            "orientation": "h",
-            "x": 0,
-            "y": 1.08,
-            "xanchor": "left",
-            "yanchor": "bottom",
-            "entrywidth": 100,
-            "entrywidthmode": "pixels",
-            "font": {"color": chart_color("axes"), "size": 11},
-            "bgcolor": chart_color("background"),
-        },
+        showlegend=False,
         dragmode="pan",
+        **(
+            {
+                "yaxis2": {
+                    "overlaying": "y",
+                    "side": "right",
+                    "showgrid": False,
+                    "zeroline": False,
+                    "tickfont": {"color": chart_color("axes")},
+                    **({"range": rir_range} if rir_range is not None else {}),
+                }
+            }
+            if rir is not None
+            else {}
+        ),
     )
     return fig
 
@@ -969,9 +1051,8 @@ def chart_pfr_timeline(
     if periodic.empty:
         return go.Figure()
 
-    # Eje X
+    # Eje X (sin título: la granularidad la indica el selector visible)
     x_col = "periodo" if "periodo" in periodic.columns else "semana"
-    x_title = {"week": "Semana", "day": "Fecha", "month": "Mes"}[granularity]
 
     # Ventana temporal inicial antes del rango Y: solo los puntos dentro de la
     # ventana visible condicionan la escala vertical (los históricos permanecen
@@ -1027,8 +1108,28 @@ def chart_pfr_timeline(
         )
     )
 
+    # RIR medio del filtro en el eje derecho (mismo criterio que chart_selection).
+    if filter_type == "muscle_group" and filter_value:
+        _rir_scope: tuple[list[str], list[str]] = ([filter_value], [])
+    elif filter_type == "exercise" and filter_value:
+        _rir_scope = ([], [filter_value])
+    else:
+        _rir_scope = ([], [])
+    rir = _rir_trace(_pooled_rir_by_key(db_path, *_rir_scope, granularity), granularity, multi_year)
+    rir_range: list | None = None
+    if rir is not None:
+        fig.add_trace(rir)
+        rir_range = _tight_range(
+            [
+                float(v)
+                for v in _y_visible_in_window(list(rir.x), list(rir.y), initial_range, granularity)
+                if v is not None and not pd.isna(v)
+            ],
+            0.15,
+            0.5,
+        )
+
     xaxis_cfg: dict = {
-        "title": x_title,
         "tickmode": "array",
         "tickvals": x_tickvals,
         "ticktext": x_ticktext,
@@ -1046,7 +1147,6 @@ def chart_pfr_timeline(
         title={"text": title, "font": {"color": chart_color("hover.text"), "size": 14}},
         xaxis=xaxis_cfg,
         yaxis={
-            "title": "Crecimiento (%)",
             "range": [y_bottom, y_top],
             "showgrid": False,
             "zerolinecolor": chart_color("grid"),
@@ -1056,31 +1156,208 @@ def chart_pfr_timeline(
         paper_bgcolor=chart_color("background"),
         font={"color": chart_color("axes")},
         height=450,
-        margin={"l": 60, "r": 20, "t": 48, "b": 50},
+        # Sin leyenda ni títulos: el tooltip cristal es el único identificador
+        # de traza; la unidad % vive en tooltip e Historial. Estabilidad entre
+        # estados por márgenes/altura idénticos (ver test de layout estable).
+        # r44 reserva sitio a los ticks del eje RIR derecho.
+        margin={"l": 48, "r": 44, "t": 20, "b": 28},
         hovermode="x unified",
         hoverlabel={
             "bgcolor": chart_color("hover.bg"),
             "font": {"color": chart_color("hover.text"), "size": 12},
             "bordercolor": chart_color("grid"),
         },
-        # La leyenda SIEMPRE visible (también con 1 traza): vive en la banda
-        # superior reservada, así que el área de trazado no cambia de tamaño
-        # al pasar de modo global a selección y viceversa.
-        showlegend=True,
-        legend={
-            "orientation": "h",
-            "x": 0,
-            "y": 1.08,
-            "xanchor": "left",
-            "yanchor": "bottom",
-            "entrywidth": 100,
-            "entrywidthmode": "pixels",
-            "font": {"color": chart_color("axes"), "size": 11},
-            "bgcolor": chart_color("background"),
-        },
+        showlegend=False,
         dragmode="pan",
+        **(
+            {
+                "yaxis2": {
+                    "overlaying": "y",
+                    "side": "right",
+                    "showgrid": False,
+                    "zeroline": False,
+                    "tickfont": {"color": chart_color("axes")},
+                    **({"range": rir_range} if rir_range is not None else {}),
+                }
+            }
+            if rir is not None
+            else {}
+        ),
     )
 
+    return fig
+
+
+def _tight_range(values: list[float], rel_pad: float, abs_min_pad: float) -> list | None:
+    """Rango Y ajustado a los datos visibles, sin forzar el 0.
+
+    ``rel_pad``: fracción del span como margen por lado; ``abs_min_pad``:
+    suelo del margen para rachas planas (span 0). Vacío → None (autoscala).
+    """
+    if not values:
+        return None
+    lo, hi = min(values), max(values)
+    pad = max((hi - lo) * rel_pad, abs_min_pad)
+    return [lo - pad, hi + pad]
+
+
+def _nutrition_hover_rows(
+    work: pd.DataFrame, x_col: str, granularity: str
+) -> tuple[list[list[str]], list[list[str]]]:
+    """customdata 4-pos por traza para el tooltip cristal compartido.
+
+    Contrato: [etiqueta, kcal_txt, peso_txt, traza]. La etiqueta usa el mismo
+    formato que la principal (``tooltip_period_label``; la semana se etiqueta
+    como su lunes en formato día). Ausencias → '—', nunca 0.
+    """
+    label_gran = "day" if granularity in ("day", "week") else "month"
+    years = {str(v)[:4] for v in work[x_col].tolist()}
+    multi_year = len(years) > 1
+    kcal_rows: list[list[str]] = []
+    peso_rows: list[list[str]] = []
+    for _, r in work.iterrows():
+        label = tooltip_period_label(label_gran, r[x_col], multi_year)
+        kcal_v, peso_v = r.get("kcal_ma7"), r.get("peso_ma7")
+        kcal_txt = "—" if kcal_v is None or pd.isna(kcal_v) else f"{float(kcal_v):.0f}"
+        peso_txt = "—" if peso_v is None or pd.isna(peso_v) else f"{float(peso_v):.1f}"
+        kcal_rows.append([label, kcal_txt, peso_txt, "kcal"])
+        peso_rows.append([label, kcal_txt, peso_txt, "peso"])
+    return kcal_rows, peso_rows
+
+
+def chart_nutrition_trends(df: pd.DataFrame, granularity: str = "day") -> go.Figure:
+    """Gráfica dual de medias móviles 7d: kcal (eje izq.) + peso kg (eje der.).
+
+    ``df`` es la salida de ``build_nutrition_trends`` (columnas ``fecha`` o
+    ``periodo`` + ``kcal_ma7``/``peso_ma7``). Vacía o sin ningún punto
+    suavizado → ``go.Figure()`` (el shell muestra el estado vacío).
+    Ambos ejes se ajustan a los datos visibles (sin base en 0).
+    """
+    if df.empty or "kcal_ma7" not in df.columns or "peso_ma7" not in df.columns:
+        return go.Figure()
+    x_col = "fecha" if "fecha" in df.columns else "periodo"
+    if x_col not in df.columns:
+        return go.Figure()
+    work = df.dropna(subset=[x_col])
+    work = work[work["kcal_ma7"].notna() | work["peso_ma7"].notna()]
+    if work.empty:
+        return go.Figure()
+
+    kcal_color = chart_color("primary")
+    peso_color = EXERCISE_PALETTE[0]
+    kcal_cd, peso_cd = _nutrition_hover_rows(work, x_col, granularity)
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=work[x_col],
+            y=work["kcal_ma7"],
+            mode="lines",
+            name="kcal",
+            line={"color": kcal_color, "width": 2.5, "dash": "solid"},
+            customdata=kcal_cd,
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=work[x_col],
+            y=work["peso_ma7"],
+            mode="lines",
+            name="peso",
+            yaxis="y2",
+            # Guía translúcida como las trazas secundarias del dashboard; el
+            # peso es estado continuo: une los puntos disponibles sin inventar
+            # intermedios (kcal conserva sus cortes: sin registro no hay dato).
+            line={"color": _hex_to_rgba(peso_color, 0.4), "width": 3.5, "dash": "solid"},
+            connectgaps=True,
+            customdata=peso_cd,
+        )
+    )
+
+    # El periodo semanal nutricional es un lunes ISO (fecha), no el número de
+    # semana del ciclo: los helpers de ventana operan en modo "day" para day y
+    # week (claves ISO ordenables) y en modo "month" para month (YYYY-MM).
+    axis_gran = "month" if granularity == "month" else "day"
+    x_values = [str(v) for v in work[x_col].tolist()]
+    initial_range = _initial_x_range(work[x_col].tolist(), axis_gran)
+    kcal_visible = _y_visible_in_window(
+        work[x_col].tolist(), work["kcal_ma7"].tolist(), initial_range, axis_gran
+    )
+    kcal_visible = [float(v) for v in kcal_visible if v is not None and not pd.isna(v)]
+    peso_visible = _y_visible_in_window(
+        work[x_col].tolist(), work["peso_ma7"].tolist(), initial_range, axis_gran
+    )
+    peso_visible = [float(v) for v in peso_visible if v is not None and not pd.isna(v)]
+
+    kcal_range = _tight_range(kcal_visible, 0.15, 60.0)
+    peso_range = _tight_range(peso_visible, 0.2, 1.0)
+
+    # Los ticks se calculan sobre la ventana visible inicial (no sobre todo el
+    # histórico): con meses de registro, los ticks fuera de rango los ignora
+    # Plotly y el eje quedaba vacío o con auto-ticks de fecha completa.
+    if initial_range:
+        lo_k = _x_key(initial_range[0], axis_gran)
+        hi_k = _x_key(initial_range[1], axis_gran)
+        in_window = sorted({v for v in x_values if lo_k <= _x_key(v, axis_gran) <= hi_k})
+        tick_source = in_window or sorted(set(x_values))
+    else:
+        tick_source = sorted(set(x_values))
+    if granularity == "month":
+        tickvals, ticktext = tick_source, [_month_tick_label(v) for v in tick_source]
+    else:
+        # Day y week (lunes ISO) comparten etiquetas compactas de día.
+        tickvals, ticktext = _day_tick_subset(tick_source, max_ticks=8)
+    # Sin títulos de eje: la leyenda mapea color→serie y los ticks llevan
+    # unidad (kcal en miles, kg en decimal). Más área de trazado en 240px.
+    xaxis_cfg: dict = {
+        "tickmode": "array",
+        "tickvals": tickvals,
+        "ticktext": ticktext,
+        "tickfont": {"size": 10, "color": chart_color("axes")},
+        "showgrid": False,
+    }
+    xaxis_cfg["type"] = "category" if granularity == "month" else "date"
+    if initial_range:
+        xaxis_cfg["range"] = _range_for_axis(initial_range, axis_gran)
+
+    yaxis_cfg: dict = {
+        # Miles compactos ("2.74k"): 3 cifras para no duplicar etiquetas en
+        # rangos ajustados estrechos.
+        "tickformat": ".3s",
+        "showgrid": False,
+        "zeroline": False,
+        "tickfont": {"color": chart_color("axes")},
+    }
+    if kcal_range is not None:
+        yaxis_cfg["range"] = kcal_range
+    yaxis2_cfg: dict = {
+        "overlaying": "y",
+        "side": "right",
+        "showgrid": False,
+        "zeroline": False,
+        "tickfont": {"color": peso_color},
+    }
+    if peso_range is not None:
+        yaxis2_cfg["range"] = peso_range
+
+    fig.update_layout(
+        title={"text": "", "font": {"color": chart_color("hover.text"), "size": 14}},
+        xaxis=xaxis_cfg,
+        yaxis=yaxis_cfg,
+        yaxis2=yaxis2_cfg,
+        plot_bgcolor=chart_color("background"),
+        paper_bgcolor=chart_color("background"),
+        font={"color": chart_color("axes")},
+        height=230,
+        margin={"l": 40, "r": 40, "t": 20, "b": 24},
+        hovermode="x unified",
+        hoverlabel={
+            "bgcolor": chart_color("hover.bg"),
+            "font": {"color": chart_color("hover.text"), "size": 12},
+            "bordercolor": chart_color("grid"),
+        },
+        showlegend=False,
+        dragmode="pan",
+    )
     return fig
 
 

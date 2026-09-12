@@ -1,6 +1,7 @@
 import hmac
 import json
 import logging
+import math
 import os
 import time
 import uuid
@@ -55,6 +56,7 @@ from src.db_connection import read_connection
 from src.exercise_service import create_exercise
 from src.health_sync_service import MAX_BODY_BYTES, ingest_health_records, parse_payload
 from src.logging_setup import request_id_var, setup_logging
+from src.metrics_engine import rm_ajustado
 from src.models import (
     SPLIT_DAYS,
     AlimentoInput,
@@ -1352,8 +1354,6 @@ def semana_primer_entreno(
 
 def _cascade_items(nivel: str, foco: str) -> list[str]:
     """Siguiente fila de la cascada: categorías → músculos → ejercicios."""
-    from src.db_connection import read_connection
-
     if nivel == "grupo" and not foco:
         return [str(c["name"]) for c in get_categories(DB_PATH) or MUSCLE_CATEGORIES]
     if nivel == "grupo":
@@ -1497,7 +1497,7 @@ def grafica_view(
     gran: str = Query(default="day"),
     ventana: int = Query(default=8),
 ):
-    """Gráfica + panel de resumen en UNA sola respuesta (contrato Fase 2).
+    """Gráfica + panel de resumen + tendencia nutricional en UNA sola respuesta.
 
     Targets OOB exclusivos: unified-chart-header/data/empty + period-summary-wrap.
     Gráfica y panel comparten exactamente la misma selección y granularidad;

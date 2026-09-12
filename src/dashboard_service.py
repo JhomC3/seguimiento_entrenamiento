@@ -137,28 +137,35 @@ def _json_for_inline(serialized: str) -> str:
     )
 
 
-def chart_shell_html(title: str, fig, *, empty_text: str = "Sin datos") -> str:
+def chart_shell_html(
+    title: str, fig, *, empty_text: str = "Sin datos", prefix: str = "unified-chart"
+) -> str:
     """Persistent chart shell: header + data div + plot div + empty div.
 
     Always outputs all four children (CLS 0): exactly one of plot/empty is
     visible (the other carries ``hidden``); the data div is always hidden.
     The client toggles visibility based on the JSON content.
     """
+    # Cabecera fija "Rendimiento" para el prefijo histórico (el título
+    # contextual vive en el panel Historial; el parámetro title se conserva
+    # por firma pero no se renderiza). Los prefijos nuevos sí renderizan su
+    # título (p. ej. la tendencia de nutrición).
+    header_title = "Rendimiento" if prefix == "unified-chart" else title
     header = (
-        '<div id="unified-chart-header" class="flex items-baseline gap-2 min-w-0 pl-3 mb-3">'
-        '<h2 class="text-sm font-black tracking-[0.2em] text-burgundy-400 uppercase neon-title truncate">Rendimiento</h2>'
+        f'<div id="{prefix}-header" class="unified-chart-header">'
+        f'<h2 class="unified-chart-title">{header_title}</h2>'
         "</div>"
     )
     has_data = hasattr(fig, "data") and fig.data
     if has_data:
         data = _json_for_inline(fig.to_json())
-        data_el = f'<div id="unified-chart-data" hidden>{data}</div>'
-        plot_el = '<div id="unified-chart-plot" class="plotly-graph-div"></div>'
-        empty_el = f'<div id="unified-chart-empty" class="chart-empty" hidden>{empty_text}</div>'
+        data_el = f'<div id="{prefix}-data" hidden>{data}</div>'
+        plot_el = f'<div id="{prefix}-plot" class="plotly-graph-div"></div>'
+        empty_el = f'<div id="{prefix}-empty" class="chart-empty" hidden>{empty_text}</div>'
     else:
-        data_el = '<div id="unified-chart-data" hidden>{}</div>'
-        plot_el = '<div id="unified-chart-plot" class="plotly-graph-div" hidden></div>'
-        empty_el = f'<div id="unified-chart-empty" class="chart-empty">{empty_text}</div>'
+        data_el = f'<div id="{prefix}-data" hidden>{{}}</div>'
+        plot_el = f'<div id="{prefix}-plot" class="plotly-graph-div" hidden></div>'
+        empty_el = f'<div id="{prefix}-empty" class="chart-empty">{empty_text}</div>'
     return header + data_el + plot_el + empty_el
 
 
