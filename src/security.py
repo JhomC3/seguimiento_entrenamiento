@@ -40,18 +40,25 @@ CSRF_HEADER = "X-CSRF-Token"
 
 # API endpoints with their own credential are exempted from the form-CSRF
 # checks. The exemption is an EXACT path match, never a prefix: a path like
-# /sync/other keeps full CSRF protection. See health-sync-contract.md.
-CSRF_EXEMPT_PATHS: frozenset = frozenset({"/sync/health-connect"})
+# /sync/other keeps full CSRF protection. See health-sync-contract.md and
+# training-api-contract.md. Only mutating API paths need exemption (GET is a
+# safe method and never checked).
+CSRF_EXEMPT_PATHS: frozenset = frozenset(
+    {
+        "/sync/health-connect",
+        "/api/v1/sesion",
+        "/api/v1/plantilla/guardar",
+        "/api/v1/plantilla/aplicar",
+        "/api/v1/ejercicio",
+        "/api/v1/undo",
+        "/api/v1/diario",
+        "/api/v1/alimento",
+        "/api/v1/plantilla-comida/guardar",
+        "/api/v1/plantilla-comida/aplicar",
+        "/api/v1/cardio/anotacion",
+    }
+)
 
-
-def _window_seconds() -> int:
-    try:
-        return int(os.environ.get("GYM_CSRF_WINDOW_HOURS", str(24 * 7))) * 3600
-    except ValueError:
-        return 24 * 7 * 3600
-
-
-CSRF_WINDOW_SECONDS = _window_seconds()
 
 # Loopback-only fallback: cryptographically random per process, never public.
 # Tokens signed with it become invalid on restart (acceptable: loopback dev,
@@ -103,8 +110,6 @@ def valid_csrf_token(token: str, secret: str) -> bool:
         int(ts)
     except (ValueError, TypeError):
         return False
-    if abs(int(time.time()) - int(ts)) > CSRF_WINDOW_SECONDS:
-        return False
     expected = _sign(secret, ts)
     return hmac.compare_digest(sig, expected)
 
@@ -148,7 +153,7 @@ class CSRFProtectionMiddleware:
     @staticmethod
     def _forbidden():
         body = (
-            "<div class='notice notice-error'>Sesión de seguridad vencida. "
+            "<div class='notice notice-error'>Solicitud no autorizada. "
             "Recarga la página e intenta de nuevo.</div>"
         )
         return body.encode(), 403

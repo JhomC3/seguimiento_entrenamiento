@@ -23,7 +23,10 @@ uv run uvicorn app:app --host 127.0.0.1 --port 8000
 - Binding `--host 0.0.0.0` is **only** sanctioned through
   `scripts/start_server.sh`, which activates the LAN sync-only gate: on the LAN
   the server serves **only** `POST /sync/health-connect` (HealthSync, autenticado
-  con `X-Sync-Token`); the dashboard UI, static assets, exports and mutations
+  con `X-Sync-Token`) **plus the training diary API v1** (entreno, nutrición,
+  plantillas, altas y undo; mismo token; contrato en
+  `docs/architecture/training-api-contract.md`); the dashboard UI, static assets,
+  exports and htmx mutations
   return bare 403/429 to non-loopback peers. `GYM_LAN_SYNC_ONLY=1` requires
   `GYM_CSRF_SECRET` (persisted in `data/csrf_secret`) and vice versa: the app
   refuses to start with an inconsistent pair (manual `uvicorn --host 0.0.0.0`
@@ -38,7 +41,7 @@ uv run uvicorn app:app --host 127.0.0.1 --port 8000
 |---|---|---|
 | `LIFESTYLE_DB_PATH` | SQLite database path | `data/lifestyle.db` (`GYM_DB_PATH` es alias) |
 | `GYM_CSRF_SECRET` | HMAC secret for CSRF tokens (persisted in `data/csrf_secret` by `start_server.sh`) | random per-process fallback (loopback only; tokens invalidan al reiniciar) |
-| `GYM_LAN_SYNC_ONLY` | `1` = LAN gate activo: remoto solo `POST /sync/health-connect` | desactivado |
+| `GYM_LAN_SYNC_ONLY` | `1` = LAN gate activo: remoto solo `POST /sync/health-connect` + API v1 del diario | desactivado |
 | `GYM_SYNC_RATE_LIMIT_PER_MINUTE` | Rate limit del sync por peer remoto (429 + `Retry-After`) | 30 |
 | `SHEET_ID` / `GIDS` | Google Sheets source (config.py) | project defaults |
 

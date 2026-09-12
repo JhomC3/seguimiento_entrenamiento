@@ -851,7 +851,7 @@ def test_v010_health_records_schema(tmp_path):
         "deleted_at",
     } <= cols
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
-    assert max_version == 15
+    assert max_version == 17
     pk_cols = {
         r[1] for r in conn.execute("PRAGMA table_info(health_records)").fetchall() if r[5] == 1
     }

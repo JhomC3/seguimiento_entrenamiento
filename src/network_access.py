@@ -1,10 +1,13 @@
-"""Network isolation: remote (LAN) traffic is allowed only for HealthSync.
+"""Network isolation: remote (LAN) traffic is allowed only for HealthSync
+and the training diary JSON API (v1).
 
-The dashboard UI (HTML, static assets, exports, mutations) is served to
-loopback clients only. Remote peers can use exactly POST /sync/health-connect
-(which authenticates with X-Sync-Token); every other remote request is
-rejected with a bare 403 before the body is parsed. A bounded per-peer rate
-limiter protects the sync endpoint.
+The dashboard UI (HTML, static assets, exports, htmx mutations) is served to
+loopback clients only. Remote peers can use exactly:
+- POST /sync/health-connect (Health Connect ingest, X-Sync-Token), and
+- the training API: GET /api/v1/sesion, GET /api/v1/ejercicios,
+  POST /api/v1/sesion, DELETE /api/v1/sesion (same X-Sync-Token);
+every other remote request is rejected with a bare 403 before the body is
+parsed. A bounded per-peer rate limiter protects all allowed remote paths.
 
 The gate is active only when GYM_LAN_SYNC_ONLY=1 (set by scripts/start_server.sh);
 otherwise the middleware is inert, preserving loopback-only development.
@@ -20,6 +23,40 @@ import time
 logger = logging.getLogger("network")
 
 SYNC_PATH = "/sync/health-connect"
+
+# Training diary JSON API (v1, mismo X-Sync-Token). Rutas exactas, nunca
+# prefijo: /api/v1/sesion/extra sigue bloqueado. Ver training-api-contract.md.
+API_SESSION_PATH = "/api/v1/sesion"
+API_EXERCISES_PATH = "/api/v1/ejercicios"
+
+# (método, path) remotos permitidos bajo el gate. Todo lo demás → 403.
+ALLOWED_REMOTE_ROUTES: frozenset = frozenset(
+    {
+        ("POST", SYNC_PATH),
+        ("GET", API_SESSION_PATH),
+        ("POST", API_SESSION_PATH),
+        ("DELETE", API_SESSION_PATH),
+        ("GET", API_EXERCISES_PATH),
+        ("GET", "/api/v1/plantillas"),
+        ("POST", "/api/v1/plantilla/guardar"),
+        ("POST", "/api/v1/plantilla/aplicar"),
+        ("POST", "/api/v1/ejercicio"),
+        ("GET", "/api/v1/undo/peek"),
+        ("POST", "/api/v1/undo"),
+        ("GET", "/api/v1/diario"),
+        ("POST", "/api/v1/diario"),
+        ("DELETE", "/api/v1/diario"),
+        ("GET", "/api/v1/alimentos"),
+        ("POST", "/api/v1/alimento"),
+        ("GET", "/api/v1/plantillas-comida"),
+        ("POST", "/api/v1/plantilla-comida/guardar"),
+        ("POST", "/api/v1/plantilla-comida/aplicar"),
+        ("GET", "/api/v1/sugerencia"),
+        ("GET", "/api/v1/cardio"),
+        ("POST", "/api/v1/cardio/anotacion"),
+        ("GET", "/api/v1/fechas"),
+    }
+)
 
 _DEFAULT_RATE_LIMIT_PER_MINUTE = 30
 _MAX_TRACKED_PEERS = 1024
@@ -85,7 +122,7 @@ class _FixedWindowLimiter:
 
 
 class LanSyncOnlyMiddleware:
-    """Rejects non-loopback dashboard traffic; allows only POST SYNC_PATH.
+    """Rejects non-loopback dashboard traffic; allows only the sync + API routes.
 
     Registered in app.py so it runs before the CSRF middleware: remote
     dashboard requests get a bare 403/429 without any HTML surface.
@@ -103,7 +140,7 @@ class LanSyncOnlyMiddleware:
         if _is_loopback(client):
             await self.app(scope, receive, send)
             return
-        if scope["method"] == "POST" and scope.get("path", "") == SYNC_PATH:
+        if (scope["method"], scope.get("path", "")) in ALLOWED_REMOTE_ROUTES:
             peer = client[0] if client else "unknown"
             if not self.limiter.allow(peer):
                 logger.warning("LAN sync rate limit exceeded: peer=%s", peer)

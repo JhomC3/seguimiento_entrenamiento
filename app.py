@@ -1504,6 +1504,1004 @@ async def health_sync_ingest(request: Request):
     )
 
 
+TRAINING_API_SCHEMA_VERSION = 1
+
+
+def _require_training_api_token(request: Request) -> JSONResponse | None:
+    """Auth compartida de la API v1: mismo X-Sync-Token que Health Connect.
+
+    Devuelve la respuesta de error (503/401) o None si el token es válido.
+    Misma semántica que POST /sync/health-connect: sin token configurado el
+    endpoint no existe (503, nunca puerta abierta); token ausente o distinto
+    es 401 permanente. Decisión documentada en training-api-contract.md §1.
+    """
+    if not HC_SYNC_TOKEN:
+        return JSONResponse({"detail": "Endpoint no configurado (HC_SYNC_TOKEN)"}, status_code=503)
+    token = request.headers.get("X-Sync-Token", "")
+    if not token or not hmac.compare_digest(token, HC_SYNC_TOKEN):
+        return JSONResponse({"detail": "Token inválido"}, status_code=401)
+    return None
+
+
+def _api_set_row(row: dict) -> dict:
+    """Fila de training_sets → objeto JSON de la API (con RM recalculado)."""
+    kg = row.get("kg")
+    reps = row.get("reps")
+    rir = row.get("rir")
+    rm: float | None = None
+    try:
+        if kg is not None and reps is not None:
+            rm = round(rm_ajustado(float(kg), float(reps), float(rir or 0.0)), 1)
+    except (TypeError, ValueError):
+        rm = None
+    return {
+        "set_orden": row.get("set_orden"),
+        "ejercicio": row.get("ejercicio"),
+        "kg": kg,
+        "reps": reps,
+        "rir": rir,
+        "descanso_seg": row.get("descanso_seg"),
+        "rm": rm,
+        "velocidad_kmh": row.get("velocidad_kmh"),
+        "dificultad": row.get("dificultad"),
+    }
+
+
+def _api_session_payload(fecha_iso: str) -> dict:
+    """Lee el día y lo serializa. Lanza ValidationError con fecha inválida."""
+    fecha = parse_form_date(fecha_iso)
+    fecha_db = fecha_to_db(fecha)
+    rows = get_sets_by_fecha(DB_PATH, fecha_db)
+    return {
+        "schema_version": TRAINING_API_SCHEMA_VERSION,
+        "fecha": fecha_db,
+        "semana": calculate_cycle_week(fecha, CICLO_START_DATE),
+        "dia": day_from_date(fecha),
+        "has_data": bool(rows),
+        "sets": [_api_set_row(dict(r)) for r in rows],
+    }
+
+
+@app.get("/api/v1/sesion")
+def api_training_get_sesion(request: Request, fecha: str = Query(default="")):
+    """Lee la sesión de un día (ver diario). Requiere X-Sync-Token."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    if not fecha or not fecha.strip():
+        return JSONResponse({"detail": "Fecha requerida (YYYY-MM-DD)."}, status_code=400)
+    try:
+        return JSONResponse(_api_session_payload(fecha.strip()))
+    except ValidationError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    except Exception:
+        logging.getLogger("dashboard").exception("API sesion GET fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+
+
+@app.post("/api/v1/sesion")
+async def api_training_save_sesion(request: Request):
+    """Guarda (reemplazo total del día) la sesión. Requiere X-Sync-Token.
+
+    POST repetido con el mismo cuerpo es idempotente por construcción
+    (DELETE + INSERT ordenado). Toda fecha ISO válida es editable: no se
+    aplica el gating readonly del editor web (UX, no seguridad); el
+    last-write-wins está documentado en training-api-contract.md §5.
+    """
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    raw_body = await request.body()
+    if len(raw_body) > MAX_BODY_BYTES:
+        return JSONResponse({"detail": "Lote excesivo"}, status_code=413)
+    try:
+        body = json.loads(raw_body)
+    except json.JSONDecodeError:
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    fecha = body.get("fecha", "")
+    sets_raw = body.get("sets", None)
+    if not isinstance(fecha, str) or not fecha.strip():
+        return JSONResponse({"detail": "Fecha requerida (YYYY-MM-DD)."}, status_code=400)
+    if not isinstance(sets_raw, list) or not sets_raw:
+        return JSONResponse({"detail": "Debes registrar al menos una serie."}, status_code=400)
+    if len(sets_raw) > MAX_FORM_SETS:
+        return JSONResponse(
+            {"detail": f"Demasiadas filas de sesión (máx. {MAX_FORM_SETS})."},
+            status_code=400,
+        )
+    inputs: list[TrainingSetInput] = []
+    for item in sets_raw:
+        if not isinstance(item, dict):
+            return JSONResponse({"detail": "Serie inválida."}, status_code=400)
+        inputs.append(
+            TrainingSetInput(
+                ejercicio=item.get("ejercicio", ""),
+                kg=item.get("kg", ""),
+                reps=item.get("reps", ""),
+                rir=item.get("rir", ""),
+                descanso_seg=item.get("descanso_seg", ""),
+                velocidad_kmh=item.get("velocidad_kmh", ""),
+                dificultad=item.get("dificultad", ""),
+            )
+        )
+    try:
+        result = save_session_with_undo_snapshot(DB_PATH, fecha.strip(), inputs)
+    except ValidationError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    except Exception:
+        logging.getLogger("mutations").exception("API sesion POST fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    try:
+        payload = _api_session_payload(result.fecha)
+    except Exception:
+        logging.getLogger("dashboard").exception("API sesion POST relectura fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    payload["saved_count"] = len(payload["sets"])
+    return JSONResponse(payload)
+
+
+@app.delete("/api/v1/sesion")
+def api_training_delete_sesion(request: Request, fecha: str = Query(default="")):
+    """Elimina el día completo. Idempotente: día ya vacío → 200. Requiere token."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    if not fecha or not fecha.strip():
+        return JSONResponse({"detail": "Fecha requerida (YYYY-MM-DD)."}, status_code=400)
+    try:
+        delete_session(DB_PATH, fecha.strip())
+    except ValidationError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    except Exception:
+        logging.getLogger("mutations").exception("API sesion DELETE fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse(
+        {
+            "schema_version": TRAINING_API_SCHEMA_VERSION,
+            "fecha": fecha.strip(),
+            "deleted": True,
+        }
+    )
+
+
+@app.get("/api/v1/ejercicios")
+def api_training_exercises(request: Request):
+    """Catálogo de ejercicios para el editor móvil. Requiere X-Sync-Token."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    try:
+        catalog = get_split_catalog(DB_PATH)
+    except Exception:
+        logging.getLogger("dashboard").exception("API ejercicios fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse(
+        {
+            "schema_version": TRAINING_API_SCHEMA_VERSION,
+            "count": len(catalog),
+            "ejercicios": catalog,
+            # meta aditiva (v1.1, sin bump): lo que el alta web ofrece en sus
+            # selects (categorías canónicas + músculos). El cliente ignora lo
+            # desconocido; los APK viejos siguen funcionando.
+            "meta": {"categorias": MUSCLE_CATEGORIES},
+        }
+    )
+
+
+def _api_domain_error(exc: Exception, log: str) -> JSONResponse:
+    """Mapea errores de dominio a su status (backend-standards §3)."""
+    if isinstance(exc, NotFoundError):
+        return JSONResponse({"detail": str(exc)}, status_code=404)
+    if isinstance(exc, ConflictError):
+        return JSONResponse({"detail": str(exc)}, status_code=409)
+    if isinstance(exc, ValidationError):
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    logging.getLogger(log).exception("API fallida")
+    return JSONResponse({"detail": "Error interno"}, status_code=500)
+
+
+def _api_num(value) -> float | None:
+    """Normaliza un valor de serie a número o None (preview de plantilla)."""
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _api_preview_row(
+    ejercicio: str, kg, reps, rir, descanso_seg, orden: int, velocidad_kmh=None, dificultad=None
+) -> dict:
+    kg_n, reps_n, rir_n, desc_n = (_api_num(v) for v in (kg, reps, rir, descanso_seg))
+    vel_n, dif_n = (_api_num(v) for v in (velocidad_kmh, dificultad))
+    rm: float | None = None
+    try:
+        if kg_n is not None and reps_n is not None:
+            rm = round(rm_ajustado(kg_n, reps_n, rir_n or 0.0), 1)
+    except (TypeError, ValueError):
+        rm = None
+    return {
+        "set_orden": orden,
+        "ejercicio": ejercicio,
+        "kg": kg_n,
+        "reps": reps_n,
+        "rir": rir_n,
+        "descanso_seg": desc_n,
+        "rm": rm,
+        "velocidad_kmh": vel_n,
+        "dificultad": dif_n,
+    }
+
+
+@app.get("/api/v1/plantillas")
+def api_training_templates(request: Request):
+    """Lista de entrenos (plantillas) con sus ejercicios. Requiere token."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    try:
+        plantillas = get_plantillas(DB_PATH)
+    except Exception:
+        logging.getLogger("dashboard").exception("API plantillas fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse(
+        {
+            "schema_version": TRAINING_API_SCHEMA_VERSION,
+            "count": len(plantillas),
+            "plantillas": [
+                {
+                    "id": p["id"],
+                    "nombre": p["nombre"],
+                    "clasificacion": p["clasificacion"],
+                    "ejercicios": list(p["ejercicios"]),
+                }
+                for p in plantillas
+            ],
+        }
+    )
+
+
+@app.post("/api/v1/plantilla/aplicar")
+async def api_training_template_apply(request: Request):
+    """Preview de un entreno sobre una fecha, sin escribir (como la web).
+
+    El móvil muestra el preview en el editor; el guardado posterior es el
+    POST /api/v1/sesion normal. Requiere X-Sync-Token.
+    """
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    raw_body = await request.body()
+    if len(raw_body) > MAX_BODY_BYTES:
+        return JSONResponse({"detail": "Lote excesivo"}, status_code=413)
+    try:
+        body = json.loads(raw_body)
+    except json.JSONDecodeError:
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    plantilla_id = body.get("plantilla_id", None)
+    fecha = body.get("fecha", "")
+    if isinstance(plantilla_id, bool) or not isinstance(plantilla_id, int):
+        return JSONResponse({"detail": "plantilla_id requerido (entero)."}, status_code=400)
+    if not isinstance(fecha, str) or not fecha.strip():
+        return JSONResponse({"detail": "Fecha requerida (YYYY-MM-DD)."}, status_code=400)
+    try:
+        parsed = parse_form_date(fecha.strip())
+        rows = apply_template_rows(DB_PATH, plantilla_id)
+    except (ValidationError, NotFoundError) as exc:
+        return _api_domain_error(exc, "dashboard")
+    except Exception:
+        logging.getLogger("dashboard").exception("API plantilla aplicar fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse(
+        {
+            "schema_version": TRAINING_API_SCHEMA_VERSION,
+            "plantilla_id": plantilla_id,
+            "fecha": fecha_to_db(parsed),
+            "semana": calculate_cycle_week(parsed, CICLO_START_DATE),
+            "dia": day_from_date(parsed),
+            "sets": [
+                _api_preview_row(
+                    r.ejercicio,
+                    r.kg,
+                    r.reps,
+                    r.rir,
+                    r.descanso_seg,
+                    idx,
+                    r.velocidad_kmh,
+                    r.dificultad,
+                )
+                for idx, r in enumerate(rows, start=1)
+            ],
+        }
+    )
+
+
+@app.post("/api/v1/plantilla/guardar")
+async def api_training_template_save(request: Request):
+    """Guarda el día como entreno (upsert por nombre, como la web)."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    raw_body = await request.body()
+    if len(raw_body) > MAX_BODY_BYTES:
+        return JSONResponse({"detail": "Lote excesivo"}, status_code=413)
+    try:
+        body = json.loads(raw_body)
+    except json.JSONDecodeError:
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    nombre = body.get("nombre", "")
+    ejercicios = body.get("ejercicios", None)
+    if not isinstance(nombre, str) or not nombre.strip():
+        return JSONResponse({"detail": "Debes ponerle nombre al entreno."}, status_code=400)
+    if not isinstance(ejercicios, list) or not ejercicios:
+        return JSONResponse(
+            {"detail": "El entreno debe tener al menos un ejercicio."}, status_code=400
+        )
+    if len(nombre) > MAX_NAME_LEN:
+        return JSONResponse(
+            {"detail": f"Nombre demasiado largo (máx. {MAX_NAME_LEN})."}, status_code=400
+        )
+    try:
+        result = save_template_with_undo_snapshot(
+            DB_PATH, TemplateInput(nombre=nombre, ejercicios=[str(e) for e in ejercicios])
+        )
+    except (ValidationError, ConflictError) as exc:
+        return _api_domain_error(exc, "mutations")
+    except Exception:
+        logging.getLogger("mutations").exception("API plantilla guardar fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse(
+        {
+            "schema_version": TRAINING_API_SCHEMA_VERSION,
+            "plantilla": {
+                "id": result.id,
+                "nombre": result.nombre,
+                "clasificacion": result.clasificacion,
+                "ejercicios": list(result.ejercicios),
+                "updated": result.updated,
+            },
+        }
+    )
+
+
+@app.post("/api/v1/ejercicio")
+async def api_training_exercise_create(request: Request):
+    """Alta de ejercicio en el catálogo (origen manual). 409 si duplicado."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    raw_body = await request.body()
+    if len(raw_body) > MAX_BODY_BYTES:
+        return JSONResponse({"detail": "Lote excesivo"}, status_code=413)
+    try:
+        body = json.loads(raw_body)
+    except json.JSONDecodeError:
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    for field in ("ejercicio", "grupo_muscular", "categoria"):
+        value = body.get(field, "")
+        if not isinstance(value, str) or not value.strip():
+            return JSONResponse({"detail": f"El campo {field} es obligatorio."}, status_code=400)
+        if len(value) > MAX_NAME_LEN:
+            return JSONResponse(
+                {"detail": f"El campo {field} es demasiado largo (máx. {MAX_NAME_LEN})."},
+                status_code=400,
+            )
+    try:
+        create_exercise(
+            DB_PATH, str(body["ejercicio"]), str(body["grupo_muscular"]), str(body["categoria"])
+        )
+    except (ValidationError, ConflictError) as exc:
+        return _api_domain_error(exc, "dashboard")
+    except Exception:
+        logging.getLogger("dashboard").exception("API ejercicio alta fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse(
+        {
+            "schema_version": TRAINING_API_SCHEMA_VERSION,
+            "ejercicio": {
+                "ejercicio": str(body["ejercicio"]).strip(),
+                "grupo_muscular": str(body["grupo_muscular"]).strip(),
+                "categoria": str(body["categoria"]).strip(),
+            },
+        }
+    )
+
+
+@app.get("/api/v1/undo/peek")
+def api_undo_peek(request: Request):
+    """Describe la entrada deshacer-able sin consumirla. Requiere token."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    try:
+        entry = peek_undo(DB_PATH)
+    except Exception:
+        logging.getLogger("mutations").exception("API undo peek fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    payload: dict = {"schema_version": TRAINING_API_SCHEMA_VERSION, "kind": entry["kind"]}
+    if "fecha_iso" in entry:
+        payload["fecha_iso"] = entry["fecha_iso"]
+    return JSONResponse(payload)
+
+
+@app.post("/api/v1/undo")
+async def api_undo(request: Request):
+    """Deshace la última acción (consume 1 entrada). kind empty = nada."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    raw_body = await request.body()
+    if len(raw_body) > MAX_BODY_BYTES:
+        return JSONResponse({"detail": "Lote excesivo"}, status_code=413)
+    fecha = ""
+    if raw_body.strip():
+        try:
+            body = json.loads(raw_body)
+        except json.JSONDecodeError:
+            return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+        if not isinstance(body, dict):
+            return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+        raw_fecha = body.get("fecha", "")
+        if raw_fecha is None:
+            raw_fecha = ""
+        if not isinstance(raw_fecha, str):
+            return JSONResponse({"detail": "Fecha inválida."}, status_code=400)
+        fecha = raw_fecha.strip()
+    try:
+        result = undo_last_action(DB_PATH, fecha)
+    except (ValidationError, NotFoundError, ConflictError) as exc:
+        return _api_domain_error(exc, "mutations")
+    except Exception:
+        logging.getLogger("mutations").exception("API undo fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    payload = {"schema_version": TRAINING_API_SCHEMA_VERSION, "kind": result["kind"]}
+    if "fecha_iso" in result:
+        payload["fecha_iso"] = result["fecha_iso"]
+    if "has_data" in result:
+        payload["has_data"] = result["has_data"] == "1"
+    return JSONResponse(payload)
+
+
+@app.get("/api/v1/sugerencia")
+def api_training_suggestion(request: Request, fecha: str = Query(default="")):
+    """Rutina sugerida del día (split + historial, sin escribir)."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    if not fecha or not fecha.strip():
+        return JSONResponse({"detail": "Fecha requerida (YYYY-MM-DD)."}, status_code=400)
+    try:
+        s = resolve_suggestion(DB_PATH, fecha.strip())
+    except ValidationError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    except Exception:
+        logging.getLogger("dashboard").exception("API sugerencia fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse(
+        {
+            "schema_version": TRAINING_API_SCHEMA_VERSION,
+            "fecha": s.fecha,
+            "tipo": s.tipo,
+            "explicacion": s.explicacion,
+            "split_id": s.split_id,
+            "slot_dia": s.slot_dia,
+            "pendiente_desde": s.pendiente_desde,
+            "ejercicios": list(s.ejercicios),
+            "sets": [
+                {
+                    "ejercicio": x.ejercicio,
+                    "kg": x.kg,
+                    "reps": x.reps,
+                    "rir": x.rir,
+                    "descanso_seg": x.descanso_seg,
+                    "fuente_fecha": x.fuente_fecha,
+                    "velocidad_kmh": x.velocidad_kmh,
+                    "dificultad": x.dificultad,
+                }
+                for x in s.sets
+            ],
+        }
+    )
+
+
+def _api_float_or_none(value, field: str) -> float | None:
+    """Número finito o None (ausente/vacío). Lanza ValidationError si no numérico."""
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        num = float(str(value).strip().replace(",", "."))
+    except (TypeError, ValueError):
+        raise ValidationError(f"El campo {field} debe ser numérico.")
+    if not math.isfinite(num):
+        raise ValidationError(f"El campo {field} debe ser numérico.")
+    return num
+
+
+@app.get("/api/v1/cardio")
+def api_cardio_day(request: Request, fecha: str = Query(default="")):
+    """Sesiones EXERCISE_SESSION del día con su anotación manual."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    if not fecha or not fecha.strip():
+        return JSONResponse({"detail": "Fecha requerida (YYYY-MM-DD)."}, status_code=400)
+    try:
+        parse_form_date(fecha.strip())
+        sesiones = get_day_cardio(DB_PATH, fecha.strip())
+    except ValidationError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    except Exception:
+        logging.getLogger("dashboard").exception("API cardio GET fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse(
+        {
+            "schema_version": TRAINING_API_SCHEMA_VERSION,
+            "fecha": fecha.strip(),
+            "count": len(sesiones),
+            "sesiones": sesiones,
+        }
+    )
+
+
+@app.post("/api/v1/cardio/anotacion")
+async def api_cardio_annotate(request: Request):
+    """Anota velocidad/inclinación/notas (upsert; todo vacío = borrar)."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    raw_body = await request.body()
+    if len(raw_body) > MAX_BODY_BYTES:
+        return JSONResponse({"detail": "Lote excesivo"}, status_code=413)
+    try:
+        body = json.loads(raw_body)
+    except json.JSONDecodeError:
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    hc_id = body.get("hc_id", "")
+    if not isinstance(hc_id, str) or not hc_id.strip():
+        return JSONResponse({"detail": "El campo hc_id es obligatorio."}, status_code=400)
+    notas = body.get("notas", "")
+    if notas is None:
+        notas = ""
+    if not isinstance(notas, str):
+        return JSONResponse({"detail": "El campo notas es inválido."}, status_code=400)
+    try:
+        velocidad = _api_float_or_none(body.get("velocidad_kmh"), "velocidad_kmh")
+        inclinacion = _api_float_or_none(body.get("inclinacion_pct"), "inclinacion_pct")
+        upsert_cardio_annotation(
+            DB_PATH,
+            CardioAnnotationInput(
+                hc_id=hc_id.strip(),
+                velocidad_kmh=velocidad,
+                inclinacion_pct=inclinacion,
+                notas=notas,
+            ),
+        )
+    except (ValidationError, NotFoundError, ConflictError) as exc:
+        return _api_domain_error(exc, "dashboard")
+    except Exception:
+        logging.getLogger("dashboard").exception("API cardio POST fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    deleted = velocidad is None and inclinacion is None and not notas.strip()
+    return JSONResponse(
+        {"schema_version": TRAINING_API_SCHEMA_VERSION, "hc_id": hc_id.strip(), "deleted": deleted}
+    )
+
+
+@app.get("/api/v1/fechas")
+def api_day_dates(request: Request, vista: str = Query(default="entrenamiento")):
+    """Fechas con datos para los puntos del carrusel (por pestaña)."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    if vista not in ("entrenamiento", "alimentacion", "todas"):
+        return JSONResponse(
+            {"detail": "Vista inválida (entrenamiento|alimentacion|todas)."},
+            status_code=400,
+        )
+    try:
+        from src.database import get_daily_data_dates
+
+        if vista == "todas":
+            fechas = sorted(
+                get_daily_data_dates(DB_PATH, "entrenamiento")
+                | get_daily_data_dates(DB_PATH, "alimentacion")
+            )
+        else:
+            fechas = sorted(get_daily_data_dates(DB_PATH, vista))
+    except Exception:
+        logging.getLogger("dashboard").exception("API fechas fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse(
+        {"schema_version": TRAINING_API_SCHEMA_VERSION, "vista": vista, "fechas": fechas}
+    )
+
+
+NUTRITION_PARAM_DEFAULTS: dict[str, float] = {
+    "peso_kg": 70.0,
+    "factor_proteina": 1.5,
+    "factor_grasa": 1.1,
+    "kcal_objetivo": 2300.0,
+    "fibra_objetivo": 0.0,
+    "hierro_objetivo": 0.0,
+    "calcio_objetivo": 0.0,
+    "vitamina_c_objetivo": 0.0,
+    "vitamina_a_objetivo": 0.0,
+}
+
+# Parámetros editables desde el cliente (los *_objetivo extra los importa la
+# hoja; la web tampoco los edita). Claves desconocidas se ignoran.
+NUTRITION_EDITABLE_PARAMS: tuple[str, ...] = (
+    "peso_kg",
+    "factor_proteina",
+    "factor_grasa",
+    "kcal_objetivo",
+)
+
+
+def _api_nutrient_row(r: dict) -> dict:
+    return {
+        "orden": r.get("orden"),
+        "alimento": r.get("alimento"),
+        "cantidad_g": r.get("cantidad_g"),
+        **{field: r.get(field) for field in NUTRIENT_FIELDS},
+    }
+
+
+def _api_diario_payload(fecha_iso: str) -> dict:
+    """Lee el día nutricional como el editor web (con prefill heredado)."""
+    fecha = parse_form_date(fecha_iso)
+    fecha_db = fecha_to_db(fecha)
+    db_data = get_diario_by_fecha(DB_PATH, fecha_db)
+    data = db_data
+    prefill_source: str | None = None
+    if not db_data:
+        prefill_source = get_prev_diary_date(DB_PATH, fecha_db)
+        if prefill_source is not None:
+            data = get_diario_by_fecha(DB_PATH, prefill_source)
+    params = get_parametros_diarios(DB_PATH, fecha_db) or {}
+    if not params and prefill_source is not None:
+        params = get_parametros_diarios(DB_PATH, prefill_source) or {}
+    parametros = {**NUTRITION_PARAM_DEFAULTS, **{k: float(v) for k, v in params.items()}}
+    consumido = diary_totals(data)
+    consumido["cantidad_g"] = round(
+        sum(float(r["cantidad_g"]) for r in data if r["cantidad_g"] is not None), 2
+    )
+    return {
+        "schema_version": TRAINING_API_SCHEMA_VERSION,
+        "fecha": fecha_db,
+        "has_data": bool(db_data),
+        "prefilled": prefill_source is not None,
+        "prefill_source": prefill_source,
+        "entradas": [_api_nutrient_row(dict(r)) for r in data],
+        "consumido": consumido,
+        "objetivo": objetivos_diarios(parametros),
+        "parametros": parametros,
+    }
+
+
+def _api_nutrition_params(body: dict) -> dict:
+    """Extrae y valida los 4 parámetros editables. Lanza ValidationError."""
+    params: dict[str, float] = {}
+    for key in NUTRITION_EDITABLE_PARAMS:
+        if key not in body or body[key] is None or str(body[key]).strip() == "":
+            continue
+        try:
+            value = float(str(body[key]).strip().replace(",", "."))
+        except (TypeError, ValueError):
+            raise ValidationError(f"El campo {key} debe ser numérico.")
+        if not math.isfinite(value) or value < 0 or (key == "peso_kg" and value == 0):
+            raise ValidationError(f"El campo {key} no es válido.")
+        params[key] = value
+    return params
+
+
+@app.get("/api/v1/diario")
+def api_nutrition_get_day(request: Request, fecha: str = Query(default="")):
+    """Lee el día nutricional (entradas + consumido + objetivo + parámetros)."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    if not fecha or not fecha.strip():
+        return JSONResponse({"detail": "Fecha requerida (YYYY-MM-DD)."}, status_code=400)
+    try:
+        return JSONResponse(_api_diario_payload(fecha.strip()))
+    except ValidationError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    except Exception:
+        logging.getLogger("dashboard").exception("API diario GET fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+
+
+@app.post("/api/v1/diario")
+async def api_nutrition_save_day(request: Request):
+    """Guarda el día nutricional (reemplazo total idempotente + parámetros)."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    raw_body = await request.body()
+    if len(raw_body) > MAX_BODY_BYTES:
+        return JSONResponse({"detail": "Lote excesivo"}, status_code=413)
+    try:
+        body = json.loads(raw_body)
+    except json.JSONDecodeError:
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    fecha = body.get("fecha", "")
+    entradas_raw = body.get("entradas", None)
+    if not isinstance(fecha, str) or not fecha.strip():
+        return JSONResponse({"detail": "Fecha requerida (YYYY-MM-DD)."}, status_code=400)
+    if not isinstance(entradas_raw, list) or not entradas_raw:
+        return JSONResponse({"detail": "Debes registrar al menos un alimento."}, status_code=400)
+    if len(entradas_raw) > MAX_FORM_SETS:
+        return JSONResponse(
+            {"detail": f"Demasiadas filas del diario (máx. {MAX_FORM_SETS})."},
+            status_code=400,
+        )
+    alimentos: list[str] = []
+    cantidades: list[str] = []
+    for item in entradas_raw:
+        if not isinstance(item, dict):
+            return JSONResponse({"detail": "Entrada inválida."}, status_code=400)
+        alimentos.append(str(item.get("alimento", "")))
+        cantidades.append(str(item.get("cantidad_g", "")))
+    try:
+        params = _api_nutrition_params(body)
+        entries = entries_from_form(alimentos, cantidades)
+        if not entries:
+            return JSONResponse(
+                {"detail": "Debes registrar al menos un alimento."}, status_code=400
+            )
+        save_diary_with_undo_snapshot(DB_PATH, fecha.strip(), entries, parametros=params or None)
+    except (ValidationError, NotFoundError, ConflictError) as exc:
+        return _api_domain_error(exc, "mutations")
+    except Exception:
+        logging.getLogger("mutations").exception("API diario POST fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    try:
+        payload = _api_diario_payload(fecha.strip())
+    except Exception:
+        logging.getLogger("dashboard").exception("API diario POST relectura fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    payload["saved_count"] = len(payload["entradas"]) if payload["has_data"] else 0
+    return JSONResponse(payload)
+
+
+@app.delete("/api/v1/diario")
+def api_nutrition_delete_day(request: Request, fecha: str = Query(default="")):
+    """Elimina el día nutricional (filas; no toca parámetros). Idempotente."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    if not fecha or not fecha.strip():
+        return JSONResponse({"detail": "Fecha requerida (YYYY-MM-DD)."}, status_code=400)
+    try:
+        delete_diary_with_undo_snapshot(DB_PATH, fecha.strip())
+    except (ValidationError, NotFoundError, ConflictError) as exc:
+        return _api_domain_error(exc, "mutations")
+    except Exception:
+        logging.getLogger("mutations").exception("API diario DELETE fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse(
+        {
+            "schema_version": TRAINING_API_SCHEMA_VERSION,
+            "fecha": fecha.strip(),
+            "deleted": True,
+        }
+    )
+
+
+@app.get("/api/v1/alimentos")
+def api_nutrition_foods(request: Request):
+    """Catálogo de alimentos (9 nutrientes por 100 g) + etiquetas del alta."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    try:
+        catalog = get_alimentos_catalog(DB_PATH)
+    except Exception:
+        logging.getLogger("dashboard").exception("API alimentos fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse(
+        {
+            "schema_version": TRAINING_API_SCHEMA_VERSION,
+            "count": len(catalog),
+            "alimentos": [
+                {
+                    "nombre": a["nombre"],
+                    "categoria": a.get("categoria", ""),
+                    **{field: a.get(field) for field in NUTRIENT_FIELDS},
+                }
+                for a in catalog
+            ],
+            "meta": {"nutrientes": NUTRIENT_FIELD_LABELS},
+        }
+    )
+
+
+@app.post("/api/v1/alimento")
+async def api_nutrition_food_create(request: Request):
+    """Alta de alimento (por 100 g). 409 si duplicado."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    raw_body = await request.body()
+    if len(raw_body) > MAX_BODY_BYTES:
+        return JSONResponse({"detail": "Lote excesivo"}, status_code=413)
+    try:
+        body = json.loads(raw_body)
+    except json.JSONDecodeError:
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    nombre = body.get("nombre", "")
+    if not isinstance(nombre, str) or not nombre.strip():
+        return JSONResponse({"detail": "El nombre del alimento es obligatorio."}, status_code=400)
+    if len(nombre) > MAX_NAME_LEN:
+        return JSONResponse(
+            {"detail": f"Nombre demasiado largo (máx. {MAX_NAME_LEN})."}, status_code=400
+        )
+    categoria = body.get("categoria", "")
+    if not isinstance(categoria, str):
+        return JSONResponse({"detail": "Categoría inválida."}, status_code=400)
+    if len(categoria) > MAX_NAME_LEN:
+        return JSONResponse(
+            {"detail": f"Categoría demasiado larga (máx. {MAX_NAME_LEN})."}, status_code=400
+        )
+    try:
+        create_alimento(
+            DB_PATH,
+            AlimentoInput(
+                nombre=nombre,
+                categoria=categoria,
+                **{field: body.get(field, 0) for field in NUTRIENT_FIELDS},
+            ),
+        )
+    except (ValidationError, ConflictError) as exc:
+        return _api_domain_error(exc, "dashboard")
+    except Exception:
+        logging.getLogger("dashboard").exception("API alimento alta fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse(
+        {
+            "schema_version": TRAINING_API_SCHEMA_VERSION,
+            "alimento": {"nombre": nombre.strip(), "categoria": categoria.strip()},
+        }
+    )
+
+
+@app.get("/api/v1/plantillas-comida")
+def api_nutrition_templates(request: Request):
+    """Lista de plantillas de comida con sus alimentos y cantidades."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    try:
+        plantillas = get_plantillas_alimentacion(DB_PATH)
+    except Exception:
+        logging.getLogger("dashboard").exception("API plantillas comida fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse(
+        {
+            "schema_version": TRAINING_API_SCHEMA_VERSION,
+            "count": len(plantillas),
+            "plantillas": [
+                {
+                    "id": p["id"],
+                    "nombre": p["nombre"],
+                    "alimentos": list(p["alimentos"]),
+                }
+                for p in plantillas
+            ],
+        }
+    )
+
+
+@app.post("/api/v1/plantilla-comida/aplicar")
+async def api_nutrition_template_apply(request: Request):
+    """Preview de plantilla de comida: nutrientes recalculados, sin escribir."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    raw_body = await request.body()
+    if len(raw_body) > MAX_BODY_BYTES:
+        return JSONResponse({"detail": "Lote excesivo"}, status_code=413)
+    try:
+        body = json.loads(raw_body)
+    except json.JSONDecodeError:
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    plantilla_id = body.get("plantilla_id", None)
+    fecha = body.get("fecha", "")
+    if isinstance(plantilla_id, bool) or not isinstance(plantilla_id, int):
+        return JSONResponse({"detail": "plantilla_id requerido (entero)."}, status_code=400)
+    if not isinstance(fecha, str) or not fecha.strip():
+        return JSONResponse({"detail": "Fecha requerida (YYYY-MM-DD)."}, status_code=400)
+    try:
+        parsed = parse_form_date(fecha.strip())
+        rows = apply_meal_template(DB_PATH, plantilla_id)
+    except (ValidationError, NotFoundError) as exc:
+        return _api_domain_error(exc, "dashboard")
+    except Exception:
+        logging.getLogger("dashboard").exception("API plantilla comida aplicar fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse(
+        {
+            "schema_version": TRAINING_API_SCHEMA_VERSION,
+            "plantilla_id": plantilla_id,
+            "fecha": fecha_to_db(parsed),
+            "entradas": [_api_nutrient_row(dict(r)) for r in rows],
+        }
+    )
+
+
+@app.post("/api/v1/plantilla-comida/guardar")
+async def api_nutrition_template_save(request: Request):
+    """Guarda el día como plantilla de comida (upsert por nombre, sin undo)."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    raw_body = await request.body()
+    if len(raw_body) > MAX_BODY_BYTES:
+        return JSONResponse({"detail": "Lote excesivo"}, status_code=413)
+    try:
+        body = json.loads(raw_body)
+    except json.JSONDecodeError:
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    nombre = body.get("nombre", "")
+    entradas_raw = body.get("entradas", None)
+    if not isinstance(nombre, str) or not nombre.strip():
+        return JSONResponse(
+            {"detail": "El nombre de la plantilla no puede estar vacío."}, status_code=400
+        )
+    if len(nombre) > MAX_NAME_LEN:
+        return JSONResponse(
+            {"detail": f"Nombre demasiado largo (máx. {MAX_NAME_LEN})."}, status_code=400
+        )
+    if not isinstance(entradas_raw, list) or not entradas_raw:
+        return JSONResponse(
+            {"detail": "La plantilla debe tener al menos un alimento."}, status_code=400
+        )
+    rows: list[dict] = []
+    for item in entradas_raw:
+        if not isinstance(item, dict):
+            return JSONResponse({"detail": "Entrada inválida."}, status_code=400)
+        rows.append(
+            {"alimento": str(item.get("alimento", "")), "cantidad_g": item.get("cantidad_g", "")}
+        )
+    try:
+        existing = find_plantilla_alimentacion_by_nombre(DB_PATH, nombre.strip())
+        save_meal_template(DB_PATH, nombre.strip(), rows)
+        pid = existing
+        if pid is None:
+            pid = find_plantilla_alimentacion_by_nombre(DB_PATH, nombre.strip())
+    except (ValidationError, ConflictError, NotFoundError) as exc:
+        return _api_domain_error(exc, "dashboard")
+    except Exception:
+        logging.getLogger("dashboard").exception("API plantilla comida guardar fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse(
+        {
+            "schema_version": TRAINING_API_SCHEMA_VERSION,
+            "plantilla": {"id": pid, "nombre": nombre.strip(), "updated": existing is not None},
+        }
+    )
+
+
 @app.get("/exportar/csv", response_class=Response)
 def export_csv():
     """CSV completo de training_sets (export de compatibilidad)."""

@@ -132,9 +132,9 @@ No third-party runtime is involved in styles.
   is a single server-log line.
 - **Use `http://127.0.0.1:8000`** (or `localhost`) in the browser — not the
   `http://0.0.0.0:8000` address uvicorn prints at startup.
-- **CSRF window is configurable** via `GYM_CSRF_WINDOW_HOURS` (default 7 días,
-  `CSRF_WINDOW_SECONDS` en `src/security.py`); a rejected request returns 403
-  with a clear "recarga la página" notice.
+- **CSRF tokens do not expire by time.** Their HMAC signature is still required,
+  and changing `GYM_CSRF_SECRET` invalidates existing tokens. A rejected request
+  returns 403 with a clear "recarga la página" notice.
 - **Before any non-loopback deployment:** Origin/token checks must stay enabled,
   the CSRF secret must come from the environment (`GYM_CSRF_SECRET`), and this
   document must be updated with the exposure model. On startup, the app logs a
@@ -143,16 +143,23 @@ No third-party runtime is involved in styles.
 ### 2.6 LAN exposure: sync-only gate (`src/network_access.py`)
 
 CSRF does not authenticate users: a remote peer could load the dashboard and
-read a valid token. The LAN is therefore **HealthSync-only**:
+read a valid token. The LAN is therefore **HealthSync + training API only**:
 
 - **`LanSyncOnlyMiddleware`** (activated by `GYM_LAN_SYNC_ONLY=1`, set only by
   `scripts/start_server.sh`) classifies each request by the ASGI
   `scope['client']` address (`ipaddress.ip_address(...).is_loopback`; covers
   `127.0.0.0/8` and `::1`). Loopback traffic passes untouched.
 - **Remote traffic is allowed only for `POST /sync/health-connect`** (exact path
-  match, never a prefix), which authenticates with `X-Sync-Token`. Every other
-  remote request — dashboard, static, exports, mutations — is rejected with a
+  match, never a prefix), which authenticates with `X-Sync-Token`, **and the
+  training diary API v1** (`ALLOWED_REMOTE_ROUTES`: `GET`/`POST`/`DELETE`
+  `/api/v1/sesion` + `GET /api/v1/ejercicios`, exact method + path, same
+  `X-Sync-Token`; contract in `training-api-contract.md`). Every other
+  remote request — dashboard, static, exports, htmx mutations — is rejected with a
   bare **403** (empty body, no HTML) before the request body is parsed.
+- **Reusing one `X-Sync-Token` for Health Connect ingest and the training API
+  is an explicit decision** (personal single-owner app, no user accounts): if
+  the token leaks, the impact grows from "injecting Health Connect rows" to
+  "rewriting training history". Accepted; never log the token or payloads.
 - **`X-Forwarded-For` is never trusted**; only the TCP peer address.
 - **Rate limit:** bounded per-peer fixed window, `GYM_SYNC_RATE_LIMIT_PER_MINUTE` (default 30/min)
   (default 30/min). Exceeding it returns **429 + `Retry-After`**.
@@ -169,7 +176,9 @@ read a valid token. The LAN is therefore **HealthSync-only**:
 ## 3. Before exposing on a network
 
 The dashboard itself is **never** exposed: the only remote surface is
-`POST /sync/health-connect` (token-authenticated, rate-limited). Any future
+`POST /sync/health-connect` (token-authenticated, rate-limited) **plus the
+training diary API v1** (`GET`/`POST`/`DELETE /api/v1/sesion`,
+`GET /api/v1/ejercicios`, same token; see `training-api-contract.md`). Any future
 remote UI access requires real authentication first.
 
 1. Add authentication (login + session cookies) and authorization (owner-only).
@@ -187,7 +196,8 @@ remote UI access requires real authentication first.
 ### 2.6 API sync endpoint (POST /sync/health-connect)
 
 - **Not a browser flow**: it is JSON-only and never rendered as HTML. The CSRF
-  middleware exempts **exactly** this path (`CSRF_EXEMPT_PATHS` in
+  middleware exempts **exactly** this path **and `POST`/`DELETE /api/v1/sesion**
+  (training API v1, own credential; `CSRF_EXEMPT_PATHS` in
   `src/security.py`); any other path keeps full form-CSRF protection
   (covered by tests in `tests/test_security.py`).
 - **Authentication** is the `X-Sync-Token` header compared with
