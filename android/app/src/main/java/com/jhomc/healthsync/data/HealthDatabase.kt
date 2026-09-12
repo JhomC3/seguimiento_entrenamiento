@@ -214,12 +214,18 @@ interface HealthDao {
         SyncTargetEntity::class,
         HealthOutboxEntity::class,
         SyncMetaEntity::class,
+        TrainingCacheEntity::class,
+        TrainingCacheMetaEntity::class,
+        NutritionCacheEntity::class,
+        PendingWriteEntity::class,
     ],
-    version = 3,
+    version = 6,
     exportSchema = false,
 )
 abstract class HealthDatabase : RoomDatabase() {
     abstract fun healthDao(): HealthDao
+    abstract fun trainingCacheDao(): TrainingCacheDao
+    abstract fun offlineDao(): OfflineDao
 }
 
 /** Tipos esenciales del catálogo (RecordTypes.kt) + el agregado interno de HR. */

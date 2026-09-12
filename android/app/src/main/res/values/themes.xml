@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AppTheme: réplica del tema web (fondo matte-950, texto neutral-100,
+     acento burgundy). Sin dependencias nuevas: solo framework. -->
+<resources>
+    <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/matte_950</item>
+        <item name="android:colorBackground">@color/matte_950</item>
+        <item name="android:textColorPrimary">@color/neutral_100</item>
+        <item name="android:textColorSecondary">@color/neutral_400</item>
+        <item name="android:textColorHint">@color/neutral_500</item>
+        <item name="android:colorAccent">@color/burgundy_400</item>
+        <item name="android:colorFocusedHighlight">@color/focus_ring</item>
+        <item name="android:statusBarColor">@color/matte_950</item>
+        <item name="android:navigationBarColor">@color/matte_950</item>
+        <item name="android:alertDialogTheme">@style/DiaryDialog</item>
+        <item name="android:buttonStyle">@style/Btn.Outline</item>
+        <item name="android:editTextStyle">@style/Cell.Input</item>
+    </style>
+
+    <!-- Diálogo oscuro con tarjeta matte (réplica del daily-dialog web). -->
+    <style name="DiaryDialog" parent="android:Theme.Material.Dialog">
+        <item name="android:windowBackground">@color/matte_900</item>
+        <item name="android:textColorPrimary">@color/neutral_100</item>
+        <item name="android:textColorSecondary">@color/neutral_400</item>
+        <item name="android:colorAccent">@color/burgundy_400</item>
+    </style>
+</resources>

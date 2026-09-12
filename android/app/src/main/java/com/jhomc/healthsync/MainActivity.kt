@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
         }
 
         statusView = TextView(this).apply { textSize = 14f; setPadding(8, 8, 8, 8) }
+        statusView.asSummary()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -62,9 +63,16 @@ class MainActivity : ComponentActivity() {
         })
 
         // --- Sincronizar todo ahora (fuerza, pantalla apagada OK) ---
-        root.addView(Button(this).apply {
-            text = "Sincronizar AHORA"
+        root.addView(primaryButton("Sincronizar AHORA").apply {
             setOnClickListener { runDirectSync() }
+        })
+
+        // --- Diario de entrenamiento (API v1, ver + editar por fecha) ---
+        root.addView(Button(this).apply {
+            text = "Diario de entrenamiento"
+            setOnClickListener {
+                startActivity(android.content.Intent(this@MainActivity, TrainingDiaryActivity::class.java))
+            }
         })
 
         setContentView(ScrollView(this).apply { addView(root) })

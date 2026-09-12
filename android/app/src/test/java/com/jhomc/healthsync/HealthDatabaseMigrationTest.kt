@@ -8,6 +8,9 @@ import androidx.test.core.app.ApplicationProvider
 import com.jhomc.healthsync.data.HealthDatabase
 import com.jhomc.healthsync.data.MIGRATION_1_2
 import com.jhomc.healthsync.data.MIGRATION_2_3
+import com.jhomc.healthsync.data.MIGRATION_3_4
+import com.jhomc.healthsync.data.MIGRATION_4_5
+import com.jhomc.healthsync.data.MIGRATION_5_6
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -129,6 +132,39 @@ class HealthDatabaseMigrationTest {
     }
 
     @Test
+    fun `migration v3 to v4 creates training cache tables`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = openV2Database(context, "migration-v3-v4.db")
+        try {
+            MIGRATION_2_3.migrate(db)
+            MIGRATION_3_4.migrate(db)
+            db.query("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('training_cache','training_cache_meta')").use { c ->
+                val names = mutableListOf<String>()
+                while (c.moveToNext()) names += c.getString(0)
+                assertTrue(names.contains("training_cache"))
+                assertTrue(names.contains("training_cache_meta"))
+            }
+            // La caché admite escritura inmediata tras migrar.
+            db.execSQL(
+                "INSERT INTO training_cache_meta (fecha, semana, dia, has_data, updated_at_epoch_ms) " +
+                    "VALUES ('2026-09-07', 19, 'LUNES', 1, 5)",
+            )
+            db.execSQL(
+                "INSERT INTO training_cache (fecha, set_orden, ejercicio, kg, reps, rir, descanso_seg, rm) " +
+                    "VALUES ('2026-09-07', 1, 'Press', 80.0, 8.0, 1.0, NULL, 103.9)",
+            )
+            db.query("SELECT ejercicio, rm FROM training_cache WHERE fecha='2026-09-07'").use { c ->
+                c.moveToFirst()
+                assertEquals("Press", c.getString(0))
+                assertEquals(103.9, c.getDouble(1), 0.001)
+            }
+        } finally {
+            db.close()
+            context.deleteDatabase("migration-v3-v4.db")
+        }
+    }
+
+    @Test
     fun `migration v1 to v2 preserves state and outbox and adds scheduling columns`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context.deleteDatabase("migration-test.db")
@@ -180,6 +216,89 @@ class HealthDatabaseMigrationTest {
         } finally {
             db.close()
             context.deleteDatabase("migration-test.db")
+        }
+    }
+
+    @Test
+    fun `migration v4 to v5 creates nutrition cache and outbox`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = openV2Database(context, "migration-v4-v5.db")
+        try {
+            MIGRATION_2_3.migrate(db)
+            MIGRATION_3_4.migrate(db)
+            MIGRATION_4_5.migrate(db)
+            db.query("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('nutrition_cache','pending_writes')").use { c ->
+                val names = mutableListOf<String>()
+                while (c.moveToNext()) names += c.getString(0)
+                assertTrue(names.contains("nutrition_cache"))
+                assertTrue(names.contains("pending_writes"))
+            }
+            db.execSQL(
+                "INSERT INTO nutrition_cache (fecha, payload_json, updated_at_epoch_ms) " +
+                    "VALUES ('2026-09-07', '{\"a\":1}', 5)",
+            )
+            db.execSQL(
+                "INSERT INTO pending_writes (domain, fecha, op, payload_json, created_at_epoch_ms) " +
+                    "VALUES ('sesion', '2026-09-07', 'SAVE', '{}', 5)",
+            )
+            db.query("SELECT payload_json FROM nutrition_cache WHERE fecha='2026-09-07'").use { c ->
+                c.moveToFirst()
+                assertEquals("{\"a\":1}", c.getString(0))
+            }
+        } finally {
+            db.close()
+            context.deleteDatabase("migration-v4-v5.db")
+        }
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
+class TrainingCacheHiitMigrationTest {
+
+    @Test
+    fun `migration v5 to v6 adds hiit columns preserving rows`() {        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.deleteDatabase("migration-v5-v6.db")
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name("migration-v5-v6.db")
+                .callback(object : SupportSQLiteOpenHelper.Callback(5) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                            "CREATE TABLE training_cache (rowId INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                                "fecha TEXT NOT NULL, set_orden INTEGER NOT NULL, ejercicio TEXT NOT NULL, " +
+                                "kg REAL, reps REAL, rir REAL, descanso_seg REAL, rm REAL)",
+                        )
+                    }
+
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+                })
+                .build(),
+        )
+        val db = helper.writableDatabase
+        try {
+            db.execSQL(
+                "INSERT INTO training_cache (fecha, set_orden, ejercicio, kg, reps, rir, descanso_seg, rm) " +
+                    "VALUES ('2026-09-07', 1, 'Press', 80.0, 8.0, 1.0, NULL, 103.9)",
+            )
+            MIGRATION_5_6.migrate(db)
+            db.execSQL(
+                "INSERT INTO training_cache (fecha, set_orden, ejercicio, velocidad_kmh, dificultad) " +
+                    "VALUES ('2026-09-07', 2, 'HIIT', 12.3, 7.5)",
+            )
+            db.query("SELECT ejercicio, kg, velocidad_kmh, dificultad FROM training_cache ORDER BY set_orden").use { c ->
+                c.moveToFirst()
+                assertEquals("Press", c.getString(0))
+                assertTrue(c.isNull(2))
+                c.moveToNext()
+                assertEquals("HIIT", c.getString(0))
+                assertTrue(c.isNull(1))
+                assertEquals(12.3, c.getDouble(2), 0.001)
+                assertEquals(7.5, c.getDouble(3), 0.001)
+            }
+        } finally {
+            db.close()
+            context.deleteDatabase("migration-v5-v6.db")
         }
     }
 }

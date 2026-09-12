@@ -37,12 +37,16 @@ android {
             val token = syncDefaultToken()
             buildConfigField("String", "DEFAULT_SYNC_URL", "\"http://192.168.1.6:8000/sync/health-connect\"")
             buildConfigField("String", "DEFAULT_SYNC_TOKEN", "\"${token.escapeForKotlin()}\"")
+            // Base explícita de la API v1 del diario (sin derivar por strip en
+            // el caso común debug; ver TrainingApiClient.resolveApiBase).
+            buildConfigField("String", "DEFAULT_API_BASE", "\"http://192.168.1.6:8000\"")
         }
         release {
             // Nunca embebir el secreto en un APK distribuible: release exige
             // configuración manual (o pairing QR futuro) para sincronizar.
             buildConfigField("String", "DEFAULT_SYNC_URL", "\"\"")
             buildConfigField("String", "DEFAULT_SYNC_TOKEN", "\"\"")
+            buildConfigField("String", "DEFAULT_API_BASE", "\"\"")
         }
     }
 }
@@ -64,6 +68,7 @@ dependencies {
     implementation("androidx.health.connect:connect-client:1.1.0")
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")

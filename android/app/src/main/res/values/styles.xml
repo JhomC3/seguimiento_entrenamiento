@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vocabulario canónico espejo de static/css/components.css:
+     .btn* → Btn.*, .cell-input → Cell.Input, .card → Card.Serie,
+     .panel-title-neon → Diary.Title, .panel-title → Diary.SectionTitle. -->
+<resources>
+    <!-- Botón primario: fondo burgundy-700, blanco, 12sp black + tracking. -->
+    <style name="Btn.Primary" parent="android:Widget.Material.Button">
+        <item name="android:background">@color/burgundy_700</item>
+        <item name="android:textColor">@color/detail_white</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.08</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:minHeight">44dp</item>
+    </style>
+
+    <!-- Botón con borde (acciones secundarias de tarjetas). -->
+    <style name="Btn.Outline" parent="android:Widget.Material.Button">
+        <item name="android:background">@color/matte_900</item>
+        <item name="android:textColor">@color/neutral_200</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.08</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:minHeight">44dp</item>
+    </style>
+
+    <!-- Botón fantasma (Cancelar). -->
+    <style name="Btn.Ghost" parent="android:Widget.Material.Button.Borderless">
+        <item name="android:textColor">@color/neutral_300</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:minHeight">44dp</item>
+    </style>
+
+    <!-- Título neón: blanco black + glow rojo (neon-title web). -->
+    <style name="Diary.Title" parent="">
+        <item name="android:textColor">@color/detail_white</item>
+        <item name="android:textSize">20sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.2</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:shadowColor">#E61E46</item>
+        <item name="android:shadowRadius">12</item>
+        <item name="android:shadowDx">0</item>
+        <item name="android:shadowDy">0</item>
+    </style>
+
+    <!-- Título de sección: burgundy-400 (panel-title web). -->
+    <style name="Diary.SectionTitle" parent="">
+        <item name="android:textColor">@color/burgundy_400</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- Celda de tabla (kg/reps/...): texto claro sobre overlay. -->
+    <style name="Cell.Input" parent="android:Widget.Material.EditText">
+        <item name="android:textColor">@color/neutral_100</item>
+        <item name="android:textColorHint">@color/neutral_500</item>
+        <item name="android:background">@color/overlay_row</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:minHeight">44dp</item>
+    </style>
+
+    <!-- Estado: error (nunca solo color: el texto lleva prefijo). -->
+    <style name="Status.Error" parent="">
+        <item name="android:textColor">@color/danger_text</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- Estado: éxito / aviso. -->
+    <style name="Status.Success" parent="">
+        <item name="android:textColor">@color/success_text</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <style name="Status.Notice" parent="">
+        <item name="android:textColor">@color/neutral_300</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <!-- Resumen guardado (tabla Historial web). -->
+    <style name="Diary.Summary" parent="">
+        <item name="android:textColor">@color/neutral_400</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+</resources>
