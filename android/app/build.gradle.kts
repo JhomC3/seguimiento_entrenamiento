@@ -48,7 +48,12 @@ android {
 }
 
 fun syncDefaultToken(): String {
-    val file = project.file("../data/hc_sync_token")
+    // OJO: el root del proyecto Gradle es android/ (ahí vive settings.gradle),
+    // no la raíz del repo. project.file() resuelve contra android/app/.
+    // Ambas formas llegan a <repo>/data/hc_sync_token; con "data/..." a secas
+    // se apuntaba a android/[app/]data/... (inexistente) y el debug salía con
+    // token vacío -> "sin_destino" en cada sync.
+    val file = rootProject.file("../data/hc_sync_token")
     return if (file.exists()) file.readText().trim() else ""
 }
 

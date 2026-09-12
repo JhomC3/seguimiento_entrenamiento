@@ -216,6 +216,10 @@ class MainActivity : ComponentActivity() {
                 "y continúa donde quedó."
             return
         }
+        SyncService.noticeMessage(report)?.let {
+            statusView.text = it
+            return
+        }
         statusView.text = SyncService.summaryOf(report)
     }
 

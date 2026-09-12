@@ -142,4 +142,25 @@ class SyncServiceTest {
             stage.error.contains("interrumpida"),
         )
     }
+
+    @Test
+    fun `noticeMessage explains how to fix missing destination and token`() {
+        val noTarget = SyncService.noticeMessage(SyncReport(17, 0, 0, notice = "sin_destino"))
+        assertTrue("sin_destino debe ser accionable, fue: $noTarget", noTarget?.contains("APK debug") == true)
+
+        val noToken = SyncService.noticeMessage(SyncReport(17, 0, 0, notice = "sin_token_guardado"))
+        assertTrue("sin_token_guardado debe pedir recompilar, fue: $noToken", noToken?.contains("recompila") == true)
+
+        val badUrl = SyncService.noticeMessage(SyncReport(17, 0, 0, notice = "url_invalida: http://x"))
+        assertTrue("url_invalida debe mencionar la IP, fue: $badUrl", badUrl?.contains("IP") == true)
+
+        val noPerms = SyncService.noticeMessage(SyncReport(0, 0, 0, notice = "sin_permisos"))
+        assertTrue("sin_permisos debe pedir el botón, fue: $noPerms", noPerms?.contains("Permisos esenciales") == true)
+
+        val badToken = SyncService.noticeMessage(SyncReport(17, 0, 1, permanentError = "HTTP 401"))
+        assertTrue("401 debe explicar el mismatch, fue: $badToken", badToken?.contains("401") == true)
+
+        val ok = SyncService.noticeMessage(SyncReport(17, 42, 0))
+        assertTrue("reporte sano no tiene aviso accionable, fue: $ok", ok == null)
+    }
 }

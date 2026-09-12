@@ -168,5 +168,39 @@ class SyncService : Service() {
             report.notice?.let { append(" | Aviso: $it") }
             report.permanentError?.let { append(" | Error: $it") }
         }
+
+        /**
+         * Mensaje accionable para avisos de configuración/entrega (sin destino,
+         * sin token, URL inválida, sin permisos, token rechazado). Devuelve null
+         * si el reporte no tiene un aviso conocido: la UI usa entonces el
+         * resumen genérico. Función pura para poder testearla sin Activity.
+         */
+        fun noticeMessage(report: SyncReport): String? {
+            when (report.notice) {
+                "sin_destino" -> return "Sin destino configurado.\n" +
+                    "Instala el APK debug recién compilado (lleva la URL y el " +
+                    "token) y reabre la app: el destino se preconfigura solo."
+                "sin_token_guardado" -> return "Destino sin token guardado.\n" +
+                    "Borra los datos de la app y reabre con el APK debug recién " +
+                    "compilado. Si regeneraste data/hc_sync_token después de " +
+                    "compilar, recompila el APK."
+                "sin_permisos" -> return "Sin permisos de Health Connect.\n" +
+                    "Pulsa 'Permisos esenciales' y concede el acceso (incluye " +
+                    "segundo plano e historial)."
+            }
+            if (report.notice?.startsWith("url_invalida") == true) {
+                return "URL de destino inválida (${report.notice}).\n" +
+                    "Recompila el debug con la IP actual del Mac en la misma " +
+                    "WiFi (http://IP:8000/sync/health-connect) y arranca el " +
+                    "servidor con ./scripts/start_server.sh."
+            }
+            if (report.permanentError?.contains("401") == true) {
+                return "El servidor rechazó el token (HTTP 401).\n" +
+                    "El token del APK no coincide con data/hc_sync_token: " +
+                    "recompila el APK debug (el token se embebe al compilar) " +
+                    "sin regenerar el archivo, y arranca con ./scripts/start_server.sh."
+            }
+            return null
+        }
     }
 }
