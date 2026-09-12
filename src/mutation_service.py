@@ -34,7 +34,7 @@ from src.db_connection import read_connection, transaction
 from src.models import Session, SplitInput, Template, TemplateInput
 from src.nutrition_service import delete_diary, save_diary
 from src.split_service import delete_split as _delete_split
-from src.split_service import save_split
+from src.split_service import save_split, set_active_split
 from src.template_service import edit_template, save_template
 from src.training_service import fecha_to_db, parse_form_date, restore_session_rows, save_session
 
@@ -195,6 +195,13 @@ def delete_split_with_undo_snapshot(db_path: str, split_id: int) -> None:
     _journal(db_path, "splits", {"before": _rows_to_dicts(before)})
 
 
+def set_active_split_with_undo_snapshot(db_path: str, split_id: int) -> None:
+    before = snapshot_splits(db_path)
+    backup_or_raise(db_path)
+    set_active_split(db_path, split_id)
+    _journal(db_path, "splits", {"before": _rows_to_dicts(before)})
+
+
 def save_diary_with_undo_snapshot(
     db_path: str, fecha_iso: str, entries, parametros: dict | None = None
 ) -> None:
@@ -273,3 +280,18 @@ def _peek_top(db_path: str) -> dict | None:
     if row is None:
         return None
     return {"kind": row[0], "snapshot": json.loads(row[1])}
+
+
+def peek_undo(db_path: str) -> dict:
+    """Describe la entrada deshacer-able sin consumirla (soporte API móvil).
+
+    Devuelve {"kind": "empty"} o {"kind": ..., "fecha_iso": ...} para los
+    kinds con fecha (sesion/alimentacion).
+    """
+    entry = _peek_top(db_path)
+    if entry is None:
+        return {"kind": "empty"}
+    if entry["kind"] in ("sesion", "alimentacion"):
+        fecha_iso = entry["snapshot"].get("fecha_iso", "")
+        return {"kind": entry["kind"], "fecha_iso": fecha_iso}
+    return {"kind": entry["kind"]}

@@ -284,10 +284,18 @@ def test_delete_and_undo_session(page, server):
     page.locator("#confirm-save").click()
     expect(page.locator("#editor-state")).to_have_attribute("data-has-data", "0", timeout=5000)
 
+    posts = []
+
+    def _spy(r):
+        if r.method == "POST" and r.url.endswith("/undo"):
+            posts.append(r.url)
+
+    page.on("request", _spy)
     page.locator("body").click(position={"x": 5, "y": 5})
     page.keyboard.press("Control+z")
-    expect(page.locator("#editor-state")).to_have_attribute("data-has-data", "1", timeout=5000)
-    expect(page.locator("#set-rows .ej-select").first).to_have_value("Press")
+    page.wait_for_timeout(400)
+    expect(page.locator("#editor-state")).to_have_attribute("data-has-data", "0")
+    assert posts == [], f"Ctrl+Z llamó a /undo: {posts}"
 
 
 def test_invalid_numeric_input_blocks_save(page, server):
@@ -568,7 +576,7 @@ def test_grafica_atras_del_navegador_restaura(page, server):
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.click("#popup-close")
+    page.goto(server)
 
     _catalog_select_muscle(page, "Pectoral")
     expect(
@@ -594,10 +602,9 @@ def test_grafica_atras_del_navegador_restaura(page, server):
 
 def test_mobile_viewport_renders(page, server):
     page.set_viewport_size({"width": 375, "height": 800})
-    page.goto(server)
+    page.goto(server + "/diario")
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    page.click('[data-action="open-editor-popup"]')
-    page.wait_for_selector("#popup-body #session-editor-wrap", timeout=5000)
+    page.wait_for_selector("#session-editor-wrap", timeout=5000)
     assert page.is_visible("#session-editor")
     assert page.is_visible("#date-navigator")
     can_scroll = page.evaluate(
@@ -1302,7 +1309,7 @@ def test_b1_back_forward_y_recarga_restauran_granularidad(page, server):
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.click("#popup-close")
+    page.goto(server)
 
     _catalog_select_muscle(page, "Pectoral")
     page.locator('#granularity-selector [data-gran="month"]').click()
@@ -1710,12 +1717,12 @@ def test_b2r2_semana_a_day_restaura_fechas_sin_descanso(page, server):
     page.locator('#granularity-selector [data-gran="week"]').click()
     page.wait_for_timeout(700)
     week_state = _chart_state(page)
-    assert week_state["xaxis"] == "Semana", week_state
+    assert week_state["xshape"] == "week", week_state
 
     page.locator('#granularity-selector [data-gran="day"]').click()
     page.wait_for_timeout(700)
     day_state = _chart_state(page)
-    assert day_state["xaxis"] == "Fecha", day_state
+    assert day_state["xshape"] == "day", day_state
     assert "gran=day" in page.url, page.url
     # Solo los días reales con datos: sin puntos de descanso.
     xs = {x for t in day_state["traces"] for x in t["x"]}
@@ -1813,7 +1820,7 @@ def test_b2r2_back_forward_restaura_seleccion_y_granularidad(page, server):
     # El estado anterior conserva la selección; la gráfica refleja el día.
     assert "gran=day" in page.url, page.url
     st = _chart_state(page)
-    assert st["xaxis"] == "Fecha", st
+    assert st["xshape"] == "day", st
     names = [t["n"] for t in st["traces"]]
     assert "Global" in names and "Pectoral" in names, names
 

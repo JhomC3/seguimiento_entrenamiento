@@ -132,7 +132,11 @@ def app_config_oob(app_config_json: dict) -> str:
 
 
 def undo_result_oob(
-    templates: Jinja2Templates, request: Request, fecha_iso: str, has_data: str
+    templates: Jinja2Templates,
+    request: Request,
+    fecha_iso: str,
+    has_data: str,
+    kind: str = "",
 ) -> str:
     return render_fragment(
         templates,
@@ -140,6 +144,7 @@ def undo_result_oob(
         "partials/oob_undo_result.html",
         fecha_iso=fecha_iso,
         has_data=has_data,
+        kind=kind,
     )
 
 

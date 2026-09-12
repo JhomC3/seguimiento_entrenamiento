@@ -66,11 +66,13 @@ from src.mutation_service import (
     delete_split_with_undo_snapshot,
     delete_template_with_undo_snapshot,
     edit_template_with_undo_snapshot,
+    peek_undo,
     reorder_templates_with_undo_snapshot,
     save_diary_with_undo_snapshot,
     save_session_with_undo_snapshot,
     save_split_with_undo_snapshot,
     save_template_with_undo_snapshot,
+    set_active_split_with_undo_snapshot,
     undo_last_action,
 )
 from src.network_access import LanSyncOnlyMiddleware, lan_sync_only_enabled
@@ -1201,6 +1203,27 @@ def split_eliminar(request: Request, split_id: int):
     )
 
 
+@app.post("/split/activar/{split_id}", response_class=HTMLResponse)
+def split_activar(request: Request, split_id: int):
+    """Marca el split actual (único). Idempotente; re-renderiza la sección."""
+    try:
+        set_active_split_with_undo_snapshot(DB_PATH, split_id)
+    except Exception as e:
+        return _domain_error_response(request, e, "notice-container")
+    return HTMLResponse(
+        content=notice_oob(
+            templates, request, target="notice-container", message="Split actual actualizado."
+        )
+        + fragment_oob(
+            templates,
+            request,
+            "splits-section",
+            _split_section_html(request),
+            swap="outerHTML",
+        )
+    )
+
+
 @app.post("/undo", response_class=HTMLResponse)
 def undo(request: Request, fecha: str = Form("")):
     notice_ok = notice_oob(
@@ -1222,7 +1245,7 @@ def undo(request: Request, fecha: str = Form("")):
         return HTMLResponse(content=notice_empty)
     if result["kind"] == "sesion":
         fecha_iso = result["fecha_iso"]
-        marker = undo_result_oob(templates, request, fecha_iso, result["has_data"])
+        marker = undo_result_oob(templates, request, fecha_iso, result["has_data"], "sesion")
         if fecha == fecha_iso:
             outcome_ok = STATIC_MARKERS["outcome_ok"]
             editor = _editor_html(request, fecha_iso)
@@ -1235,7 +1258,7 @@ def undo(request: Request, fecha: str = Form("")):
         return HTMLResponse(content=notice_ok + marker)
     if result["kind"] == "alimentacion":
         fecha_iso = result["fecha_iso"]
-        marker = undo_result_oob(templates, request, fecha_iso, result["has_data"])
+        marker = undo_result_oob(templates, request, fecha_iso, result["has_data"], "alimentacion")
         if fecha == fecha_iso:
             outcome_ok = STATIC_MARKERS["outcome_ok"]
             editor = _nutrition_editor_html(request, fecha_iso)

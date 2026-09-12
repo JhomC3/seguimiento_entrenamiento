@@ -2,7 +2,8 @@
 // No other module may mutate state directly: always through the getters/setters.
 // DOM owned: none (reads #session-editor, #session-form, #set-rows defensively).
 // Public API: get*/set* for shared state, serializeForm, captureBaseline, isDirty,
-// fmtNum, editorEditmode, currentFecha, showConfirmDialog, hideConfirmDialog.
+// fmtNum, editorEditmode, currentFecha, showConfirmDialog, hideConfirmDialog,
+// noteFormFocus, noteFieldEdit, clearFieldHistory, popFieldEdit.
 
 let pendingNav = null;
 let confirmCbs = null;
@@ -112,10 +113,67 @@ export function serializeForm() {
 export function captureBaseline() {
     const editor = document.getElementById('session-editor');
     if (editor) editor.dataset.baseline = serializeForm();
+    const form = document.getElementById('session-form');
+    if (form) clearFieldHistory(form);
 }
 
 export function isDirty() {
     const editor = document.getElementById('session-editor');
     if (!editor || editor.dataset.baseline === undefined) return false;
     return editor.dataset.baseline !== serializeForm();
+}
+
+/* Ctrl+Z local (R1+R2): restaura el último campo en edición, sin servidor.
+   Se vacía al re-baselinear (guardar/navegar). */
+const fieldPrev = new WeakMap();
+const fieldHist = new Map();
+const FIELD_HIST_MAX = 50;
+
+function histKey(form) {
+    return (form && form.id) || 'form';
+}
+
+export function noteFormFocus(form) {
+    if (!form || !form.querySelectorAll) return;
+    form.querySelectorAll('input, select').forEach(function (el) {
+        if (!el.disabled && el.type !== 'hidden' && !fieldPrev.has(el)) {
+            fieldPrev.set(el, el.value);
+        }
+    });
+}
+
+export function noteFieldEdit(el) {
+    const form = el && el.form;
+    if (!form || el.disabled || el.type === 'hidden') return;
+    const prev = fieldPrev.has(el) ? fieldPrev.get(el) : el.value;
+    fieldPrev.set(el, el.value);
+    if (prev === el.value) return;
+    const key = histKey(form);
+    let stack = fieldHist.get(key);
+    if (!stack) {
+        stack = [];
+        fieldHist.set(key, stack);
+    }
+    const top = stack[stack.length - 1];
+    if (top && top.el === el) return;
+    stack.push({ el: el, prev: prev });
+    if (stack.length > FIELD_HIST_MAX) stack.shift();
+}
+
+export function clearFieldHistory(form) {
+    if (form) fieldHist.delete(histKey(form));
+    else fieldHist.clear();
+}
+
+export function popFieldEdit(form) {
+    const stack = form ? fieldHist.get(histKey(form)) : null;
+    const item = stack ? stack.pop() : null;
+    if (!item) return false;
+    if (!item.el.isConnected || item.el.disabled) return popFieldEdit(form);
+    item.el.value = item.prev;
+    fieldPrev.set(item.el, item.prev);
+    item.el.dispatchEvent(
+        new Event(item.el.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true })
+    );
+    return true;
 }

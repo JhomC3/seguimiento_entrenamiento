@@ -70,7 +70,9 @@ function serializeNutrition() {
 
 function captureBaseline() {
     const form = document.getElementById('nutrition-form');
-    if (form) form.dataset.baseline = serializeNutrition();
+    if (!form) return;
+    form.dataset.baseline = serializeNutrition();
+    clearFieldHistory(form);
 }
 
 export function nutritionIsDirty() {

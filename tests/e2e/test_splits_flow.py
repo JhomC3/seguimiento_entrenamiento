@@ -769,6 +769,8 @@ def test_eliminar_split_con_confirmacion(page, server):
     )
 
 
+def test_ctrlz_no_restaura_split_guardado(page, server):
+    """R1: Ctrl+Z fuera de edición no revierte un split guardado (sin /undo)."""
     _goto_splits(page, server)
     _nuevo(page)
     _drag_from_catalog(page, "Press", "LUNES")

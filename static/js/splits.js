@@ -29,7 +29,7 @@ import { showConfirmDialog } from './state.js';
 
 const SPLIT_DAYS = ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO', 'DOMINGO'];
 const DEFAULT_MAX_ITEMS = 300;
-const MUTATION_PATHS = ['/split/guardar', '/split/eliminar/', '/undo'];
+const MUTATION_PATHS = ['/split/guardar', '/split/eliminar/', '/split/activar/', '/undo'];
 
 // Estado del módulo (no compartido con otros módulos).
 const state = {
@@ -1066,6 +1066,24 @@ export function initSplits() {
         const item = e.target.closest && e.target.closest('.split-accordion-item');
         if (item && e.target.matches('input[name="nombre"]')) markDirty(item);
     });
+
+    // Enter en el nombre guarda con el formulario sincronizado: sin esto, el
+    // submit nativo (htmx) enviaría cero ejercicios (syncSplitForm solo corría
+    // en el botón Guardar) y el servidor rechazaría con 400.
+    document.addEventListener('submit', function (e) {
+        const form = e.target && e.target.closest ? e.target.closest('form.split-item-form') : null;
+        if (!form) return;
+        const itemEl = form.closest('.split-accordion-item');
+        if (!itemEl) return;
+        const nombre = form.querySelector('input[name="nombre"]');
+        if (!nombre || !nombre.value.trim()) {
+            e.preventDefault();
+            if (nombre) nombre.focus();
+            showNotice('Ponle nombre al split antes de guardar.', 'error');
+            return;
+        }
+        syncSplitForm(itemEl);
+    }, true);
 
     // Búsqueda en el catálogo: abre los grupos con resultados, oculta el resto
     // y restaura el estado cerrado al vaciar.
