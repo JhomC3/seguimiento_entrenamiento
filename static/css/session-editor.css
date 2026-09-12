@@ -229,6 +229,7 @@
     appearance: textfield;
 }
 .rir-step {
+    position: relative;
     display: block;
     width: 100%;
     padding: 0;
@@ -239,6 +240,18 @@
     line-height: 1.1;
     cursor: pointer;
     transition: color .15s, background .15s;
+}
+/* Hit area ensanchada a 24px sin engordar la fila: cada mitad expande hacia
+   FUERA (nunca hacia la mitad vecina, para no interceptar sus clics). */
+.rir-step:first-child::before {
+    content: '';
+    position: absolute;
+    inset: -6px -6px 0 -6px;
+}
+.rir-step:last-child::before {
+    content: '';
+    position: absolute;
+    inset: 0 -6px -6px -6px;
 }
 .rir-step:hover:not(:disabled) {
     color: var(--t-detail-white);

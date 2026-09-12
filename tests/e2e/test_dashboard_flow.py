@@ -25,26 +25,24 @@ def _wait_editor_settled(page):
     page.wait_for_timeout(120)
 
 
-def _open_popup(page, server):
-    """Los editores viven en la ventana emergente de registro (contrato v3)."""
-    page.goto(server)
+def _open_popup(page, server, vista="entrenamiento"):
+    """Los editores viven en /diario (contrato v4: sin popup en el Dashboard)."""
+    page.goto(server + "/diario?vista=" + vista)
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    page.click('[data-action="open-editor-popup"]')
-    page.wait_for_selector("#popup-body #session-editor-wrap", timeout=5000)
-    page.wait_for_selector("#popup-body #nutrition-form", timeout=5000)
+    page.wait_for_selector("#session-editor-wrap", state="attached", timeout=5000)
+    page.wait_for_selector("#nutrition-form", state="attached", timeout=5000)
 
 
 def _goto_date(page, server, iso):
     _open_popup(page, server)
-    before = page.locator("#session-date-title h3").inner_text()
-    page.locator(f'#popup-body .date-num[data-iso="{iso}"]').click()
-    expect(page.locator(f'#popup-body .date-num[data-iso="{iso}"]')).to_have_class(
+    before = page.locator("#daily-date-title").inner_text()
+    page.locator(f'#date-navigator .date-num[data-iso="{iso}"]').click()
+    expect(page.locator(f'#date-navigator .date-num[data-iso="{iso}"]')).to_have_class(
         re.compile(r"\bselected\b")
     )
     expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso)
     # El título global cambia con la navegación
-    expect(page.locator("#session-date-title h3")).not_to_have_text(before)
-    expect(page.locator("#session-date-title")).to_contain_text("Semana")
+    expect(page.locator("#daily-date-title")).not_to_have_text(before)
     _wait_editor_settled(page)
 
 
@@ -132,8 +130,8 @@ def test_unsaved_changes_confirmation(page, server):
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    expect(page.locator("#session-date-title")).to_contain_text("Semana")
-    expect(page.locator('#session-form input[name="fecha"]')).to_have_value(_iso(2))
+    # El Diario navega a la fecha elegida tras guardar.
+    expect(page.locator("#session-form input[name='fecha']")).to_have_value(_iso(2), timeout=5000)
 
 
 def test_add_remove_reorder_set(page, server):
@@ -634,7 +632,7 @@ def test_navigate_por_fecha_del_navegador_del_popup(page, server):
     page.click('#edit-actions button[type="submit"]')
     expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "1", timeout=5000)
 
-    page.locator(f'#popup-body .date-num[data-iso="{iso_a}"]').click()
+    page.locator(f'#date-navigator .date-num[data-iso="{iso_a}"]').click()
     expect(page.locator("#session-form input[name='fecha']")).to_have_value(iso_a, timeout=3000)
     expect(page.locator('input[name="kg"]')).to_have_value("80")
 
@@ -861,7 +859,7 @@ def test_catalog_expand_sin_seleccionar(page, server):
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.click("#popup-close")
+    page.goto(server)
 
     group = page.locator('#dashboard-catalog .db-group[data-group="Pectoral"]')
     summary = group.locator('[data-action="toggle-group"]')
@@ -893,14 +891,14 @@ def test_catalog_seleccion_rapida_consecutiva(page, server):
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.locator(f'#popup-body .date-num[data-iso="{_iso(1)}"]').click()
+    page.locator(f'#date-navigator .date-num[data-iso="{_iso(1)}"]').click()
     page.wait_for_timeout(400)
     _fill_row(page, 0, ejercicio="Curl", kg="12", reps="10", rir="1")
     page.click('#edit-actions button[type="submit"]')
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.click("#popup-close")
+    page.goto(server)
 
     # Seleccionar Pectoral y Biceps casi a la vez (sin esperar el swap).
     _catalog_select_muscle(page, "Pectoral")
@@ -939,14 +937,14 @@ def test_catalog_sel_rapida_sin_respuestas_obsoletas(page, server):
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.locator(f'#popup-body .date-num[data-iso="{_iso(1)}"]').click()
+    page.locator(f'#date-navigator .date-num[data-iso="{_iso(1)}"]').click()
     page.wait_for_timeout(400)
     _fill_row(page, 0, ejercicio="Curl", kg="12", reps="10", rir="1")
     page.click('#edit-actions button[type="submit"]')
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.click("#popup-close")
+    page.goto(server)
 
     # Ciclo rápido: seleccionar, deseleccionar (Escape), re-seleccionar.
     biceps_grp = page.locator('#dashboard-catalog .db-group[data-group="Biceps"]')
@@ -1097,7 +1095,7 @@ def test_catalog_flujo_sin_errores_consola(page, server):
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.click("#popup-close")
+    page.goto(server)
 
     # Flujo rápido músculo → ejercicio: genera cancelaciones intencionales de la
     # petición /grafica + /nivel del músculo al elegir el ejercicio.
@@ -1177,19 +1175,27 @@ def _seed_sessions(page, server, dates, ejercicio="Press"):
         expect(page.locator("#editor-notice .notice-success")).to_contain_text(
             "Entrenamiento guardado", timeout=2000
         )
-    page.click("#popup-close")
-    page.wait_for_selector("#editor-popup", state="hidden", timeout=5000)
+    page.goto(server)
 
 
 def _chart_state(page):
-    """Lee el contenido real de la gráfica Plotly: eje X, trazas y tooltip."""
+    """Lee el contenido real de la gráfica Plotly: forma del eje X, trazas y tooltip.
+
+    Sin títulos de eje (los indica el selector): la granularidad se infiere de
+    la forma del primer x ('day' ISO, 'week' dígitos, 'month' YYYY-MM).
+    """
     return page.evaluate(
         """() => {
             const el = document.getElementById('unified-chart-plot');
             if (!el || !el._fullData) return {empty: true};
+            const x0 = el._fullData.length && el._fullData[0].x.length
+                ? String(el._fullData[0].x[0]) : null;
+            const xshape = !x0 ? null
+                : /^\\d{4}-\\d{2}-\\d{2}$/.test(x0) ? 'day'
+                : /^\\d+$/.test(x0) ? 'week'
+                : /^\\d{4}-\\d{2}$/.test(x0) ? 'month' : '?';
             return {
-                xaxis: el._fullLayout && el._fullLayout.xaxis
-                    ? el._fullLayout.xaxis.title.text : null,
+                xshape: xshape,
                 traces: el._fullData.map(t => ({
                     n: t.name,
                     x: Array.from(t.x).map(String),
@@ -3091,6 +3097,11 @@ def test_training_cards_reorder_and_persist(page, server):
     cards = page.locator("#plantillas-list .pt-card")
     expect(cards).to_have_count(2, timeout=3000)
     assert cards.nth(0).get_attribute("data-pt-nombre") == "Press Day"
+    # La lista vive en el diálogo del Diario: abrirlo para el drag.
+    page.locator(
+        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
+    ).click()
+    page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
     # Mover el segundo arriba con el ratón (cuerpo de la tarjeta).
     _drag_card_up(
         page, "#plantillas-list .pt-card:nth-child(2)", "#plantillas-list .pt-card:nth-child(1)"
@@ -3099,9 +3110,13 @@ def test_training_cards_reorder_and_persist(page, server):
     expect(page.locator("#plantillas-list .pt-card").nth(0)).to_have_attribute(
         "data-pt-nombre", "Back Day"
     )
-    # Persistencia tras recarga (el popup se reabre solo vía ?registro).
+    # Persistencia tras recarga.
     page.reload()
     page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.locator(
+        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
+    ).click()
+    page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
     page.wait_for_selector("#plantillas-list .pt-card", timeout=5000)
     expect(page.locator("#plantillas-list .pt-card").nth(0)).to_have_attribute(
         "data-pt-nombre", "Back Day"
@@ -3127,6 +3142,10 @@ def test_reorder_failure_restores_order_and_notifies(page, server):
         page.wait_for_timeout(400)
     cards = page.locator("#plantillas-list .pt-card")
     expect(cards).to_have_count(2, timeout=3000)
+    page.locator(
+        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
+    ).click()
+    page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
 
     def fail_reorder(route):
         route.abort()
@@ -3147,7 +3166,7 @@ def test_reorder_failure_restores_order_and_notifies(page, server):
 
 
 def test_nutrition_apply_confirms_replacement(page, server):
-    _open_popup(page, server)
+    _open_popup(page, server, vista="alimentacion")
     # Crear una plantilla de alimentación: guardar el día con una fila.
     page.locator("#nutrition-rows .nutrition-row").first.locator('input[name="alimento"]').fill(
         "Pollo"
@@ -3198,11 +3217,11 @@ def test_cardio_annotation_saves_from_popup(page, server, tmp_path):
     conn.close()
 
     _open_popup(page, server)
-    page.locator(f'#popup-body .date-num[data-iso="{iso_cardio}"]').click()
-    expect(
-        page.locator("#popup-body #cardio-day form[data-action='cardio-annotation-save']")
-    ).to_have_count(1, timeout=5000)
-    form = page.locator("#popup-body #cardio-day form[data-action='cardio-annotation-save']").first
+    page.locator(f'#date-navigator .date-num[data-iso="{iso_cardio}"]').click()
+    expect(page.locator("#cardio-day form[data-action='cardio-annotation-save']")).to_have_count(
+        1, timeout=5000
+    )
+    form = page.locator("#cardio-day form[data-action='cardio-annotation-save']").first
     form.locator('input[name="velocidad_kmh"]').fill("9.5")
     form.get_by_role("button", name="Guardar").click()
     expect(page.locator("#notice-container .notice-success")).to_contain_text(
@@ -3217,10 +3236,9 @@ def test_cardio_annotation_saves_from_popup(page, server, tmp_path):
 
 
 def test_date_arrows_ignored_outside_navigator(page, server):
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
+    _open_popup(page, server)
     # Foco fuera del navigator: las flechas no navegan.
-    page.locator('[data-action="open-editor-popup"]').focus()
+    page.locator('.workspace-nav a[href="/"]').focus()
     fecha_before = page.evaluate(
         "document.querySelector('.date-num.selected') ? document.querySelector('.date-num.selected').dataset.iso : null"
     )
@@ -3280,17 +3298,15 @@ def test_cardio_refreshes_when_navigating_in_popup(page, server, tmp_path):
 
     # Abrir el popup hoy (sin cardio) y navegar a mañana: debe aparecer el form.
     _open_popup(page, server)
-    expect(page.locator("#popup-body #cardio-day")).to_contain_text(
-        "Sin sesiones de ejercicio", timeout=5000
-    )
-    page.locator(f'#popup-body .date-num[data-iso="{iso_cardio}"]').click()
-    expect(page.locator("#popup-body #session-form input[name='fecha']")).to_have_value(
+    expect(page.locator("#cardio-day")).to_contain_text("Sin sesiones de ejercicio", timeout=5000)
+    page.locator(f'#date-navigator .date-num[data-iso="{iso_cardio}"]').click()
+    expect(page.locator("#session-form input[name='fecha']")).to_have_value(
         iso_cardio, timeout=5000
     )
-    expect(
-        page.locator("#popup-body #cardio-day form[data-action='cardio-annotation-save']")
-    ).to_have_count(1, timeout=5000)
-    expect(page.locator("#popup-body #cardio-day")).to_contain_text("Cinta")
+    expect(page.locator("#cardio-day form[data-action='cardio-annotation-save']")).to_have_count(
+        1, timeout=5000
+    )
+    expect(page.locator("#cardio-day")).to_contain_text("Cinta")
 
 
 # ---------------------------------------------------------------------------

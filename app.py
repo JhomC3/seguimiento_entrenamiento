@@ -51,6 +51,8 @@ from src.logging_setup import request_id_var, setup_logging
 from src.models import (
     SPLIT_DAYS,
     AlimentoInput,
+    ConflictError,
+    NotFoundError,
     Split,
     SplitInput,
     SplitMetrics,

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gym Tracker — Progreso de entrenamiento</title>
+    <title>{% block title %}Gym Tracker — Progreso de entrenamiento{% endblock %}</title>
     <meta name="description" content="Seguimiento de entrenamiento, alimentación y salud: series, RIR, volumen, nutrición diaria y sincronización con Health Connect.">
     <link rel="icon" href="{{ static_url('favicon.svg') }}" type="image/svg+xml">
     <!-- Tailwind compilado estáticamente (sin CDN runtime) -->
@@ -16,6 +16,7 @@
     <link rel="stylesheet" href="{{ static_url('css/app.css') }}">
 </head>
 <body class="bg-matte-950 text-neutral-100 min-h-screen font-sans antialiased selection:bg-burgundy-700 selection:text-white">
+    <a class="skip-link" href="#main-content">Saltar al contenido principal</a>
     {% include "partials/notices.html" %}
 
     {% include "partials/confirm_modal.html" %}

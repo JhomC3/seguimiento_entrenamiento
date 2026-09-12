@@ -31,7 +31,6 @@ import {
     syncTemplateEjercicios,
 } from './templates.js';
 import {
-    currentFecha,
     editorEditmode,
     getConfirmCbs,
     getPendingNav,
@@ -151,8 +150,10 @@ export function initLifecycle() {
                 const fecha = fechaInput ? fechaInput.value : '';
                 const st = document.getElementById('editor-state');
                 const hasData = st && st.dataset.hasData !== undefined ? st.dataset.hasData === '1' : null;
-                if (hasData !== null) {
+                if (hasData !== null && shouldUpdateDot('entrenamiento')) {
                     updateDateDot(fecha, hasData);
+                    syncEditButtons();
+                } else if (hasData !== null) {
                     syncEditButtons();
                 }
                 setTimeout(function () {

@@ -29,6 +29,7 @@ export function syncEditButtons() {
     if (pencil) {
         pencil.classList.toggle('on', editable);
         pencil.classList.toggle('off', !editable);
+        pencil.setAttribute('aria-pressed', String(editable));
     }
     const bookmark = editor.querySelector('.save-template-btn');
     if (bookmark) bookmark.classList.toggle('on', editable);
@@ -45,7 +46,10 @@ export function syncEditButtons() {
 export function updateEditActions() {
     const actions = document.getElementById('edit-actions');
     if (!actions) return;
-    const show = editorEditmode() === '1' && isDirty();
+    // El contrato es inequívoco: en modo edición las acciones (Guardar
+    // cambios / Cancelar) están SIEMPRE visibles, haya o no cambios. El
+    // dirty-check sigue existiendo para la navegación con confirmación.
+    const show = editorEditmode() === '1';
     actions.classList.toggle('invisible', !show);
 }
 
@@ -57,6 +61,16 @@ export function syncEditorFromContent() {
     captureBaseline();
     updateEditActions();
     syncEditButtons();
+    syncSessionEmptyState();
+}
+
+export function syncSessionEmptyState() {
+    const editor = document.getElementById('session-editor');
+    const st = document.getElementById('editor-state');
+    if (!editor || !st) return;
+    const empty = editor.querySelector('[data-empty-state="session"]');
+    if (!empty) return;
+    empty.hidden = st.dataset.hasData === '1';
 }
 
 export function setPanelReadonly() {
@@ -229,6 +243,7 @@ export function addRowAfter(btn) {
 export function removeRow(btn) {
     if (editorEditmode() !== '1') return;
     btn.closest('.set-row').remove();
+    syncSessionRows();
     renumberRows();
     updateEditActions();
     fitRowsToPanel();
@@ -309,8 +324,7 @@ export function recalcRM() {
         const kgEl = row.querySelector('input[name="kg"]');
         const repsEl = row.querySelector('input[name="reps"]');
         const rirEl = row.querySelector('input[name="rir"]');
-        const cell = row.querySelector('.rm-cell');
-        if (!cell || !kgEl || !repsEl) return;
+        if (!kgEl || !repsEl) return;
         const kg = parseFloat(kgEl.value);
         const reps = parseFloat(repsEl.value);
         const rirRaw = rirEl ? rirEl.value : '';

@@ -1,13 +1,12 @@
 {% extends "base.html" %}
+{% block title %}Gym Tracker — Dashboard{% endblock %}
 {% block content %}
 <div class="dashboard-page">
+    <span id="main-content" tabindex="-1" class="sr-only">Contenido principal</span>
     <header class="dashboard-header">
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 workspace-brand">
             <h1 class="text-xl font-black tracking-[0.2em] text-white uppercase">Gym Tracker</h1>
-            <a
-                href="/splits"
-                class="btn btn-outline"
-            >Splits</a>
+            {% include "partials/workspace_nav.html" %}
         </div>
         <div class="flex items-center gap-3">
             <button
@@ -27,10 +26,6 @@
                     <line x1="9.5" y1="13" x2="13.5" y2="13" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
                 </svg>
             </button>
-            <button
-                data-action="open-editor-popup"
-                class="btn btn-primary rounded-full px-5 h-11"
-            >+ Registrar</button>
         </div>
     </header>
 
@@ -138,14 +133,4 @@
     </div>
 </noscript>
 
-<!-- Ventana emergente de registro (alimentación + sesión + cardio) -->
-<dialog id="editor-popup" class="editor-popup-dialog" aria-labelledby="popup-fecha-title">
-    <div class="relative z-20 mx-auto my-6 max-w-4xl max-h-[calc(100vh-3rem)] overflow-y-auto bg-neutral-950 border border-neutral-800 rounded-2xl flex flex-col">
-        <div class="sticky top-0 z-30 bg-neutral-950 border-b border-neutral-800 px-5 py-3 flex items-center gap-4">
-            <h2 class="panel-title panel-title-neon" id="popup-fecha-title"></h2>
-            <button id="popup-close" data-action="close-editor-popup" class="ml-auto text-neutral-400 hover:text-white text-xl leading-none px-2" aria-label="Cerrar">×</button>
-        </div>
-        <div id="popup-body" class="flex flex-col gap-4 p-5"></div>
-    </div>
-</dialog>
 {% endblock %}

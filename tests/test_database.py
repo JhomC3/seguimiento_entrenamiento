@@ -1282,3 +1282,5 @@ def test_dashboard_catalog_category_empty_string(tmp_path):
     insert_exercise(db_path, "Press", "Pectoral", "")
     catalog = get_dashboard_catalog(db_path)
     assert catalog[0]["exercises"][0]["category"] == ""
+
+

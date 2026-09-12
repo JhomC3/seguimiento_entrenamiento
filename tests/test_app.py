@@ -85,8 +85,9 @@ def test_index_uses_stable_card(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/")
-    assert 'data-action="open-editor-popup"' in r.text
-    assert 'id="editor-popup"' in r.text
+    assert 'href="/diario"' in r.text
+    assert "+ Registrar" not in r.text
+    assert 'id="editor-popup"' not in r.text
     assert 'id="dashboard-catalog"' in r.text
     # El editor vive en la ventana emergente de registro.
     r2 = _client().get("/editor/popup?fecha=2099-01-01")
@@ -232,6 +233,97 @@ def test_save_zero_rir_succeeds(tmp_path, monkeypatch):
     assert 'data-ok="1"' in r.text
 
 
+def test_save_multiple_series_persiste(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    insert_exercise(db, "Curl", "Biceps", "EMPUJE")
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().post(
+        "/entrenamiento/session/save",
+        data={
+            "fecha": _fecha(),
+            "ejercicio": ["Press", "Curl"],
+            "kg": ["80", "16"],
+            "reps": ["8", "10"],
+            "rir": ["1", "0"],
+            "descanso": ["90", "60"],
+        },
+    )
+    assert r.status_code == 200
+    assert 'data-ok="1"' in r.text
+    rows = get_sets_by_fecha(db, fecha_to_db(datetime.date.today()))
+    assert len(rows) == 2
+    assert [(x["ejercicio"], x["kg"], x["reps"], x["rir"], x["descanso_seg"]) for x in rows] == [
+        ("Press", 80.0, 8.0, 1.0, 90.0),
+        ("Curl", 16.0, 10.0, 0.0, 60.0),
+    ]
+
+
+def test_save_edita_sesion_existente_reemplaza(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    save_session(db, _fecha(), [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().post(
+        "/entrenamiento/session/save",
+        data={
+            "fecha": _fecha(),
+            "ejercicio": ["Press"],
+            "kg": ["92.5"],
+            "reps": ["6"],
+            "rir": ["2"],
+        },
+    )
+    assert r.status_code == 200
+    assert 'data-ok="1"' in r.text
+    rows = get_sets_by_fecha(db, fecha_to_db(datetime.date.today()))
+    assert len(rows) == 1
+    assert rows[0]["kg"] == 92.5 and rows[0]["reps"] == 6.0 and rows[0]["rir"] == 2.0
+
+
+def test_save_con_ejercicio_nuevo_desde_alta(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    r_alta = client.post(
+        "/ejercicio/nuevo",
+        data={"ejercicio": "Press Pausado", "grupo_muscular": "Pectoral", "categoria": "EMPUJE"},
+    )
+    assert r_alta.status_code == 200
+    r = client.post(
+        "/entrenamiento/session/save",
+        data={
+            "fecha": _fecha(),
+            "ejercicio": ["Press Pausado"],
+            "kg": ["70"],
+            "reps": ["6"],
+            "rir": ["1"],
+        },
+    )
+    assert r.status_code == 200
+    assert 'data-ok="1"' in r.text
+    rows = get_sets_by_fecha(db, fecha_to_db(datetime.date.today()))
+    assert rows[0]["ejercicio"] == "Press Pausado"
+
+
+def test_save_fecha_historica_persiste(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().post(
+        "/entrenamiento/session/save",
+        data={
+            "fecha": "2026-08-06",
+            "ejercicio": ["Press"],
+            "kg": ["90"],
+            "reps": ["7"],
+            "rir": ["1"],
+            "descanso": ["120"],
+        },
+    )
+    assert r.status_code == 200
+    rows = get_sets_by_fecha(db, "2026-08-06")
+    assert len(rows) == 1
+    assert rows[0]["kg"] == 90.0 and rows[0]["descanso_seg"] == 120.0
+
+
 def test_plantillas_section_lives_in_popup(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
@@ -358,8 +450,9 @@ def test_editor_botones_texto_en_panel_e_iconos_en_form(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get(f"/fecha/editor?fecha={_fecha()}")
-    assert ">Guardar</button>" in r.text
+    assert ">Guardar cambios</button>" in r.text
     assert ">Cancelar</button>" in r.text
+    assert 'class="btn btn-primary h-7 px-5"' in r.text
     assert 'class="btn-x"' in r.text
     assert 'class="btn-check"' in r.text
     assert "undo-btn" not in r.text
@@ -1896,6 +1989,88 @@ def test_data_tables_have_caption_and_scope(tmp_path, monkeypatch):
     editor = _client().get("/fecha/editor?fecha=2026-08-14").text
     assert "<caption" in editor
     assert 'scope="col"' in editor
+
+
+    """Toda respuesta de guardado apunta a targets reales de la página.
+
+    Falla si un OOB de /entrenamiento/session/save o /alimentacion/save usa
+    un id que no existe en /diario (el swap OOB silencioso perdería el aviso).
+    """
+    import re as _re
+
+    db = _setup_db(tmp_path)
+    from src.database import insert_alimento
+
+    insert_alimento(
+        db,
+        {
+            "nombre": "Avena",
+            "categoria": "Cereal",
+            "kcal": 389.0,
+            "carbohidratos": 68.0,
+            "fibra": 10.0,
+            "proteina": 17.0,
+            "grasa": 6.9,
+            "hierro": 4.2,
+            "calcio": 54.0,
+            "vitamina_c": 0.0,
+            "vitamina_a": 0.0,
+        },
+    )
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+
+    diario = client.get("/diario?fecha=2026-08-14").text
+
+    for method, path, data in (
+        (
+            "POST",
+            "/entrenamiento/session/save",
+            {
+                "fecha": "2026-08-14",
+                "ejercicio": ["Press"],
+                "kg": ["80"],
+                "reps": ["8"],
+                "rir": ["1"],
+            },
+        ),
+        (
+            "POST",
+            "/alimentacion/save",
+            {"fecha": "2026-08-14", "alimento": ["Avena"], "cantidad": ["120"]},
+        ),
+    ):
+        resp = client.request(method, path, data=data)
+        assert resp.status_code == 200, f"{path}: {resp.status_code}"
+        for target in _re.findall(r'id="([a-z-]+)" hx-swap-oob=', resp.text):
+            assert target in diario, f"OOB de {path} apunta a #{target} que no existe en /diario"
+
+
+def test_fragment_oob_rechaza_target_fuera_de_allow_list(tmp_path, monkeypatch):
+    """El wrapper OOB de fragmentos solo permite targets de la allow-list."""
+    from fastapi import Request as _Request
+
+    from src.response_fragments import fragment_oob
+
+    request = _Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "raw_path": b"/",
+            "query_string": b"",
+            "headers": [],
+            "server": ("testserver", 80),
+            "scheme": "http",
+            "client": ("127.0.0.1", 1234),
+        }
+    )
+    try:
+        fragment_oob(appmod.templates, request, "elemento-que-no-existe", "<b>x</b>")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("fragment_oob aceptó un target fuera de la allow-list")
 
 
 def test_session_inputs_have_accessible_names(tmp_path, monkeypatch):
