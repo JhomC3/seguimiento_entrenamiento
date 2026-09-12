@@ -115,4 +115,25 @@ object SessionFlowState {
 
     fun toggleDone(done: Set<String>, uuid: String): Set<String> =
         if (uuid in done) done - uuid else done + uuid
+
+    /** Apertura múltiple: alterna solo la suya, las demás intactas. */
+    fun toggleExpanded(expanded: Set<String>, uuid: String): Set<String> =
+        if (uuid in expanded) expanded - uuid else expanded + uuid
+
+    /**
+     * Borradores desde la sesión del servidor (misma conversión que el editor
+     * clásico). Preserva TODOS los campos incluido descanso_seg oculto.
+     */
+    fun draftsFromSession(sets: List<TrainingSet>): List<TrainingSetDraft> =
+        sets.map {
+            TrainingSetDraft(
+                it.ejercicio, numText(it.kg), numText(it.reps), numText(it.rir),
+                numText(it.descansoSeg), numText(it.velocidadKmh), numText(it.dificultad),
+            )
+        }
+
+    private fun numText(v: Double?): String {
+        if (v == null) return ""
+        return if (v % 1.0 == 0.0) v.toLong().toString() else v.toString()
+    }
 }

@@ -88,12 +88,21 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
     private var entrenoIdsFecha: String? = null
     private var orphanSweepDone = false
 
-    private val _modoEntreno = MutableStateFlow(false)
-    val modoEntreno: StateFlow<Boolean> = _modoEntreno.asStateFlow()
     private val _entrenoGroups = MutableStateFlow<List<EntrenoGroup>>(emptyList())
     val entrenoGroups: StateFlow<List<EntrenoGroup>> = _entrenoGroups.asStateFlow()
-    private val _expandedUuid = MutableStateFlow<String?>(null)
-    val expandedUuid: StateFlow<String?> = _expandedUuid.asStateFlow()
+    /** Apertura múltiple: cada cabecera alterna solo la suya. */
+    private val _expandedUuids = MutableStateFlow<Set<String>>(emptySet())
+    val expandedUuids: StateFlow<Set<String>> = _expandedUuids.asStateFlow()
+    /** Todas las filas incl. blancos (el editor unificado las pinta todas). */
+    private val _entrenoRows = MutableStateFlow<List<EntrenoRow>>(emptyList())
+    val entrenoRows: StateFlow<List<EntrenoRow>> = _entrenoRows.asStateFlow()
+    /**
+     * Versión estructural: solo cambia con add/remove/día/transición
+     * blanco↔visible/cambio de nombre o HIIT. Los steppers NO la tocan
+     * (la Activity actualiza el valor in-place, sin reconstruir ni saltos).
+     */
+    private val _structureVersion = MutableStateFlow(0)
+    val structureVersion: StateFlow<Int> = _structureVersion.asStateFlow()
     private val _doneUuids = MutableStateFlow<Set<String>>(emptySet())
     val doneUuids: StateFlow<Set<String>> = _doneUuids.asStateFlow()
     private val _restMs = MutableStateFlow<Map<String, Long>>(emptyMap())
@@ -106,6 +115,8 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
 
     init {
         load(LocalDate.now().toString())
+        // Ticker vago: corre siempre pero solo emite con descanso en curso.
+        startTicker()
         viewModelScope.launch(Dispatchers.IO) {
             // Barrido único de huérfanos: abiertos de sesiones anteriores no se
             // reanudan; se marcan ABANDONADO con el tick actual.
@@ -121,64 +132,135 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         val fecha = _state.value.fecha
         val buffered = draftBuffer?.takeIf { it.first == fecha }?.second
         return buffered
-            ?: _state.value.session?.sets?.map {
-                TrainingSetDraft(
-                    it.ejercicio, numText(it.kg), numText(it.reps),
-                    numText(it.rir), numText(it.descansoSeg),
-                    numText(it.velocidadKmh), numText(it.dificultad),
-                )
-            }?.ifEmpty { listOf(TrainingSetDraft("", "", "", "", "")) }
+            ?: _state.value.session?.let { SessionFlowState.draftsFromSession(it.sets) }
+                ?.ifEmpty { listOf(TrainingSetDraft("", "", "", "", "")) }
             ?: listOf(TrainingSetDraft("", "", "", "", ""))
     }
 
-    fun setModoEntreno(enabled: Boolean) {
-        if (_modoEntreno.value == enabled) return
-        _modoEntreno.value = enabled
-        if (enabled) {
-            ensureEntrenoBuilt()
-            startTicker()
-            viewModelScope.launch(Dispatchers.IO) {
-                // Semilla de acumulados desde intervalos CERRADOS (sin bloquear).
-                val fecha = _state.value.fecha
-                val closed = runCatching { restDao().forFecha(fecha) }.getOrDefault(emptyList())
-                    .filter { it.estado == "CERRADO" && it.endElapsedMs != null }
-                for (c in closed) {
-                    val dur = (c.endElapsedMs!! - c.startElapsedMs).coerceAtLeast(0)
-                    restTimer.seedAccum(c.clientSetUuid, dur)
-                }
-                refreshRestMs()
+    /** Semilla de acumulados desde intervalos CERRADOS (llamar al abrir el día). */
+    fun seedRestAccum() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val fecha = _state.value.fecha
+            val closed = runCatching { restDao().forFecha(fecha) }.getOrDefault(emptyList())
+                .filter { it.estado == "CERRADO" && it.endElapsedMs != null }
+            for (c in closed) {
+                val dur = (c.endElapsedMs!! - c.startElapsedMs).coerceAtLeast(0)
+                restTimer.seedAccum(c.clientSetUuid, dur)
             }
-        } else {
-            tickerJob?.cancel()
-            tickerJob = null
+            refreshRestMs()
         }
     }
 
-    /** Reconstruye grupos preservando UUIDs por índice; resetea expand/done si cambia el día. */
+    /** Añade una serie en blanco (el editor unificado la pinta con foco). */
+    fun addEntrenoRow() {
+        val fecha = _state.value.fecha
+        val drafts = currentDrafts().toMutableList()
+        if (drafts.size >= 100) return
+        drafts += TrainingSetDraft("", "", "", "", "")
+        draftBuffer = fecha to drafts
+        rebuildEntrenoLists()
+        _structureVersion.value++
+    }
+
+    fun removeEntrenoRow(uuid: String) {
+        val fecha = _state.value.fecha
+        val drafts = currentDrafts().toMutableList()
+        val index = entrenoIds.indexOf(uuid)
+        if (index !in drafts.indices) return
+        drafts.removeAt(index)
+        draftBuffer = fecha to (drafts.ifEmpty { listOf(TrainingSetDraft("", "", "", "", "")) })
+        _doneUuids.value = _doneUuids.value - uuid
+        _expandedUuids.value = _expandedUuids.value - uuid
+        rebuildEntrenoLists()
+        _structureVersion.value++
+        persistProgressive()
+    }
+
+    /**
+     * Nombre del ejercicio (autocompletado, igual que antes). Devuelve true
+     * si hubo cambio estructural (blanco↔visible o cambio HIIT) y la
+     * Activity debe reconstruir (restaurando el foco).
+     */
+    fun setEntrenoExercise(uuid: String, ejercicio: String): Boolean {
+        val fecha = _state.value.fecha
+        val drafts = currentDrafts().toMutableList()
+        val index = entrenoIds.indexOf(uuid)
+        if (index !in drafts.indices) return false
+        val cur = drafts[index]
+        if (cur.ejercicio == ejercicio) return false
+        val wasBlank = cur.isBlank()
+        val wasHiit = cur.isHiit()
+        drafts[index] = cur.copy(ejercicio = ejercicio)
+        draftBuffer = fecha to drafts
+        val nowBlank = drafts[index].isBlank()
+        val nowHiit = drafts[index].isHiit()
+        rebuildEntrenoLists()
+        return if (wasBlank != nowBlank || wasHiit != nowHiit) {
+            _structureVersion.value++
+            true
+        } else {
+            false
+        }
+    }
+
+    /** Escritura por teclado (diálogo sobre el valor): actualiza sin reconstruir. */
+    fun setEntrenoValue(uuid: String, field: String, text: String) {
+        val fecha = _state.value.fecha
+        val drafts = currentDrafts().toMutableList()
+        val index = entrenoIds.indexOf(uuid)
+        if (index !in drafts.indices) return
+        val cur = drafts[index]
+        val v = text.trim()
+        drafts[index] = when (field) {
+            "kg" -> cur.copy(kg = v)
+            "reps" -> cur.copy(reps = v)
+            "rir" -> cur.copy(rir = v)
+            "vel" -> cur.copy(velocidadKmh = v)
+            "dif" -> cur.copy(dificultad = v)
+            else -> return
+        }
+        draftBuffer = fecha to drafts
+        rebuildEntrenoLists()
+    }
+
+    /** Reconstruye grupos+filas preservando UUIDs por índice. */
     fun ensureEntrenoBuilt() {
         val fecha = _state.value.fecha
-        if (entrenoIdsFecha != fecha) {
+        val dayChanged = entrenoIdsFecha != fecha
+        if (dayChanged) {
             entrenoIds = emptyList()
             entrenoIdsFecha = fecha
             _doneUuids.value = emptySet()
-            _expandedUuid.value = null
+            _expandedUuids.value = emptySet()
             restTimer.clearAccum(emptySet())
+            seedRestAccum()
         }
+        rebuildEntrenoLists()
+        val flat = SessionFlowState.flattened(_entrenoGroups.value).map { it.uuid }.toSet()
+        _expandedUuids.value = _expandedUuids.value.intersect(flat)
+        if (dayChanged && _expandedUuids.value.isEmpty()) {
+            // Primer pintado del día: abre la primera pendiente. Los colapsos
+            // manuales posteriores se respetan (no se reabre solo).
+            SessionFlowState.nextPending(_entrenoGroups.value, _doneUuids.value, null)?.uuid?.let {
+                _expandedUuids.value = setOf(it)
+            }
+        }
+        refreshRestMs()
+    }
+
+    /** Reconstruye grupos y filas sin tocar expand/done/versión. */
+    private fun rebuildEntrenoLists() {
         val drafts = currentDrafts()
         val (groups, outIds) = SessionFlowState.build(drafts, entrenoIds)
         entrenoIds = outIds
         restTimer.clearAccum(outIds.toSet())
         _entrenoGroups.value = groups
-        // Si lo expandido desapareció (borrado en Editor), colapsa.
-        val flat = SessionFlowState.flattened(groups).map { it.uuid }.toSet()
-        if (_expandedUuid.value !in flat) {
-            _expandedUuid.value = SessionFlowState.nextPending(groups, _doneUuids.value, null)?.uuid
-        }
-        refreshRestMs()
+        _entrenoRows.value = drafts.mapIndexed { i, d -> EntrenoRow(outIds[i], d) }
     }
 
-    fun expandUuid(uuid: String?) {
-        _expandedUuid.value = uuid
+    /** Cada cabecera alterna solo la suya (apertura múltiple). */
+    fun toggleExpand(uuid: String) {
+        _expandedUuids.value = SessionFlowState.toggleExpanded(_expandedUuids.value, uuid)
     }
 
     fun toggleDone(uuid: String) {
@@ -187,15 +269,17 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
     }
 
     /**
-     * Botón principal: marca hecha (idempotente: solo añade), colapsa,
-     * auto-expande la siguiente pendiente y auto-arranca su descanso.
+     * Botón principal: marca hecha (idempotente: solo añade), auto-expande la
+     * siguiente pendiente sin colapsar las demás y auto-arranca su descanso.
      */
     fun completeSet(uuid: String) {
         if (uuid !in _doneUuids.value) _doneUuids.value = _doneUuids.value + uuid
         persistProgressive()
         val next = SessionFlowState.nextPending(_entrenoGroups.value, _doneUuids.value, uuid)
-        _expandedUuid.value = next?.uuid
-        if (next != null) timerStart(next.uuid)
+        if (next != null) {
+            _expandedUuids.value = _expandedUuids.value + next.uuid
+            timerStart(next.uuid)
+        }
     }
 
     /** Borradores no vacíos listos para el Guardar final único (con confirm). */
@@ -222,9 +306,8 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         }
         draftBuffer = fecha to drafts
         // Solo stash local aquí (sin enqueue: evita ráfagas al rate-limit).
-        val (groups, outIds) = SessionFlowState.build(drafts, entrenoIds)
-        entrenoIds = outIds
-        _entrenoGroups.value = groups
+        // Sin bump estructural: la Activity actualiza el valor in-place.
+        rebuildEntrenoLists()
     }
 
     fun timerStart(uuid: String) {
@@ -290,12 +373,13 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    /** Ticker vago: gira siempre pero solo emite con descanso en curso. */
     private fun startTicker() {
         tickerJob?.cancel()
         tickerJob = viewModelScope.launch {
             while (isActive) {
                 delay(250)
-                if (_modoEntreno.value) refreshRestMs()
+                if (restTimer.runningUuid() != null) refreshRestMs()
             }
         }
     }

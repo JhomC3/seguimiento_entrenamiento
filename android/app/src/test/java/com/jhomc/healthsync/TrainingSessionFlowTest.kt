@@ -87,6 +87,33 @@ class TrainingSessionFlowTest {
     }
 
     @Test
+    fun `toggleExpanded alterna solo la suya`() {
+        val a = "u1"
+        val b = "u2"
+        var open = SessionFlowState.toggleExpanded(emptySet(), a)
+        assertEquals(setOf(a), open)
+        open = SessionFlowState.toggleExpanded(open, b)
+        assertEquals(setOf(a, b), open)
+        // Cerrar una no toca la otra.
+        open = SessionFlowState.toggleExpanded(open, a)
+        assertEquals(setOf(b), open)
+    }
+
+    @Test
+    fun `draftsFromSession preserva descanso_seg oculto`() {
+        val sets = listOf(
+            TrainingSet(1, "Press", 80.0, 8.0, 1.0, 90.0, 103.9),
+            TrainingSet(2, "HIIT", null, null, null, null, null, 12.0, 7.5),
+        )
+        val drafts = SessionFlowState.draftsFromSession(sets)
+        assertEquals(2, drafts.size)
+        assertEquals("90", drafts[0].descansoSeg)
+        assertEquals("80", drafts[0].kg)
+        assertEquals("12", drafts[1].velocidadKmh)
+        assertEquals("7.5", drafts[1].dificultad)
+    }
+
+    @Test
     fun `formatMmSs pinta MM_SS`() {
         assertEquals("00:00", formatMmSs(0))
         assertEquals("02:05", formatMmSs(125))

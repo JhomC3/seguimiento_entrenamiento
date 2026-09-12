@@ -132,3 +132,6 @@ fun formatMmSs(totalSeconds: Long): String {
 }
 
 fun formatMmSsFromMs(ms: Long): String = formatMmSs(ms / 1000)
+
+/** Fila del editor unificado (borrador + uuid local estable por índice). */
+data class EntrenoRow(val uuid: String, val draft: TrainingSetDraft)
