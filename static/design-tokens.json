@@ -132,6 +132,7 @@
     "black-030": "rgba(0, 0, 0, 0.30)",
     "black-050": "rgba(0, 0, 0, 0.5)",
     "neutral-900-070": "rgba(23, 23, 23, 0.7)",
+    "neutral-900-055": "rgba(23, 23, 23, 0.55)",
     "black-060": "rgba(0, 0, 0, 0.6)",
     "backdrop-popup": "rgba(10, 10, 10, 0.45)",
     "backdrop-popup-solid": "rgba(10, 10, 10, 0.78)"

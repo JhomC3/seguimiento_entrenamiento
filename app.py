@@ -155,6 +155,9 @@ async def lifespan(_: FastAPI):
         logging.getLogger("security").warning(
             "GYM_CSRF_SECRET no configurado: usando secreto de desarrollo."
         )
+    logging.getLogger("dashboard").info(
+        "DB_PATH=%s (absoluta: %s)", DB_PATH, os.path.abspath(DB_PATH)
+    )
     init_db(DB_PATH)
     yield
 

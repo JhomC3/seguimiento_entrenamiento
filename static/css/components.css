@@ -99,6 +99,7 @@
     background: var(--t-overlay-burgundy-020);
 }
 
+/* Navegación común de las páginas principales. */
 .workspace-nav {
     display: inline-flex;
     align-items: center;
@@ -121,6 +122,16 @@
 .workspace-brand h1 {
     white-space: nowrap;
 }
+@media (max-width: 640px) {
+    .workspace-brand h1 {
+        font-size: 1rem;
+        letter-spacing: 0.14em;
+    }
+    .splits-page-header .splits-new-btn {
+        width: 100%;
+    }
+}
+
 /* ---------- Botones de fila: alias de compatibilidad ---------- */
 .row-btn,
 .btn-check,
@@ -318,6 +329,7 @@ input[type="number"]::-webkit-outer-spin-button {
     border-radius: 6px;
 }
 
+/* ---------- Nutrición: parámetros y filas Objetivo/Consumido ---------- */
 .nutri-params {
     background: var(--t-overlay-black-030);
     border: 1px solid var(--t-surfaces-neutral-800);
@@ -330,6 +342,12 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 /* ---------- Errores de formulario ---------- */
+.form-error {
+    font-size: 12px;
+    color: var(--t-semantics-danger-text);
+}
+
+/* ---------- Cabecera de gráfica unificada ---------- */
 .unified-chart-header {
     display: flex;
     align-items: baseline;
@@ -698,6 +716,7 @@ input[type="number"]::-webkit-outer-spin-button {
     justify-content: space-between;
     gap: 6px;
     min-height: 22px;
+    margin: 0;
     font-size: 12px;
     font-weight: 900;
     letter-spacing: 0.08em;
@@ -739,7 +758,8 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 /* Chip del catálogo (variante de .split-item-card: arrastrable o click para
-   agregar al día seleccionado; sin grupo visible ni botón de eliminar). */
+   agregar al día seleccionado; sin grupo visible ni botón de eliminar).
+   Botón nativo (teclado/lector): reset de estilos de botón. */
 button.split-catalog-chip {
     font: inherit;
     text-align: left;

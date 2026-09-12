@@ -104,9 +104,9 @@ Estados válidos:
 El panel mantiene una sola zona de scroll interna (`.ps-panels`). La comparación usa la misma
 superficie y no crea scroll anidado por fila.
 
-El periodo del resumen admite valores enteros del 1 al 8. El valor inicial es 8. El cambio de
-periodo actualiza gráfica y resumen en una única petición `/grafica?ventana=N`. Cambiar de pestaña
-es local y no genera fetch.
+La ventana técnica es fija (8) y no se expone como selector visible: el endpoint
+acepta `ventana=1..8` por API, pero la UI siempre pide `ventana=8` y el histórico
+muestra todo el ciclo. Cambiar de pestaña es local y no genera fetch.
 
 ## 6. Contrato de `/grafica`
 

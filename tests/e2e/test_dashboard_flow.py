@@ -641,6 +641,10 @@ def test_keyboard_focus_ring_visible(page, server):
 
 def test_template_delete_uses_custom_modal(page, server):
     _create_template(page, server, _iso(5), "Eliminame")
+    page.locator(
+        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
+    ).click()
+    page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
     page.locator("#plantillas-section .pt-card").get_by_role("button", name="Eliminar").click()
     expect(page.locator("#confirm-modal")).to_be_visible()
     expect(page.locator("#confirm-msg")).to_contain_text("Eliminame")
@@ -679,7 +683,7 @@ def test_muscle_toggle_y_escape_vuelven_al_cuerpo_completo(page, server):
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=2000
     )
-    page.click("#popup-close")
+    page.goto(server)
 
     # Seleccionar el músculo: se marca y aparecen sus ejercicios.
     muscle_select = page.locator(
@@ -2993,29 +2997,33 @@ def test_cls_stable_shell_and_history(page, server):
 # ---------------------------------------------------------------------------
 
 
+def test_daily_dialog_focus_roundtrip(page, server):
+    """Abrir un diálogo del Diario mueve el foco dentro; Escape lo cierra y lo
+    devuelve al botón que lo abrió."""
+    page.goto(server + "/diario")
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    trigger = page.locator('[data-action="open-editor-popup"]')
+    trigger = page.locator(
+        '[data-action="open-daily-dialog"][data-dialog="exercise-create-dialog"]'
+    )
     trigger.focus()
     trigger.click()
-    page.wait_for_selector("#popup-body #session-editor-wrap", timeout=5000)
+    page.wait_for_selector("#exercise-create-dialog[open]", timeout=5000)
     page.wait_for_timeout(200)
     inside = page.evaluate(
-        "document.getElementById('editor-popup').contains(document.activeElement)"
+        "document.getElementById('exercise-create-dialog').contains(document.activeElement)"
     )
-    assert inside, "el foco debe estar dentro del popup tras abrirlo"
-    page.click("#popup-close")
-    page.wait_for_selector("#editor-popup", state="hidden", timeout=5000)
+    assert inside, "el foco debe estar dentro del diálogo tras abrirlo"
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#exercise-create-dialog", state="hidden", timeout=5000)
     restored = page.evaluate(
-        "document.activeElement === document.querySelector('[data-action=\"open-editor-popup\"]')"
+        'document.activeElement === document.querySelector(\'[data-action="open-daily-dialog"][data-dialog="exercise-create-dialog"]\')'
     )
-    assert restored, "el foco debe volver al botón que abrió el popup"
+    assert restored, "el foco debe volver al botón que abrió el diálogo"
 
 
 def test_confirm_dialog_focus_and_escape(page, server):
     """La confirmación de cambios sin guardar: foco dentro, Escape la cierra
-    y restaura el foco al elemento que la disparó."""
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
+    y la página permanece en la misma fecha."""
     _open_popup(page, server)
     page.locator("#set-rows .set-row").first.locator('input[name="kg"]').fill("80")
     page.wait_for_timeout(150)
@@ -3027,30 +3035,43 @@ def test_confirm_dialog_focus_and_escape(page, server):
     assert inside, "el foco debe estar dentro de la confirmación"
     page.keyboard.press("Escape")
     page.wait_for_selector("#confirm-modal", state="hidden", timeout=5000)
-    assert page.locator("#editor-popup").evaluate("el => el.open"), "el popup debe seguir abierto"
+    # Sin popup: la página del Diario sigue en la fecha original con el editor.
+    assert page.locator("#session-form input[name='fecha']").input_value() == _iso(0)
 
 
-def test_confirm_dialog_inside_popup_escape_chain(page, server):
-    """Escape cierra solo la confirmación anidada; el popup sigue abierto y el
-    foco vuelve a la confirmación anterior/dentro del popup."""
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
+def test_confirm_dialog_inside_daily_dialog_escape_chain(page, server):
+    """Escape cierra solo la confirmación anidada; el diálogo del Diario sigue
+    abierto y el foco queda dentro de él."""
     _open_popup(page, server)
-    page.locator("#set-rows .set-row").first.locator('input[name="kg"]').fill("80")
-    page.wait_for_timeout(150)
-    page.locator('.date-num[data-iso="' + _iso(1) + '"]').click()
+    # Plantilla sembrada vía htmx.ajax: los OOB de la respuesta actualizan el
+    # DOM (el contador del botón y la lista del diálogo).
+    page.evaluate(
+        """() => {
+            htmx.ajax('POST', '/plantilla/guardar', {
+                values: {nombre: 'Torso', ejercicio: 'Press'},
+                target: 'body', swap: 'none'
+            });
+        }"""
+    )
+    page.wait_for_selector(
+        "#plantillas-section [data-pt-nombre='Torso']", state="attached", timeout=5000
+    )
+    page.locator(
+        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
+    ).click()
+    page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
+    page.locator("#plantillas-section .pt-card", has_text="Torso").get_by_role(
+        "button", name="Eliminar"
+    ).click()
     page.wait_for_selector("#confirm-modal[open]", timeout=5000)
     # Escape sobre la confirmación: se cierra solo ella.
     page.keyboard.press("Escape")
     page.wait_for_selector("#confirm-modal", state="hidden", timeout=5000)
-    assert page.locator("#editor-popup").evaluate("el => el.open")
+    assert page.locator("#training-templates-dialog").evaluate("el => el.open")
     inside = page.evaluate(
-        "document.getElementById('editor-popup').contains(document.activeElement)"
+        "document.getElementById('training-templates-dialog').contains(document.activeElement)"
     )
-    assert inside, "el foco debe quedar dentro del popup tras cerrar la confirmación"
-    # Escape ahora cierra el popup (cancel del dialog nativo).
-    page.keyboard.press("Escape")
-    page.wait_for_selector("#editor-popup", state="hidden", timeout=5000)
+    assert inside, "el foco debe quedar dentro del diálogo tras cerrar la confirmación"
 
 
 # ---------------------------------------------------------------------------
@@ -3297,7 +3318,7 @@ def test_date_arrows_ignored_outside_navigator(page, server):
 
 
 def test_nutrition_rows_reorder_by_drag(page, server):
-    _open_popup(page, server)
+    _open_popup(page, server, vista="alimentacion")
     page.locator('[data-action="nutrition-row-add"]').click()
     page.wait_for_timeout(120)
     rows = page.locator("#nutrition-rows .nutrition-row")

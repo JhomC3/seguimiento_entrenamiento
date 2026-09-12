@@ -15,10 +15,39 @@ ROOT = Path(__file__).resolve().parents[1]
 # Revisado 2026-08-26: TAREA 3 comparación de puntos (+~11 KB, highlight + panel)
 # requiere ~185 KB; se eleva a 190 KB para no bloquear feature (commit dedicado).
 # Revisado 2026-08-28: UX-2 tooltip propio (+2.2K CSS, +5K JS) → 85K aggregate.
-CSS_INDIVIDUAL_MAX = 32 * 1024  # tailwind.css ~16K; cada CSS componente muy por debajo
-CSS_AGGREGATE_MAX = 85 * 1024  # ~60K → 84K con tooltip
+# Revisado 2026-09-02: Diario standalone + navegación común (workspace-nav) y
+# estados vacíos añaden ~0.7K CSS legítimos → 86K aggregate.
+# Revisado 2026-09-04: remediación UI/UX (skip-link, workspace-brand, sticky
+# nutrición 3 filas, hit-areas 24px, nutri/chart/splits canónicos) añade ~2K
+# legítimos → 89K aggregate.
+# Revisado 2026-09-08: botón de sugerencia con glow (btn-suggest, +217 B
+# legítimos) supera los 34K por poco → individual a 35K.
+CSS_INDIVIDUAL_MAX = 35 * 1024  # components.css ~34K tras btn-suggest
+# Revisado 2026-09-08: lo mismo empuja el agregado (~91.4K) → 90K.
+# Revisado 2026-09-10: segunda gráfica del dashboard (tendencia nutricional
+# kcal+peso MA7: shell + estilos propios ~1K) → 91K.
+# Revisado 2026-09-11: separación estricta HIIT (placeholder transparente en
+# readonly para el fantasma "s" de Desc, ~0.2K) → 92K.
+CSS_AGGREGATE_MAX = (
+    92 * 1024
+)  # ~60K → 84K tooltip → 86K Diario → 89K remediación → 90K sugerencia → 91K nutrición → 92K HIIT-estricto
 JS_INDIVIDUAL_MAX = 64 * 1024
-JS_AGGREGATE_MAX = 190 * 1024  # ~132K → 165K Fase 2 → ~185K TAREA 3
+# Revisado 2026-09-04: remediación UI/UX (drawer por breakpoint, cardio paralelo
+# con aviso, dirty-check Cancel, 9 nutrientes, copy-day, submit splits) +~8K → 200K.
+# Revisado 2026-09-08: filas HIIT del editor (toggle kg/reps/rir ↔
+# velocidad/dificultad) +~1K → 201K.
+# Revisado 2026-09-10: render genérico de gráficas + tendencia nutricional
+# (segunda serie Plotly con observer propio, ~1.4K) → 203K.
+# Revisado 2026-09-10: tooltip cristal compartido + customdata nutricional
+# y bloques de una fila con swatch (~1.5K) → 205K.
+# Revisado 2026-09-10: Ctrl+Z local R1+R2 (historial por campo en state.js;
+# el atajo ya no llama al undo global: lo guardado no se altera, ~3.2K) → 209K.
+# Revisado 2026-09-11: separación estricta HIIT (modo de sesión, cabeceras
+# dinámicas y bloqueo anti-mezcla en editor.js + nombre HIIT en templates.js,
+# ~+3K) → 212K.
+JS_AGGREGATE_MAX = (
+    212 * 1024
+)  # ~132K → 165K Fase 2 → ~185K TAREA 3 → ~198K remediación → ~201K HIIT → ~203K nutrición → ~205K tooltip → ~209K ctrlz-local → ~212K HIIT-estricto
 
 
 def _size(path: Path) -> int:

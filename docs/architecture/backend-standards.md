@@ -45,7 +45,7 @@ SQLite (data/lifestyle.db)
 ## 2. Configuración y 12-Factor App
 
 - **Config por entorno:** `DB_PATH` (`LIFESTYLE_DB_PATH`/`GYM_DB_PATH`), `HC_SYNC_TOKEN`
-  (env o `data/hc_sync_token`, gitignored), `GYM_CSRF_SECRET`, `GYM_CSRF_WINDOW_HOURS`.
+  (env o `data/hc_sync_token`, gitignored) y `GYM_CSRF_SECRET`.
   Los secretos **nunca** van en el código ni en git.
 - `GYM_CSRF_SECRET` **obligatorio** en cualquier despliegue que no sea loopback; el
   fallback de desarrollo (`security.py:54`) solo es aceptable en `127.0.0.1`. El arranque

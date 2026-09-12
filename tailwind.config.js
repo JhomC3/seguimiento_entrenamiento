@@ -8,6 +8,9 @@ module.exports = {
       colors: {
         burgundy: tokens.burgundy,
         matte: tokens.surfaces.matte,
+        // Neutros canónicos (tokens surfaces.neutral): las utilidades
+        // text-neutral-*/bg-neutral-*/border-neutral-* mapean a tokens.
+        neutral: tokens.surfaces.neutral,
       },
     },
   },

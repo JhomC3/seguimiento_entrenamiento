@@ -2197,7 +2197,7 @@ def test_heading_outline_h1_to_h2(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "DB_PATH", db)
     home = _client().get("/").text
     h1 = home.index("<h1")
-    chart_h2 = home.index('<h2 class="text-sm font-black tracking-[0.2em]')
+    chart_h2 = home.index('<h2 class="unified-chart-title">')
     assert h1 < chart_h2
     assert "<h2" in home
 
@@ -2268,8 +2268,8 @@ def test_index_serves_initial_muscles_noscript_and_seo(tmp_path, monkeypatch):
     noscript = home[home.index("<noscript>") : home.index("</noscript>")]
     assert "JavaScript" in noscript
     assert "/exportar/csv" not in noscript
-    # SEO descriptivo.
-    assert "<title>Gym Tracker — Progreso de entrenamiento</title>" in home
+    # SEO descriptivo (título propio por página).
+    assert "<title>Gym Tracker — Dashboard</title>" in home
     assert 'name="description"' in home
 
 

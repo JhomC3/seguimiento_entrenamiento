@@ -8,9 +8,9 @@
     opacity: 0.5;
 }
 
-/* Botones de gestión de plantillas */
+/* Botones de gestión de plantillas (24px, WCAG 2.5.8) */
 .pt-btn {
-    height: 22px;
+    min-height: 24px;
     padding: 0 8px;
     border-radius: 6px;
     border: 1px solid var(--t-surfaces-neutral-800);

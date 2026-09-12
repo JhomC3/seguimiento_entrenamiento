@@ -19,14 +19,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 # Patrones prohibidos en templates (clases Tailwind de color/estilo que deben
-# vivir en componentes CSS, no repetirse inline).
+# vivir en componentes CSS, no repetirse inline). Los neutros text-/border-
+# neutral-* están permitidos (mapean a tokens en tailwind.config.js); los
+# fondos lavados y semánticos (red/green) deben usar el vocabulario canónico.
 FORBIDDEN_TEMPLATE = [
     r"bg-white/\[0\.04\]",
-    r"bg-burgundy-700\s+hover",  # botón primario inline
-    r"bg-matte-950\s+border",
+    r"bg-white/\[0\.03\]",
+    r"bg-black/30",
     r"bg-black/50",
+    r"bg-burgundy-700\s+hover",  # botón primario inline
+    r"bg-burgundy-700/10",
+    r"bg-matte-950\s+border",
     r"hover:bg-red-400",
     r"hover:bg-burgundy-700/20",
+    r"text-red-400",
+    r"text-green-400",
     r"text-\[(9|10|11)px\]",
     r"text-neutral-(500|600)",
     r"focus:border-burgundy-700",
@@ -38,6 +45,7 @@ RGBA_RE = re.compile(r"rgba?\(")
 # Clases de componente canónicas (vocabulario propio, no Tailwind).
 COMPONENT_CLASSES = {
     "btn",
+    "icon-btn",
     "btn-primary",
     "btn-ghost",
     "btn-outline",
@@ -74,6 +82,16 @@ COMPONENT_CLASSES = {
     "neon-border",
     "metallic-border",
     "neon-title",
+    "unified-chart-header",
+    "unified-chart-title",
+    "nutri-params",
+    "nutri-target-row",
+    "nutri-consumed-row",
+    "form-error",
+    "skip-link",
+    "empty-state",
+    "workspace-brand",
+    "workspace-nav",
     "no-scrollbar",
     "htmx-indicator",
     "editor-popup-dialog",
@@ -139,7 +157,9 @@ COMPONENT_CLASSES = {
 
 def audit_templates() -> list[str]:
     issues: list[str] = []
-    for f in sorted((ROOT / "templates").glob("*.html")):
+    files = sorted((ROOT / "templates").glob("*.html"))
+    files += sorted((ROOT / "templates" / "partials").glob("*.html"))
+    for f in files:
         text = f.read_text(encoding="utf-8")
         for pat in FORBIDDEN_TEMPLATE:
             for m in re.finditer(pat, text):

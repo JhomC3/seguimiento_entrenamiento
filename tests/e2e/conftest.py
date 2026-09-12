@@ -66,6 +66,16 @@ def server(tmp_path):
             proc.wait(timeout=5)
 
 
+@pytest.fixture()
+def server_db_path(tmp_path):
+    """Ruta de la DB que usa el fixture `server` (mismo tmp_path por test).
+
+    Permite a los tests verificar persistencia REAL consultando SQLite
+    directamente, no solo el DOM/aviso del navegador.
+    """
+    return tmp_path / "lifestyle.db"
+
+
 @pytest.fixture(scope="session")
 def browser():
     with sync_playwright() as p:

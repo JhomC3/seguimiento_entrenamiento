@@ -6,7 +6,6 @@
 
 import { initChartInteractions, renderNutritionTrend, renderUnifiedChart } from './chart-interaction.js';
 import { initDateNavigation } from './date-navigation.js';
-import { initEditorPopup } from './editor-popup.js';
 import { initLevelCascade } from './level-cascade.js';
 import { fitRowsToPanel, initEditorActions, initEditorRowSortable, syncEditorFromContent } from './editor.js';
 import { initLifecycle } from './htmx-lifecycle.js';
@@ -68,7 +67,6 @@ document.addEventListener('DOMContentLoaded', function () {
             renderNutritionTrend();
         }
         initDateNavigation();
-        initEditorPopup();
         initEditorActions();
         initTemplateActions();
         initNutritionEditor();

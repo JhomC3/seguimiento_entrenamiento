@@ -134,3 +134,67 @@ uv run python scripts/verify_editor.py
 - **Forzar el worker desde ADB** (sin esperar la hora):
   `adb shell cmd jobscheduler run -f com.jhomc.healthsync <job_id>`.
 - **Migración a host persistente**: `docs/operations/health-sync-migration.md`.
+
+## Parallel work with git worktrees
+
+Rule (binding, see `AGENTS.md` §0.5): **one task = one branch = one worktree.**
+Never run two agents or two tasks in the same working directory.
+
+### Create
+
+```bash
+git status --short --branch   # must be clean first: commit or `git stash -u`
+git worktree add ../entrenamiento-<tarea> -b <tipo>/<nombre> <base>
+git worktree list             # verify
+```
+
+- `<base>` is a stable commit or branch (e.g. `main`), never a half-done branch.
+- Branch names follow repo style: `feat/...`, `fix/...`, `docs/...`.
+- A new worktree starts from HEAD; uncommitted changes are NOT carried over.
+
+### Isolate (per worktree)
+
+`.venv/`, `data/*.db`, `data/backups/`, tokens (`data/hc_sync_token`,
+`data/csrf_secret`), `android/.gradle` and `android/sdk/` are gitignored, so
+each worktree sets up its own:
+
+```bash
+cd ../entrenamiento-<tarea>
+uv sync --locked                                   # own .venv
+cp ../entrenamiento/data/lifestyle.db data/ 2>/dev/null || uv run python scripts/import_google_sheets.py
+./scripts/start_server.sh                          # generates its own secrets
+uv run uvicorn app:app --host 127.0.0.1 --port 8001 --reload   # own port, never 8000
+```
+
+Android (from that worktree's `android/`, sandbox paths are relative so they
+resolve per worktree automatically):
+
+```bash
+JAVA_HOME=/opt/homebrew/opt/openjdk@21 GRADLE_USER_HOME=$PWD/.gradle ANDROID_HOME=$PWD/android/sdk ./gradlew assembleDebug test
+```
+
+Notes:
+
+- e2e tests use an isolated server + temporary DB, so `pytest` is safe to run
+  in several worktrees at once. Playwright browsers (`~/.cache/ms-playwright`)
+  are shared machine-wide (one-time install).
+- `android/sdk/` is per worktree and large (~GBs). If disk is tight, reusing
+  another tree's SDK read-only is a conscious sandbox exception, not the default.
+- Assign agents by directory and keep touched files disjoint where possible;
+  worktrees don't remove merge conflicts, they only isolate work in progress.
+
+### Integrate (constant git maintenance)
+
+- Small commits per milestone, concise message in repo style.
+- Before every commit: `git status`, `git diff`, `git log --oneline -10`;
+  stage only intended files, never secrets. No automatic commits or pushes:
+  branch and diff are always reviewed first.
+- Sync with the base (rebase/merge) before integrating.
+
+### Clean up
+
+```bash
+git worktree remove ../entrenamiento-<tarea>   # after the merge
+git worktree prune
+git branch -d <tipo>/<nombre>                  # delete branches already merged
+```

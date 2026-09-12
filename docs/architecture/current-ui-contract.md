@@ -13,6 +13,24 @@
 > **Baseline suite:** `uv run pytest -q` (unidad + integración + e2e Playwright, cobertura
 > ≥ 90 %) y gates `ruff` + `mypy`. El conteo exacto de tests no es parte del contrato.
 
+> **Dashboard congelado (armonización Diario/Splits → Dashboard):** el Dashboard
+> es la referencia visual y no se modifica. Archivos congelados:
+> `templates/index.html`, `partials/dashboard_catalog.html`, `cascade_row.html`,
+> `ejercicios_row.html`, `partials/period_summary_panel.html`,
+> `static/css/cascade.css` y la variante `dashboard` del navegador de fechas.
+> Los fragmentos compartidos con el popup (`session_editor.html`,
+> `nutrition_editor.html`, `cardio_day.html`, `date_navigator.html`,
+> `exercise/alimento_create_form.html`, `plantillas*_list.html`) solo admiten
+> cambios aditivos con scope (`#daily-page …`, `.splits-*`) que no alteren el
+> render del Dashboard. Pins en `tests/test_dashboard_freeze.py`: si fallan,
+> el lote ha tocado el Dashboard y requiere consulta previa.
+> Excepción 2026-09-10 (orden expresa): sin títulos de eje ni leyenda en las
+> gráficas del dashboard (`src/charts.py`), con sus tests y este contrato
+> actualizados en el mismo lote.
+> Ajuste 2026-09-10 (orden expresa): gap de la columna central 24→12px y
+> nutricional `clamp(140px,18vh,330px)` (+`25vh/400px` desde 1100px) para
+> alinear su base con los paneles laterales sin scroll.
+
 ---
 
 ## 1. Rutas y su contrato
@@ -20,14 +38,16 @@
 ### `GET /` (index, HTML completo)
 
 - Renderiza `index.html` (extends `base.html`).
-- Sirve server-side: header (título, botón Registrar),
+- Sirve server-side: header (título, navegación común Dashboard/Diario/Splits
+  vía `workspace_nav.html` con `aria-current` en la página activa),
   **fila inicial de músculos** (`#cascade-row`, chips `data-action="select-muscle"`),
   gráfica sistémica (`#unified-chart` con `#unified-chart-data` JSON + `#unified-chart-plot`),
   `#history-section` vacío, `<noscript>` y los partials
   globales (`#notice-container` role=status, `#confirm-modal` dialog, `#app-config`).
 - `#app-config` (script `type="application/json"`, inerte): `categoria_map`,
   `alimento_map`, `ciclo_start`, `csrf_token` (firmado con `GYM_CSRF_SECRET`).
-- El popup de registro es un `<dialog id="editor-popup" aria-labelledby="popup-fecha-title">`.
+- El Dashboard no contiene botón Registrar ni popup de registro: es solo análisis.
+  La captura de datos vive en `/diario`, la única pantalla canónica de registro.
 - Assets versionados con `static_url(...)` (`?v=<sha256[:12]>`; `Cache-Control: immutable`
   solo con digest vigente).
 
@@ -37,20 +57,24 @@
 - Usado con `target: '#session-editor-wrap'`, `swap: 'innerHTML'`.
 - Marcadores de estado: `#editor-state[data-readonly][data-has-data]` (hidden).
 
-### `GET /editor/popup?fecha=<YYYY-MM-DD>`
+### `GET /diario?fecha=<YYYY-MM-DD>&vista=<entrenamiento|alimentacion>`
 
-- Cuerpo del popup de registro: `editor_popup.html` (navegador de fechas + título +
-  alimentación + editor de sesión + cardio + plantillas).
-- Incluye `#editor-notice` (role=status, aria-live) y `#save-outcome[data-ok]` (hidden).
-- Cargado por `editor-popup.js` con `htmx.ajax(target: '#popup-body')`; el popup se abre
-  con `showModal()` y la fecha viaja en `?registro=<iso>` (historial).
+- Página completa del Diario: navegador compacto, selector de Entrenamiento/Alimentación,
+  editor de la fecha, cardio y diálogos de plantillas/altas.
+- `vista` es local a la página y por defecto es `entrenamiento`.
+- `#date-navigator` usa el formato diario corto `dd/mm/aa`, sin etiqueta Semana.
+
+### `GET /editor/popup?fecha=<YYYY-MM-DD>` (compatibilidad interna)
+
+- Fragmento heredado para integraciones antiguas. No forma parte de la navegación ni de la
+  experiencia visible del Dashboard; el Diario usa sus propios contenedores server-side.
 
 ### `GET /cardio/day?fecha=<YYYY-MM-DD>`
 
 - Fragmento del panel de cardio de la fecha (`cardio_day.html`), usado por
   `date-navigation.js` (`doNav`) para refrescar `#cardio-day` al navegar fechas dentro
-  del popup (sin esto, el panel queda con el día de apertura).
-- Mismo contenido que el bloque `#cardio-day` del popup; `POST /cardio/annotation`
+  del Diario (sin esto, el panel queda con el día de apertura).
+- Mismo contenido que el bloque `#cardio-day` del Diario; `POST /cardio/annotation`
   responde OOB `#cardio-day` (outerHTML) tras guardar.
 
 ### `POST /entrenamiento/session/save`
@@ -62,6 +86,15 @@
 - OOB error de dominio (400): `#editor-notice` (error, `data-dismiss="4500"`),
   `#save-outcome` (`data-ok="0"`).
 - Gating cliente: submit interceptado si `#session-editor[data-editmode] !== '1'`.
+  Cancelar (`data-action="cancel-session-edit"` / `"cancel-nutrition-edit"`) pasa
+  por el mismo dirty-check que el lápiz (confirmación si hay cambios, `doNav`
+  forzado al descartar); nunca hace `hx-get` directo.
+- Estado del botón de guardado: en modo readonly `#edit-actions` está `invisible` y el
+  botón `Guardar cambios` (submit, `btn-primary`) deshabilitado. Al entrar en modo
+  edición las acciones (Guardar cambios / Cancelar) quedan **siempre visibles** (con o
+  sin cambios). Durante el vuelo htmx el botón se deshabilita y muestra `Guardando…`
+  (anti doble-submit); se restaura al terminar. Los 5xx/fallos de red muestran un aviso
+  genérico en `#editor-notice` (htmx no intercambia 5xx).
 - Efectos: backup pre-mutación, journal `undo_entries` (kind `sesion`, solo `before`).
 
 ### `POST /entrenamiento/session/eliminar`
@@ -80,7 +113,7 @@
     `aria-pressed`) + OOB `#unified-chart` (compilado del músculo).
   - `tipo=ejercicio` con foco → `exercise_detail.html` en `#history-section`.
   - `tipo=global` → fila de músculos + OOB gráfica sistémica.
-- Selección múltiple con Shift+click; `Escape` deselecciona (salvo popup abierto);
+- Selección múltiple con Shift+click; `Escape` deselecciona;
   historial `?musculos=A,B&ejercicios=a,b` con popstate.
 
 ### `GET /grafica?musculo[]=&ejercicios[]=`
@@ -89,21 +122,39 @@
   compilado + ejercicios; 2+ → global + músculos. Con 1 músculo también OOB
   `#ejercicios-row` (outerHTML).
 - El fragmento usa el mismo shell que `chart_html` (header h2 + `chart-empty`/plot 450px).
+- Sin títulos de eje ni leyenda (2026-09-10, a petición expresa): la granularidad
+  la indica el selector Día/Semana/Mes y el tooltip cristal identifica las
+  trazas. Márgenes `l48 r20 t20 b28`; la estabilidad entre estados la dan
+  márgenes/altura idénticos.
 
 ### `GET /semana/primer-entreno?semana=<n>`
 
 - JSON `{"fecha": "<iso>"|null}`: primera fecha de entrenamiento de la semana del ciclo.
-- Consumido por `chart-interaction.js` al hacer clic en un punto: abre el popup en esa
-  fecha. `response.ok` exigido; un reintento para fallos transitorios; aviso de error
-  si persiste.
+- Conservado para compatibilidad con enlaces históricos. El Dashboard actual no abre un
+  editor al hacer clic en la gráfica; la captura de datos se inicia desde Diario.
+
+### Sugerencia de rutina (`GET /sugerencia/banner` + `GET /sugerencia/aplicar`)
+
+- `GET /sugerencia/banner?fecha=` → fragmento `partials/suggestion_banner.html`
+  en `#suggestion-banner` (carga con `hx-trigger="load"` y se refresca en cada
+  `doNav` con fuente propia, como `#cardio-day`): rutina → botón minimalista
+  `btn btn-suggest` ("Usar sugerencia", sin texto); descanso → aviso corto;
+  nada → vacío. Nunca 500 visible (error → vacío).
+- `GET /sugerencia/aplicar?fecha=` — exige modo edición (misma guarda que
+  aplicar plantilla, anti doble-submit); rellena el editor con la sugerencia
+  (pesos de la última vez comparable) sin guardar, con marcador
+  `#plantilla-applied` y aviso con la explicación. Sin rutina → solo aviso.
 
 ### `POST /cardio/annotation`
 
 - Campos: `hc_id`, `velocidad_kmh`, `inclinacion_pct`, `notas`, `fecha`.
 - Upsert de anotación sobre una sesión `EXERCISE_SESSION` espejada; anotación vacía se
   elimina. OOB de aviso vía `#notice-container`.
-- El submit del popup convierte `FormData` a objeto plano (htmx no serializa FormData
+- El submit del Diario convierte `FormData` a objeto plano (htmx no serializa FormData
   como `values`) y omite los campos vacíos (`float | None = Form(None)`).
+- El formulario de anotación vive en el fragmento compartido con el popup del
+  Dashboard: su convergencia a las etiquetas de los editores queda diferida
+  (cambiarlo altera el render del popup; requiere consulta previa).
 
 ### `POST /ejercicio/nuevo`
 
@@ -115,6 +166,9 @@
 
 ### Plantillas de entrenamiento
 
+- En el Diario viven dentro del diálogo nativo `#training-templates-dialog`; el botón
+  del panel muestra el conteo (`Plantillas · N`) en el span `#daily-training-template-count`,
+  refrescado por OOB en cada mutación de plantillas.
 - `GET /plantillas[?editar=<id>]` → fragmento `plantillas_list.html`
   (`target: '#plantillas-section'`). Tarjetas `#plantillas-list .pt-card[data-pt-id]`
   con acciones Aplicar/Editar/Eliminar; se reordenan arrastrando el cuerpo de la tarjeta.
@@ -126,7 +180,8 @@
   `persistOrderWithHtmx` (htmx + CSRF); fallo → restaura el DOM y avisa.
 - `GET /plantilla/aplicar/{id}?fecha=` — exige modo edición; confirmación de reemplazo
   si el día tiene datos; OOB `#editor-notice` + `#session-editor-wrap`
-  (con marcador `#plantilla-applied` para el dirty-baseline).
+  (con marcador `#plantilla-applied` para el dirty-baseline). No escribe en SQLite:
+  solo rellena el editor; el usuario revisa y pulsa Guardar.
 - Reordenamiento **solo con ratón** (decisión explícita del usuario; desviación de WCAG
   2.1.1 documentada en `web-standards.md`): tarjetas y filas de editor se arrastran desde
   cualquier parte no-control de la fila (el `dragstart` de las tarjetas excluye
@@ -138,6 +193,8 @@
 
 ### Plantillas de alimentación
 
+- En el Diario viven dentro del diálogo nativo `#food-templates-dialog`; el botón
+  del panel muestra el conteo (`#daily-food-template-count`, OOB en mutaciones).
 - `POST /alimentacion/plantilla/guardar` — `nombre`, `alimento[]`, `cantidad[]`.
 - `POST /alimentacion/plantilla/eliminar/{id}`, `POST /alimentacion/plantilla/reordenar`
   (`id[]`), `GET /alimentacion/plantilla/aplicar/{id}?fecha=` (OOB
@@ -151,7 +208,10 @@
 - `POST /alimentacion/save` — `fecha`, `alimento[]`, `cantidad[]`, `peso_kg`,
   `factor_proteina`, `factor_grasa`, `kcal_objetivo`. El servidor recalcula nutrientes
   contra el catálogo (`ROUND_HALF_UP(catálogo_100g × g / 100)`); nunca confía en el
-  cliente. OOB `#nutrition-editor-wrap` + `#nutrition-date-navigator`.
+  cliente. OOB `#nutrition-editor-wrap`. El botón de
+  guardado (`#nutrition-edit-actions`) sigue el mismo contrato del editor de sesión:
+  visible en modo edición, `Guardando…` durante el vuelo, anti doble-submit, y aviso
+  genérico en `#notice-container` en 5xx.
 - `POST /alimentacion/eliminar` — `fecha`.
 - `POST /alimento/nuevo` — alta de alimento; OOB `#alimento-create` + `#app-config`.
 - Tabla: `<caption>`, `scope="col"` en las cabeceras; filas `Objetivo`/`Consumido`
@@ -181,7 +241,8 @@
   `#splits-section` a la derecha (`.splits-editor-col`). Móvil: una columna
   con el editor primero (CSS `order`) y el catálogo debajo. Header de página:
   título + `← Dashboard` + botón `data-action="split-new"` **Nuevo split**.
-  `?abrir=<id>` valida el id y renderiza ese item ya expandido (modo vista).
+  `?abrir=<id>` valida el id y renderiza ese item ya expandido (modo vista);
+  sin `?abrir`, el split actual (si hay) se renderiza primero y abierto.
 - **`#splits-section`** contiene el **estado vacío** ("Todavía no hay splits
   guardados" + `data-action="split-new"` "Crear nuevo split") o
   `#splits-list` con **un item por split** (`partials/split_accordion.html` +
@@ -197,14 +258,16 @@
   - `.split-item-toolbar` (altura fija `--split-toolbar-h: 40px`): formulario
     por split (`hx-post="/split/guardar"`, hidden `split_id`, input `nombre`
     oculto en vista) + badges "Editando"/"Modificado" + **acciones como iconos
-    agrupadas** `.split-item-actions` (`.split-action-btn` 28×28 con
+    agrupadas** `.split-item-actions` (`.icon-btn.split-action-btn` 28×28 con
     `aria-label`/`title`, focus-visible, `[disabled]` con el MISMO tamaño):
     lápiz (`split-edit`, toggle `aria-pressed` + clase **`.is-active`** cuando el
     modo edición está activo — se ilumina con acento + glow, sin texto ni badge
     "Editando"), guardar (`split-save`,
     **deshabilitado sin cambios locales o en item guardado**; `markDirty` lo
     habilita al mutar el board o teclear el nombre), papelera (`split-delete`,
-    conserva `data-split-id`/`data-split-nombre` para el confirm);
+    conserva `data-split-id`/`data-split-nombre` para el confirm) y check de
+    actual (`split-activate`, `aria-pressed`, clase **`.is-active`** cuando el
+    split es el actual — mismo lenguaje que el lápiz);
   - `.split-accordion-content` (min-height `--split-expanded-height`) →
     `.split-board-scroll` (flex:1, `overflow-x: auto` SOLO aquí, fondo
     `matte-950` + `border-top`: bloque visualmente independiente) →
@@ -248,7 +311,10 @@
   `ejercicio[]`, servidor autoritativo, upsert por nombre, límite 300,
   mínimo 1 ejercicio, renumera `orden`). OOB: `#notice-container` +
   `#splits-section` (outerHTML). `POST /split/eliminar/{split_id}`: idem
-  (confirmación `#confirm-modal`).
+  (confirmación `#confirm-modal`). `POST /split/activar/{split_id}`: marca el
+  split actual (único, idempotente; 400 si no existe); OOB idem y el activo
+  queda primero y abierto. El activo viaja en `training_splits.activo` (v016,
+  índice parcial único) y el undo (`kind "splits"`) lo restaura.
 - **Modo visualización / edición por item**: un split guardado renderiza
   `data-editmode="0"` (sin `.row-btn`/copy-handle/clear-btn/input/Guardar,
   tarjetas `draggable=false`, sortables deshabilitados, **`pointer-events:
@@ -316,9 +382,13 @@ La gráfica `#unified-chart` muestra trazas según el estado de selección
 | **1 músculo**, ejercicio ajeno | Se descarta (no aparece) | — |
 | **2+ músculos** | 1 global + N músculos | Global sólida; músculos `alpha=0.4`, width 3.5; ejercicios ignorados |
 | **Cardio** (sin datos de entrenamiento) | "Sin datos para esta selección" | `chart-empty` |
+| **RIR** (todos los estados con datos) | 1: "RIR" (RIR medio pooled del ámbito) | Blanco translúcido discontinuo (`rgba(255,255,255,0.35)`, dash), eje Y derecho; existe siempre que el ámbito tenga series (ausente = 0, como el hover) |
 
-Eje X = semana del ciclo; Y = "Crecimiento (%)" (rendimiento − 100, baseline semana 1 = 0);
-hover unificado (series, fallos, volumen, peso, sueño).
+Eje X = semana del ciclo (sin título; lo indica el selector); Y = rendimiento − 100,
+baseline semana 1 = 0, sin título (la unidad % vive en tooltip e Historial);
+eje Y derecho = RIR medio con rango ajustado a los datos visibles (sin base en 0);
+hover unificado (series, fallos, volumen, peso, sueño) + bloque RIR. Sin leyenda
+(2026-09-10): el tooltip es el único identificador de traza.
 
 ### Sincronización LAN
 
@@ -326,7 +396,9 @@ hover unificado (series, fallos, volumen, peso, sueño).
   exenta del CSRF de formularios por igualdad exacta de ruta; lotes ≤ 500 ops / 1 MiB;
   upsert por revisión + baja lógica; acuse individual. Contrato completo en
   `docs/architecture/health-sync-contract.md`.
-- Gate LAN (`GYM_LAN_SYNC_ONLY=1`): remoto solo este POST; el resto de la UI remota es
+- Gate LAN (`GYM_LAN_SYNC_ONLY=1`): remoto solo este POST **más la API v1 del
+  diario** (entreno, nutrición, plantillas, altas y undo;
+  contrato en `training-api-contract.md`); el resto de la UI remota es
   403/429 (ver `docs/architecture/security-model.md` §2.6).
 
 ### Rutas retiradas
@@ -343,13 +415,26 @@ hook se conservan como alias):
 
 - **Botones:** `.btn` + `.btn-primary` (acción principal), `.btn-ghost`
   (Cancelar/Guardar de paneles), `.btn-outline` (+`.btn-outline-danger`) (acciones
-  de tarjetas), `.btn-text` (enlace con borde). Alias compatibles: `.row-btn`,
-  `.btn-x`, `.btn-check`, `.edit-toggle`, `.pt-btn`, `.today-btn`, `.nav-arrow`,
-  `.rir-step`, `.collapse-chevron`.
+  de tarjetas), `.btn-text` (enlace con borde). Botón de icono canónico
+  `.icon-btn` 28×28 (base de armonización; `.split-action-btn` es su alias
+  directo). Alias compatibles: `.row-btn`
+  (hit area 24px vía `::before`), `.btn-x`, `.btn-check`, `.edit-toggle` (24px),
+  `.pt-btn` (24px), `.today-btn`, `.nav-arrow`, `.rir-step`, `.collapse-chevron`.
+  (La migración de `.edit-toggle`/`.row-btn`/`.nav-arrow` a `.icon-btn` queda
+  diferida: viven en fragmentos compartidos con el popup del Dashboard.)
 - **Inputs:** `.cell-input`/`.cell-select` (celdas de tabla; +`.cell-input-sm` para
   parámetros), `.field-input` (+`.field-input-sm`) (formularios de alta).
+- **Shell global:** `.skip-link` (WCAG 2.4.1, `#main-content`), `.workspace-nav`
+  (+`aria-current="page"`), `.workspace-brand` (título + nav sin ruptura).
+- **Gráfica:** `.unified-chart-header`/`.unified-chart-title` (server-render con
+  título fijo "Rendimiento", mismo en `src/dashboard_service.py` y
+  `src/response_fragments.py`).
+- **Nutrición:** `.nutri-params`, `.nutri-target-row`, `.nutri-consumed-row`.
+- **Formularios:** `.form-error` (errores, color semántico por token).
 - **Contenedores:** `.panel` (+`.panel-tight`/`.panel-default`/`.panel-spacious`),
   `.panel-title` (+`.panel-title-neon`, `.panel-title-divider`), `.card`.
+- **Estados vacíos:** `.empty-state` (tono 12px neutral-400 único en Diario y
+  Splits; cada contexto conserva su texto y layout).
 - **Splits:** `.splits-page`, `.splits-page-header`, `.splits-layout`,
   `.splits-editor-col`, `.splits-catalog-col`, `.split-columns`,
   `.split-board-scroll`, `.split-day-zone` (+`.drop-target` durante el
@@ -386,11 +471,24 @@ hook se conservan como alias):
 
 ## 3. Diálogos y foco
 
-- `#editor-popup` y `#confirm-modal` son `<dialog>` nativos (`modal-dialog.js`):
-  `showModal`/`close`, foco inicial en el primer control, restauración de foco al
-  origen, Escape cerrando solo el diálogo superior. Sin focus-trap manual.
-- El popup conserva `?registro` en el historial; el popstate no reabre recursivamente
-  (flag `suppressPopstate`).
+- Shell global: `.skip-link` → `#main-content` (span `sr-only` en Dashboard/Diario,
+  `main#main-content` en Splits); `h1` idéntico en las 3 páginas (utilidades
+  `text-xl font-black tracking-[0.2em] text-white uppercase`); secciones con
+  `h2.panel-title`; Splits usa `h2.split-accordion-name` y `h3.split-day-section-label`.
+- Fechas: `.date-num.selected` + `aria-current="date"` (servidor y `doNav`).
+  Título del Diario `#daily-date-title.panel-title-neon` (`DÍA dd/mm/aa`);
+  leyenda sr-only `#navigator-legend` (texto por vista, sincronizada en `setMode`).
+- Lápices de edición: `aria-pressed` sincronizado con `editmode`.
+- Tabs del Diario con `aria-labelledby`; input date con anillo `:focus-within`.
+- `#unified-chart-plot` focuseable con anillo visible; valores en panel Historial.
+
+- Los diálogos de plantillas y altas del Diario, y `#confirm-modal`, son `<dialog>` nativos
+  (`modal-dialog.js`): `showModal`/`close`, foco inicial en el primer control, restauración
+  de foco al origen y Escape cerrando solo el diálogo superior. Sin focus-trap manual.
+  Los `.daily-dialog` hablan el lenguaje del popup del Dashboard (diálogo transparente,
+  backdrop `overlay-backdrop-popup` con blur 12px + tarjeta `matte-900` con glow burdeos).
+- No se mantiene estado de popup en el historial. La fecha y vista canónicas viven en
+  `/diario?fecha=<iso>&vista=<modo>`.
 
 ## 4. Navegador de fechas
 
@@ -398,6 +496,33 @@ hook se conservan como alias):
   `[ciclo_start, fin del mes siguiente]`. Input date = salto preciso; flechas = ±15 días
   (ventana); HOY = salto al día actual. Flechas de teclado solo con foco dentro de
   `#date-navigator`. Puntos `.date-dot` = días con datos.
+- Dashboard (`variant="dashboard"`): formato `S{semana} · dd-mm-aa`, puntos solo de
+  entrenamiento (`fechas_con_datos`), sin cambios.
+- Diario (`variant="daily"`): etiquetas compactas (`dd` o `d/m` el primero de mes),
+  aria `dd/mm/aa`, sin texto "Semana"; los puntos se filtran por pestaña
+  (`GET /diario?vista=` y `GET /diario/navigator?vista=`): `entrenamiento` solo
+  `training_sets`, `alimentacion` solo `diario_alimentacion`
+  (`get_daily_data_dates(vista)`). El cambio de pestaña refresca el carrusel
+  (`diario.js`) y la navegación propaga `vista` (`date-navigation.js`); los
+  dots optimistas tras save/eliminar/undo solo aplican si el dominio coincide
+  con la vista activa. El fragmento `GET /diario/navigator` refresca el
+  carrusel en cada navegación con cola htmx propia (no descarta las
+  peticiones de los editores).
+
+## 4.1. Navegación común
+
+- `templates/partials/workspace_nav.html` en `index.html`, `diario.html` y
+  `splits.html`: enlaces Dashboard `/`, Diario `/diario` y Splits `/splits` con
+  `.btn btn-outline`; la página activa se marca con `aria-current="page"` y
+  color/borde borgoña (`.workspace-nav .btn[aria-current="page"]`).
+
+## 4.2. Estados vacíos del Diario
+
+- "No hay entrenamiento guardado para este día." / "No hay alimentación guardada
+  para este día." cuando la fecha no tiene datos de ese dominio, con el
+  componente `.empty-state` (compartido con Splits; textos intactos).
+- Los botones de crear (Nuevo ejercicio / Nuevo alimento) y Plantillas siguen
+  visibles en días vacíos.
 
 ## 5. Estados de UI (siempre diseñados)
 

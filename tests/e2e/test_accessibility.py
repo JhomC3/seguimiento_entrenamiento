@@ -1,8 +1,8 @@
 """Accessibility gates with axe-core (version bloqueada en package.json).
 
-Estados auditados: dashboard vacío, gráfica con datos, diálogo del editor
-(popup), confirmación, editor de alimentación y plantillas. Sin supresiones
-globales: cada hallazgo de terceros documentado en el comentario del test.
+Estados auditados: dashboard vacío, gráfica con datos, página del Diario
+(editores de entrenamiento y alimentación), confirmación y plantillas. Sin
+supresiones globales: cada hallazgo de terceros documentado en el comentario.
 """
 
 import datetime
@@ -29,9 +29,10 @@ def _fill_row(page, row, ejercicio="Press", kg="80", reps="8", rir="1"):
 
 
 def _open_popup(page, server):
-    page.click('[data-action="open-editor-popup"]')
-    page.wait_for_selector("#popup-body #session-editor-wrap", timeout=5000)
-    page.wait_for_selector("#popup-body #nutrition-form", timeout=5000)
+    page.goto(server + "/diario")
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_selector("#session-editor-wrap", state="attached", timeout=5000)
+    page.wait_for_selector("#nutrition-form", state="attached", timeout=5000)
 
 
 def _wait_editor_settled(page):
@@ -40,7 +41,7 @@ def _wait_editor_settled(page):
 
 def _goto_date(page, server, iso):
     _open_popup(page, server)
-    page.locator(f'#popup-body .date-num[data-iso="{iso}"]').click()
+    page.locator(f'#date-navigator .date-num[data-iso="{iso}"]').click()
     page.wait_for_timeout(200)
 
 
@@ -72,12 +73,12 @@ def test_axe_empty_dashboard(page, server):
     _assert_no_violations(_run_axe(page), "dashboard vacío")
 
 
-def test_axe_popup_editor_and_nutrition(page, server):
+def test_axe_diario_editor_and_nutrition(page, server):
     page.goto(server)
     page.wait_for_function("document.body.dataset.appReady === '1'")
     _open_popup(page, server)
     page.wait_for_timeout(200)
-    _assert_no_violations(_run_axe(page), "popup editor + nutrición")
+    _assert_no_violations(_run_axe(page), "diario editor + nutrición")
 
 
 def test_axe_confirmation_dialog(page, server):
@@ -102,8 +103,7 @@ def test_axe_populated_chart(page, server):
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entrenamiento guardado", timeout=3000
     )
-    page.click("#popup-close")
-    page.wait_for_selector("#editor-popup", state="hidden", timeout=5000)
+    page.goto(server)
     group = page.locator('#dashboard-catalog .db-group[data-group="Pectoral"]')
     if group.locator('[data-action="toggle-group"]').get_attribute("aria-expanded") != "true":
         group.locator('[data-action="toggle-group"]').click()
@@ -129,5 +129,10 @@ def test_axe_templates_page(page, server):
     page.keyboard.press("Enter")
     page.wait_for_selector("#confirm-modal[open]", timeout=3000)
     page.keyboard.press("Enter")
-    page.wait_for_selector("#plantillas-list .pt-card", timeout=3000)
+    page.wait_for_selector("#plantillas-list .pt-card", state="attached", timeout=3000)
+    # Auditar el diálogo abierto (la lista es visible dentro de él).
+    page.locator(
+        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
+    ).click()
+    page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
     _assert_no_violations(_run_axe(page), "plantillas")
