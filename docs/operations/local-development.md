@@ -56,6 +56,9 @@ uv run uvicorn app:app --host 127.0.0.1 --port 8000
   uv run uvicorn app:app --host 127.0.0.1 --port 8000
   ```
 - Schema is versioned in `schema_migrations`; never hand-edit tables.
+- Emergency server undo (no UI affordance by design): `HC_SYNC_TOKEN=$(cat data/hc_sync_token)`,
+  then `curl -X POST -H "X-Sync-Token: $HC_SYNC_TOKEN" http://127.0.0.1:8000/api/v1/undo`
+  (peek first with `GET /api/v1/undo/peek`). Pops one journal entry (max 10).
 
 ## Tests
 

@@ -164,12 +164,4 @@ class TrainingSessionFlowTest {
         assertEquals(5_000L, t.elapsedFor("u2", 25_000L))
     }
 
-    @Test
-    fun `resetDisplay olvida acumulado en memoria`() {
-        val t = RestTimer()
-        t.onOpened(1L, "u1", 1_000L, 10_000L)
-        t.onClosed(15_000L)
-        t.resetDisplay("u1")
-        assertEquals(0L, t.elapsedFor("u1", 99_000L))
-    }
 }

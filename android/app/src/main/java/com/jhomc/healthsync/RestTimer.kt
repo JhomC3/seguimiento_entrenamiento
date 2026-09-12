@@ -54,12 +54,6 @@ class RestTimer {
         if (running?.uuid !in uuids) running = null
     }
 
-    /** Reset discreto de display: olvida el acumulado en memoria (Room intacto). */
-    fun resetDisplay(uuid: String) {
-        accum.remove(uuid)
-        if (running?.uuid == uuid) running = null
-    }
-
     /** Ms a pintar para [uuid] en [nowElapsed] (acumulado + tramo en curso). */
     fun elapsedFor(uuid: String, nowElapsed: Long): Long {
         val base = accum[uuid] ?: 0L

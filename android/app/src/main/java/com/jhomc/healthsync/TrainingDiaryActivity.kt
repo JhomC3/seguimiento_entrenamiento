@@ -43,12 +43,7 @@ class TrainingDiaryActivity : ComponentActivity() {
     private lateinit var prevButton: Button
     private lateinit var todayButton: Button
     private lateinit var nextButton: Button
-    private lateinit var addRowButton: Button
     private lateinit var saveButton: Button
-    private lateinit var deleteButton: Button
-    private lateinit var templatesButton: Button
-    private lateinit var exerciseButton: Button
-    private lateinit var undoButton: Button
     // --- B2: alimentación ---
     private lateinit var trainingTabButton: Button
     private lateinit var foodTabButton: Button
@@ -64,18 +59,12 @@ class TrainingDiaryActivity : ComponentActivity() {
     private lateinit var deleteFoodButton: Button
     private lateinit var mealTemplatesButton: Button
     private lateinit var newFoodButton: Button
-    // --- B3: cardio ---
-    private lateinit var cardioTitle: TextView
-    private lateinit var cardioBox: LinearLayout
-    private var cardioBuiltFor: Pair<String, List<CardioSession>>? = null
-    // --- Editor unificado (una sola lista: editar + entrenar) ---
+    // --- Solo-registro: una sola lista (nombres fijos del plan) ---
     private lateinit var progressView: TextView
     private var rowsBuiltForFecha: String? = null
     private var rowsBuiltForSession: TrainingSession? = null
     private var rowsBuiltForPreview: Int = 0
     private var rowsBuiltForStructure: Int = -1
-    private var catalogNames: List<String> = emptyList()
-    private var pendingFocusUuid: String? = null
     private val timerViews = mutableMapOf<String, TextView>()
     private val headerButtons = mutableMapOf<String, Button>()
     private val statusLines = mutableMapOf<String, TextView>()
@@ -112,25 +101,9 @@ class TrainingDiaryActivity : ComponentActivity() {
         nextButton.setOnClickListener { vm.shiftDay(1) }
         todayButton.setOnClickListener { vm.goToday() }
 
-        addRowButton = Button(this).apply { text = "+ Añadir serie" }
         saveButton = primaryButton("Guardar cambios")
-        deleteButton = Button(this).apply { text = "Eliminar día"; asDanger() }
-        templatesButton = Button(this).apply { text = "Plantillas" }
-        exerciseButton = Button(this).apply { text = "Nuevo ejercicio" }
-        undoButton = Button(this).apply { text = "Deshacer" }
-        cardioTitle = TextView(this).apply { text = "Cardio"; asSectionTitle() }
-        cardioBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         progressView = TextView(this).apply { asSummary() }
-        addRowButton.setOnClickListener {
-            pendingFocusUuid = null
-            vm.addEntrenoRow()
-            pendingFocusUuid = vm.entrenoRows.value.lastOrNull()?.uuid
-        }
         saveButton.setOnClickListener { confirmSave() }
-        deleteButton.setOnClickListener { confirmDelete() }
-        templatesButton.setOnClickListener { showTemplatesDialog() }
-        exerciseButton.setOnClickListener { showExerciseDialog() }
-        undoButton.setOnClickListener { vm.undo() }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -141,15 +114,8 @@ class TrainingDiaryActivity : ComponentActivity() {
             addView(statusView)
             addView(progressView)
             addView(rowsBox)
-            addView(addRowButton)
             addView(saveButton)
-            addView(deleteButton)
-            addView(templatesButton)
-            addView(exerciseButton)
-            addView(cardioTitle)
-            addView(cardioBox)
             addView(foodBox())
-            addView(undoButton)
             addView(summaryView)
         }
         setContentView(ScrollView(this).apply { addView(root) })
@@ -192,7 +158,7 @@ class TrainingDiaryActivity : ComponentActivity() {
 
     private fun applyTrainingVisibility(isFood: Boolean) {
         val trainVis = if (isFood) View.GONE else View.VISIBLE
-        for (v in listOf(progressView, rowsBox, addRowButton, saveButton, deleteButton, templatesButton, exerciseButton, cardioTitle, cardioBox)) {
+        for (v in listOf(progressView, rowsBox, saveButton)) {
             v.visibility = trainVis
         }
     }
@@ -277,13 +243,13 @@ class TrainingDiaryActivity : ComponentActivity() {
             state.notice != null -> statusView.asStatus(state.notice, StatusKind.SUCCESS)
             state.stale -> statusView.asStatus("Sin conexión: última copia guardada.", StatusKind.NOTICE)
             state.pending > 0 -> statusView.asStatus(
-                "${state.pending} cambio(s) pendientes de envío.", StatusKind.NOTICE,
+                "${state.pending} por enviar al servidor.", StatusKind.NOTICE,
             )
             else -> statusView.asStatus("", StatusKind.NOTICE)
         }
         val busy = state.loading || state.saving
-        for (b in listOf(saveButton, deleteButton, addRowButton, templatesButton, exerciseButton,
-            undoButton, prevButton, nextButton, todayButton, trainingTabButton, foodTabButton,
+        for (b in listOf(saveButton,
+            prevButton, nextButton, todayButton, trainingTabButton, foodTabButton,
             addFoodButton, saveFoodButton, deleteFoodButton, mealTemplatesButton, newFoodButton)) {
             b.isEnabled = !busy
         }
@@ -301,11 +267,7 @@ class TrainingDiaryActivity : ComponentActivity() {
             rowsBuiltForStructure = vm.structureVersion.value
         }
 
-        if (state.catalog.map { it.ejercicio } != catalogNames) {
-            catalogNames = state.catalog.map { it.ejercicio }
-        }
         if (isFood) renderFood(state, busy)
-        if (!isFood) renderCardio(state, busy)
         summaryView.text = if (isFood) {
             foodSummaryOf(state)
         } else if (state.suggestion?.tipo == "descanso" && session?.hasData != true) {
@@ -332,23 +294,19 @@ class TrainingDiaryActivity : ComponentActivity() {
         val groups = vm.entrenoGroups.value
         val done = vm.doneUuids.value
         val expanded = vm.expandedUuids.value
-        val (total, doneCount, pending) = SessionFlowState.progress(groups, done)
-        progressView.text = if (total == 0 && rows.all { it.draft.isBlank() }) {
-            "Escribe el ejercicio y ajusta con +."
+        val (total, doneCount, _) = SessionFlowState.progress(groups, done)
+        progressView.text = if (total == 0) {
+            "Sin series este día."
         } else {
-            "Serie $doneCount/$total · $pending pendientes"
+            "$doneCount hechas de $total"
         }
         rowsBuiltForStructure = vm.structureVersion.value
         val byUuid = SessionFlowState.flattened(groups).associateBy { it.uuid }
-        for (row in rows) {
+        // Solo-registro: las filas vienen del plan (web); los blancos se ocultan.
+        for (row in rows.filter { !it.draft.isBlank() }) {
             rowsBox.addView(rowCard(row, byUuid[row.uuid], row.uuid in expanded, row.uuid in done))
         }
         updateTimers()
-        // Foco pendiente tras añadir serie o transición blanco→visible.
-        pendingFocusUuid?.let { uuid ->
-            pendingFocusUuid = null
-            rowsBox.findViewWithTag<AutoCompleteTextView>("ex_$uuid")?.requestFocus()
-        }
     }
 
     private fun rowCard(row: EntrenoRow, item: EntrenoItem?, isExpanded: Boolean, isDone: Boolean): LinearLayout {
@@ -357,53 +315,22 @@ class TrainingDiaryActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(0, 8, 0, 8)
         }
-        // Nombre del ejercicio: igual que siempre (autocompletado con catálogo).
-        val adapter = ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, catalogNames)
-        val ejercicio = AutoCompleteTextView(this).apply {
-            asCellInput()
-            hint = "Ejercicio"
-            setText(row.draft.ejercicio)
-            setAdapter(adapter)
-            threshold = 1
-            tag = "ex_${row.uuid}"
+        // Nombre fijo del plan (solo lectura: altas y cambios en la web).
+        card.addView(TextView(this).apply {
+            text = row.draft.ejercicio.ifBlank { "(sin nombre)" }
+            asSectionTitle()
+        })
+        if (item == null) return card
+        val headerBtn = Button(this).apply {
+            text = item.summaryLine(formatMmSsFromMs(vm.restMs.value[item.uuid] ?: 0L), isDone)
+            minHeight = (64 * dm).toInt()
+            isAllCaps = false
+            contentDescription = "Serie ${item.aparenteOrden} ${item.ejercicio}: expandir o colapsar"
+            setOnClickListener { vm.toggleExpand(item.uuid) }
         }
-        card.addView(ejercicio)
-        var focused = false
-        ejercicio.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus && !focused) {
-                focused = true
-                val structural = vm.setEntrenoExercise(row.uuid, ejercicio.text.toString())
-                if (structural) pendingFocusUuid = row.uuid
-            } else if (hasFocus) {
-                focused = false
-            }
-        }
-        val headerRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        if (item == null) {
-            val hint = TextView(this).apply {
-                text = "Nueva serie · escribe el ejercicio"
-                asSummary()
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            }
-            headerRow.addView(hint)
-        } else {
-            val headerBtn = Button(this).apply {
-                text = item.summaryLine(formatMmSsFromMs(vm.restMs.value[item.uuid] ?: 0L), isDone)
-                minHeight = (64 * dm).toInt()
-                isAllCaps = false
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                contentDescription = "Serie ${item.aparenteOrden} ${item.ejercicio}: expandir o colapsar"
-                setOnClickListener { vm.toggleExpand(item.uuid) }
-            }
-            headerButtons[item.uuid] = headerBtn
-            headerRow.addView(headerBtn)
-        }
-        val remove = Button(this).apply { text = "Quitar"; asDanger() }
-        remove.contentDescription = "Quitar serie"
-        remove.setOnClickListener { vm.removeEntrenoRow(row.uuid) }
-        headerRow.addView(remove)
-        card.addView(headerRow)
-        if (item != null && isExpanded) {
+        headerButtons[item.uuid] = headerBtn
+        card.addView(headerBtn)
+        if (isExpanded) {
             addExpandedPanel(card, item, row.draft, isDone)
         }
         return card
@@ -448,14 +375,6 @@ class TrainingDiaryActivity : ComponentActivity() {
             card.addView(stepperRow(item, draft, "reps", "reps", "reps", "Bajar repeticiones", "Subir repeticiones"))
             card.addView(stepperRow(item, draft, "RIR", "rir", "rir", "Bajar RIR", "Subir RIR"))
         }
-        val resetBtn = Button(this).apply {
-            text = "Reiniciar descanso (solo display, conserva historial)"
-            asDanger()
-            textSize = 12f
-            contentDescription = "Reiniciar display del cronómetro sin borrar el historial"
-            setOnClickListener { vm.timerReset(item.uuid) }
-        }
-        card.addView(resetBtn)
         val doneBtn = primaryButton(if (isDone) "Hecha ✓ (toca para desmarcar)" else "Serie hecha + descansar")
         doneBtn.contentDescription = "Marcar serie hecha y descansar"
         doneBtn.minHeight = (64 * dm).toInt()
@@ -637,189 +556,6 @@ class TrainingDiaryActivity : ComponentActivity() {
                 .show()
         } else {
             vm.save(drafts)
-        }
-    }
-
-    private fun confirmDelete() {
-        AlertDialog.Builder(this)
-            .setTitle("Eliminar día")
-            .setMessage("Se borran todas las series de este día. ¿Continuar?")
-            .setPositiveButton("Eliminar") { _, _ -> vm.deleteDay() }
-            .setNegativeButton("Cancelar", null)
-            .show()
-    }
-
-    // --- B1: plantillas / alta de ejercicio ---------------------------------------
-
-    private fun showTemplatesDialog() {
-        vm.ensureTemplates()
-        val state = vm.state.value
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 16, 24, 16)
-        }
-        // Guardar el día visible como plantilla (upsert por nombre, como la web).
-        val nameInput = EditText(this).apply { hint = "Nombre del entreno" }
-        val saveAs = Button(this).apply { text = "Guardar día como plantilla" }
-        box.addView(nameInput)
-        box.addView(saveAs)
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Plantillas (${state.templates.size})")
-            .setView(ScrollView(this).apply { addView(box) })
-            .setNegativeButton("Cerrar", null)
-            .create()
-        saveAs.setOnClickListener {
-            val nombre = nameInput.text.toString().trim()
-            val ejercicios = vm.currentDrafts().map { it.ejercicio }.filter { it.isNotBlank() }
-            if (nombre.isBlank()) {
-                nameInput.error = "Ponle nombre al entreno."
-                return@setOnClickListener
-            }
-            if (ejercicios.isEmpty()) {
-                statusView.asStatus("Error: el día no tiene ejercicios que guardar.", StatusKind.ERROR)
-                return@setOnClickListener
-            }
-            dialog.dismiss()
-            vm.saveAsTemplate(nombre, ejercicios)
-        }
-        if (state.templates.isEmpty()) {
-            box.addView(TextView(this).apply { text = "Sin plantillas. Guarda el día actual con un nombre." })
-        }
-        for (tpl in state.templates) {
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            val label = TextView(this).apply {
-                text = "${tpl.nombre} (${tpl.clasificacion}, ${tpl.ejercicios.size})"
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            }
-            val apply = Button(this).apply { text = "Aplicar" }
-            apply.setOnClickListener {
-                dialog.dismiss()
-                vm.applyTemplate(tpl.id, tpl.nombre)
-            }
-            row.addView(label)
-            row.addView(apply)
-            box.addView(row)
-        }
-        dialog.show()
-    }
-
-    private fun showExerciseDialog() {
-        val state = vm.state.value
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 16, 24, 16)
-        }
-        val nombre = EditText(this).apply { hint = "Ejercicio" }
-        val groups = (state.catalog.map { it.grupoMuscular } +
-            state.categories.flatMap { it.muscles }).filter { it.isNotBlank() }.distinct().sorted()
-        val grupo = AutoCompleteTextView(this).apply {
-            asCellInput()
-            hint = "Grupo muscular"
-            setAdapter(ArrayAdapter(this@TrainingDiaryActivity, android.R.layout.simple_dropdown_item_1line, groups))
-            threshold = 1
-        }
-        box.addView(nombre)
-        box.addView(grupo)
-        val categoryNames = state.categories.map { it.name }
-        val categoriaPicker: android.view.View
-        val categoriaInput: EditText?
-        val categoriaSpinner: Spinner?
-        if (categoryNames.isNotEmpty()) {
-            categoriaSpinner = Spinner(this).apply {
-                adapter = ArrayAdapter(
-                    this@TrainingDiaryActivity,
-                    android.R.layout.simple_spinner_dropdown_item,
-                    categoryNames,
-                )
-            }
-            categoriaInput = null
-            categoriaPicker = categoriaSpinner
-        } else {
-            // Sin catálogo (sin red y sin caché): texto libre, el servidor valida.
-            categoriaInput = EditText(this).apply { hint = "Categoría (EMPUJE…)" }
-            categoriaSpinner = null
-            categoriaPicker = categoriaInput
-        }
-        box.addView(categoriaPicker)
-        AlertDialog.Builder(this)
-            .setTitle("Nuevo ejercicio")
-            .setView(ScrollView(this).apply { addView(box) })
-            .setPositiveButton("Crear") { _, _ ->
-                val categoria = categoriaSpinner?.selectedItem?.toString()
-                    ?: categoriaInput?.text.toString().trim()
-                vm.createExercise(
-                    nombre.text.toString().trim(),
-                    grupo.text.toString().trim(),
-                    categoria.trim(),
-                )
-            }
-            .setNegativeButton("Cancelar", null)
-            .show()
-    }
-
-    // --- B3: cardio -----------------------------------------------------------
-
-    private fun renderCardio(state: DiaryUiState, busy: Boolean) {
-        val key = state.fecha to state.cardio
-        if (!busy && cardioBuiltFor != key) {
-            cardioBuiltFor = key
-            cardioBox.removeAllViews()
-            if (state.cardio.isEmpty()) {
-                cardioBox.addView(TextView(this).apply {
-                    text = "Sin sesiones de cardio este día."
-                    asSummary()
-                })
-                return
-            }
-            for (session in state.cardio) {
-                cardioBox.addView(cardioCard(session, busy))
-            }
-        }
-    }
-
-    private fun numInput(hint: String, value: String): EditText = EditText(this).apply {
-        this.hint = hint
-        setText(value)
-        inputType = InputType.TYPE_CLASS_NUMBER or
-            InputType.TYPE_NUMBER_FLAG_DECIMAL or
-            InputType.TYPE_NUMBER_FLAG_SIGNED
-        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-    }
-
-    private fun cardioCard(session: CardioSession, busy: Boolean): LinearLayout {
-        val title = TextView(this).apply {
-            text = "${session.titulo} · ${session.duracionMin} min"
-            asSummary()
-        }
-        val velocidad = numInput("vel. km/h", foodNumToText(session.velocidadKmh))
-        val inclinacion = numInput("incl. %", foodNumToText(session.inclinacionPct))
-        val notas = EditText(this).apply {
-            hint = "Notas"
-            setText(session.notas)
-        }
-        val nums = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(velocidad); addView(inclinacion)
-        }
-        val save = Button(this).apply {
-            text = "Guardar"
-            isEnabled = !busy
-            setOnClickListener {
-                vm.annotateCardio(
-                    session.hcId,
-                    velocidad.text.toString().trim(),
-                    inclinacion.text.toString().trim(),
-                    notas.text.toString().trim(),
-                )
-            }
-        }
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, 8, 0, 8)
-            addView(title)
-            addView(nums)
-            addView(notas)
-            addView(save)
         }
     }
 
