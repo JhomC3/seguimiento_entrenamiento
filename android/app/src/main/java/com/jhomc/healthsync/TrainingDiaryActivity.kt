@@ -322,7 +322,7 @@ class TrainingDiaryActivity : ComponentActivity() {
         })
         if (item == null) return card
         val headerBtn = Button(this).apply {
-            text = item.summaryLine(formatMmSsFromMs(vm.restMs.value[item.uuid] ?: 0L), isDone)
+            text = headerText(item, row.draft.descansoSeg, isDone)
             minHeight = (64 * dm).toInt()
             isAllCaps = false
             contentDescription = "Serie ${item.aparenteOrden} ${item.ejercicio}: expandir o colapsar"
@@ -466,8 +466,8 @@ class TrainingDiaryActivity : ComponentActivity() {
         rowsBox.findViewWithTag<TextView>("val_${uuid}_vel")?.text = stepperText("Vel.", row.draft, "velocidadKmh")
         rowsBox.findViewWithTag<TextView>("val_${uuid}_dif")?.text = stepperText("Dif.", row.draft, "dificultad")
         if (item != null) {
-            headerButtons[uuid]?.text = item.summaryLine(
-                formatMmSsFromMs(vm.restMs.value[uuid] ?: 0L), uuid in vm.doneUuids.value,
+            headerButtons[uuid]?.text = headerText(
+                item, row.draft.descansoSeg, uuid in vm.doneUuids.value,
             )
         }
     }
@@ -498,6 +498,14 @@ class TrainingDiaryActivity : ComponentActivity() {
             .show()
     }
 
+    /** Descanso registrado como dato (1 decimal), vacío si no hay. */
+    private fun descansoSuffix(descansoSeg: String): String =
+        if (descansoSeg.isBlank()) "" else " · D $descansoSeg s"
+
+    private fun headerText(item: EntrenoItem, descansoSeg: String, isDone: Boolean): String =
+        item.summaryLine(formatMmSsFromMs(vm.restMs.value[item.uuid] ?: 0L), isDone) +
+            descansoSuffix(descansoSeg)
+
     /** Tick 250ms: solo repinta números + líneas de estado (nunca reconstruye). */
     private fun updateTimers() {
         if (!::rowsBox.isInitialized) return
@@ -505,21 +513,20 @@ class TrainingDiaryActivity : ComponentActivity() {
         val running = vm.runningUuid.value
         val done = vm.doneUuids.value
         val byUuid = SessionFlowState.flattened(vm.entrenoGroups.value).associateBy { it.uuid }
+        val draftsByUuid = vm.entrenoRows.value.associate { it.uuid to it.draft }
         for ((uuid, tv) in timerViews) {
             tv.text = formatMmSsFromMs(rest[uuid] ?: 0L)
         }
         for ((uuid, btn) in headerButtons) {
             val item = byUuid[uuid] ?: continue
-            // Con apertura múltiple el tick no toca expandidas (las refresca su
-            // propio rebuild); las colapsadas muestran su tiempo acumulado.
-            if (uuid !in vm.expandedUuids.value) {
-                btn.text = item.summaryLine(formatMmSsFromMs(rest[uuid] ?: 0L), uuid in done)
-            }
+            btn.text = headerText(item, draftsByUuid[uuid]?.descansoSeg ?: "", uuid in done)
         }
         for ((uuid, line) in statusLines) {
             val ms = rest[uuid] ?: 0L
+            val reg = draftsByUuid[uuid]?.descansoSeg ?: ""
             line.text = when {
                 running == uuid -> "Descanso corriendo… solo local, nada enviado."
+                reg.isNotBlank() -> "Descanso registrado: $reg s · se envía con Guardar o solo."
                 ms > 0 -> "Descanso ${formatMmSsFromMs(ms)} pausado · solo local, nada enviado."
                 else -> "Sin descanso medido."
             }

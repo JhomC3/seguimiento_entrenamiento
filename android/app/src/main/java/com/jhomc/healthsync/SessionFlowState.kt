@@ -121,6 +121,18 @@ object SessionFlowState {
         if (uuid in expanded) expanded - uuid else expanded + uuid
 
     /**
+     * Descanso medido en segundos con 1 decimal (mismo redondeo que RIR 0.1:
+     * el binario acumula error sin esto). 95440 ms → 95.4.
+     */
+    fun descansoSecsFor(elapsedMs: Long): Double =
+        (kotlin.math.round(elapsedMs / 100.0) / 10.0).coerceAtLeast(0.0)
+
+    fun descansoText(v: Double?): String {
+        if (v == null) return "–"
+        return if (v % 1.0 == 0.0) v.toLong().toString() else v.toString()
+    }
+
+    /**
      * Borradores desde la sesión del servidor (misma conversión que el editor
      * clásico). Preserva TODOS los campos incluido descanso_seg oculto.
      */

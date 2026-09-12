@@ -114,6 +114,16 @@ class TrainingSessionFlowTest {
     }
 
     @Test
+    fun `descansoSecsFor redondea a 1 decimal`() {
+        assertEquals(95.4, SessionFlowState.descansoSecsFor(95_440L), 0.0)
+        assertEquals(95.0, SessionFlowState.descansoSecsFor(95_040L), 0.0)
+        assertEquals(0.0, SessionFlowState.descansoSecsFor(-50L), 0.0)
+        assertEquals("95.4", SessionFlowState.descansoText(95.4))
+        assertEquals("95", SessionFlowState.descansoText(95.0))
+        assertEquals("–", SessionFlowState.descansoText(null))
+    }
+
+    @Test
     fun `formatMmSs pinta MM_SS`() {
         assertEquals("00:00", formatMmSs(0))
         assertEquals("02:05", formatMmSs(125))

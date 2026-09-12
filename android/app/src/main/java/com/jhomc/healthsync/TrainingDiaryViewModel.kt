@@ -363,19 +363,57 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         persistLocal()
     }
 
+    /**
+     * Cierra el descanso en curso (si lo hay) con su hora real y anota el
+     * total acumulado en el campo descanso de esa serie: un dato más, como
+     * kg/reps/RIR (libreta local + cola para auto-subida). Nunca borra:
+     * sin timer previo no toca nada. Devuelve el uuid afectado o null.
+     */
+    private suspend fun closeRunning(): String? {
+        val toClose = restTimer.pendingClose() ?: return null
+        val endWall = clockWall()
+        val endElapsed = clockElapsed()
+        runCatching { restDao().close(toClose.intervalId, endWall, endElapsed) }
+        val (uuid, _) = restTimer.onClosed(endElapsed) ?: return null
+        annotateDescanso(uuid)
+        _runningUuid.value = restTimer.runningUuid()
+        refreshRestMs()
+        return uuid
+    }
+
+    /** Anota el acumulado en descanso_seg (1 decimal) + libreta + cola. */
+    private suspend fun annotateDescanso(uuid: String) {
+        val totalMs = SessionFlowState.flattened(_entrenoGroups.value)
+            .find { it.uuid == uuid }
+            ?.let { restTimer.elapsedFor(uuid, clockElapsed()) }
+            ?: return
+        val secs = SessionFlowState.descansoSecsFor(totalMs)
+        val text = SessionFlowState.descansoText(secs)
+        val fecha = _state.value.fecha
+        val drafts = currentDrafts().toMutableList()
+        val index = entrenoIds.indexOf(uuid)
+        if (index in drafts.indices) {
+            drafts[index] = drafts[index].copy(descansoSeg = text)
+            draftBuffer = fecha to drafts
+            rebuildEntrenoLists()
+        }
+        persistLocal()
+        // Auto-subida: olvidar Guardar ya no pierde nada en ningún lado.
+        val sets = currentDrafts().filter { !it.isBlank() }
+        if (sets.isNotEmpty()) {
+            runCatching { repository.enqueueSessionSave(fecha, sets) }
+            _state.value = _state.value.copy(
+                pending = runCatching { repository.pendingCount() }.getOrDefault(0),
+            )
+        }
+    }
+
     fun timerStart(uuid: String) {
         viewModelScope.launch(Dispatchers.IO) {
+            // Invariante single-running: cierra y anota lo anterior primero.
+            closeRunning()
             val wall = clockWall()
             val elapsed = clockElapsed()
-            // Invariante single-running: cierra lo anterior primero.
-            restTimer.pendingClose()?.let { toClose ->
-                runCatching { restDao().close(toClose.intervalId, wall, elapsed) }
-                restTimer.onClosed(elapsed)
-            }
-            if (restTimer.runningUuid() == uuid) {
-                refreshRestMs()
-                return@launch
-            }
             val item = SessionFlowState.flattened(_entrenoGroups.value).find { it.uuid == uuid }
             val id = runCatching {
                 restDao().insert(
@@ -399,13 +437,7 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
     fun timerPause(uuid: String) {
         viewModelScope.launch(Dispatchers.IO) {
             if (restTimer.runningUuid() != uuid) return@launch
-            val elapsed = clockElapsed()
-            restTimer.pendingClose()?.let { toClose ->
-                runCatching { restDao().close(toClose.intervalId, clockWall(), elapsed) }
-                restTimer.onClosed(elapsed)
-            }
-            _runningUuid.value = restTimer.runningUuid()
-            refreshRestMs()
+            closeRunning()
         }
     }
 
@@ -474,7 +506,11 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
                 return@launch
             }
             val (apiBase, token) = creds
-            val res = withContext(Dispatchers.IO) { repository.saveSession(apiBase, token, fecha, drafts) }
+            // Si hay un descanso corriendo, se cierra con hora real primero:
+            // lo medido entra en el guardado en vez de perderse a medias.
+            withContext(Dispatchers.IO) { closeRunning() }
+            val toSave = currentDrafts().filter { !it.isBlank() }.ifEmpty { drafts }
+            val res = withContext(Dispatchers.IO) { repository.saveSession(apiBase, token, fecha, toSave) }
             _state.value = when (res) {
                 is TrainingResult.Ok -> {
                     draftBuffer = null
