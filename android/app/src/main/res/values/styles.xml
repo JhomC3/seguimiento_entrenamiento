@@ -54,6 +54,14 @@
         <item name="android:textStyle">bold</item>
     </style>
 
+    <!-- Nombre del ejercicio en el diario: grande, centrado (modo registro). -->
+    <style name="Diary.ExerciseName" parent="">
+        <item name="android:textColor">@color/detail_white</item>
+        <item name="android:textSize">22sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:gravity">center</item>
+    </style>
+
     <!-- Celda de tabla (kg/reps/...): texto claro sobre overlay. -->
     <style name="Cell.Input" parent="android:Widget.Material.EditText">
         <item name="android:textColor">@color/neutral_100</item>
