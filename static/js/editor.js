@@ -3,7 +3,8 @@
 // Public API: initEditorActions, syncEditButtons, updateEditActions,
 // syncEditorFromContent, setPanelReadonly, handleEditorState, enterEditMode,
 // exitEditMode, toggleEdit, addRowAfter, removeRow, renumberRows, fitRowsToPanel,
-// recalcRM, submitSave, eliminarSesion, stepRir.
+// recalcRM, submitSave, eliminarSesion, stepRir, isHiitRow, syncHiitRow,
+// sessionMode, syncSessionHeaders, syncSessionRows.
 
 import { flashEditorNotice } from './notices.js';
 import { initRowSortable, syncSortableState } from './row-sortable.js';
@@ -115,6 +116,97 @@ export function toggleEdit() {
 }
 
 /* ---------- Filas ---------- */
+export function isHiitRow(row) {
+    const sel = row && row.querySelector('.ej-select');
+    return !!sel && sel.value.trim().toUpperCase() === 'HIIT';
+}
+
+/* Alterna kg/reps/rir ↔ velocidad/dificultad según el ejercicio.
+   Los inputs ocultos se VACÍAN (siguen enviándose en los arrays paralelos:
+   en blanco el servidor los ignora por rama). */
+export function syncHiitRow(row) {
+    if (!row) return;
+    const hiit = isHiitRow(row);
+    row.dataset.hiit = hiit ? '1' : '0';
+    for (const name of ['kg', 'reps', 'rir']) {
+        const cell = row.querySelector(`[data-col="${name}"]`);
+        const input = row.querySelector(`input[name="${name}"]`);
+        if (cell) cell.hidden = hiit;
+        if (input && hiit) input.value = '';
+    }
+    for (const name of ['velocidad', 'dificultad']) {
+        const cell = row.querySelector(`[data-col="${name}"]`);
+        const input = row.querySelector(`input[name="${name}"]`);
+        if (cell) cell.hidden = !hiit;
+        if (input && !hiit) input.value = '';
+    }
+    if (hiit) {
+        const rm = row.querySelector('.rm-cell');
+        if (rm) rm.textContent = '—';
+    }
+}
+
+/* Separación estricta HIIT: la sesión es HIIT pura, fuerza, mixta (legado
+   inválido que el servidor rechaza) o vacía. Solo cuentan selects con valor. */
+export function sessionMode() {
+    const sels = Array.from(document.querySelectorAll('#set-rows .set-row .ej-select'));
+    let hiit = 0, fuerza = 0;
+    sels.forEach(function (sel) {
+        const v = sel.value.trim();
+        if (!v) return;
+        if (v.toUpperCase() === 'HIIT') hiit++;
+        else fuerza++;
+    });
+    if (hiit && fuerza) return 'mixto';
+    if (hiit) return 'hiit';
+    if (fuerza) return 'fuerza';
+    return 'vacio';
+}
+
+/* Cabecera + filas vacías siguen al modo de sesión (el servidor renderiza
+   el modo inicial; esto solo cubre cambios dinámicos sin recarga). */
+export function syncSessionHeaders() {
+    const form = document.getElementById('session-form');
+    if (!form) return;
+    const mode = sessionMode();
+    const showStrength = mode !== 'hiit';
+    const showHiit = mode === 'hiit' || mode === 'mixto';
+    form.dataset.hiitSession = mode === 'hiit' ? '1' : '0';
+    form.dataset.mixedSession = mode === 'mixto' ? '1' : '0';
+    for (const name of ['kg', 'reps', 'rir', 'rm']) {
+        form.querySelectorAll(`thead [data-col="${name}"]`).forEach(function (th) {
+            th.hidden = !showStrength;
+        });
+    }
+    for (const name of ['velocidad', 'dificultad']) {
+        form.querySelectorAll(`thead [data-col="${name}"]`).forEach(function (th) {
+            th.hidden = !showHiit;
+        });
+    }
+}
+
+export function syncSessionRows() {
+    const mode = sessionMode();
+    document.querySelectorAll('#set-rows .set-row').forEach(function (row) {
+        const sel = row.querySelector('.ej-select');
+        const empty = !sel || !sel.value.trim();
+        if (empty && (mode === 'hiit' || mode === 'mixto')) {
+            // Fila vacía en sesión con HIIT: ofrece inputs HIIT sin imponer valor.
+            for (const name of ['kg', 'reps', 'rir']) {
+                const cell = row.querySelector(`[data-col="${name}"]`);
+                if (cell) cell.hidden = true;
+            }
+            for (const name of ['velocidad', 'dificultad']) {
+                const cell = row.querySelector(`[data-col="${name}"]`);
+                if (cell) cell.hidden = false;
+            }
+            return;
+        }
+        syncHiitRow(row);
+    });
+    syncSessionHeaders();
+}
+
 export function addRowAfter(btn) {
     if (editorEditmode() !== '1') return;
     const row = btn.closest('.set-row');
@@ -124,6 +216,11 @@ export function addRowAfter(btn) {
     const badge = clone.querySelector('.rir-badge');
     if (badge) badge.classList.add('hidden');
     row.after(clone);
+    // La fila nueva hereda el modo de sesión: en sesión HIIT ofrece HIIT.
+    if (sessionMode() === 'hiit') {
+        clone.querySelector('.ej-select').value = 'HIIT';
+    }
+    syncSessionRows();
     renumberRows();
     updateEditActions();
     fitRowsToPanel();
@@ -202,6 +299,13 @@ function updateRirBadge(row) {
 
 export function recalcRM() {
     document.querySelectorAll('#set-rows .set-row').forEach(function (row) {
+        const cell = row.querySelector('.rm-cell');
+        if (!cell) return;
+        if (isHiitRow(row)) {
+            cell.textContent = '—';
+            updateRirBadge(row);
+            return;
+        }
         const kgEl = row.querySelector('input[name="kg"]');
         const repsEl = row.querySelector('input[name="reps"]');
         const rirEl = row.querySelector('input[name="rir"]');
@@ -303,5 +407,29 @@ export function initEditorActions() {
         if (!input) return;
         e.preventDefault();
         stepRir(input, e.key === 'ArrowUp' ? RIR_STEP : -RIR_STEP);
+    });
+
+    document.addEventListener('focusin', function (e) {
+        const sel = e.target.closest ? e.target.closest('#session-form .ej-select') : null;
+        if (!sel) return;
+        sel.dataset.prev = sel.value;
+    });
+
+    document.addEventListener('change', function (e) {
+        const sel = e.target.closest ? e.target.closest('#session-form .ej-select') : null;
+        if (!sel) return;
+        if (sessionMode() === 'mixto') {
+            sel.value = sel.dataset.prev || '';
+            const row = sel.closest('.set-row');
+            if (row) syncHiitRow(row);
+            syncSessionRows();
+            flashEditorNotice(
+                'HIIT no se puede combinar con otros ejercicios. Regístralo en un día separado.',
+                'error'
+            );
+            return;
+        }
+        syncSessionRows();
+        sel.dataset.prev = sel.value;
     });
 }

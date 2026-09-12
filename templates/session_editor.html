@@ -65,29 +65,39 @@
             </button>
         </div>
 
-    <form id="session-form" hx-post="/entrenamiento/session/save" hx-swap="none" class="flex flex-col gap-1 mt-1.5">
+    <form id="session-form" hx-post="/entrenamiento/session/save" hx-swap="none" class="flex flex-col gap-1 mt-1.5" data-hiit-session="{{ 1 if is_hiit_session else 0 }}" data-mixed-session="{{ 1 if is_mixed_session else 0 }}">
         <input type="hidden" name="fecha" value="{{ fecha_iso }}">
+        {% set show_strength = (not is_hiit_session) %}
+        {% set show_hiit = (is_hiit_session or is_mixed_session) %}
         <div class="table-scroll overflow-x-auto overflow-y-auto">
             <table class="w-full text-left border-collapse text-xs">
                 <caption class="sr-only">Series de entrenamiento del día</caption>
                 <colgroup>
-                    <col span="7">
+                    <col>
+                    <col>
+                    {% if show_strength %}<col span="3">{% endif %}
+                    <col>
+                    {% if show_hiit %}<col span="2">{% endif %}
+                    {% if show_strength %}<col>{% endif %}
                     <col class="set-actions-column">
                 </colgroup>
                 <thead>
                     <tr>
                         <th scope="col" class="w-8 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-center">#</th>
                         <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Ejercicio</th>
-                        <th scope="col" class="w-20 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Peso</th>
-                        <th scope="col" class="w-20 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Reps</th>
-                        <th scope="col" class="w-20 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">RIR</th>
-                        <th scope="col" class="w-16 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Desc</th>
-                        <th scope="col" class="w-20 py-0.5 px-1.5 font-bold text-burgundy-400 uppercase tracking-wider text-center">RMₐ</th>
+                        {% if show_strength %}<th scope="col" data-col="kg" class="w-20 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Peso</th>{% endif %}
+                        {% if show_strength %}<th scope="col" data-col="reps" class="w-20 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Reps</th>{% endif %}
+                        {% if show_strength %}<th scope="col" data-col="rir" class="w-20 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">RIR</th>{% endif %}
+                        <th scope="col" data-col="descanso" class="w-16 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Desc</th>
+                        {% if show_hiit %}<th scope="col" data-col="velocidad" class="w-20 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Vel</th>{% endif %}
+                        {% if show_hiit %}<th scope="col" data-col="dificultad" class="w-20 py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Difc</th>{% endif %}
+                        {% if show_strength %}<th scope="col" data-col="rm" class="w-20 py-0.5 px-1.5 font-bold text-burgundy-400 uppercase tracking-wider text-center">RMₐ</th>{% endif %}
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-800/40" id="set-rows">
                     {% for r in rows %}
-                    <tr class="set-row group transition-colors duration-150">
+                    {% set is_hiit = (r.ejercicio or '').upper() == 'HIIT' %}
+                    <tr class="set-row group transition-colors duration-150" data-hiit="{{ 1 if is_hiit else 0 }}">
                         <td class="set-num py-0.5 px-1.5 text-neutral-400 font-bold text-center">{{ loop.index }}</td>
                         <td class="py-0.5 px-1.5">
                             <select
@@ -98,10 +108,11 @@
                             >
                                 <option value="">— Ejercicio —</option>
                                 {% if r.ejercicio %}<option value="{{ r.ejercicio }}" selected>{{ r.ejercicio }}</option>{% endif %}
+                                {% if (r.ejercicio or '').upper() != 'HIIT' %}<option value="HIIT">HIIT</option>{% endif %}
                                 {% for ej in catalog %}{% if ej != r.ejercicio %}<option value="{{ ej }}">{{ ej }}</option>{% endif %}{% endfor %}
                             </select>
                         </td>
-                        <td class="py-0.5 px-1.5">
+                        <td class="py-0.5 px-1.5" data-col="kg" {% if is_hiit %}hidden{% endif %}>
                             <input
                                 name="kg" type="number" step="0.1" min="0" placeholder="kg"
                                 aria-label="Peso, serie {{ loop.index }}"
@@ -158,7 +169,26 @@
                             >
                             <span id="descanso-help-{{ loop.index }}" class="sr-only">Descanso entre series (segundos, opcional)</span>
                         </td>
-                        <td class="rm-cell py-0.5 px-1.5 text-center font-bold text-burgundy-300 whitespace-nowrap">{{ "%g"|format(r.rm) if r.rm is not none else "—" }}</td>
+                        <td class="py-0.5 px-1.5" data-col="velocidad" {% if not is_hiit %}hidden{% endif %}>
+                            <input
+                                name="velocidad" type="number" step="any" min="0" placeholder="km/h"
+                                aria-label="Velocidad, serie {{ loop.index }}"
+                                value="{{ "%g"|format(r.velocidad_kmh) if r.velocidad_kmh is not none and r.velocidad_kmh != "" else "" }}"
+                                class="w-full cell-input"
+                                title="Velocidad en km/h (se guarda con 1 decimal)"
+                                {% if readonly %}disabled{% endif %}
+                            >
+                        </td>
+                        <td class="py-0.5 px-1.5" data-col="dificultad" {% if not is_hiit %}hidden{% endif %}>
+                            <input
+                                name="dificultad" type="number" step="any" min="0" placeholder="difc"
+                                aria-label="Dificultad, serie {{ loop.index }}"
+                                value="{{ "%g"|format(r.dificultad) if r.dificultad is not none and r.dificultad != "" else "" }}"
+                                class="w-full cell-input"
+                                {% if readonly %}disabled{% endif %}
+                            >
+                        </td>
+                        {% if show_strength %}<td class="rm-cell py-0.5 px-1.5 text-center font-bold text-burgundy-300 whitespace-nowrap" data-col="rm">{{ "%g"|format(r.rm) if r.rm is not none else "—" }}</td>{% else %}<td class="rm-cell" data-col="rm" hidden>—</td>{% endif %}
                         <td class="set-actions-column py-0.5">
                             <div class="row-actions flex w-full items-center justify-center gap-px opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-150 {% if readonly %}hidden{% endif %}">
                                 <button type="button" data-action="row-remove" class="row-btn" title="Eliminar fila" aria-label="Eliminar fila">−</button>

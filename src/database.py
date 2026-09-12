@@ -121,7 +121,8 @@ def get_sets_by_fecha(db_path: str, fecha: str) -> list[dict]:
     with read_connection(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT ejercicio, set_orden, reps, kg, rir, descanso_seg, origen
+            SELECT ejercicio, set_orden, reps, kg, rir, descanso_seg, velocidad_kmh,
+                   dificultad, origen
             FROM training_sets
             WHERE fecha = ?
             ORDER BY set_orden
@@ -136,7 +137,9 @@ def get_sets_by_fecha(db_path: str, fecha: str) -> list[dict]:
             "kg": r[3],
             "rir": r[4],
             "descanso_seg": r[5],
-            "origen": r[6],
+            "velocidad_kmh": r[6],
+            "dificultad": r[7],
+            "origen": r[8],
         }
         for r in rows
     ]
@@ -171,7 +174,7 @@ def get_sets_for_window(
     params.extend(e.lower() for e in uniq)
     with read_connection(db_path) as conn:
         rows = conn.execute(
-            f"SELECT fecha, ejercicio, set_orden, reps, kg, rir, descanso_seg "
+            f"SELECT fecha, ejercicio, set_orden, reps, kg, rir, descanso_seg, velocidad_kmh, dificultad "
             f"FROM training_sets WHERE {' AND '.join(clauses)} "
             f"ORDER BY fecha DESC, ejercicio, set_orden",
             params,
@@ -185,6 +188,8 @@ def get_sets_for_window(
             "kg": r[4],
             "rir": r[5],
             "descanso_seg": r[6],
+            "velocidad_kmh": r[7],
+            "dificultad": r[8],
         }
         for r in rows
     ]
@@ -200,7 +205,8 @@ def get_session_sets(db_path: str, semana: int, dia: str, fecha: str) -> list[di
     with read_connection(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT ejercicio, set_orden, reps, kg, rir, descanso_seg, origen
+            SELECT ejercicio, set_orden, reps, kg, rir, descanso_seg, velocidad_kmh,
+                   dificultad, origen
             FROM training_sets
             WHERE semana = ? AND dia = ? AND fecha = ?
             ORDER BY set_orden
@@ -215,7 +221,9 @@ def get_session_sets(db_path: str, semana: int, dia: str, fecha: str) -> list[di
             "kg": r[3],
             "rir": r[4],
             "descanso_seg": r[5],
-            "origen": r[6],
+            "velocidad_kmh": r[6],
+            "dificultad": r[7],
+            "origen": r[8],
         }
         for r in rows
     ]
@@ -405,7 +413,7 @@ def get_last_session_sets(db_path: str, ejercicio: str) -> list[dict]:
         if latest is None:
             return []
         set_rows = conn.execute(
-            "SELECT ejercicio, set_orden, reps, kg, rir, descanso_seg FROM training_sets "
+            "SELECT ejercicio, set_orden, reps, kg, rir, descanso_seg, velocidad_kmh, dificultad FROM training_sets "
             "WHERE LOWER(ejercicio) = LOWER(?) AND fecha = ? ORDER BY set_orden",
             (ejercicio, latest[0]),
         ).fetchall()
@@ -417,6 +425,8 @@ def get_last_session_sets(db_path: str, ejercicio: str) -> list[dict]:
             "kg": r[3],
             "rir": r[4],
             "descanso_seg": r[5],
+            "velocidad_kmh": r[6],
+            "dificultad": r[7],
         }
         for r in set_rows
     ]
@@ -434,7 +444,7 @@ def get_last_template_session_sets(db_path: str, ejercicios: list[str]) -> list[
         return []
     with read_connection(db_path) as conn:
         rows = conn.execute(
-            "SELECT fecha, ejercicio, set_orden, reps, kg, rir, descanso_seg "
+            "SELECT fecha, ejercicio, set_orden, reps, kg, rir, descanso_seg, velocidad_kmh, dificultad "
             "FROM training_sets WHERE fecha IS NOT NULL ORDER BY fecha DESC, set_orden"
         ).fetchall()
     by_date: dict[str, list[tuple]] = {}
@@ -456,6 +466,8 @@ def get_last_template_session_sets(db_path: str, ejercicios: list[str]) -> list[
                 "kg": row[4],
                 "rir": row[5],
                 "descanso_seg": row[6],
+                "velocidad_kmh": row[7],
+                "dificultad": row[8],
             }
             for row in session_rows
         ]

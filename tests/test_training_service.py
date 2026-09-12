@@ -381,3 +381,173 @@ def test_save_session_allows_future_date(db):
     count = conn.execute("SELECT COUNT(*) FROM training_sets").fetchone()[0]
     conn.close()
     assert count == 1
+
+
+def test_hiit_guarda_velocidad_dificultad_sin_pesos(db):
+    cleaned = validate_sets(
+        db,
+        [
+            TrainingSetInput(
+                ejercicio="HIIT", kg="", reps="", rir="", velocidad_kmh="12.34", dificultad="7.5"
+            )
+        ],
+    )
+    assert cleaned[0].velocidad_kmh == 12.3
+    assert cleaned[0].dificultad == 7.5
+    save_session(
+        db,
+        "2026-09-07",
+        [
+            TrainingSetInput(
+                ejercicio="hiit", kg="", reps="", rir="", velocidad_kmh=12.34, dificultad=7.5
+            )
+        ],
+    )
+    rows = get_sets_by_fecha(db, "2026-09-07")
+    assert len(rows) == 1
+    assert rows[0]["ejercicio"] == "HIIT"
+    assert rows[0]["kg"] is None
+    assert rows[0]["reps"] is None
+    assert rows[0]["rir"] is None
+    assert rows[0]["velocidad_kmh"] == 12.3
+    assert rows[0]["dificultad"] == 7.5
+
+
+def test_hiit_rechaza_pesos_y_exige_velocidad_dificultad(db):
+    with pytest.raises(Exception, match="HIIT no lleva"):
+        validate_sets(
+            db,
+            [
+                TrainingSetInput(
+                    ejercicio="HIIT", kg="80", reps="", rir="", velocidad_kmh="10", dificultad="5"
+                )
+            ],
+        )
+    with pytest.raises(Exception, match="HIIT no lleva"):
+        validate_sets(
+            db,
+            [
+                TrainingSetInput(
+                    ejercicio="HIIT", kg="", reps="8", rir="", velocidad_kmh="10", dificultad="5"
+                )
+            ],
+        )
+    with pytest.raises(Exception, match="HIIT no lleva"):
+        validate_sets(
+            db,
+            [
+                TrainingSetInput(
+                    ejercicio="HIIT", kg="", reps="", rir="1", velocidad_kmh="10", dificultad="5"
+                )
+            ],
+        )
+    with pytest.raises(Exception, match="velocidad"):
+        validate_sets(
+            db,
+            [
+                TrainingSetInput(
+                    ejercicio="HIIT", kg="", reps="", rir="", velocidad_kmh="", dificultad="5"
+                )
+            ],
+        )
+    with pytest.raises(Exception, match="dificultad"):
+        validate_sets(
+            db,
+            [
+                TrainingSetInput(
+                    ejercicio="HIIT", kg="", reps="", rir="", velocidad_kmh="10", dificultad=""
+                )
+            ],
+        )
+    with pytest.raises(Exception, match="dificultad"):
+        validate_sets(
+            db,
+            [
+                TrainingSetInput(
+                    ejercicio="HIIT", kg="", reps="", rir="", velocidad_kmh="10", dificultad="-1"
+                )
+            ],
+        )
+
+
+def test_hiit_sin_catalogo_y_con_descanso(db):
+    cleaned = validate_sets(
+        db,
+        [
+            TrainingSetInput(
+                ejercicio="  hiit ",
+                kg="",
+                reps="",
+                rir="",
+                descanso_seg="60",
+                velocidad_kmh="9",
+                dificultad="6",
+            )
+        ],
+    )
+    assert cleaned[0].ejercicio == "HIIT"
+    assert cleaned[0].descanso_seg == 60.0
+
+
+def test_hiit_no_se_combina_con_fuerza(db):
+    """Separación estricta: una sesión es HIIT pura o fuerza pura, nunca mixta."""
+    with pytest.raises(Exception, match="HIIT no se puede combinar"):
+        validate_sets(
+            db,
+            [
+                TrainingSetInput(ejercicio="Press", kg="80", reps="8", rir="1"),
+                TrainingSetInput(
+                    ejercicio="HIIT",
+                    kg="",
+                    reps="",
+                    rir="",
+                    velocidad_kmh="10",
+                    dificultad="5",
+                ),
+            ],
+        )
+    with pytest.raises(Exception, match="HIIT no se puede combinar"):
+        save_session(
+            db,
+            "2026-09-12",
+            [
+                TrainingSetInput(ejercicio="Press", kg="80", reps="8", rir="1"),
+                TrainingSetInput(
+                    ejercicio="HIIT",
+                    kg="",
+                    reps="",
+                    rir="",
+                    velocidad_kmh="10",
+                    dificultad="5",
+                ),
+            ],
+        )
+
+
+def test_modo_sesion_hiit_para_tabla(db):
+    """El editor expone el modo para renderizar solo las columnas que tocan."""
+    from src.dashboard_service import build_session_editor
+
+    save_session(
+        db, "2026-09-10", [TrainingSetInput(ejercicio="Press", kg="80", reps="8", rir="1")]
+    )
+    vm_fuerza = build_session_editor(db, "2026-09-10", CYCLE)
+    assert vm_fuerza.is_hiit_session is False
+    assert vm_fuerza.is_mixed_session is False
+
+    save_session(
+        db,
+        "2026-09-11",
+        [
+            TrainingSetInput(
+                ejercicio="HIIT", kg="", reps="", rir="", velocidad_kmh="10", dificultad="5"
+            )
+        ],
+    )
+    vm_hiit = build_session_editor(db, "2026-09-11", CYCLE)
+    assert vm_hiit.is_hiit_session is True
+    assert vm_hiit.is_mixed_session is False
+
+    vm_vacia = build_session_editor(db, "2026-09-13", CYCLE)
+    assert vm_vacia.is_hiit_session is False
+    assert vm_vacia.is_mixed_session is False

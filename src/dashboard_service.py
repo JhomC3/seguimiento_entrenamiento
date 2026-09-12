@@ -17,7 +17,7 @@ from src.database import (
 )
 from src.db_connection import read_connection
 from src.metrics_engine import rm_ajustado
-from src.models import ConflictError, NotFoundError, ValidationError
+from src.models import ConflictError, NotFoundError, ValidationError, is_hiit_set
 from src.nutrition_service import diary_totals, objetivos_diarios
 from src.training_service import (
     calculate_cycle_week,
@@ -242,7 +242,7 @@ def build_date_navigator(
 
 def _row_has_values(r: dict) -> bool:
     return bool(str(r.get("ejercicio") or "").strip()) or any(
-        str(r.get(k) or "").strip() for k in ("kg", "reps", "rir")
+        str(r.get(k) or "").strip() for k in ("kg", "reps", "rir", "velocidad_kmh", "dificultad")
     )
 
 
@@ -255,6 +255,19 @@ def _as_float(value) -> float | None:
         return None
 
 
+def _session_hiit_flags(rows: list[dict]) -> tuple[bool, bool]:
+    """(is_hiit_session, is_mixed_session) sobre filas normalizadas.
+
+    Solo cuentan filas con contenido (_row_has_values): una sesión vacía
+    es modo fuerza. El estado mixto es legado/inválido (el guardado lo
+    rechaza) pero se renderiza con todas las columnas para poder corregirlo.
+    """
+    data = [r for r in rows if _row_has_values(r)]
+    has_hiit = any(is_hiit_set(str(r.get("ejercicio") or "")) for r in data)
+    has_fuerza = any(not is_hiit_set(str(r.get("ejercicio") or "")) for r in data)
+    return (has_hiit and not has_fuerza, has_hiit and has_fuerza)
+
+
 def _editor_rows(rows: list[dict]) -> list[EditorRow]:
     data_rows = [r for r in rows if _row_has_values(r)]
     display = []
@@ -263,6 +276,8 @@ def _editor_rows(rows: list[dict]) -> list[EditorRow]:
         reps = _as_float(r.get("reps"))
         rir = _as_float(r.get("rir"))
         descanso = _as_float(r.get("descanso_seg"))
+        velocidad = _as_float(r.get("velocidad_kmh"))
+        dificultad = _as_float(r.get("dificultad"))
         rm = None
         try:
             if kg is not None and reps is not None:
@@ -277,6 +292,8 @@ def _editor_rows(rows: list[dict]) -> list[EditorRow]:
                 rir=rir,
                 descanso_seg=descanso,
                 rm=rm,
+                velocidad_kmh=velocidad,
+                dificultad=dificultad,
             )
         )
     if not display:
@@ -301,13 +318,22 @@ def build_session_editor(
         rows = [dict(r) for r in get_sets_by_fecha(db_path, fecha_to_db(fecha))]
     else:
         rows = [
-            {"ejercicio": r.ejercicio, "kg": r.kg, "reps": r.reps, "rir": r.rir}
+            {
+                "ejercicio": r.ejercicio,
+                "kg": r.kg,
+                "reps": r.reps,
+                "rir": r.rir,
+                "descanso_seg": r.descanso_seg,
+                "velocidad_kmh": r.velocidad_kmh,
+                "dificultad": r.dificultad,
+            }
             if not isinstance(r, dict)
             else r
             for r in rows
         ]
     has_saved = any(_row_has_values(r) for r in rows)
     readonly = (force_readonly or has_saved or fecha < today) and not force_editable
+    is_hiit_session, is_mixed_session = _session_hiit_flags(rows)
     return SessionEditorViewModel(
         fecha_iso=fecha_iso,
         fecha_display=fecha_display(fecha_iso),
@@ -319,6 +345,8 @@ def build_session_editor(
         error=error,
         success=success,
         catalog=get_exercises_catalog(db_path),
+        is_hiit_session=is_hiit_session,
+        is_mixed_session=is_mixed_session,
     )
 
 

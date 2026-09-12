@@ -1,10 +1,11 @@
 import math
 from datetime import date, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 
 from config import CICLO_START
 from src.database import get_exercises_catalog
 from src.db_connection import transaction
-from src.models import Session, TrainingSetInput, ValidationError
+from src.models import Session, TrainingSetInput, ValidationError, is_hiit_set
 
 # RIR mínimo aceptado: negativo = repeticiones forzadas (más allá del fallo).
 RIR_MIN = -5.0
@@ -84,6 +85,8 @@ def sets_from_form(
     reps: list[str],
     rirs: list[str],
     descansos: list[str] | None = None,
+    velocidades: list[str] | None = None,
+    dificultades: list[str] | None = None,
 ) -> list[TrainingSetInput]:
     """Adapter: parallel form arrays -> typed set inputs."""
     sets = []
@@ -95,6 +98,8 @@ def sets_from_form(
                 reps=reps[i] if i < len(reps) else "",
                 rir=rirs[i] if i < len(rirs) else "",
                 descanso_seg=descansos[i] if descansos and i < len(descansos) else "",
+                velocidad_kmh=velocidades[i] if velocidades and i < len(velocidades) else "",
+                dificultad=dificultades[i] if dificultades and i < len(dificultades) else "",
             )
         )
     return sets
@@ -111,8 +116,37 @@ def _coerce_set(raw) -> TrainingSetInput:
             reps=raw.get("reps", ""),
             rir=raw.get("rir", ""),
             descanso_seg=raw.get("descanso_seg", ""),
+            velocidad_kmh=raw.get("velocidad_kmh", ""),
+            dificultad=raw.get("dificultad", ""),
         )
     raise ValidationError("Serie inválida.")
+
+
+def _round_1(value: float) -> float:
+    """Un solo decimal con half-up (velocidad HIIT)."""
+    return float(Decimal(str(value)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
+
+def _validate_hiit_set(raw: TrainingSetInput) -> TrainingSetInput:
+    """HIIT: sin kg/reps/rir; velocidad (1 decimal) + dificultad (decimal)."""
+    for field, label in (("kg", "peso (kg)"), ("reps", "repeticiones"), ("rir", "RIR")):
+        if str(getattr(raw, field) or "").strip() != "":
+            raise ValidationError(f"HIIT no lleva {label}.")
+    velocidad = _validate_number(raw.velocidad_kmh, "velocidad (km/h)")
+    dificultad = _validate_number(raw.dificultad, "dificultad", allow_zero=True)
+    descanso_raw = str(raw.descanso_seg or "").strip()
+    descanso = (
+        _validate_number(descanso_raw, "descanso (s)", allow_zero=True) if descanso_raw else None
+    )
+    return TrainingSetInput(
+        ejercicio="HIIT",
+        kg="",
+        reps="",
+        rir="",
+        descanso_seg=descanso,
+        velocidad_kmh=_round_1(velocidad),
+        dificultad=dificultad,
+    )
 
 
 def validate_sets(db_path: str, sets: list[TrainingSetInput]) -> list[TrainingSetInput]:
@@ -125,6 +159,9 @@ def validate_sets(db_path: str, sets: list[TrainingSetInput]) -> list[TrainingSe
         ejercicio = str(raw.ejercicio).strip()
         if not ejercicio:
             raise ValidationError("Debes seleccionar un ejercicio.")
+        if is_hiit_set(ejercicio):
+            cleaned.append(_validate_hiit_set(raw))
+            continue
         if ejercicio.lower() not in catalog:
             raise ValidationError(f"El ejercicio '{ejercicio}' no existe en el catálogo.")
         kg = _validate_number(raw.kg, "peso (kg)")
@@ -145,12 +182,35 @@ def validate_sets(db_path: str, sets: list[TrainingSetInput]) -> list[TrainingSe
                 descanso_seg=descanso,
             )
         )
+    if any(is_hiit_set(s.ejercicio) for s in cleaned) and any(
+        not is_hiit_set(s.ejercicio) for s in cleaned
+    ):
+        raise ValidationError(
+            "HIIT no se puede combinar con otros ejercicios en la misma sesión. "
+            "Regístralo en un día separado."
+        )
     return cleaned
+
+
+def _none_if_blank(value):
+    """'' → NULL en el borde de escritura (RIR 0.0 se conserva)."""
+    return None if value is None or str(value).strip() == "" else value
+
+
+def _is_blank_value(value) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() == ""
+    return False
 
 
 def _is_empty_row(s) -> bool:
     s = _coerce_set(s)
-    return not any(str(getattr(s, k, "")).strip() for k in ("ejercicio", "kg", "reps", "rir"))
+    return not any(
+        not _is_blank_value(getattr(s, k, ""))
+        for k in ("ejercicio", "kg", "reps", "rir", "velocidad_kmh", "dificultad")
+    )
 
 
 def save_session(db_path: str, fecha_iso: str, sets: list[TrainingSetInput]) -> Session:
@@ -164,9 +224,21 @@ def save_session(db_path: str, fecha_iso: str, sets: list[TrainingSetInput]) -> 
         conn.execute("DELETE FROM training_sets WHERE fecha = ?", (fecha_db,))
         for idx, s in enumerate(cleaned, start=1):
             conn.execute(
-                "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, descanso_seg, origen) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual')",
-                (semana, dia, fecha_db, idx, s.ejercicio, s.reps, s.kg, s.rir, s.descanso_seg),
+                "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, descanso_seg, velocidad_kmh, dificultad, origen) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual')",
+                (
+                    semana,
+                    dia,
+                    fecha_db,
+                    idx,
+                    s.ejercicio,
+                    _none_if_blank(s.reps),
+                    _none_if_blank(s.kg),
+                    _none_if_blank(s.rir),
+                    s.descanso_seg,
+                    _none_if_blank(s.velocidad_kmh),
+                    _none_if_blank(s.dificultad),
+                ),
             )
     return Session(semana=semana, dia=dia, fecha=fecha_db)
 
@@ -189,18 +261,20 @@ def restore_session_rows(db_path: str, fecha_iso: str, rows: list) -> None:
         conn.execute("DELETE FROM training_sets WHERE fecha = ?", (fecha_db,))
         for idx, (s, origen) in enumerate(zip(cleaned, [o for _, o in kept]), start=1):
             conn.execute(
-                "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, descanso_seg, origen) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, descanso_seg, velocidad_kmh, dificultad, origen) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     semana,
                     dia,
                     fecha_db,
                     idx,
                     s.ejercicio,
-                    s.reps,
-                    s.kg,
-                    s.rir,
+                    _none_if_blank(s.reps),
+                    _none_if_blank(s.kg),
+                    _none_if_blank(s.rir),
                     s.descanso_seg,
+                    _none_if_blank(s.velocidad_kmh),
+                    _none_if_blank(s.dificultad),
                     origen,
                 ),
             )

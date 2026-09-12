@@ -15,6 +15,16 @@ class ConflictError(ValueError):
     """An operation conflicts with existing domain state (e.g. duplicate name)."""
 
 
+# Ejercicio especial: series de cardio por intervalos. Nunca lleva kg/reps/rir;
+# lleva velocidad (km/h, 1 decimal) + dificultad (decimal). Espejo del tipo
+# especial HIIT de los splits (split_service.HIIT_NAME).
+HIIT_EXERCISE = "HIIT"
+
+
+def is_hiit_set(ejercicio: str) -> bool:
+    return str(ejercicio or "").strip().upper() == HIIT_EXERCISE
+
+
 @dataclass(frozen=True)
 class TrainingSetInput:
     """A set submitted from a form, before persistence."""
@@ -24,6 +34,8 @@ class TrainingSetInput:
     reps: float | str
     rir: float | str
     descanso_seg: float | str | None = None
+    velocidad_kmh: float | str | None = ""
+    dificultad: float | str | None = ""
 
 
 @dataclass(frozen=True)
@@ -37,6 +49,8 @@ class TrainingSet:
     rir: float | None = None
     descanso_seg: float | None = None
     origen: str = "google"
+    velocidad_kmh: float | None = None
+    dificultad: float | None = None
 
 
 @dataclass(frozen=True)

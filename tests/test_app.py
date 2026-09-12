@@ -120,6 +120,66 @@ def test_save_valid_returns_ok_marker(tmp_path, monkeypatch):
     assert rows[0]["descanso_seg"] == 90.0
 
 
+def test_save_mixto_hiit_rechaza(tmp_path, monkeypatch):
+    """Separación estricta: HIIT no se combina con fuerza en la misma sesión."""
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().post(
+        "/entrenamiento/session/save",
+        data={
+            "fecha": _fecha(),
+            "ejercicio": ["Press", "HIIT"],
+            "kg": ["80", ""],
+            "reps": ["8", ""],
+            "rir": ["1", ""],
+            "descanso": ["", ""],
+            "velocidad": ["", "10"],
+            "dificultad": ["", "5"],
+        },
+    )
+    assert r.status_code == 400
+    assert "HIIT no se puede combinar" in r.text
+
+
+def test_editor_fuerza_oculta_vel_difc(tmp_path, monkeypatch):
+    """Sesión de fuerza: sin columnas VEL/DIFC (cabecera), RM alineado."""
+    from src.training_service import TrainingSetInput, save_session
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    save_session(
+        db, _fecha(), [TrainingSetInput(ejercicio="Press", kg="98.6", reps="7", rir="1.2")]
+    )
+    r = _client().get(f"/fecha/editor?fecha={_fecha()}")
+    th = re.findall(r'<th[^>]*data-col="([^"]+)"', r.text)
+    assert "velocidad" not in th
+    assert "dificultad" not in th
+    assert "kg" in th and "rm" in th
+
+
+def test_editor_hiit_oculta_peso_rm_y_usa_difc(tmp_path, monkeypatch):
+    """Sesión HIIT: sin Peso/Reps/RIR/RM; la columna es DIFC."""
+    from src.training_service import TrainingSetInput, save_session
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    save_session(
+        db,
+        _fecha(),
+        [
+            TrainingSetInput(
+                ejercicio="HIIT", kg="", reps="", rir="", velocidad_kmh="12", dificultad="5"
+            )
+        ],
+    )
+    r = _client().get(f"/fecha/editor?fecha={_fecha()}")
+    th = re.findall(r'<th[^>]*data-col="([^"]+)"', r.text)
+    assert "velocidad" in th and "dificultad" in th
+    assert "kg" not in th and "rm" not in th
+    assert ">Difc<" in r.text
+    assert ">Dif<" not in r.text
+
+
 def test_save_invalid_returns_fail_marker(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)

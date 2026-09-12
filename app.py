@@ -55,6 +55,7 @@ from src.models import (
     SplitInput,
     SplitMetrics,
     TemplateInput,
+    TrainingSetInput,
     ValidationError,
 )
 from src.mutation_service import (
@@ -334,6 +335,8 @@ def _editor_html(
                 "error": vm.error,
                 "success": vm.success,
                 "catalog": vm.catalog,
+                "is_hiit_session": vm.is_hiit_session,
+                "is_mixed_session": vm.is_mixed_session,
             },
         )
     )
@@ -757,9 +760,13 @@ def entrenamiento_session_save(
     reps: list[str] = Form(default=[]),
     rir: list[str] = Form(default=[]),
     descanso: list[str] = Form(default=[]),
+    velocidad: list[str] = Form(default=[]),
+    dificultad: list[str] = Form(default=[]),
 ):
     _check_lote(ejercicio, MAX_FORM_SETS, "series")
-    sets = sets_from_form(ejercicio, kg, reps, rir, descansos=descanso)
+    sets = sets_from_form(
+        ejercicio, kg, reps, rir, descansos=descanso, velocidades=velocidad, dificultades=dificultad
+    )
     notice_success = notice_oob(
         templates, request, target="editor-notice", message="Entrenamiento guardado."
     )

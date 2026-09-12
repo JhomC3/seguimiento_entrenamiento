@@ -64,13 +64,16 @@ export function refreshPlantillas() {
 export function suggestedTemplateName() {
     const cats = new Set();
     const seen = new Set();
+    let hasHiit = false;
     document.querySelectorAll('#set-rows .ej-select').forEach(sel => {
         const v = sel.value.trim();
         if (!v || seen.has(v.toLowerCase())) return;
         seen.add(v.toLowerCase());
+        if (v.toUpperCase() === 'HIIT') { hasHiit = true; return; }
         const c = getCategoriaMap()[v.toLowerCase()];
         if (c) cats.add(c.toUpperCase());
     });
+    if (hasHiit) return 'HIIT';
     if (!cats.size) return '';
     const hE = cats.has('EMPUJE'), hT = cats.has('TIRON'), hP = cats.has('PIERNA');
     if (hP && (hE || hT)) return 'Full Body';

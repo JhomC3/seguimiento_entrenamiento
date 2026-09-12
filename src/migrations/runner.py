@@ -20,6 +20,7 @@ from src.migrations import (
     v014_training_fecha_index,
     v015_splits,
     v016_split_activo,
+    v017_hiit_velocidad_dificultad,
 )
 
 MIGRATIONS = [
@@ -38,6 +39,7 @@ MIGRATIONS = [
     v014_training_fecha_index,
     v015_splits,
     v016_split_activo,
+    v017_hiit_velocidad_dificultad,
 ]
 
 _CURRENT_VERSION = max(m.VERSION for m in MIGRATIONS)

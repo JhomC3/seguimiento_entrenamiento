@@ -109,7 +109,7 @@ def test_migrations_recorded_in_schema_migrations(tmp_path):
         r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()
     )
     conn.close()
-    assert versions == [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    assert versions == [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
 
 
 def test_migrates_intermediate_state_without_orden(tmp_path):
@@ -399,7 +399,7 @@ def test_v009_is_latest_schema_version(tmp_path):
     conn = sqlite3.connect(db_path)
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 15
+    assert max_version == 17
 
 
 def test_v007_migration_idempotent(tmp_path):
