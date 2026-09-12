@@ -1,15 +1,21 @@
 package com.jhomc.healthsync
 
 import android.app.Application
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.jhomc.healthsync.data.RestIntervalEntity
+import com.jhomc.healthsync.data.RestDao
 import com.jhomc.healthsync.data.SecureTargetStore
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -70,8 +76,251 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
      */
     var draftBuffer: Pair<String, List<TrainingSetDraft>>? = null
 
+    // --- Modo entreno (Fase 1, local-first, sin backend) ----------------------
+    // Relojes inyectables para tests (defecto = relojes reales).
+    internal var clockWall: () -> Long = { System.currentTimeMillis() }
+    internal var clockElapsed: () -> Long = { SystemClock.elapsedRealtime() }
+    internal var restDaoOverride: RestDao? = null
+
+    private val restTimer = RestTimer()
+    private var tickerJob: Job? = null
+    private var entrenoIds: List<String> = emptyList()
+    private var entrenoIdsFecha: String? = null
+    private var orphanSweepDone = false
+
+    private val _modoEntreno = MutableStateFlow(false)
+    val modoEntreno: StateFlow<Boolean> = _modoEntreno.asStateFlow()
+    private val _entrenoGroups = MutableStateFlow<List<EntrenoGroup>>(emptyList())
+    val entrenoGroups: StateFlow<List<EntrenoGroup>> = _entrenoGroups.asStateFlow()
+    private val _expandedUuid = MutableStateFlow<String?>(null)
+    val expandedUuid: StateFlow<String?> = _expandedUuid.asStateFlow()
+    private val _doneUuids = MutableStateFlow<Set<String>>(emptySet())
+    val doneUuids: StateFlow<Set<String>> = _doneUuids.asStateFlow()
+    private val _restMs = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val restMs: StateFlow<Map<String, Long>> = _restMs.asStateFlow()
+    private val _runningUuid = MutableStateFlow<String?>(null)
+    val runningUuid: StateFlow<String?> = _runningUuid.asStateFlow()
+
+    private fun restDao(): RestDao =
+        restDaoOverride ?: HealthDatabaseBuilder.get(getApplication()).restDao()
+
     init {
         load(LocalDate.now().toString())
+        viewModelScope.launch(Dispatchers.IO) {
+            // Barrido único de huérfanos: abiertos de sesiones anteriores no se
+            // reanudan; se marcan ABANDONADO con el tick actual.
+            if (!orphanSweepDone) {
+                orphanSweepDone = true
+                runCatching { restDao().abandonAllOpen(clockWall(), clockElapsed()) }
+            }
+        }
+    }
+
+    /** Borradores actuales (misma fuente que rebuildRows de la Activity). */
+    fun currentDrafts(): List<TrainingSetDraft> {
+        val fecha = _state.value.fecha
+        val buffered = draftBuffer?.takeIf { it.first == fecha }?.second
+        return buffered
+            ?: _state.value.session?.sets?.map {
+                TrainingSetDraft(
+                    it.ejercicio, numText(it.kg), numText(it.reps),
+                    numText(it.rir), numText(it.descansoSeg),
+                    numText(it.velocidadKmh), numText(it.dificultad),
+                )
+            }?.ifEmpty { listOf(TrainingSetDraft("", "", "", "", "")) }
+            ?: listOf(TrainingSetDraft("", "", "", "", ""))
+    }
+
+    fun setModoEntreno(enabled: Boolean) {
+        if (_modoEntreno.value == enabled) return
+        _modoEntreno.value = enabled
+        if (enabled) {
+            ensureEntrenoBuilt()
+            startTicker()
+            viewModelScope.launch(Dispatchers.IO) {
+                // Semilla de acumulados desde intervalos CERRADOS (sin bloquear).
+                val fecha = _state.value.fecha
+                val closed = runCatching { restDao().forFecha(fecha) }.getOrDefault(emptyList())
+                    .filter { it.estado == "CERRADO" && it.endElapsedMs != null }
+                for (c in closed) {
+                    val dur = (c.endElapsedMs!! - c.startElapsedMs).coerceAtLeast(0)
+                    restTimer.seedAccum(c.clientSetUuid, dur)
+                }
+                refreshRestMs()
+            }
+        } else {
+            tickerJob?.cancel()
+            tickerJob = null
+        }
+    }
+
+    /** Reconstruye grupos preservando UUIDs por índice; resetea expand/done si cambia el día. */
+    fun ensureEntrenoBuilt() {
+        val fecha = _state.value.fecha
+        if (entrenoIdsFecha != fecha) {
+            entrenoIds = emptyList()
+            entrenoIdsFecha = fecha
+            _doneUuids.value = emptySet()
+            _expandedUuid.value = null
+            restTimer.clearAccum(emptySet())
+        }
+        val drafts = currentDrafts()
+        val (groups, outIds) = SessionFlowState.build(drafts, entrenoIds)
+        entrenoIds = outIds
+        restTimer.clearAccum(outIds.toSet())
+        _entrenoGroups.value = groups
+        // Si lo expandido desapareció (borrado en Editor), colapsa.
+        val flat = SessionFlowState.flattened(groups).map { it.uuid }.toSet()
+        if (_expandedUuid.value !in flat) {
+            _expandedUuid.value = SessionFlowState.nextPending(groups, _doneUuids.value, null)?.uuid
+        }
+        refreshRestMs()
+    }
+
+    fun expandUuid(uuid: String?) {
+        _expandedUuid.value = uuid
+    }
+
+    fun toggleDone(uuid: String) {
+        _doneUuids.value = SessionFlowState.toggleDone(_doneUuids.value, uuid)
+        persistProgressive()
+    }
+
+    /**
+     * Botón principal: marca hecha (idempotente: solo añade), colapsa,
+     * auto-expande la siguiente pendiente y auto-arranca su descanso.
+     */
+    fun completeSet(uuid: String) {
+        if (uuid !in _doneUuids.value) _doneUuids.value = _doneUuids.value + uuid
+        persistProgressive()
+        val next = SessionFlowState.nextPending(_entrenoGroups.value, _doneUuids.value, uuid)
+        _expandedUuid.value = next?.uuid
+        if (next != null) timerStart(next.uuid)
+    }
+
+    /** Borradores no vacíos listos para el Guardar final único (con confirm). */
+    fun entrenoDrafts(): List<TrainingSetDraft> = currentDrafts().filter { !it.isBlank() }
+
+    fun entrenoDelta(uuid: String, field: String, delta: Double) {
+        val fecha = _state.value.fecha
+        val drafts = currentDrafts().toMutableList()
+        val index = entrenoIds.indexOf(uuid)
+        if (index !in drafts.indices) return
+        val cur = drafts[index]
+        fun shift(raw: String, step: Double): String {
+            val base = raw.trim().replace(",", ".").toDoubleOrNull() ?: 0.0
+            val next = (base + step).coerceAtLeast(0.0)
+            return if (next % 1.0 == 0.0) next.toLong().toString() else next.toString()
+        }
+        drafts[index] = when (field) {
+            "kg" -> cur.copy(kg = shift(cur.kg, delta))
+            "reps" -> cur.copy(reps = shift(cur.reps, delta))
+            "rir" -> cur.copy(rir = shift(cur.rir, delta))
+            "vel" -> cur.copy(velocidadKmh = shift(cur.velocidadKmh, delta))
+            "dif" -> cur.copy(dificultad = shift(cur.dificultad, delta))
+            else -> return
+        }
+        draftBuffer = fecha to drafts
+        // Solo stash local aquí (sin enqueue: evita ráfagas al rate-limit).
+        val (groups, outIds) = SessionFlowState.build(drafts, entrenoIds)
+        entrenoIds = outIds
+        _entrenoGroups.value = groups
+    }
+
+    fun timerStart(uuid: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val wall = clockWall()
+            val elapsed = clockElapsed()
+            // Invariante single-running: cierra lo anterior primero.
+            restTimer.pendingClose()?.let { toClose ->
+                runCatching { restDao().close(toClose.intervalId, wall, elapsed) }
+                restTimer.onClosed(elapsed)
+            }
+            if (restTimer.runningUuid() == uuid) {
+                refreshRestMs()
+                return@launch
+            }
+            val item = SessionFlowState.flattened(_entrenoGroups.value).find { it.uuid == uuid }
+            val id = runCatching {
+                restDao().insert(
+                    RestIntervalEntity(
+                        fecha = _state.value.fecha,
+                        ejercicio = item?.ejercicio ?: "",
+                        clientSetUuid = uuid,
+                        setOrdenAparente = item?.aparenteOrden ?: 0,
+                        startWallMs = wall,
+                        startElapsedMs = elapsed,
+                        createdAtEpochMs = wall,
+                    ),
+                )
+            }.getOrDefault(-1L)
+            if (id > 0) restTimer.onOpened(id, uuid, wall, elapsed)
+            _runningUuid.value = restTimer.runningUuid()
+            refreshRestMs()
+        }
+    }
+
+    fun timerPause(uuid: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (restTimer.runningUuid() != uuid) return@launch
+            val elapsed = clockElapsed()
+            restTimer.pendingClose()?.let { toClose ->
+                runCatching { restDao().close(toClose.intervalId, clockWall(), elapsed) }
+                restTimer.onClosed(elapsed)
+            }
+            _runningUuid.value = restTimer.runningUuid()
+            refreshRestMs()
+        }
+    }
+
+    fun timerReset(uuid: String) {
+        // Reset discreto de display: cierra lo que corra y olvida el acumulado
+        // en memoria. Las filas Room se conservan (auditoría del dato FC).
+        viewModelScope.launch(Dispatchers.IO) {
+            if (restTimer.runningUuid() == uuid) {
+                val elapsed = clockElapsed()
+                restTimer.pendingClose()?.let { toClose ->
+                    runCatching { restDao().close(toClose.intervalId, clockWall(), elapsed) }
+                    restTimer.onClosed(elapsed)
+                }
+            }
+            restTimer.resetDisplay(uuid)
+            _runningUuid.value = restTimer.runningUuid()
+            refreshRestMs()
+        }
+    }
+
+    private fun startTicker() {
+        tickerJob?.cancel()
+        tickerJob = viewModelScope.launch {
+            while (isActive) {
+                delay(250)
+                if (_modoEntreno.value) refreshRestMs()
+            }
+        }
+    }
+
+    private fun refreshRestMs() {
+        val now = try { clockElapsed() } catch (_: Exception) { 0L }
+        val ids = SessionFlowState.flattened(_entrenoGroups.value).map { it.uuid }
+        _restMs.value = ids.associateWith { restTimer.elapsedFor(it, now) }
+        _runningUuid.value = restTimer.runningUuid()
+    }
+
+    /**
+     * Progresivo local + cola sin drenar en caliente: stash ya está en
+     * draftBuffer; aquí solo enqueue (colapsa a 1 op/día por PK). Un único
+     * POST explícito al final = 1 backup + 1 entrada undo (sin ruido).
+     */
+    private fun persistProgressive() {
+        val fecha = _state.value.fecha
+        val sets = currentDrafts().filter { !it.isBlank() }
+        if (sets.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.enqueueSessionSave(fecha, sets) }
+            val pending = runCatching { repository.pendingCount() }.getOrDefault(0)
+            _state.value = _state.value.copy(pending = pending)
+        }
     }
 
     fun load(fecha: String) {

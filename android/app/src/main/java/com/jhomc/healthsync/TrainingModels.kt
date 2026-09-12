@@ -112,3 +112,23 @@ data class CardioSession(
     val inclinacionPct: Double?,
     val notas: String,
 )
+
+// --- Modo entreno (Fase 1, solo Android, sin backend) ------------------------
+
+/** Pasos de steppers acordados: kg ±1 (larga ±5). */
+const val KG_STEP = 1.0
+const val KG_STEP_LONG = 5.0
+const val REPS_STEP = 1.0
+const val RIR_STEP = 0.5
+const val VEL_STEP = 0.5
+const val DIF_STEP = 0.5
+
+/** Estado de descanso por serie para la UI (derivado de rest_intervals). */
+enum class RestState { IDLE, RUNNING, PAUSED }
+
+fun formatMmSs(totalSeconds: Long): String {
+    val s = totalSeconds.coerceAtLeast(0)
+    return "%02d:%02d".format(s / 60, s % 60)
+}
+
+fun formatMmSsFromMs(ms: Long): String = formatMmSs(ms / 1000)

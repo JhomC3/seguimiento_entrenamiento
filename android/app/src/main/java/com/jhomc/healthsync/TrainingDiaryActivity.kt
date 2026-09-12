@@ -4,6 +4,8 @@ import android.os.Bundle
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
+import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.AutoCompleteTextView
@@ -66,6 +68,17 @@ class TrainingDiaryActivity : ComponentActivity() {
     private lateinit var cardioTitle: TextView
     private lateinit var cardioBox: LinearLayout
     private var cardioBuiltFor: Pair<String, List<CardioSession>>? = null
+    // --- Modo entreno (Fase 1) ---
+    private lateinit var editorModeButton: Button
+    private lateinit var entrenoModeButton: Button
+    private lateinit var entrenoBox: LinearLayout
+    private lateinit var entrenoProgressView: TextView
+    private lateinit var entrenoGroupsBox: LinearLayout
+    private lateinit var entrenoSaveButton: Button
+    private var entrenoBuiltKey: Triple<String, List<EntrenoGroup>, Set<String>>? = null
+    private var entrenoExpandedKey: String? = null
+    private val entrenoTimerViews = mutableMapOf<String, TextView>()
+    private val entrenoHeaderButtons = mutableMapOf<String, Button>()
 
     private data class RowViews(
         val ejercicio: AutoCompleteTextView,
@@ -136,6 +149,7 @@ class TrainingDiaryActivity : ComponentActivity() {
             addView(titleView)
             addView(navRow)
             addView(tabsRow())
+            addView(modeRow())
             addView(statusView)
             addView(rowsBox)
             addView(addRowButton)
@@ -143,6 +157,7 @@ class TrainingDiaryActivity : ComponentActivity() {
             addView(deleteButton)
             addView(templatesButton)
             addView(exerciseButton)
+            addView(entrenoBox())
             addView(cardioTitle)
             addView(cardioBox)
             addView(foodBox())
@@ -156,6 +171,71 @@ class TrainingDiaryActivity : ComponentActivity() {
                 vm.state.collect { render(it) }
             }
         }
+        lifecycleScope.launch {
+            repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                vm.modoEntreno.collect { renderMode() }
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                vm.entrenoGroups.collect { rebuildEntreno() }
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                vm.expandedUuid.collect {
+                    entrenoExpandedKey = it
+                    rebuildEntreno()
+                }
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                vm.doneUuids.collect { rebuildEntreno() }
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                vm.restMs.collect { updateEntrenoTimers() }
+            }
+        }
+    }
+
+    // --- Modo entreno: toggle -------------------------------------------------
+
+    private fun modeRow(): LinearLayout {
+        editorModeButton = Button(this).apply { text = "● Editor" }
+        entrenoModeButton = Button(this).apply { text = "Entreno" }
+        editorModeButton.setOnClickListener { vm.setModoEntreno(false) }
+        entrenoModeButton.setOnClickListener { vm.setModoEntreno(true) }
+        editorModeButton.contentDescription = "Modo editor"
+        entrenoModeButton.contentDescription = "Modo entreno"
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(editorModeButton, navParams())
+            addView(entrenoModeButton, navParams())
+        }
+    }
+
+    private fun renderMode() {
+        val entreno = vm.modoEntreno.value
+        editorModeButton.text = if (entreno) "Editor" else "● Editor"
+        entrenoModeButton.text = if (entreno) "● Entreno" else "Entreno"
+        applyEntrenoVisibility()
+        if (entreno) {
+            vm.ensureEntrenoBuilt()
+            rebuildEntreno()
+        }
+    }
+
+    private fun applyEntrenoVisibility() {
+        val isFood = vm.state.value.vista == "alimentacion"
+        val entreno = vm.modoEntreno.value && !isFood
+        val editorVis = if (!isFood && !entreno) View.VISIBLE else View.GONE
+        for (v in listOf(rowsBox, addRowButton, saveButton, deleteButton, templatesButton, exerciseButton)) {
+            v.visibility = editorVis
+        }
+        entrenoBox.visibility = if (entreno) View.VISIBLE else View.GONE
     }
 
     // --- Render ---------------------------------------------------------------
@@ -245,16 +325,25 @@ class TrainingDiaryActivity : ComponentActivity() {
         val busy = state.loading || state.saving
         for (b in listOf(saveButton, deleteButton, addRowButton, templatesButton, exerciseButton,
             undoButton, prevButton, nextButton, todayButton, trainingTabButton, foodTabButton,
-            addFoodButton, saveFoodButton, deleteFoodButton, mealTemplatesButton, newFoodButton)) {
+            addFoodButton, saveFoodButton, deleteFoodButton, mealTemplatesButton, newFoodButton,
+            editorModeButton, entrenoModeButton, entrenoSaveButton)) {
             b.isEnabled = !busy
         }
         // Visibilidad por pestaña (mismo `vista` que el Diario web).
         val trainVis = if (isFood) android.view.View.GONE else android.view.View.VISIBLE
         val foodVis = if (isFood) android.view.View.VISIBLE else android.view.View.GONE
-        for (v in listOf(rowsBox, addRowButton, saveButton, deleteButton, templatesButton, exerciseButton, cardioTitle, cardioBox)) {
+        for (v in listOf(cardioTitle, cardioBox)) {
             v.visibility = trainVis
         }
         foodBox.visibility = foodVis
+        // El modo entreno reparte la visibilidad de entrenamiento (editor vs
+        // entreno); la alimentación siempre oculta ambos.
+        applyEntrenoVisibility()
+        // Al cambiar de día en modo entreno, reagrupa (el Editor manda).
+        if (!isFood && !busy && vm.modoEntreno.value) {
+            vm.ensureEntrenoBuilt()
+            rebuildEntreno()
+        }
 
         if (state.catalog.map { it.ejercicio } != catalogNames) {
             catalogNames = state.catalog.map { it.ejercicio }
@@ -866,6 +955,230 @@ class TrainingDiaryActivity : ComponentActivity() {
             }
             .setNegativeButton("Cancelar", null)
             .show()
+    }
+
+    // --- Modo entreno: acordeón por serie + cronómetro -------------------------
+
+    private fun entrenoBox(): LinearLayout {
+        entrenoProgressView = TextView(this).apply { asSummary() }
+        entrenoGroupsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        entrenoSaveButton = primaryButton("Terminar entreno → Guardar")
+        entrenoSaveButton.contentDescription = "Terminar entreno y guardar"
+        entrenoSaveButton.setOnClickListener { confirmEntrenoSave() }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(entrenoProgressView)
+            addView(entrenoGroupsBox)
+            addView(entrenoSaveButton)
+            visibility = View.GONE
+        }.also { entrenoBox = it }
+    }
+
+    private fun rebuildEntreno() {
+        if (!::entrenoGroupsBox.isInitialized || !vm.modoEntreno.value) return
+        val groups = vm.entrenoGroups.value
+        val done = vm.doneUuids.value
+        val expanded = vm.expandedUuid.value
+        val fecha = vm.state.value.fecha
+        val key = Triple(fecha, groups, done)
+        if (key == entrenoBuiltKey && expanded == entrenoExpandedKey) {
+            updateEntrenoTimers()
+            return
+        }
+        entrenoBuiltKey = key
+        entrenoExpandedKey = expanded
+        entrenoGroupsBox.removeAllViews()
+        entrenoTimerViews.clear()
+        entrenoHeaderButtons.clear()
+        val (total, doneCount, pending) = SessionFlowState.progress(groups, done)
+        val flat = SessionFlowState.flattened(groups)
+        val groupIndex = groups.indexOfFirst { g -> g.items.any { it.uuid == expanded } }
+        entrenoProgressView.text = if (total == 0) {
+            "Sin series para entrenar (el Editor manda: añade o aplica plantilla)."
+        } else {
+            "Ejercicio ${if (groupIndex < 0) "–" else "${groupIndex + 1}/${groups.size}"} · " +
+                "Serie $doneCount/$total · $pending pendientes"
+        }
+        if (total == 0) return
+        for (g in groups) {
+            val header = TextView(this).apply {
+                text = g.ejercicio
+                asSectionTitle()
+            }
+            entrenoGroupsBox.addView(header)
+            for (item in g.items) {
+                entrenoGroupsBox.addView(entrenoCard(item, item.uuid == expanded, done))
+            }
+        }
+        updateEntrenoTimers()
+    }
+
+    private fun entrenoCard(item: EntrenoItem, isExpanded: Boolean, done: Set<String>): LinearLayout {
+        val dm = resources.displayMetrics.density
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 8, 0, 8)
+        }
+        val timerText = formatMmSsFromMs(vm.restMs.value[item.uuid] ?: 0L)
+        val headerBtn = Button(this).apply {
+            text = item.summaryLine(timerText, item.uuid in done)
+            minHeight = (64 * dm).toInt()
+            isAllCaps = false
+            contentDescription = "Serie ${item.aparenteOrden} ${item.ejercicio}"
+            setOnClickListener {
+                vm.expandUuid(if (vm.expandedUuid.value == item.uuid) null else item.uuid)
+            }
+        }
+        entrenoHeaderButtons[item.uuid] = headerBtn
+        card.addView(headerBtn)
+        if (!isExpanded) return card
+
+        val timerView = TextView(this).apply {
+            text = timerText
+            textSize = 48f
+            gravity = Gravity.CENTER
+            // Sin liveRegion: no spamea TalkBack con cada tick.
+        }
+        entrenoTimerViews[item.uuid] = timerView
+        card.addView(timerView)
+
+        val timerRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val startBtn = Button(this).apply {
+            text = "INICIAR"
+            minHeight = (64 * dm).toInt()
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            contentDescription = "Iniciar descanso serie ${item.aparenteOrden}"
+            setOnClickListener { vm.timerStart(item.uuid) }
+        }
+        val pauseBtn = Button(this).apply {
+            text = "PAUSAR"
+            minHeight = (64 * dm).toInt()
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            contentDescription = "Pausar descanso serie ${item.aparenteOrden}"
+            setOnClickListener { vm.timerPause(item.uuid) }
+        }
+        timerRow.addView(startBtn)
+        timerRow.addView(pauseBtn)
+        card.addView(timerRow)
+
+        val resetBtn = Button(this).apply {
+            text = "Reset"
+            asDanger()
+            contentDescription = "Resetear display del cronómetro"
+            setOnClickListener { vm.timerReset(item.uuid) }
+        }
+        card.addView(resetBtn)
+
+        if (item.isHiit()) {
+            card.addView(stepperRow("Vel.", item.velocidadKmh.ifBlank { "–" }, "Bajar velocidad", "Subir velocidad",
+                onMinus = { vm.entrenoDelta(item.uuid, "vel", -VEL_STEP) },
+                onPlus = { vm.entrenoDelta(item.uuid, "vel", VEL_STEP) }))
+            card.addView(stepperRow("Dif.", item.dificultad.ifBlank { "–" }, "Bajar dificultad", "Subir dificultad",
+                onMinus = { vm.entrenoDelta(item.uuid, "dif", -DIF_STEP) },
+                onPlus = { vm.entrenoDelta(item.uuid, "dif", DIF_STEP) }))
+        } else {
+            card.addView(stepperRow("kg", item.kg.ifBlank { "–" }, "Bajar peso", "Subir peso",
+                onMinus = { vm.entrenoDelta(item.uuid, "kg", -KG_STEP) },
+                onPlus = { vm.entrenoDelta(item.uuid, "kg", KG_STEP) },
+                onPlusLong = { vm.entrenoDelta(item.uuid, "kg", KG_STEP_LONG) },
+                onMinusLong = { vm.entrenoDelta(item.uuid, "kg", -KG_STEP_LONG) }))
+            card.addView(stepperRow("reps", item.reps.ifBlank { "–" }, "Bajar repeticiones", "Subir repeticiones",
+                onMinus = { vm.entrenoDelta(item.uuid, "reps", -REPS_STEP) },
+                onPlus = { vm.entrenoDelta(item.uuid, "reps", REPS_STEP) }))
+            card.addView(stepperRow("RIR", item.rir.ifBlank { "–" }, "Bajar RIR", "Subir RIR",
+                onMinus = { vm.entrenoDelta(item.uuid, "rir", -RIR_STEP) },
+                onPlus = { vm.entrenoDelta(item.uuid, "rir", RIR_STEP) }))
+        }
+
+        val doneBtn = primaryButton(if (item.uuid in done) "Hecha ✓ (toca para desmarcar)" else "Serie hecha + descansar")
+        doneBtn.contentDescription = "Marcar serie hecha y descansar"
+        doneBtn.minHeight = (64 * dm).toInt()
+        doneBtn.setOnClickListener {
+            if (item.uuid in vm.doneUuids.value) vm.toggleDone(item.uuid) else vm.completeSet(item.uuid)
+        }
+        card.addView(doneBtn)
+        return card
+    }
+
+    private fun stepperRow(
+        label: String,
+        value: String,
+        minusDesc: String,
+        plusDesc: String,
+        onMinus: () -> Unit,
+        onPlus: () -> Unit,
+        onMinusLong: (() -> Unit)? = null,
+        onPlusLong: (() -> Unit)? = null,
+    ): LinearLayout {
+        val dm = resources.displayMetrics.density
+        val minus = Button(this).apply {
+            text = "−"
+            textSize = 24f
+            minimumWidth = (64 * dm).toInt()
+            minHeight = (56 * dm).toInt()
+            contentDescription = minusDesc
+            setOnClickListener { onMinus() }
+            if (onMinusLong != null) setOnLongClickListener { onMinusLong(); true }
+        }
+        val shown = TextView(this).apply {
+            text = "$label  $value"
+            textSize = 20f
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val plus = Button(this).apply {
+            text = "+"
+            textSize = 24f
+            minimumWidth = (64 * dm).toInt()
+            minHeight = (56 * dm).toInt()
+            contentDescription = plusDesc
+            setOnClickListener { onPlus() }
+            if (onPlusLong != null) setOnLongClickListener { onPlusLong(); true }
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(minus)
+            addView(shown)
+            addView(plus)
+        }
+    }
+
+    private fun updateEntrenoTimers() {
+        if (!::entrenoGroupsBox.isInitialized || !vm.modoEntreno.value) return
+        val rest = try { vm.restMs.value } catch (_: Exception) { return }
+        val done = try { vm.doneUuids.value } catch (_: Exception) { return }
+        val groups = try { vm.entrenoGroups.value } catch (_: Exception) { return }
+        val byUuid = SessionFlowState.flattened(groups).associateBy { it.uuid }
+        for ((uuid, tv) in entrenoTimerViews) {
+            tv.text = formatMmSsFromMs(rest[uuid] ?: 0L)
+        }
+        for ((uuid, btn) in entrenoHeaderButtons) {
+            val item = byUuid[uuid] ?: continue
+            // Solo re-pinta colapsadas aquí (la expandida la refresca el rebuild
+            // estructural; así el tick de 250ms no reconstruye vistas).
+            if (uuid != vm.expandedUuid.value) {
+                btn.text = item.summaryLine(formatMmSsFromMs(rest[uuid] ?: 0L), uuid in done)
+            }
+        }
+    }
+
+    private fun confirmEntrenoSave() {
+        val drafts = vm.entrenoDrafts()
+        if (drafts.isEmpty()) {
+            statusView.asStatus("Error: añade al menos una serie.", StatusKind.ERROR)
+            return
+        }
+        val hadData = vm.state.value.session?.hasData == true
+        if (hadData) {
+            AlertDialog.Builder(this)
+                .setTitle("Reemplazar el día")
+                .setMessage("Este día ya tiene series guardadas. Guardar las reemplaza por completo. ¿Continuar?")
+                .setPositiveButton("Reemplazar") { _, _ -> vm.save(drafts) }
+                .setNegativeButton("Cancelar", null)
+                .show()
+        } else {
+            vm.save(drafts)
+        }
     }
 
     companion object {
