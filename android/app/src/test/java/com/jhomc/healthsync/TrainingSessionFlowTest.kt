@@ -1,6 +1,7 @@
 package com.jhomc.healthsync
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -60,18 +61,41 @@ class TrainingSessionFlowTest {
     }
 
     @Test
-    fun `toggleDone es reversible y progress cuadra`() {
+    fun `progress cuadra con guardadas`() {
         val drafts = listOf(draft("Press"), draft("Remo"))
         val (groups, _) = SessionFlowState.build(drafts)
         val flat = SessionFlowState.flattened(groups)
-        var done = SessionFlowState.toggleDone(emptySet(), flat[0].uuid)
-        assertTrue(flat[0].uuid in done)
+        val done = setOf(flat[0].uuid)
         val (total, doneCount, pending) = SessionFlowState.progress(groups, done)
         assertEquals(2, total)
         assertEquals(1, doneCount)
         assertEquals(1, pending)
-        done = SessionFlowState.toggleDone(done, flat[0].uuid)
-        assertTrue(flat[0].uuid !in done)
+    }
+
+    @Test
+    fun `ir abre trabajo y guardar avanza sin descanso final`() {
+        val drafts = listOf(draft("Press"), draft("Remo"))
+        val (groups, _) = SessionFlowState.build(drafts)
+        val flat = SessionFlowState.flattened(groups)
+        // Ir sin descanso previo: solo abre trabajo.
+        var eff = SessionFlowState.WorkoutFlow.ir(flat[0].uuid, null, emptySet())
+        assertNull(eff.closeRestOwner)
+        assertEquals(flat[0].uuid, eff.openWork)
+        // Doble Ir: se ignora.
+        eff = SessionFlowState.WorkoutFlow.ir(flat[0].uuid, null, setOf(flat[0].uuid))
+        assertNull(eff.closeRestOwner)
+        // Ir siguiente con descanso corriendo: lo cierra y anota al previo.
+        eff = SessionFlowState.WorkoutFlow.ir(flat[1].uuid, flat[0].uuid, setOf(flat[0].uuid))
+        assertEquals(flat[0].uuid, eff.closeRestOwner)
+        // Guardar intermedio: abre siguiente y arranca descanso.
+        var g = SessionFlowState.WorkoutFlow.guardar(flat[0].uuid, emptySet(), groups)
+        assertEquals(flat[0].uuid, g.saved)
+        assertEquals(flat[1].uuid, g.nextToExpand)
+        assertTrue(g.startRest)
+        // Guardar la última: sin siguiente ni descanso post-entreno.
+        g = SessionFlowState.WorkoutFlow.guardar(flat[1].uuid, setOf(flat[0].uuid), groups)
+        assertNull(g.nextToExpand)
+        assertFalse(g.startRest)
     }
 
     @Test

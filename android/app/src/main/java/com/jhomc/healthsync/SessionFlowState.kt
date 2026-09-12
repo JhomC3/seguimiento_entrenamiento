@@ -113,9 +113,6 @@ object SessionFlowState {
         return Triple(total, doneCount, total - doneCount)
     }
 
-    fun toggleDone(done: Set<String>, uuid: String): Set<String> =
-        if (uuid in done) done - uuid else done + uuid
-
     /** Apertura múltiple: alterna solo la suya, las demás intactas. */
     fun toggleExpanded(expanded: Set<String>, uuid: String): Set<String> =
         if (uuid in expanded) expanded - uuid else expanded + uuid
@@ -130,6 +127,38 @@ object SessionFlowState {
     fun descansoText(v: Double?): String {
         if (v == null) return "–"
         return if (v % 1.0 == 0.0) v.toLong().toString() else v.toString()
+    }
+
+    /**
+     * Máquina pura del flujo por serie: pendiente → en trabajo (Ir) →
+     * guardada (check). Sin Android ni Room. El ViewModel la posee para
+     * transiciones; solo cablea Room/reloj/red alrededor.
+     */
+    object WorkoutFlow {
+        /** Ir con descanso previo corriendo: se cierra y anota a [restOwner]. */
+        data class IrEffect(val closeRestOwner: String?, val openWork: String)
+
+        /** Guardar: colapsa esta, abre la siguiente y arranca su descanso. */
+        data class GuardarEffect(
+            val saved: String,
+            val nextToExpand: String?,
+            val startRest: Boolean,
+        )
+
+        fun ir(uuid: String, runningRestOwner: String?, workOpen: Set<String>): IrEffect {
+            if (uuid in workOpen) return IrEffect(null, uuid) // doble tap: ignorar
+            return IrEffect(closeRestOwner = runningRestOwner, openWork = uuid)
+        }
+
+        fun guardar(
+            uuid: String,
+            done: Set<String>,
+            groups: List<EntrenoGroup>,
+        ): GuardarEffect {
+            val next = nextPending(groups, done + uuid, uuid)
+            // Última serie: no se arranca descanso (post-entreno sin sentido).
+            return GuardarEffect(saved = uuid, nextToExpand = next?.uuid, startRest = next != null)
+        }
     }
 
     /**

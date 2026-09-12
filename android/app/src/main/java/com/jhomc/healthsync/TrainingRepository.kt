@@ -52,6 +52,9 @@ class TrainingRepository(
     suspend fun fetchSession(apiBase: String, token: String, fecha: String): TrainingResult<TrainingSession> =
         client.getSession(apiBase, token, fecha)
 
+    /** Última copia local del día (caché; null si nunca se vio con red). */
+    suspend fun cachedSession(fecha: String): TrainingSession? = cached(fecha)
+
     /** Descarta la op pendiente de un dominio+fecha (reemplazo silencioso). */
     suspend fun dropPending(domain: String, fecha: String) {
         offline.ack(domain, fecha)

@@ -9,6 +9,8 @@ import com.jhomc.healthsync.data.EntrenoDraftDao
 import com.jhomc.healthsync.data.EntrenoDraftEntity
 import com.jhomc.healthsync.data.RestIntervalEntity
 import com.jhomc.healthsync.data.RestDao
+import com.jhomc.healthsync.data.WorkDao
+import com.jhomc.healthsync.data.WorkIntervalEntity
 import com.jhomc.healthsync.data.SecureTargetStore
 import com.jhomc.healthsync.data.canonicalRowsHash
 import com.jhomc.healthsync.data.doneJson
@@ -18,9 +20,11 @@ import com.jhomc.healthsync.data.payloadJson
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -91,8 +95,13 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
     internal var clockElapsed: () -> Long = { SystemClock.elapsedRealtime() }
     internal var restDaoOverride: RestDao? = null
     internal var draftsDaoOverride: EntrenoDraftDao? = null
+    internal var workDaoOverride: WorkDao? = null
     /** Fila local del día en caché de memoria (la DB es la fuente real). */
     private var localRowCache: Pair<String, EntrenoDraftEntity?>? = null
+    /** Trabajo abierto por serie (uuid → id de intervalo): se pierde al morir (documentado). */
+    private val openWork = mutableMapOf<String, Long>()
+    private val _workOpen = MutableStateFlow<Set<String>>(emptySet())
+    val workOpen: StateFlow<Set<String>> = _workOpen.asStateFlow()
 
     private val restTimer = RestTimer()
     private var tickerJob: Job? = null
@@ -128,6 +137,9 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
     private fun draftsDao(): EntrenoDraftDao =
         draftsDaoOverride ?: HealthDatabaseBuilder.get(getApplication()).entrenoDraftDao()
 
+    private fun workDao(): WorkDao =
+        workDaoOverride ?: HealthDatabaseBuilder.get(getApplication()).workDao()
+
     init {
         load(LocalDate.now().toString())
         // Ticker vago: corre siempre pero solo emite con descanso en curso.
@@ -138,6 +150,7 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             if (!orphanSweepDone) {
                 orphanSweepDone = true
                 runCatching { restDao().abandonAllOpen(clockWall(), clockElapsed()) }
+                runCatching { workDao().abandonAllOpen(clockWall(), clockElapsed()) }
             }
         }
     }
@@ -285,6 +298,15 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             _expandedUuids.value = emptySet()
             restTimer.clearAccum(emptySet())
             seedRestAccum()
+            // El trabajo abierto no cruza de día: se abandona (fin honesto
+            // como abandono, nunca como cierre inventado).
+            if (openWork.isNotEmpty()) {
+                openWork.clear()
+                _workOpen.value = emptySet()
+                viewModelScope.launch(Dispatchers.IO) {
+                    runCatching { workDao().abandonAllOpen(clockWall(), clockElapsed()) }
+                }
+            }
         }
         rebuildEntrenoLists()
         val flat = SessionFlowState.flattened(_entrenoGroups.value).map { it.uuid }.toSet()
@@ -314,27 +336,90 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         _expandedUuids.value = SessionFlowState.toggleExpanded(_expandedUuids.value, uuid)
     }
 
-    fun toggleDone(uuid: String) {
-        _doneUuids.value = SessionFlowState.toggleDone(_doneUuids.value, uuid)
-        persistProgressive()
-    }
+    // --- Flujo por serie: Ir + check (sin pausa) --------------------------------
 
     /**
-     * Botón principal: marca hecha (idempotente: solo añade), auto-expande la
-     * siguiente pendiente sin colapsar las demás y auto-arranca su descanso.
+     * Ir: corta el descanso en curso (lo anota a su serie) y abre el trabajo
+     * de esta. Sin descanso previo (primera serie) solo abre trabajo.
+     * Doble tap: se ignora. El instante de inicio vive en memoria.
      */
-    fun completeSet(uuid: String) {
-        if (uuid !in _doneUuids.value) _doneUuids.value = _doneUuids.value + uuid
-        persistProgressive()
-        val next = SessionFlowState.nextPending(_entrenoGroups.value, _doneUuids.value, uuid)
-        if (next != null) {
-            _expandedUuids.value = _expandedUuids.value + next.uuid
-            timerStart(next.uuid)
+    fun ir(uuid: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val effect = SessionFlowState.WorkoutFlow.ir(uuid, restTimer.runningUuid(), openWork.keys)
+            effect.closeRestOwner?.let { closeRunning() }
+            if (uuid in openWork) return@launch
+            val item = SessionFlowState.flattened(_entrenoGroups.value).find { it.uuid == uuid }
+            val wall = clockWall()
+            val id = runCatching {
+                workDao().insert(
+                    WorkIntervalEntity(
+                        fecha = _state.value.fecha,
+                        ejercicio = item?.ejercicio ?: "",
+                        clientSetUuid = uuid,
+                        setOrdenAparente = item?.aparenteOrden ?: 0,
+                        startWallMs = wall,
+                        startElapsedMs = clockElapsed(),
+                        createdAtEpochMs = wall,
+                    ),
+                )
+            }.getOrDefault(-1L)
+            if (id > 0) {
+                openWork[uuid] = id
+                _workOpen.value = openWork.keys.toSet()
+            }
         }
     }
 
-    /** Borradores no vacíos listos para el Guardar final único (con confirm). */
-    fun entrenoDrafts(): List<TrainingSetDraft> = currentDrafts().filter { !it.isBlank() }
+    /**
+     * Check: guarda la serie (local + cola), la colapsa, auto-expande la
+     * siguiente y arranca su descanso. En la última pendiente no se arranca
+     * descanso (post-entreno sin sentido: el reloj no queda corriendo).
+     * Sin Ir previo funciona igual (el descanso se corta en este tap).
+     */
+    fun guardar(uuid: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (restTimer.runningUuid() != null) closeRunning()
+            openWork.remove(uuid)?.let { workId ->
+                runCatching { workDao().close(workId, clockWall(), clockElapsed()) }
+                _workOpen.value = openWork.keys.toSet()
+            }
+            val effect = SessionFlowState.WorkoutFlow.guardar(uuid, _doneUuids.value, _entrenoGroups.value)
+            _doneUuids.value = _doneUuids.value + effect.saved
+            persistProgressive()
+            _expandedUuids.value = _expandedUuids.value - effect.saved
+            if (effect.nextToExpand != null) {
+                _expandedUuids.value = _expandedUuids.value + effect.nextToExpand
+            }
+            if (effect.startRest) {
+                openRest(effect.saved)
+            } else {
+                _state.value = _state.value.copy(notice = "Entreno completo.")
+            }
+        }
+    }
+
+    /** Abre el descanso tras una serie guardada (etiquetado a esa serie). */
+    private suspend fun openRest(ownerUuid: String) {
+        val item = SessionFlowState.flattened(_entrenoGroups.value).find { it.uuid == ownerUuid }
+        val wall = clockWall()
+        val elapsed = clockElapsed()
+        val id = runCatching {
+            restDao().insert(
+                RestIntervalEntity(
+                    fecha = _state.value.fecha,
+                    ejercicio = item?.ejercicio ?: "",
+                    clientSetUuid = ownerUuid,
+                    setOrdenAparente = item?.aparenteOrden ?: 0,
+                    startWallMs = wall,
+                    startElapsedMs = elapsed,
+                    createdAtEpochMs = wall,
+                ),
+            )
+        }.getOrDefault(-1L)
+        if (id > 0) restTimer.onOpened(id, ownerUuid, wall, elapsed)
+        _runningUuid.value = restTimer.runningUuid()
+        refreshRestMs()
+    }
 
     fun entrenoDelta(uuid: String, field: String, delta: Double) {
         val fecha = _state.value.fecha
@@ -408,39 +493,6 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
-    fun timerStart(uuid: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            // Invariante single-running: cierra y anota lo anterior primero.
-            closeRunning()
-            val wall = clockWall()
-            val elapsed = clockElapsed()
-            val item = SessionFlowState.flattened(_entrenoGroups.value).find { it.uuid == uuid }
-            val id = runCatching {
-                restDao().insert(
-                    RestIntervalEntity(
-                        fecha = _state.value.fecha,
-                        ejercicio = item?.ejercicio ?: "",
-                        clientSetUuid = uuid,
-                        setOrdenAparente = item?.aparenteOrden ?: 0,
-                        startWallMs = wall,
-                        startElapsedMs = elapsed,
-                        createdAtEpochMs = wall,
-                    ),
-                )
-            }.getOrDefault(-1L)
-            if (id > 0) restTimer.onOpened(id, uuid, wall, elapsed)
-            _runningUuid.value = restTimer.runningUuid()
-            refreshRestMs()
-        }
-    }
-
-    fun timerPause(uuid: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            if (restTimer.runningUuid() != uuid) return@launch
-            closeRunning()
-        }
-    }
-
     /** Ticker vago: gira siempre pero solo emite con descanso en curso. */
     private fun startTicker() {
         tickerJob?.cancel()
@@ -476,16 +528,43 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    /** Una sola carga a la vez: navegar cancela la anterior (sin apilamientos). */
+    private var loadJob: Job? = null
+
+    /** Atrapa todo menos cancelación (runCatching la tragaría y rompería el Job). */
+    private suspend fun <T> safeIo(block: suspend () -> T): T? = try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }
+
     fun load(fecha: String) {
-        _state.value = _state.value.copy(fecha = fecha, loading = true, error = null, notice = null)
-        viewModelScope.launch { loadInternal(fecha) }
+        launchLoad(fecha, null)
     }
 
     fun setVista(vista: String) {
         if (vista != "entrenamiento" && vista != "alimentacion") return
         if (_state.value.vista == vista) return
-        _state.value = _state.value.copy(vista = vista, loading = true, error = null, notice = null)
-        viewModelScope.launch { loadInternal(_state.value.fecha) }
+        launchLoad(_state.value.fecha, vista)
+    }
+
+    private fun launchLoad(fecha: String, vista: String?) {
+        loadJob?.cancel()
+        _state.value = _state.value.copy(
+            fecha = fecha,
+            vista = vista ?: _state.value.vista,
+            loading = true,
+            error = null,
+            notice = null,
+        )
+        loadJob = viewModelScope.launch {
+            // Fase 1: pintar al instante desde el móvil (caché + libreta).
+            paintLocal(fecha)
+            // Fase 2: red en segundo plano (drena + refresca o falla en silencio).
+            loadInternal(fecha)
+        }
     }
 
     fun shiftDay(deltaDays: Long) {
@@ -495,47 +574,6 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun goToday() = load(LocalDate.now().toString())
-
-    fun save(drafts: List<TrainingSetDraft>) {
-        val fecha = _state.value.fecha
-        _state.value = _state.value.copy(saving = true, error = null, notice = null)
-        viewModelScope.launch {
-            val creds = credentials()
-            if (creds == null) {
-                _state.value = _state.value.copy(saving = false, error = "Sin destino configurado (build release sin pairing).")
-                return@launch
-            }
-            val (apiBase, token) = creds
-            // Si hay un descanso corriendo, se cierra con hora real primero:
-            // lo medido entra en el guardado en vez de perderse a medias.
-            withContext(Dispatchers.IO) { closeRunning() }
-            val toSave = currentDrafts().filter { !it.isBlank() }.ifEmpty { drafts }
-            val res = withContext(Dispatchers.IO) { repository.saveSession(apiBase, token, fecha, toSave) }
-            _state.value = when (res) {
-                is TrainingResult.Ok -> {
-                    draftBuffer = null
-                    clearLocalRow(fecha)
-                    _state.value.copy(
-                        saving = false,
-                        session = res.value,
-                        stale = false,
-                        suggestion = null,
-                        notice = "Entrenamiento guardado (${res.value.sets.size} series).",
-                    )
-                }
-                is TrainingResult.ApiError -> _state.value.copy(saving = false, error = res.detail)
-                is TrainingResult.NetworkError -> {
-                    withContext(Dispatchers.IO) { repository.enqueueSessionSave(fecha, drafts) }
-                    val pending = withContext(Dispatchers.IO) { repository.pendingCount() }
-                    _state.value.copy(
-                        saving = false,
-                        pending = pending,
-                        notice = "Sin LAN: por enviar al servidor (se enviará al reconectar).",
-                    )
-                }
-            }
-        }
-    }
 
     fun deleteDay() {
         val fecha = _state.value.fecha
@@ -575,44 +613,58 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    /** Fecha con aviso offline propio (para limpiarlo al recuperar red). */
+    private var offlineNoticeFor: String? = null
+
+    /**
+     * Fase 1: pintar al instante desde el móvil, sin esperar red. Con copia:
+     * se muestra marcada como última copia; sin copia: aviso amable inmediato.
+     * Nunca spinner bloqueante por red.
+     */
+    private suspend fun paintLocal(fecha: String) {
+        localRowCache = fecha to withContext(Dispatchers.IO) {
+            safeIo { draftsDao().forFecha(fecha) }
+        }
+        if (_state.value.vista == "alimentacion") {
+            _state.value = _state.value.copy(loading = false, error = null)
+            return
+        }
+        val cached = withContext(Dispatchers.IO) { safeIo { repository.cachedSession(fecha) } }
+        offlineNoticeFor = if (cached == null) fecha else null
+        _state.value = _state.value.copy(
+            loading = false,
+            session = cached,
+            stale = cached != null,
+            error = null,
+            notice = if (cached == null) "Sin conexión y sin copia de este día." else null,
+        )
+    }
+
     private suspend fun loadInternal(fecha: String) {
-        val creds = withContext(Dispatchers.IO) { credentials() }
+        val creds = withContext(Dispatchers.IO) { safeIo { credentials() } }
         if (creds == null) {
             _state.value = _state.value.copy(loading = false, error = "Sin destino configurado (build release sin pairing).")
             return
         }
         val (apiBase2, token2) = creds
-        // Libreta local en memoria para resurrección (muerte del proceso).
-        localRowCache = fecha to withContext(Dispatchers.IO) {
-            runCatching { draftsDao().forFecha(fecha) }.getOrNull()
-        }
         // Si hay borrador y el servidor trae algo distinto de su base, la web
         // editó por debajo: reemplazo silencioso (manda lo web, sin avisos).
-        withContext(Dispatchers.IO) { reconcileDay(apiBase2, token2, fecha) }
+        withContext(Dispatchers.IO) {
+            ensureActive()
+            reconcileDay(apiBase2, token2, fecha)
+        }
         // Drenar la cola offline (oportunista, como health_outbox). Cada op
         // entregada o descartada limpia su fila de borrador: ya es servidor.
         val drained = withContext(Dispatchers.IO) {
-            runCatching {
+            ensureActive()
+            safeIo {
                 repository.drainOutbox(apiBase2, token2) { acked ->
                     if (acked.domain == "sesion") clearLocalRowSync(acked.fecha)
                 }
-            }.getOrDefault(0)
+            } ?: 0
         }
         val authBlocked = repository.drainAuthBlocked
-        val pending = withContext(Dispatchers.IO) { repository.pendingCount() }
-        val dots = withContext(Dispatchers.IO) {
-            val vista = if (_state.value.vista == "alimentacion") "alimentacion" else "entrenamiento"
-            when (val d = repository.clientFechas(apiBase2, token2, vista)) {
-                is TrainingResult.Ok -> d.value
-                else -> _state.value.dots
-            }
-        }
-        _state.value = _state.value.copy(pending = pending, dots = dots)
-        if (drained > 0 && _state.value.notice == null && _state.value.error == null) {
-            _state.value = _state.value.copy(notice = "$drained cambio(s) enviados al servidor.")
-        }
-        // Recién drenado: el conteo ya es 0.
-        val freshPending = if (drained > 0) 0 else pending
+        val pending = withContext(Dispatchers.IO) { safeIo { repository.pendingCount() } ?: 0 }
         if (_state.value.vista == "alimentacion") {
             loadNutritionInternal(fecha, creds)
             return
@@ -623,10 +675,12 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             session = view.session,
             stale = view.stale,
             error = view.error,
-            pending = freshPending,
-            dots = dots,
+            pending = pending,
             suggestion = null,
+            // Con red de vuelta, el aviso offline propio ya no pinta nada.
+            notice = if (view.error == null && offlineNoticeFor == fecha) null else _state.value.notice,
         )
+        if (view.error == null) offlineNoticeFor = null
         // 401 en el drenado: la cola sigue intacta; avisarlo pesa más que un
         // error de lectura (que ya vendría en view.error si lo hubiera).
         if (authBlocked && _state.value.error == null) {
@@ -634,11 +688,25 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
                 error = "Sin autorización: revisa el pairing. Tus datos siguen en el móvil.",
             )
         }
-        // Día vacío sin error: auto-relleno con la rueda (sin guardar).
-        if (view.error == null && (view.session == null || !view.session.hasData)) {
+        // Día vacío sin error y sin libreta local: auto-relleno con la rueda
+        // (sin guardar). Con borrador nunca se sugiere (lo sombrearía).
+        if (view.error == null && (view.session == null || !view.session.hasData) &&
+            localRowCache?.second == null
+        ) {
             maybeSuggest(fecha, creds)
         }
-        refreshCardio(fecha, creds)
+        // Dots en segundo plano, best-effort: jamás bloquean el pintado.
+        val dots = withContext(Dispatchers.IO) {
+            val vista = if (_state.value.vista == "alimentacion") "alimentacion" else "entrenamiento"
+            when (val d = safeIo { repository.clientFechas(apiBase2, token2, vista) }) {
+                is TrainingResult.Ok -> d.value
+                else -> _state.value.dots
+            }
+        }
+        _state.value = _state.value.copy(pending = pending, dots = dots)
+        if (drained > 0 && _state.value.notice == null && _state.value.error == null) {
+            _state.value = _state.value.copy(notice = "$drained cambio(s) enviados al servidor.")
+        }
     }
 
     // --- B3: cardio -----------------------------------------------------------------

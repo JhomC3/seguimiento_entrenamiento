@@ -741,9 +741,11 @@ class TrainingApiClient(
     companion object {
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
+        // Timeouts cortos: el diario pinta desde el móvil y la red es
+        // segundo plano (fail-fast). Solo lo usa TrainingRepository.
         private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
             .build()
 
         /**
