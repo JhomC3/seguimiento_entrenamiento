@@ -34,6 +34,9 @@ android/.gradle/
 android/app/build/
 android/local.properties
 android/sdk/
+# Symlink al SDK de otro worktree (excepción documentada: solo lectura).
+# Con barra solo ignora directorios; sin barra también el enlace simbólico.
+android/sdk
 
 # Cache Gradle del directorio raíz (residuo de arranque; el real vive en android/.gradle)
 .gradle/
