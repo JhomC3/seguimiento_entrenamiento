@@ -659,7 +659,7 @@ def test_v008_creates_parametros_diarios_and_nullable_qty(tmp_path):
         assert col in params
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 15
+    assert max_version == 17
 
 
 def test_v008_preserves_diario_rows(tmp_path):

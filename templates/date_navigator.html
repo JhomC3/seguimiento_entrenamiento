@@ -9,6 +9,7 @@
                 data-action="select-date"
                 data-iso="{{ d.iso }}"
                 class="date-num {% if d.selected %}selected{% endif %}"
+                {% if d.selected %}aria-current="date"{% endif %}
                 title="{{ d.aria_label if d.aria_label else d.iso }}"
                 aria-label="{{ d.aria_label if d.aria_label else d.iso }}"
             >

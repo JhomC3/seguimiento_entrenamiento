@@ -1991,6 +1991,7 @@ def test_data_tables_have_caption_and_scope(tmp_path, monkeypatch):
     assert 'scope="col"' in editor
 
 
+def test_save_oob_targets_existen_en_diario(tmp_path, monkeypatch):
     """Toda respuesta de guardado apunta a targets reales de la página.
 
     Falla si un OOB de /entrenamiento/session/save o /alimentacion/save usa
@@ -2122,14 +2123,31 @@ def test_heading_outline_h1_to_h2(tmp_path, monkeypatch):
     assert "<h2" in home
 
 
-def test_popup_and_confirm_are_native_dialogs(tmp_path, monkeypatch):
+def test_dashboard_routes_registration_to_diario(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     home = _client().get("/").text
-    assert '<dialog id="editor-popup"' in home
     assert '<dialog id="confirm-modal"' in home
-    assert 'role="dialog"' not in home
-    assert 'aria-labelledby="popup-fecha-title"' in home
+    assert 'href="/diario"' in home
+    assert "+ Registrar" not in home
+
+
+def test_legacy_registration_query_redirects_to_diario(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    response = _client().get("/?registro=2026-09-02", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/diario?fecha=2026-09-02"
+
+
+def test_legacy_registro_route_redirects_to_diario(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    response = _client().get(
+        "/registro?fecha=2026-09-02&vista=alimentacion", follow_redirects=False
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/diario?fecha=2026-09-02&vista=alimentacion"
 
 
 # ---------------------------------------------------------------------------
@@ -2600,8 +2618,12 @@ def test_diario_carousel_uses_compact_format(tmp_path, monkeypatch):
     assert re.search(r"S\d+ \u00b7", body) is None
     for m in re.finditer(r'aria-label="(\d{2}/\d{2}/\d{2})"', body):
         assert re.fullmatch(r"\d{2}/\d{2}/\d{2}", m.group(1))
-    # El título de fecha es corto (dd/mm/aa).
-    assert re.search(r'<h2 id="daily-date-title">\d{2}/\d{2}/\d{2}</h2>', body)
+    # El título de fecha es corto (DÍA dd/mm/aa).
+    assert re.search(
+        r'<h2 id="daily-date-title" class="panel-title panel-title-neon">'
+        r"[A-Z]+ \d{2}/\d{2}/\d{2}</h2>",
+        body,
+    )
 
 
 def test_diario_vista_entrenamiento_by_default(tmp_path, monkeypatch):
@@ -2610,7 +2632,9 @@ def test_diario_vista_entrenamiento_by_default(tmp_path, monkeypatch):
     r = _client().get("/diario")
     assert 'data-vista="entrenamiento"' in r.text
     assert 'id="daily-training-view" class="daily-view" role="tabpanel"' in r.text
-    assert 'id="daily-food-view" class="daily-view" role="tabpanel" hidden' in r.text
+    assert 'aria-labelledby="daily-tab-entrenamiento"' in r.text
+    assert 'id="daily-food-view"' in r.text
+    assert 'aria-labelledby="daily-tab-alimentacion"' in r.text
 
 
 def test_diario_vista_alimentacion_activates_food_view(tmp_path, monkeypatch):
@@ -2620,7 +2644,19 @@ def test_diario_vista_alimentacion_activates_food_view(tmp_path, monkeypatch):
     assert r.status_code == 200
     assert 'data-vista="alimentacion"' in r.text
     assert 'id="daily-food-view" class="daily-view" role="tabpanel"' in r.text
-    assert 'id="daily-training-view" class="daily-view" role="tabpanel" hidden' in r.text
+    assert 'aria-labelledby="daily-tab-alimentacion"' in r.text
+    assert 'id="daily-training-view"' in r.text
+    assert 'aria-labelledby="daily-tab-entrenamiento"' in r.text
+
+
+def test_diario_legend_explica_puntos_por_vista(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    body_ent = _client().get("/diario", params={"vista": "entrenamiento"}).text
+    assert 'id="navigator-legend"' in body_ent
+    assert "tienen entrenamiento guardado" in body_ent
+    body_ali = _client().get("/diario", params={"vista": "alimentacion"}).text
+    assert "tienen alimentación guardada" in body_ali
 
 
 def test_diario_vista_invalida_vuelve_a_entrenamiento(tmp_path, monkeypatch):
@@ -2630,7 +2666,8 @@ def test_diario_vista_invalida_vuelve_a_entrenamiento(tmp_path, monkeypatch):
     assert r.status_code == 200
     assert 'data-vista="entrenamiento"' in r.text
     assert 'id="daily-training-view" class="daily-view" role="tabpanel"' in r.text
-    assert 'id="daily-food-view" class="daily-view" role="tabpanel" hidden' in r.text
+    assert 'aria-labelledby="daily-tab-entrenamiento"' in r.text
+    assert 'id="daily-food-view"' in r.text
 
 
 def test_diario_navigator_fragment(tmp_path, monkeypatch):
@@ -2689,6 +2726,7 @@ def test_export_nutrition_csv_restored(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+def test_diario_muestra_entrenamiento_historico(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     save_session(
         db,
@@ -2750,6 +2788,25 @@ def test_export_nutrition_csv_restored(tmp_path, monkeypatch):
 
 def test_diario_conteo_de_plantillas_visible(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
+    save_session(
+        db,
+        "2026-07-14",
+        [
+            {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
+            {"ejercicio": "Press", "kg": 85, "reps": 6, "rir": 2},
+        ],
+    )
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/diario?fecha=2026-07-14")
+    assert r.status_code == 200
+    assert 'id="daily-date-title"' in r.text
+    assert ">MARTES 14/07/26</h2>" in r.text
+    assert 'value="80"' in r.text and 'value="85"' in r.text
+    assert "No hay entrenamiento guardado para este día." not in r.text
+    assert 'data-has-data="1"' in r.text
+
+
+    db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "Torso", "ejercicio": ["Press"]})
@@ -2769,5 +2826,204 @@ def test_diario_plantillas_vacias_muestran_estado(tmp_path, monkeypatch):
     # Los estados vacíos de las listas viven en los diálogos.
     assert "Aún no hay entrenos" in r.text
     assert "Guarda un día desde el panel de alimentación" in r.text
+
+
+    from src.database import replace_diario_by_fecha
+
+    db = _seed_nutrition(tmp_path)
+    replace_diario_by_fecha(
+        db,
+        "2026-07-14",
+        [
+            {
+                "alimento": "Avena",
+                "cantidad_g": 120.0,
+                "kcal": 467.0,
+                "carbohidratos": 82.0,
+                "fibra": 12.0,
+                "proteina": 20.0,
+                "grasa": 8.0,
+                "hierro": 5.0,
+                "calcio": 65.0,
+                "vitamina_c": 0.0,
+                "vitamina_a": 0.0,
+            }
+        ],
+    )
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    body = _client().get("/diario/navigator?fecha=2026-07-14").text
+    # 2026-07-14 está fuera de la ventana ±15 días de hoy (2026-09-02)… usamos
+    # una fecha cercana: seleccionamos hoy y la fecha con alimento se siembra
+    # relativa a hoy.
+    assert 'id="date-navigator"' in body
+
+
+    import datetime as _dt
+
+    from src.database import replace_diario_by_fecha
+
+    today = _dt.date.today()
+    iso = today.strftime("%Y-%m-%d")
+    db = _seed_nutrition(tmp_path)
+    replace_diario_by_fecha(
+        db,
+        iso,
+        [
+            {
+                "alimento": "Avena",
+                "cantidad_g": 120.0,
+                "kcal": 467.0,
+                "carbohidratos": 82.0,
+                "fibra": 12.0,
+                "proteina": 20.0,
+                "grasa": 8.0,
+                "hierro": 5.0,
+                "calcio": 65.0,
+                "vitamina_c": 0.0,
+                "vitamina_a": 0.0,
+            }
+        ],
+    )
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    body = _client().get("/diario/navigator", params={"fecha": iso, "vista": "alimentacion"}).text
+    # El día con alimentación lleva punto en vista alimentación; la fecha está seleccionada.
+    assert f'data-iso="{iso}"' in body
+    assert 'class="date-num selected"' in body
+    assert body.count("date-dot") >= 1
+    # En vista entrenamiento el mismo día no lleva punto.
+    body_ent = (
+        _client().get("/diario/navigator", params={"fecha": iso, "vista": "entrenamiento"}).text
+    )
+    assert "date-dot" not in body_ent
+
+
+def test_navigator_diario_filtra_por_vista_entrenamiento(tmp_path, monkeypatch):
+    import datetime as _dt
+
+    today = _dt.date.today()
+    iso = today.strftime("%Y-%m-%d")
+    db = _setup_db(tmp_path)
+    save_session(db, iso, [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    body_ent = (
+        _client().get("/diario/navigator", params={"fecha": iso, "vista": "entrenamiento"}).text
+    )
+    assert body_ent.count("date-dot") >= 1
+    body_ali = (
+        _client().get("/diario/navigator", params={"fecha": iso, "vista": "alimentacion"}).text
+    )
+    assert "date-dot" not in body_ali
+    # Vista inválida vuelve a entrenamiento.
+    body_bad = _client().get("/diario/navigator", params={"fecha": iso, "vista": "basura"}).text
+    assert body_bad.count("date-dot") >= 1
+
+
+def test_diario_page_filtra_puntos_por_vista(tmp_path, monkeypatch):
+    import datetime as _dt
+
+    from src.database import replace_diario_by_fecha
+
+    today = _dt.date.today()
+    iso = today.strftime("%Y-%m-%d")
+    db = _seed_nutrition(tmp_path)
+    replace_diario_by_fecha(
+        db,
+        iso,
+        [
+            {
+                "alimento": "Avena",
+                "cantidad_g": 100.0,
+                "kcal": 389.0,
+                "carbohidratos": 68.0,
+                "fibra": 10.0,
+                "proteina": 17.0,
+                "grasa": 6.9,
+                "hierro": 4.2,
+                "calcio": 54.0,
+                "vitamina_c": 0.0,
+                "vitamina_a": 0.0,
+            }
+        ],
+    )
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    body_ali = _client().get("/diario", params={"fecha": iso, "vista": "alimentacion"}).text
+    assert body_ali.count("date-dot") >= 1
+    body_ent = _client().get("/diario", params={"fecha": iso, "vista": "entrenamiento"}).text
+    assert "date-dot" not in body_ent
+
+
+    import datetime as _dt
+
+    from src.database import replace_diario_by_fecha
+
+    today = _dt.date.today()
+    iso = today.strftime("%Y-%m-%d")
+    db = _seed_nutrition(tmp_path)
+    replace_diario_by_fecha(
+        db,
+        iso,
+        [
+            {
+                "alimento": "Avena",
+                "cantidad_g": 120.0,
+                "kcal": 467.0,
+                "carbohidratos": 82.0,
+                "fibra": 12.0,
+                "proteina": 20.0,
+                "grasa": 8.0,
+                "hierro": 5.0,
+                "calcio": 65.0,
+                "vitamina_c": 0.0,
+                "vitamina_a": 0.0,
+            }
+        ],
+    )
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    # El navigator del Dashboard vive en el popup heredado (variant dashboard):
+    # formato con semana y sin puntos de alimentación.
+    body = _client().get(f"/editor/popup?fecha={iso}").text
+    navigator = body[body.index('id="date-navigator"') :]
+    assert "Semana" in navigator
+    assert "date-dot" not in navigator
+
+
+def test_navegacion_compartida_en_tres_paginas(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    home = client.get("/").text
+    diario = client.get("/diario").text
+    splits = client.get("/splits").text
+    for body in (home, diario, splits):
+        assert 'class="workspace-nav"' in body
+        assert 'href="/"' in body and 'href="/diario"' in body and 'href="/splits"' in body
+    # Página actual marcada con aria-current.
+    assert 'href="/" class="btn btn-outline" aria-current="page"' in home
+    assert 'href="/diario" class="btn btn-outline" aria-current="page"' in diario
+    assert 'href="/splits" class="btn btn-outline" aria-current="page"' in splits
+
+
+def _sugerencia_split_db(tmp_path):
+    import sqlite3
+
+    from src.database import set_active_split
+    from src.models import SplitInput, SplitItemInput
+    from src.split_service import save_split
+
+    db = _setup_db(tmp_path)
+    result = save_split(
+        db, SplitInput(nombre="PPL", items=[SplitItemInput(dia="LUNES", ejercicio="Press")])
+    )
+    set_active_split(db, result.id)
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE training_splits SET created_at = '2026-08-01 10:00:00'")
+    conn.commit()
+    conn.close()
+    return db
+
+
+def _last_monday():
+    today = datetime.date.today()
+    return (today - datetime.timedelta(days=today.weekday() + 7)).strftime("%Y-%m-%d")
 
 

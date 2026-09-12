@@ -9,12 +9,16 @@ from datetime import date
 
 import pandas as pd
 from fastapi import FastAPI, Form, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.gzip import GZipMiddleware
 
 from config import CICLO_START, DB_PATH, HC_SYNC_TOKEN, MUSCLE_CATEGORIES
+from src.cardio_service import (
+    CardioAnnotationInput,
+    get_day_cardio,
+    upsert_cardio_annotation,
 from src.charts import (
     chart_pfr_timeline,
     get_exercise_cohort_summary,
@@ -35,10 +39,13 @@ from src.database import (
     get_alimentos_catalog,
     get_categories,
     get_dashboard_catalog,
+    get_diario_by_fecha,
     get_ejercicio_categoria,
     get_exercises_catalog,
+    get_parametros_diarios,
     get_plantillas,
     get_plantillas_alimentacion,
+    get_prev_diary_date,
     get_sets_by_fecha,
     get_split_catalog,
     get_splits_summary,
@@ -270,6 +277,7 @@ def _navigator_html(
     ejercicio: str | None = None,
     granularity: str = "day",
     variant: str = "dashboard",
+    vista: str = "entrenamiento",
 ) -> str:
     vm = build_date_navigator(
         DB_PATH,
@@ -280,6 +288,7 @@ def _navigator_html(
         ejercicio=ejercicio,
         granularity=granularity,
         variant=variant,
+        vista=vista,
     )
     return _render_body(
         templates.TemplateResponse(
@@ -583,8 +592,23 @@ def _domain_error_response(
 
 
 @app.get("/", response_class=HTMLResponse)
-def read_index(request: Request, gran: str = Query(default="day")):
+def read_index(
+    request: Request,
+    gran: str = Query(default="day"),
+    registro: str = Query(default=""),
+):
     from datetime import date as _date
+
+    # ``?registro=`` fue la URL del editor emergente anterior. La conservamos
+    # como enlace de compatibilidad, pero la experiencia canónica vive en
+    # /diario y no debe volver a abrir una segunda interfaz de registro.
+    if registro:
+        try:
+            legacy_date = _date.fromisoformat(registro)
+        except ValueError:
+            legacy_date = None
+        if legacy_date is not None:
+            return RedirectResponse(url=f"/diario?fecha={legacy_date.isoformat()}", status_code=303)
 
     from src.summary_service import build_period_summary
 
@@ -651,7 +675,6 @@ def _cardio_day_html(request: Request, fecha: str) -> str:
 
 
 @app.get("/diario", response_class=HTMLResponse)
-@app.get("/registro", response_class=HTMLResponse)
 def diario_page(
     request: Request,
     fecha: str = Query(default=""),
@@ -688,9 +711,6 @@ def diario_page(
 
 
 @app.get("/diario/navigator", response_class=HTMLResponse)
-def diario_navigator(request: Request, fecha: str = Query(...)):
-    """Fragmento del carrusel de fechas del Diario (variante compacta)."""
-    return HTMLResponse(content=_navigator_html(request, fecha, variant="daily"))
 
 
 @app.get("/editor/popup", response_class=HTMLResponse)

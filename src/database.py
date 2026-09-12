@@ -145,6 +145,29 @@ def get_sets_by_fecha(db_path: str, fecha: str) -> list[dict]:
     ]
 
 
+def get_daily_data_dates(db_path: str, vista: str | None = None) -> set[str]:
+    """Días con datos de registro para el navegador del Diario (variant="daily").
+
+    ``vista="entrenamiento"``: solo ``training_sets``.
+    ``vista="alimentacion"``: solo ``diario_alimentacion``.
+    Cualquier otro valor (incluido ``None``): unión de ambos (compatibilidad).
+    El Dashboard sigue usando ``fechas_con_datos`` (solo entrenamiento).
+    """
+    if vista == "entrenamiento":
+        sql = "SELECT DISTINCT fecha FROM training_sets WHERE fecha IS NOT NULL"
+    elif vista == "alimentacion":
+        sql = "SELECT DISTINCT fecha FROM diario_alimentacion WHERE fecha IS NOT NULL"
+    else:
+        sql = (
+            "SELECT DISTINCT fecha FROM training_sets WHERE fecha IS NOT NULL "
+            "UNION "
+            "SELECT DISTINCT fecha FROM diario_alimentacion WHERE fecha IS NOT NULL"
+        )
+    with read_connection(db_path) as conn:
+        rows = conn.execute(sql).fetchall()
+    return {str(r[0]) for r in rows}
+
+
 def get_sets_for_window(
     db_path: str,
     fecha_min: str | None,
@@ -401,6 +424,17 @@ def get_ejercicio_categoria(db_path: str) -> dict[str, str]:
                 "SELECT ejercicio, categoria FROM ejercicios WHERE categoria IS NOT NULL AND categoria != ''"
             )
         }
+
+
+def get_last_session_fecha(db_path: str, ejercicio: str) -> str | None:
+    """Última fecha con series de un ejercicio (para la fuente de la sugerencia)."""
+    with read_connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT fecha FROM training_sets WHERE LOWER(ejercicio) = LOWER(?) "
+            "AND fecha IS NOT NULL ORDER BY fecha DESC LIMIT 1",
+            (ejercicio,),
+        ).fetchone()
+    return str(row[0]) if row else None
 
 
 def get_last_session_sets(db_path: str, ejercicio: str) -> list[dict]:

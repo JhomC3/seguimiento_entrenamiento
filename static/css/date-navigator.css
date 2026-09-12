@@ -67,6 +67,12 @@
 .today-btn:hover {
     color: var(--t-burgundy-400);
 }
+/* El input date es invisible pero focuseable: anillo en el label al enfocar. */
+label:focus-within:has(#date-jump) {
+    outline: 2px solid var(--t-focus-ring);
+    outline-offset: 2px;
+    border-radius: 8px;
+}
 .no-scrollbar {
     scrollbar-width: none;
     -ms-overflow-style: none;

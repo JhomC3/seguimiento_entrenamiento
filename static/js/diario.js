@@ -12,6 +12,27 @@ function normalizeMode(mode) {
     return MODES.includes(mode) ? mode : 'entrenamiento';
 }
 
+function currentIso() {
+    const sel = document.querySelector('.date-num.selected');
+    if (sel && sel.dataset.iso) return sel.dataset.iso;
+    const jump = document.getElementById('date-jump');
+    if (jump && jump.value) return jump.value;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('fecha')) return params.get('fecha');
+    return null;
+}
+
+function refreshNavigator(mode) {
+    const iso = currentIso();
+    const navEl = document.getElementById('date-navigator');
+    if (!iso || !navEl) return;
+    htmx.ajax('GET', `/diario/navigator?fecha=${iso}&vista=${mode}`, {
+        source: navEl,
+        target: '#date-navigator',
+        swap: 'outerHTML',
+    });
+}
+
 function setMode(mode, push = true) {
     mode = normalizeMode(mode);
     document.querySelectorAll('#daily-page [role="tab"]').forEach((tab) => {
@@ -21,10 +42,17 @@ function setMode(mode, push = true) {
     document.querySelector('#daily-training-view')?.toggleAttribute('hidden', mode !== 'entrenamiento');
     document.querySelector('#daily-food-view')?.toggleAttribute('hidden', mode !== 'alimentacion');
     document.querySelector('#daily-page')?.setAttribute('data-vista', mode);
+    const legend = document.getElementById('navigator-legend');
+    if (legend) {
+        legend.textContent = mode === 'alimentacion'
+            ? 'Los días con punto tienen alimentación guardada.'
+            : 'Los días con punto tienen entrenamiento guardado.';
+    }
     if (push) {
         const url = new URL(window.location.href);
         url.searchParams.set('vista', mode);
         window.history.replaceState({}, '', url);
+        refreshNavigator(mode);
     }
 }
 
@@ -102,9 +130,14 @@ export function initDiario() {
     document.body.addEventListener('htmx:configRequest', (event) => {
         const params = event.detail ? event.detail.parameters : null;
         if (!params) return;
-        // htmx serializa ejercicio/alimento como campo del formulario.
+        // htmx serializa ejercicio/alimento como campo del formulario. Con
+        // varias series, ejercicio[] llega como array: el alta de ejercicio
+        // solo interesa al primero (todos comparten el mismo formulario).
         if (params.ejercicio !== undefined) {
-            pendingExercise = (params.ejercicio || "").trim();
+            const ej = Array.isArray(params.ejercicio)
+                ? (params.ejercicio[0] || "")
+                : (params.ejercicio || "");
+            pendingExercise = String(ej).trim();
         }
         if (params.nombre !== undefined) {
             const elt = event.detail.elt;

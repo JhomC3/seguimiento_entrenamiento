@@ -1,66 +1,61 @@
 {% extends "base.html" %}
+{% block title %}Gym Tracker — Diario{% endblock %}
 {% block content %}
 <main id="daily-page" class="daily-page" data-vista="{{ vista }}">
+    <span id="main-content" tabindex="-1" class="sr-only">Contenido principal</span>
     <header class="daily-header">
-        <div>
-            <p class="daily-kicker">Registro personal</p>
-            <h1 class="daily-title">Diario</h1>
+        <div class="flex items-center gap-3 workspace-brand">
+            <h1 class="text-xl font-black tracking-[0.2em] text-white uppercase">Diario</h1>
+            {% include "partials/workspace_nav.html" %}
         </div>
-        <nav class="daily-header-actions" aria-label="Navegación principal">
-            <a href="/" class="btn btn-outline">Dashboard</a>
-            <a href="/splits" class="btn btn-outline">Splits</a>
-        </nav>
     </header>
 
     {{ navigator_html | safe }}
+    <p class="sr-only" id="navigator-legend">{% if vista == 'alimentacion' %}Los días con punto tienen alimentación guardada.{% else %}Los días con punto tienen entrenamiento guardado.{% endif %}</p>
 
     <section class="daily-date-heading" aria-live="polite">
-        <p class="daily-day-label">{{ dia }}</p>
-        <h2 id="daily-date-title">{{ daily_date_title }}</h2>
+        <h2 id="daily-date-title" class="panel-title panel-title-neon">{{ dia }} {{ daily_date_title }}</h2>
     </section>
 
     <nav class="daily-tabs" role="tablist" aria-label="Tipo de registro">
-        <button type="button" role="tab" data-action="daily-mode" data-vista="entrenamiento"
+        <button type="button" role="tab" id="daily-tab-entrenamiento" data-action="daily-mode" data-vista="entrenamiento"
                 aria-selected="{{ 'true' if vista == 'entrenamiento' else 'false' }}"
                 aria-controls="daily-training-view"
                 tabindex="{{ 0 if vista == 'entrenamiento' else -1 }}">Entrenamiento</button>
-        <button type="button" role="tab" data-action="daily-mode" data-vista="alimentacion"
+        <button type="button" role="tab" id="daily-tab-alimentacion" data-action="daily-mode" data-vista="alimentacion"
                 aria-selected="{{ 'true' if vista == 'alimentacion' else 'false' }}"
                 aria-controls="daily-food-view"
                 tabindex="{{ 0 if vista == 'alimentacion' else -1 }}">Alimentación</button>
     </nav>
 
-    <section id="daily-training-view" class="daily-view" role="tabpanel"{% if vista != 'entrenamiento' %} hidden{% endif %}>
+    <section id="daily-training-view" class="daily-view" role="tabpanel" aria-labelledby="daily-tab-entrenamiento"{% if vista != 'entrenamiento' %} hidden{% endif %}>
         <div class="daily-view-header">
-            <div>
-                <p class="daily-eyebrow">Sesión del día</p>
-                <h2 class="daily-section-title">Entrenamiento</h2>
-            </div>
+            <h2 class="panel-title">Entrenamiento</h2>
             <div class="daily-tools">
-                <button type="button" class="btn btn-ghost" data-action="open-daily-dialog" data-dialog="training-templates-dialog">Plantillas</button>
+                <button type="button" class="btn btn-outline" data-action="open-daily-dialog" data-dialog="training-templates-dialog">Plantillas<span id="daily-training-template-count">{% if training_template_count %} · {{ training_template_count }}{% endif %}</span></button>
                 <button type="button" class="btn btn-primary" data-action="open-daily-dialog" data-dialog="exercise-create-dialog">Nuevo ejercicio</button>
             </div>
         </div>
-        <section id="session-editor" data-editmode="0" class="daily-editor-card">
+        <section id="session-editor" data-editmode="0" class="daily-editor-card panel panel-default">
             <div id="editor-notice" role="status" aria-live="polite" aria-atomic="true"></div>
+            <div id="suggestion-banner" hx-get="/sugerencia/banner?fecha={{ fecha_iso }}" hx-trigger="load" hx-swap="innerHTML"></div>
             <div id="save-outcome" data-ok="0" hidden></div>
+            {% if not session_has_data %}<p class="empty-state daily-empty-state" data-empty-state="session" role="status">No hay entrenamiento guardado para este día.</p>{% endif %}
             <div id="session-editor-wrap">{{ editor_html | safe }}</div>
         </section>
         <section id="cardio-day" class="daily-secondary-card">{{ cardio_html | safe }}</section>
     </section>
 
-    <section id="daily-food-view" class="daily-view" role="tabpanel"{% if vista != 'alimentacion' %} hidden{% endif %}>
+    <section id="daily-food-view" class="daily-view" role="tabpanel" aria-labelledby="daily-tab-alimentacion"{% if vista != 'alimentacion' %} hidden{% endif %}>
         <div class="daily-view-header">
-            <div>
-                <p class="daily-eyebrow">Registro del día</p>
-                <h2 class="daily-section-title">Alimentación</h2>
-            </div>
+            <h2 class="panel-title">Alimentación</h2>
             <div class="daily-tools">
-                <button type="button" class="btn btn-ghost" data-action="open-daily-dialog" data-dialog="food-templates-dialog">Plantillas</button>
+                <button type="button" class="btn btn-outline" data-action="open-daily-dialog" data-dialog="food-templates-dialog">Plantillas<span id="daily-food-template-count">{% if food_template_count %} · {{ food_template_count }}{% endif %}</span></button>
                 <button type="button" class="btn btn-primary" data-action="open-daily-dialog" data-dialog="food-create-dialog">Nuevo alimento</button>
             </div>
         </div>
-        <section id="nutrition-panel" data-editmode="0" class="daily-editor-card">
+        <section id="nutrition-panel" data-editmode="0" class="daily-editor-card panel panel-default">
+            {% if not food_has_data %}<p class="empty-state daily-empty-state" data-empty-state="nutrition" role="status">No hay alimentación guardada para este día.</p>{% endif %}
             <div id="nutrition-editor-wrap">{{ nutrition_editor_html | safe }}</div>
         </section>
     </section>
@@ -69,7 +64,7 @@
 <dialog id="training-templates-dialog" class="daily-dialog" aria-labelledby="training-templates-title">
     <div class="daily-dialog-card">
         <header class="daily-dialog-header">
-            <div><p class="daily-eyebrow">Sesiones guardadas</p><h2 id="training-templates-title">Plantillas de entrenamiento</h2></div>
+            <div><h2 id="training-templates-title">Plantillas de entrenamiento</h2></div>
             <button type="button" class="btn-x" data-action="close-daily-dialog" aria-label="Cerrar">×</button>
         </header>
         <div id="plantillas-section">{{ plantillas_html | safe }}</div>
@@ -79,7 +74,7 @@
 <dialog id="food-templates-dialog" class="daily-dialog" aria-labelledby="food-templates-title">
     <div class="daily-dialog-card">
         <header class="daily-dialog-header">
-            <div><p class="daily-eyebrow">Comidas guardadas</p><h2 id="food-templates-title">Plantillas de alimentación</h2></div>
+            <div><h2 id="food-templates-title">Plantillas de alimentación</h2></div>
             <button type="button" class="btn-x" data-action="close-daily-dialog" aria-label="Cerrar">×</button>
         </header>
         <div id="nutrition-templates-section">{{ nutrition_templates_html | safe }}</div>
@@ -89,7 +84,7 @@
 <dialog id="exercise-create-dialog" class="daily-dialog" aria-labelledby="exercise-create-title">
     <div class="daily-dialog-card">
         <header class="daily-dialog-header">
-            <div><p class="daily-eyebrow">Catálogo</p><h2 id="exercise-create-title">Nuevo ejercicio</h2></div>
+            <div><h2 id="exercise-create-title">Nuevo ejercicio</h2></div>
             <button type="button" class="btn-x" data-action="close-daily-dialog" aria-label="Cerrar">×</button>
         </header>
         <div id="exercise-create">{{ exercise_form_html | safe }}</div>
@@ -99,7 +94,7 @@
 <dialog id="food-create-dialog" class="daily-dialog" aria-labelledby="food-create-title">
     <div class="daily-dialog-card">
         <header class="daily-dialog-header">
-            <div><p class="daily-eyebrow">Catálogo</p><h2 id="food-create-title">Nuevo alimento</h2></div>
+            <div><h2 id="food-create-title">Nuevo alimento</h2></div>
             <button type="button" class="btn-x" data-action="close-daily-dialog" aria-label="Cerrar">×</button>
         </header>
         <div id="alimento-create">{{ alimento_form_html | safe }}</div>

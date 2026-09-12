@@ -4,7 +4,7 @@
 // Extras de nutrición: preview de 9 nutrientes, filas Objetivo/Consumido en
 // vivo, parámetros (peso/factores/kcal) y eliminación del día.
 
-import { getAlimentoMap, hideConfirmDialog, showConfirmDialog } from './state.js';
+import { clearFieldHistory, getAlimentoMap, hideConfirmDialog, showConfirmDialog } from './state.js';
 import { syncNutritionSortableState } from './row-sortable.js';
 import { doNav } from './date-navigation.js';
 
@@ -346,12 +346,23 @@ export function requestNutritionNav(iso) {
 }
 
 /* ---------- Eventos delegados ---------- */
+export function syncNutritionEmptyState() {
+    const p = panel();
+    const st = document.getElementById('nutrition-editor-state');
+    if (!p || !st) return;
+    const empty = p.querySelector('[data-empty-state="nutrition"]');
+    if (!empty) return;
+    empty.hidden = st.dataset.hasData === '1';
+}
+
 function onClick(e) {
     const el = e.target.closest('[data-action]');
     if (!el) return;
     const action = el.dataset.action;
     if (action === 'nutrition-toggle-edit') {
         toggleNutritionEdit();
+    } else if (action === 'cancel-nutrition-edit') {
+        exitNutritionEditMode();
     } else if (action === 'nutrition-delete') {
         eliminarDia();
     } else if (action === 'nutrition-row-add') {

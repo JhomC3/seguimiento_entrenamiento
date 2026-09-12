@@ -83,6 +83,28 @@
     background: var(--t-overlay-burgundy-020);
 }
 
+.workspace-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.workspace-nav .btn[aria-current="page"] {
+    color: var(--t-burgundy-400);
+    border-color: var(--t-burgundy-600);
+}
+
+/* Marca + navegación común: grupo flexible que envuelve sin romper el título. */
+.workspace-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+.workspace-brand h1 {
+    white-space: nowrap;
+}
 /* ---------- Botones de fila: alias de compatibilidad ---------- */
 .row-btn,
 .btn-check,

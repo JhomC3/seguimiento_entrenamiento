@@ -177,6 +177,7 @@ def build_date_navigator(
     ejercicio: str | None = None,
     granularity: str = "day",
     variant: str = "dashboard",
+    vista: str = "entrenamiento",
 ) -> DateNavigatorViewModel:
     """Navigator with a bounded 31-day window centered on the selection.
 
@@ -186,10 +187,16 @@ def build_date_navigator(
     ``variant``: ``"dashboard"`` conserva el formato UX-3 (semana + fecha
     explícita con ``granularity``); ``"daily"`` usa etiquetas compactas
     (día, ``día/mes`` el primero de mes; aria ``dd/mm/aa``) sin la palabra
-    "Semana", para la página independiente del Diario.
+    "Semana", para la página independiente del Diario. En ``"daily"`` los
+    puntos se filtran por ``vista`` (``"entrenamiento"`` | ``"alimentacion"``).
     """
     selected = parse_form_date(fecha_iso)
-    data_dates = fechas_con_datos(db_path, grupo, ejercicio)
+    if variant == "daily":
+        from src.database import get_daily_data_dates
+
+        data_dates = get_daily_data_dates(db_path, vista)
+    else:
+        data_dates = fechas_con_datos(db_path, grupo, ejercicio)
     end = _end_of_next_month(today)
     start = max(ciclo_start, selected - timedelta(days=15))
     limit_end = min(end, selected + timedelta(days=15))

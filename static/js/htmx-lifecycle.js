@@ -46,6 +46,18 @@ import {
     setSaveRequested,
 } from './state.js';
 
+function dailyVista() {
+    const page = document.getElementById('daily-page');
+    return page ? (page.dataset.vista || 'entrenamiento') : null;
+}
+
+function shouldUpdateDot(kindVista) {
+    const vista = dailyVista();
+    // Fuera del Diario (popup del Dashboard): solo puntos de entrenamiento.
+    if (vista === null) return kindVista === 'entrenamiento';
+    return vista === kindVista;
+}
+
 function undoKindToVista(kind) {
     if (kind === 'sesion') return 'entrenamiento';
     if (kind === 'alimentacion') return 'alimentacion';

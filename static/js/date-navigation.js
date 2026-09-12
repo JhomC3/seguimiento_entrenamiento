@@ -25,7 +25,8 @@ function updateDateTitle(iso) {
     const dailyTitle = document.getElementById('daily-date-title');
     if (dailyTitle) {
         dailyTitle.textContent =
-            String(d).padStart(2, '0') + '/' + String(m).padStart(2, '0') + '/' + String(y % 100).padStart(2, '0');
+            DIA_MAP[fecha.getUTCDay()] + ' '
+            + String(d).padStart(2, '0') + '/' + String(m).padStart(2, '0') + '/' + String(y % 100).padStart(2, '0');
         return;
     }
     const el = document.getElementById('session-date-title');
@@ -59,9 +60,15 @@ export function doNav(iso, force) {
     const actions = document.getElementById('edit-actions');
     if (actions) actions.classList.add('invisible');
     setCurrentIso(iso);
-    document.querySelectorAll('.date-num.selected').forEach(b => b.classList.remove('selected'));
+    document.querySelectorAll('.date-num.selected').forEach(b => {
+        b.classList.remove('selected');
+        b.removeAttribute('aria-current');
+    });
     const btn = document.querySelector(`.date-num[data-iso="${iso}"]`);
-    if (btn) btn.classList.add('selected');
+    if (btn) {
+        btn.classList.add('selected');
+        btn.setAttribute('aria-current', 'date');
+    }
     const jobs = [
         htmx.ajax('GET', `/fecha/editor?fecha=${iso}`, { target: '#session-editor-wrap', swap: 'innerHTML' }),
     ];
@@ -79,8 +86,9 @@ export function doNav(iso, force) {
     if (document.getElementById('daily-page')) {
         const navEl = document.getElementById('date-navigator');
         if (navEl) {
+            const vista = document.getElementById('daily-page')?.dataset.vista || 'entrenamiento';
             jobs.push(
-                htmx.ajax('GET', `/diario/navigator?fecha=${iso}`, {
+                htmx.ajax('GET', `/diario/navigator?fecha=${iso}&vista=${vista}`, {
                     source: navEl,
                     target: '#date-navigator',
                     swap: 'outerHTML',
@@ -91,15 +99,15 @@ export function doNav(iso, force) {
     Promise.all(jobs)
         .then(function () {
             inFlightIso = null;
-            // El refresh de cardio va DESPUÉS de los editores: htmx serializa los
-            // requests del mismo elemento fuente (body) en una cola "last", y un
-            // tercer ajax simultáneo habría reemplazado al de alimentación en cola.
-            if (document.getElementById('cardio-day')) {
-                htmx.ajax('GET', `/cardio/day?fecha=${iso}`, { target: '#cardio-day', swap: 'innerHTML' });
-            }
         })
-        .catch(function () { inFlightIso = null; });
-    if (btn) btn.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+        .catch(function () {
+            inFlightIso = null;
+            showNotice('No se pudo cargar el día. Reintenta.', 'error');
+        });
+    if (btn) {
+        const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        btn.scrollIntoView({ inline: 'center', block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
+    }
 }
 
 export function requestNavigate(iso) {
@@ -197,7 +205,8 @@ export function initDateNavigation() {
             if (target && target.id === 'date-navigator') {
                 const selected = document.querySelector('.date-num.selected');
                 if (selected) {
-                    selected.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+                    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                    selected.scrollIntoView({ inline: 'center', block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
                 }
             }
         });

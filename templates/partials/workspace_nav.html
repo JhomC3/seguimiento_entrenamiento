@@ -1,0 +1,5 @@
+<nav class="workspace-nav" aria-label="Navegación principal">
+    <a href="/" class="btn btn-outline"{% if request.url.path == '/' %} aria-current="page"{% endif %}>Dashboard</a>
+    <a href="/diario" class="btn btn-outline"{% if request.url.path == '/diario' or request.url.path == '/registro' %} aria-current="page"{% endif %}>Diario</a>
+    <a href="/splits" class="btn btn-outline"{% if request.url.path == '/splits' %} aria-current="page"{% endif %}>Splits</a>
+</nav>
