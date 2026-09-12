@@ -24,6 +24,11 @@ const CONSUMED_TARGETS = [
     ['carbohidratos', 'consumed-carb'],
     ['proteina', 'consumed-prot'],
     ['grasa', 'consumed-fat'],
+    ['fibra', 'consumed-fibra'],
+    ['hierro', 'consumed-hierro'],
+    ['calcio', 'consumed-calcio'],
+    ['vitamina_c', 'consumed-vitc'],
+    ['vitamina_a', 'consumed-vita'],
 ];
 const TARGET_CELLS = [
     ['kcal', 'target-kcal'],
@@ -95,6 +100,7 @@ function syncNutritionButtons() {
     if (pencil) {
         pencil.classList.toggle('on', editable);
         pencil.classList.toggle('off', !editable);
+        pencil.setAttribute('aria-pressed', String(editable));
     }
     const trash = p.querySelector('.nutrition-delete-btn');
     if (trash) {
@@ -141,7 +147,7 @@ export function ensureNutritionEditable() {
     if (panelEditmode() !== '1') enterNutritionEditMode();
 }
 
-function exitNutritionEditMode() {
+export function exitNutritionEditMode() {
     // Igual que el editor de sesión: re-render del servidor para salir de edición.
     const p = panel();
     const fecha = p?.querySelector('#nutrition-form input[name="fecha"]')?.value;
@@ -174,7 +180,9 @@ function handleNutritionState() {
 function updateEditActionsVisibility() {
     const actions = document.getElementById('nutrition-edit-actions');
     if (!actions) return;
-    const show = panelEditmode() === '1' && nutritionIsDirty();
+    // Mismo contrato que el editor de sesión: en modo edición las acciones
+    // están SIEMPRE visibles, haya o no cambios.
+    const show = panelEditmode() === '1';
     actions.classList.toggle('invisible', !show);
 }
 
@@ -245,11 +253,19 @@ function nutritionRemoveRow(btn) {
 }
 
 /* ---------- Preview y filas Objetivo/Consumido ---------- */
+function alimentoEntry(name) {
+    const map = getAlimentoMap() || {};
+    if (map[name]) return map[name];
+    const lower = name.toLowerCase();
+    const key = Object.keys(map).find((k) => k.toLowerCase() === lower);
+    return key ? map[key] : null;
+}
+
 function previewRow(row) {
     const name = (row.querySelector('.food-select')?.value || '').trim();
     const raw = (row.querySelector('.cantidad-input')?.value || '').trim();
     const qty = parseFloat(raw.replace(',', '.'));
-    const food = getAlimentoMap()[name] || null;
+    const food = name ? alimentoEntry(name) : null;
     PREVIEW_CELLS.forEach(([key, cls]) => {
         const cell = row.querySelector('.' + cls);
         if (!cell) return;
@@ -314,7 +330,7 @@ function eliminarDia() {
     if (panelEditmode() !== '1') {
         const notice = document.getElementById('notice-container');
         if (notice) {
-            notice.innerHTML = '<div class="notice notice-error" data-dismiss="2500">Activa el modo editable primero.</div>';
+            notice.innerHTML = '<div class="notice notice-error" data-dismiss="2500" role="alert">Activa el modo editable primero.</div>';
         }
         return;
     }
@@ -420,6 +436,7 @@ export function refreshNutritionEditor() {
     if (st && p) p.dataset.editmode = st.dataset.readonly === '1' ? '0' : '1';
     handleNutritionState();
     syncNutritionButtons();
+    syncNutritionEmptyState();
     updateObjetivo();
     updateConsumido();
     fitNutritionRowsToPanel();

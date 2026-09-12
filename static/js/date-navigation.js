@@ -5,6 +5,7 @@
 import { getCicloStart, getCurrentIso, getPendingNav, isDirty, setCurrentIso, setPendingNav, showConfirmDialog } from './state.js';
 import { submitSave } from './editor.js';
 import { nutritionIsDirty, requestNutritionNav } from './nutrition-editor.js';
+import { showNotice } from './notices.js';
 
 const DIA_MAP = {
     0: 'DOMINGO',
@@ -95,6 +96,31 @@ export function doNav(iso, force) {
                 })
             );
         }
+    }
+    // Cardio en paralelo con source propio (#cardio-day): no compite en la cola
+    // "last" de body con los editores y las navegaciones rápidas descartan la
+    // respuesta obsoleta en vez de pintar el día anterior.
+    const cardioEl = document.getElementById('cardio-day');
+    if (cardioEl) {
+        jobs.push(
+            htmx.ajax('GET', `/cardio/day?fecha=${iso}`, {
+                source: cardioEl,
+                target: '#cardio-day',
+                swap: 'innerHTML',
+            })
+        );
+    }
+    // Banner de sugerencia con fuente propia (igual que cardio): no compite
+    // en la cola "last" de body y las navegaciones rápidas lo descartan.
+    const suggEl = document.getElementById('suggestion-banner');
+    if (suggEl) {
+        jobs.push(
+            htmx.ajax('GET', `/sugerencia/banner?fecha=${iso}`, {
+                source: suggEl,
+                target: '#suggestion-banner',
+                swap: 'innerHTML',
+            })
+        );
     }
     Promise.all(jobs)
         .then(function () {

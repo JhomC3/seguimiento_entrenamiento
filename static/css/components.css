@@ -79,6 +79,22 @@
     background: transparent;
     border: 1px solid var(--t-burgundy-700);
 }
+
+/* Sugerencia: botón minimalista con borde difuminado (glow suave).
+   Solo borde + glow, sin relleno: visible sin romper el tono oscuro. */
+.btn-suggest {
+    height: 28px;
+    padding: 0 16px;
+    color: var(--t-burgundy-400);
+    background: transparent;
+    border: 1px solid var(--t-burgundy-600);
+    box-shadow: var(--t-glow-neon-border);
+}
+.btn-suggest:hover {
+    color: var(--t-detail-white);
+    border-color: var(--t-burgundy-400);
+    box-shadow: var(--t-glow-neon-border), 0 0 24px var(--t-overlay-burgundy-025);
+}
 .btn-text:hover {
     background: var(--t-overlay-burgundy-020);
 }
@@ -302,6 +318,18 @@ input[type="number"]::-webkit-outer-spin-button {
     border-radius: 6px;
 }
 
+.nutri-params {
+    background: var(--t-overlay-black-030);
+    border: 1px solid var(--t-surfaces-neutral-800);
+}
+.nutri-target-row th {
+    background: var(--t-overlay-white-004);
+}
+.nutri-consumed-row th {
+    background: var(--t-overlay-burgundy-020);
+}
+
+/* ---------- Errores de formulario ---------- */
 .unified-chart-header {
     display: flex;
     align-items: baseline;

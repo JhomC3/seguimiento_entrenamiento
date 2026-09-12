@@ -390,7 +390,7 @@ def test_v009_creates_meal_templates(tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM plantilla_alimentos").fetchone()[0] == 0
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 15
+    assert max_version == 17
 
 
 def test_v009_is_latest_schema_version(tmp_path):
@@ -1284,3 +1284,64 @@ def test_dashboard_catalog_category_empty_string(tmp_path):
     assert catalog[0]["exercises"][0]["category"] == ""
 
 
+def test_get_daily_data_dates_union_entrenamiento_y_alimentacion(tmp_path):
+    from src.database import (
+        get_daily_data_dates,
+        insert_exercise,
+        replace_diario_by_fecha,
+    )
+    from src.training_service import save_session
+
+    db = str(tmp_path / "gym.db")
+    init_db(db)
+    insert_exercise(db, "Press", "Pectoral", "EMPUJE")
+    save_session(db, "2026-08-10", [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
+    replace_diario_by_fecha(
+        db,
+        "2026-08-11",
+        [
+            {
+                "alimento": "Avena",
+                "cantidad_g": 100.0,
+                "kcal": 389.0,
+                "carbohidratos": 68.0,
+                "fibra": 10.0,
+                "proteina": 17.0,
+                "grasa": 6.9,
+                "hierro": 4.2,
+                "calcio": 54.0,
+                "vitamina_c": 0.0,
+                "vitamina_a": 0.0,
+            }
+        ],
+    )
+    save_session(
+        db,
+        "2026-08-12",
+        [{"ejercicio": "Press", "kg": 82, "reps": 8, "rir": 1}],
+    )
+    replace_diario_by_fecha(
+        db,
+        "2026-08-12",
+        [
+            {
+                "alimento": "Avena",
+                "cantidad_g": 80.0,
+                "kcal": 311.0,
+                "carbohidratos": 54.0,
+                "fibra": 8.0,
+                "proteina": 14.0,
+                "grasa": 5.5,
+                "hierro": 3.4,
+                "calcio": 43.0,
+                "vitamina_c": 0.0,
+                "vitamina_a": 0.0,
+            }
+        ],
+    )
+    assert get_daily_data_dates(db) == {"2026-08-10", "2026-08-11", "2026-08-12"}
+    # Día sin ningún dato no aparece.
+    assert "2026-08-13" not in get_daily_data_dates(db)
+    # Filtrado por vista: entrenamiento solo training_sets, alimentación solo diario.
+    assert get_daily_data_dates(db, "entrenamiento") == {"2026-08-10", "2026-08-12"}
+    assert get_daily_data_dates(db, "alimentacion") == {"2026-08-11", "2026-08-12"}

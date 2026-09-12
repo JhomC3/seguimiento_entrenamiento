@@ -1,8 +1,8 @@
 // templates.js — owns: plantilla (entreno) list, form, apply/delete/edit/reorder, DnD.
 // DOM owned: #plantillas-section, #plantillas-list, .pt-card, #plantilla-edit-rows,
 // #save-template-form-wrap, #save-template-form, #session-editor (drop target).
-// Public API: initTemplateActions, editorHasData, aplicarPlantilla, eliminarPlantilla,
-// editarPlantilla, refreshPlantillas, suggestedTemplateName, syncTemplateEjercicios,
+// Public API: initTemplateActions, editorHasData, aplicarPlantilla, aplicarSugerencia,
+// eliminarPlantilla, editarPlantilla, refreshPlantillas, suggestedTemplateName, syncTemplateEjercicios,
 // setEntrenoBtnVisible, openEntrenoForm, guardarPlantillaToggle, confirmEntrenoSave,
 // ptAddRow, ptRemoveRow, initTemplateSortable, entrenosOrder, initEntrenoDnD.
 
@@ -44,6 +44,20 @@ export function aplicarPlantilla(id) {
     setApplyInFlight(key);
     setTimeout(function () { if (getApplyInFlight() === key) setApplyInFlight(null); }, 600);
     htmx.ajax('GET', `/plantilla/aplicar/${id}?fecha=${fecha}`, { target: 'body', swap: 'none' });
+}
+
+export function aplicarSugerencia() {
+    if (editorEditmode() !== '1') {
+        flashEditorNotice('Activa el modo editable primero.', 'error');
+        return;
+    }
+    const fecha = currentFecha();
+    if (!fecha) return;
+    const key = `sugerencia|${fecha}`;
+    if (getApplyInFlight() === key) return;
+    setApplyInFlight(key);
+    setTimeout(function () { if (getApplyInFlight() === key) setApplyInFlight(null); }, 600);
+    htmx.ajax('GET', `/sugerencia/aplicar?fecha=${fecha}`, { target: 'body', swap: 'none' });
 }
 
 export function eliminarPlantilla(id, nombre) {
@@ -202,6 +216,9 @@ export function initTemplateActions() {
         switch (el.dataset.action) {
             case 'apply-template':
                 aplicarPlantilla(parseInt(el.dataset.templateId, 10));
+                break;
+            case 'apply-suggestion':
+                aplicarSugerencia();
                 break;
             case 'edit-template':
                 editarPlantilla(parseInt(el.dataset.templateId, 10));

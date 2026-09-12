@@ -1,0 +1,59 @@
+/* nutrition-trend.css — gráfica nutricional (kcal + peso, MA7): ancho total
+   de la columna; en escritorio rellena hasta la base de los laterales. */
+
+#nutrition-trend {
+    height: clamp(140px, 18vh, 330px);
+    display: flex;
+    flex-direction: column;
+}
+/* Escritorio: la columna iguala a los laterales (misma fórmula) y la
+   nutricional rellena: bases alineadas. En móvil rige el clamp. */
+@media (min-width: 1024px) {
+    .dashboard-analytics-col {
+        /* Misma fórmula que .dashboard-summary-col en escritorio (sin el
+           min() de la base): igual altura, bases alineadas. */
+        height: calc(100vh - var(--dashboard-layout-top, 16px) - 16px);
+        height: calc(100dvh - var(--dashboard-layout-top, 16px) - 16px);
+    }
+    #nutrition-trend-container {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+    #nutrition-trend {
+        flex: 1 1 auto;
+        height: auto;
+        min-height: 140px;
+    }
+}
+#nutrition-trend-plot {
+    width: 100%;
+    display: block;
+    min-width: 0;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+#nutrition-trend-plot:focus {
+    outline: none;
+}
+#nutrition-trend-plot:focus-visible {
+    outline: 2px solid var(--t-focus-ring);
+    outline-offset: 2px;
+}
+#nutrition-trend .chart-empty,
+#nutrition-trend-empty {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--t-surfaces-neutral-400);
+    font-size: 12px;
+}
+#nutrition-trend-empty[hidden] {
+    display: none !important;
+}
+#nutrition-trend-plot[hidden] {
+    display: none !important;
+}

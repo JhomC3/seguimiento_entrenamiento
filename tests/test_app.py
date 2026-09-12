@@ -1322,6 +1322,78 @@ def test_alimentacion_save_unknown_food_is_400(tmp_path, monkeypatch):
     assert "Alimento no encontrado" in r.text
 
 
+def test_alimentacion_save_edita_dia_existente(tmp_path, monkeypatch):
+    from src.database import get_diario_by_fecha, replace_diario_by_fecha
+
+    db = _seed_nutrition(tmp_path)
+    replace_diario_by_fecha(
+        db,
+        "2025-04-26",
+        [
+            {
+                "alimento": "Avena",
+                "cantidad_g": 100.0,
+                "kcal": 389.0,
+                "carbohidratos": 68.0,
+                "fibra": 10.0,
+                "proteina": 17.0,
+                "grasa": 6.9,
+                "hierro": 4.2,
+                "calcio": 54.0,
+                "vitamina_c": 0.0,
+                "vitamina_a": 0.0,
+                "origen": "google",
+            }
+        ],
+    )
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().post(
+        "/alimentacion/save",
+        data={"fecha": "2025-04-26", "alimento": ["Avena"], "cantidad": ["150"]},
+    )
+    assert r.status_code == 200
+    rows = get_diario_by_fecha(db, "2025-04-26")
+    assert len(rows) == 1
+    assert rows[0]["cantidad_g"] == 150.0
+    assert rows[0]["origen"] == "manual"
+    assert rows[0]["kcal"] == 584.0
+
+
+def test_alimentacion_save_multiple_alimentos(tmp_path, monkeypatch):
+    from src.database import get_diario_by_fecha, insert_alimento
+
+    db = _seed_nutrition(tmp_path)
+    insert_alimento(
+        db,
+        {
+            "nombre": "Pollo",
+            "categoria": "Proteína",
+            "kcal": 165.0,
+            "carbohidratos": 0.0,
+            "fibra": 0.0,
+            "proteina": 31.0,
+            "grasa": 3.6,
+            "hierro": 1.0,
+            "calcio": 0.0,
+            "vitamina_c": 0.0,
+            "vitamina_a": 0.0,
+        },
+    )
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().post(
+        "/alimentacion/save",
+        data={
+            "fecha": "2025-04-26",
+            "alimento": ["Avena", "Pollo"],
+            "cantidad": ["120", "200"],
+        },
+    )
+    assert r.status_code == 200
+    rows = get_diario_by_fecha(db, "2025-04-26")
+    assert [x["alimento"] for x in rows] == ["Avena", "Pollo"]
+    assert rows[0]["cantidad_g"] == 120.0 and rows[1]["cantidad_g"] == 200.0
+
+
 def test_alimentacion_eliminar(tmp_path, monkeypatch):
     from src.database import get_diario_by_fecha, replace_diario_by_fecha
 
@@ -2753,6 +2825,7 @@ def test_diario_muestra_entrenamiento_historico(tmp_path, monkeypatch):
     assert 'data-has-data="1"' in r.text
 
 
+def test_diario_estado_vacio_entrenamiento_y_alimentacion(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/diario?fecha=2026-07-14")
@@ -2763,6 +2836,7 @@ def test_diario_muestra_entrenamiento_historico(tmp_path, monkeypatch):
     assert r.text.count('class="empty-state daily-empty-state"') == 2
 
 
+def test_diario_muestra_alimentacion_historica(tmp_path, monkeypatch):
     from src.database import replace_diario_by_fecha
 
     db = _seed_nutrition(tmp_path)
@@ -2815,6 +2889,46 @@ def test_diario_conteo_de_plantillas_visible(tmp_path, monkeypatch):
 
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/diario?fecha=2026-07-14")
+    assert r.status_code == 200
+    assert "No hay entrenamiento guardado para este día." in r.text
+    assert "No hay alimentación guardada para este día." in r.text
+    assert "daily-date-hint" not in r.text
+    assert r.text.count('class="empty-state daily-empty-state"') == 2
+
+
+    from src.database import replace_diario_by_fecha
+
+    db = _seed_nutrition(tmp_path)
+    replace_diario_by_fecha(
+        db,
+        "2026-07-14",
+        [
+            {
+                "alimento": "Avena",
+                "cantidad_g": 120.0,
+                "kcal": 467.0,
+                "carbohidratos": 82.0,
+                "fibra": 12.0,
+                "proteina": 20.0,
+                "grasa": 8.0,
+                "hierro": 5.0,
+                "calcio": 65.0,
+                "vitamina_c": 0.0,
+                "vitamina_a": 0.0,
+            }
+        ],
+    )
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/diario?fecha=2026-07-14&vista=alimentacion")
+    assert r.status_code == 200
+    assert 'value="Avena"' in r.text
+    assert "No hay alimentación guardada para este día." not in r.text
+    assert 'data-vista="alimentacion"' in r.text
+
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "Torso", "ejercicio": ["Press"]})
     client.post("/plantilla/guardar", data={"nombre": "Jalon", "ejercicio": ["Curl"]})
@@ -2835,6 +2949,7 @@ def test_diario_plantillas_vacias_muestran_estado(tmp_path, monkeypatch):
     assert "Guarda un día desde el panel de alimentación" in r.text
 
 
+def test_navigator_diario_incluye_fechas_de_alimentacion(tmp_path, monkeypatch):
     from src.database import replace_diario_by_fecha
 
     db = _seed_nutrition(tmp_path)
@@ -2865,6 +2980,7 @@ def test_diario_plantillas_vacias_muestran_estado(tmp_path, monkeypatch):
     assert 'id="date-navigator"' in body
 
 
+def test_navigator_diario_punto_en_dia_de_alimentacion(tmp_path, monkeypatch):
     import datetime as _dt
 
     from src.database import replace_diario_by_fecha
@@ -2959,6 +3075,7 @@ def test_diario_page_filtra_puntos_por_vista(tmp_path, monkeypatch):
     assert "date-dot" not in body_ent
 
 
+def test_navigator_dashboard_ignora_alimentacion(tmp_path, monkeypatch):
     import datetime as _dt
 
     from src.database import replace_diario_by_fecha
@@ -3034,3 +3151,47 @@ def _last_monday():
     return (today - datetime.timedelta(days=today.weekday() + 7)).strftime("%Y-%m-%d")
 
 
+def test_sugerencia_banner_rutina_descanso_nada(tmp_path, monkeypatch):
+    db = _sugerencia_split_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    c = _client()
+    mon = _last_monday()
+    tue = (datetime.date.fromisoformat(mon) + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    # Sin historial: manda el calendario (martes de calendario = descanso aquí).
+    r = c.get(f"/sugerencia/banner?fecha={tue}")
+    assert r.status_code == 200
+    # Con deuda del lunes: banner con botón de aplicar.
+    save_session(db, mon, [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
+    save_session(
+        db,
+        (datetime.date.fromisoformat(mon) - datetime.timedelta(days=7)).strftime("%Y-%m-%d"),
+        [{"ejercicio": "Press", "kg": 70, "reps": 8, "rir": 1}],
+    )
+    wed = (datetime.date.fromisoformat(mon) + datetime.timedelta(days=2)).strftime("%Y-%m-%d")
+    # Miércoles: el martes se hizo (lunes al día) → la rueda llega a descanso.
+    r = c.get(f"/sugerencia/banner?fecha={wed}")
+    assert r.status_code == 200
+    assert "descanso" in r.text
+
+
+def test_sugerencia_banner_boton_y_aplicar(tmp_path, monkeypatch):
+    db = _sugerencia_split_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    c = _client()
+    mon = _last_monday()
+    tue = (datetime.date.fromisoformat(mon) + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    # Lunes faltado (sin historial previo salvo el propio lunes anterior): martes con botón.
+    prev_mon = (datetime.date.fromisoformat(mon) - datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+    save_session(db, prev_mon, [{"ejercicio": "Press", "kg": 70, "reps": 8, "rir": 1}])
+    r = c.get(f"/sugerencia/banner?fecha={tue}")
+    assert r.status_code == 200
+    assert 'data-action="apply-suggestion"' in r.text
+    assert "btn-suggest" in r.text
+    # Sin texto de instrucciones: solo el botón minimalista.
+    assert "Te tocaba" not in r.text
+    # Aplicar rellena el editor con los últimos pesos, sin guardar.
+    r = c.get(f"/sugerencia/aplicar?fecha={tue}")
+    assert r.status_code == 200
+    assert "Press" in r.text
+    assert 'id="plantilla-applied"' in r.text
+    assert get_sets_by_fecha(db, tue) == []

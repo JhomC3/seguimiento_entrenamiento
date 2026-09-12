@@ -1,0 +1,5 @@
+{% if tipo == 'rutina' %}
+<button type="button" class="btn btn-suggest" data-action="apply-suggestion">Usar sugerencia</button>
+{% elif tipo == 'descanso' %}
+<div class="notice notice-info" role="status">{{ explicacion }}</div>
+{% endif %}

@@ -3221,6 +3221,9 @@ def test_nutrition_apply_confirms_replacement(page, server):
     page.locator('#save-meal-template-form input[name="nombre"]').fill("Comida A")
     page.locator('[data-action="confirm-meal-template-save"]').click()
     page.wait_for_timeout(500)
+    # La lista de plantillas de comida vive en el diálogo del Diario.
+    page.locator('[data-action="open-daily-dialog"][data-dialog="food-templates-dialog"]').click()
+    page.wait_for_selector("#food-templates-dialog[open]", timeout=5000)
     apply_btn = page.locator('[data-action="apply-meal-template"]')
     expect(apply_btn).to_have_count(1, timeout=3000)
     # El día ya tiene filas: aplicar exige confirmación de reemplazo.

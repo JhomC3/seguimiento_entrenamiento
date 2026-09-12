@@ -119,6 +119,49 @@ def daily_weight(db_path: str) -> pd.DataFrame:
     )
 
 
+def daily_weight_manual(db_path: str) -> pd.DataFrame:
+    """Peso manual diario (kg) desde ``parametros_diarios``.
+
+    Solo días con fila guardada (el editor precarga valores por defecto en
+    memoria, pero aquí solo cuenta lo persistido). Sin SQL fuera de este
+    módulo de lectura: forma parte de las capas de análisis diario.
+    """
+    return _daily_agg(
+        db_path,
+        """
+        SELECT fecha, peso_kg AS valor
+        FROM parametros_diarios
+        WHERE peso_kg IS NOT NULL AND peso_kg > 0
+        GROUP BY fecha
+        """,
+    )
+
+
+def daily_weight_unified(db_path: str) -> pd.DataFrame:
+    """Peso diario unificado: manual manda, HC como respaldo por día.
+
+    Une ``daily_weight_manual`` y ``daily_weight`` por fecha ISO. Si un día
+    tiene ambas fuentes, prevalece el peso manual del editor de nutrición.
+    Retorna columnas ``fecha`` / ``valor`` / ``fecha_dt`` ordenadas.
+    """
+    manual = daily_weight_manual(db_path)
+    hc = daily_weight(db_path)
+    if manual.empty and hc.empty:
+        return manual
+    if manual.empty:
+        return hc.sort_values("fecha").reset_index(drop=True)
+    if hc.empty:
+        return manual.sort_values("fecha").reset_index(drop=True)
+    m = manual.set_index("fecha")["valor"]
+    h = hc.set_index("fecha")["valor"]
+    combined = m.combine_first(h).reset_index()
+    combined = combined.rename(columns={"index": "fecha"})
+    if "fecha" not in combined.columns:
+        combined = combined.rename(columns={combined.columns[0]: "fecha"})
+    combined["fecha_dt"] = pd.to_datetime(combined["fecha"], format=_DATETIME_FMT, errors="coerce")
+    return combined.dropna(subset=["fecha_dt"]).sort_values("fecha").reset_index(drop=True)
+
+
 def daily_kcal(db_path: str) -> pd.DataFrame:
     """Kcal consumidas por día (diario_alimentacion)."""
     return _daily_agg(

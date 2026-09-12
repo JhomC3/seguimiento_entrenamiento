@@ -36,6 +36,7 @@
                 <form id="save-meal-template-form" hx-post="/alimentacion/plantilla/guardar" hx-swap="none" class="flex items-center gap-1.5">
                     <input
                         name="nombre"
+                        aria-label="Nombre de la plantilla de alimentación"
                         placeholder="Nombre de la plantilla"
                         title="Enter para guardar"
                         class="w-36 sm:w-44 cell-input"
@@ -53,6 +54,7 @@
                 data-action="nutrition-toggle-edit"
                 class="edit-toggle nutrition-pencil-btn {% if readonly %}off{% else %}on{% endif %}"
                 aria-label="Editar día"
+                aria-pressed="{{ 'false' if readonly else 'true' }}"
             >
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.13 2.86a3 3 0 0 0-4.17 0l-13 13L2 22l6.19-2L21.13 7a3 3 0 0 0 0-4.16zM6.77 18.57l-1.35-1.34L16.64 6 18 7.35z"></path></svg>
             </button>
@@ -76,7 +78,7 @@
         <input type="hidden" name="factor_grasa" value="{{ '%g'|format(parametros.factor_grasa) }}">
         <input type="hidden" name="kcal_objetivo" value="{{ '%g'|format(parametros.kcal_objetivo) }}">
 
-        <div id="target-params" class="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg bg-black/30 border border-neutral-800 px-4 py-2 text-xs">
+        <div id="target-params" class="nutri-params flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border px-4 py-2 text-xs">
             <label class="flex items-center gap-2 font-bold text-neutral-300 uppercase tracking-widest">
                 Peso (kg)
                 <input id="param-peso" type="number" step="0.1" min="0" value="{{ '%g'|format(parametros.peso_kg) }}"
@@ -135,7 +137,7 @@
                         <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Vitamina A</th>
                         <th class="py-0.5 px-1.5"></th>
                     </tr>
-                    <tr class="bg-white/[0.03] font-black text-neutral-200">
+                    <tr class="nutri-target-row font-black text-neutral-200">
                         <th scope="row" class="py-0.5 px-1.5 text-left font-black uppercase tracking-widest text-burgundy-400">Objetivo</th>
                         <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(parametros.peso_kg) if parametros.peso_kg else '—' }} kg</th>
                         <th class="py-0.5 px-1.5 text-right font-black target-kcal">{{ '%g'|format(objetivo.kcal) }}</th>
@@ -149,7 +151,7 @@
                         <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.vitamina_a) }}</th>
                         <th class="py-0.5 px-1.5"></th>
                     </tr>
-                    <tr class="bg-burgundy-700/10 font-black text-neutral-100">
+                    <tr class="nutri-consumed-row font-black text-neutral-100">
                         <th scope="row" class="py-0.5 px-1.5 text-left font-black uppercase tracking-widest text-burgundy-400">Consumido</th>
                         <th class="py-0.5 px-1.5 text-right font-black consumed-grams">
                             {% if consumido.cantidad_g %}{{ '%g'|format(consumido.cantidad_g) }} g{% else %}—{% endif %}
@@ -158,11 +160,11 @@
                         <th class="py-0.5 px-1.5 text-right font-black consumed-carb">{{ '%g'|format(consumido.carbohidratos) }}</th>
                         <th class="py-0.5 px-1.5 text-right font-black consumed-prot">{{ '%g'|format(consumido.proteina) }}</th>
                         <th class="py-0.5 px-1.5 text-right font-black consumed-fat">{{ '%g'|format(consumido.grasa) }}</th>
-                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(consumido.fibra) }}</th>
-                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(consumido.hierro) }}</th>
-                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(consumido.calcio) }}</th>
-                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(consumido.vitamina_c) }}</th>
-                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(consumido.vitamina_a) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black consumed-fibra">{{ '%g'|format(consumido.fibra) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black consumed-hierro">{{ '%g'|format(consumido.hierro) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black consumed-calcio">{{ '%g'|format(consumido.calcio) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black consumed-vitc">{{ '%g'|format(consumido.vitamina_c) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black consumed-vita">{{ '%g'|format(consumido.vitamina_a) }}</th>
                         <th class="py-0.5 px-1.5"></th>
                     </tr>
                 </thead>
@@ -247,15 +249,13 @@
         <div id="nutrition-edit-actions" class="mt-1 h-7 flex items-center gap-2 invisible">
             <button
                 type="button"
-                hx-get="/alimentacion/editor?fecha={{ fecha_iso }}"
-                hx-target="#nutrition-editor-wrap"
-                hx-swap="innerHTML"
+                data-action="cancel-nutrition-edit"
                 class="btn btn-ghost px-4"
             >Cancelar</button>
             <button
                 type="submit"
-                class="btn btn-ghost px-5"
-            >Guardar</button>
+                class="btn btn-primary h-7 px-5"
+            >Guardar cambios</button>
         </div>
     </form>
 

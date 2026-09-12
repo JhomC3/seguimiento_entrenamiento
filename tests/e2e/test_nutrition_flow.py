@@ -1,6 +1,8 @@
-"""Browser tests: nutrition editor inside the register popup."""
+"""Browser tests: nutrition editor inside /diario."""
 
 import datetime
+import sqlite3
+import time
 
 from playwright.sync_api import expect
 
@@ -9,17 +11,39 @@ def _iso(delta: int = 0) -> str:
     return (datetime.date.today() + datetime.timedelta(days=delta)).strftime("%Y-%m-%d")
 
 
-def _open_popup(page, server):
-    page.goto(server)
+def _open_food_day(page, server, iso):
+    page.goto(server + f"/diario?fecha={iso}&vista=alimentacion")
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    page.click('[data-action="open-editor-popup"]')
-    page.wait_for_selector("#popup-body #nutrition-form", timeout=5000)
+    page.wait_for_selector("#nutrition-form", timeout=5000)
     page.wait_for_selector(
-        '#popup-body #session-form input[name="fecha"]', state="attached", timeout=5000
+        f"#nutrition-form input[name='fecha'][value='{iso}']",
+        state="attached",
+        timeout=5000,
     )
 
 
+def _food_rows(db_path, fecha: str) -> list[tuple]:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return conn.execute(
+            "SELECT orden, alimento, cantidad_g, kcal, proteina "
+            "FROM diario_alimentacion WHERE fecha = ? ORDER BY orden",
+            (fecha,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def _open_popup(page, server):
+    page.goto(server + "/diario?vista=alimentacion")
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_selector("#nutrition-form", timeout=5000)
+    page.wait_for_selector('#session-form input[name="fecha"]', state="attached", timeout=5000)
+
+
 def _fill_alimento_form(page):
+    page.click('[data-action="open-daily-dialog"][data-dialog="food-create-dialog"]')
+    page.wait_for_selector("#food-create-dialog[open]", timeout=5000)
     page.fill('#alimento-create-form input[name="nombre"]', "Avena")
     page.fill('#alimento-create-form input[name="categoria"]', "Cereal")
     page.fill('#alimento-create-form input[name="kcal"]', "389")
@@ -44,6 +68,7 @@ def _fill_alimento_form(page):
         }"""
     )
     page.wait_for_selector("#notice-container .notice-success", timeout=5000)
+    page.wait_for_selector("#food-create-dialog", state="hidden", timeout=5000)
 
 
 def test_nutrition_create_edit_save_reload_delete(page, server):
@@ -75,11 +100,11 @@ def test_nutrition_create_edit_save_reload_delete(page, server):
     page.wait_for_selector("#notice-container .notice", timeout=5000)
     expect(page.locator("#nutrition-editor-state")).to_have_attribute("data-has-data", "1")
 
-    # 5) Recargar: la URL trae ?registro y el popup se restaura solo (fila y
+    # 5) Recargar: la URL trae ?fecha= y el Diario se restaura solo (fila y
     # parámetros persisten; el día queda readonly)
     page.reload()
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    page.wait_for_selector("#popup-body #nutrition-rows .nutrition-row", timeout=5000)
+    page.wait_for_selector("#nutrition-rows .nutrition-row", timeout=5000)
     expect(page.locator('#nutrition-rows input[name="cantidad"]')).to_have_value("120")
     expect(page.locator("#param-peso")).to_have_value("69")
     expect(page.locator(".consumed-kcal")).to_have_text("467")
@@ -108,7 +133,7 @@ def _fill_nutrition_day(page):
 
 def _jump_date(page, iso):
     page.evaluate(
-        f"const el = document.querySelector('#popup-body #date-jump'); "
+        f"const el = document.querySelector('#date-jump'); "
         f"el.value = '{iso}'; el.dispatchEvent(new Event('change', {{ bubbles: true }}));"
     )
     page.wait_for_function(
@@ -146,16 +171,23 @@ def test_nutrition_templates_save_reorder_apply(page, server):
     page.fill('#save-meal-template-form input[name="nombre"]', "Desayuno")
     page.click('[data-action="confirm-meal-template-save"]')
     page.wait_for_selector("#notice-container .notice", timeout=5000)
-    expect(page.locator("#nutrition-templates")).to_contain_text("Desayuno")
+    expect(
+        page.locator('[data-action="open-daily-dialog"][data-dialog="food-templates-dialog"]')
+    ).to_contain_text("Plantillas · 1")
 
-    # 2) Aplicar por drag sobre el panel (otra fecha, sin datos)
+    # 2) Aplicar por drag sobre el panel (otra fecha, sin datos); la lista se
+    # arrastra desde el diálogo de plantillas de comida.
     _jump_date(page, _iso(9))
+    page.click('[data-action="open-daily-dialog"][data-dialog="food-templates-dialog"]')
+    page.wait_for_selector("#food-templates-dialog[open]", timeout=5000)
     _simulate_drag(page, "#nutrition-templates .pt-card", "#nutrition-panel")
     # El día prefillado tiene filas: la aplicación exige confirmación.
     page.wait_for_selector("#confirm-modal[open]", timeout=5000)
     page.keyboard.press("Enter")
     page.wait_for_selector("#notice-container .notice", timeout=5000)
     expect(page.locator('#nutrition-rows input[name="alimento"]').first).to_have_value("Avena")
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#food-templates-dialog", state="hidden", timeout=5000)
 
     # 3) Reordenar por drag entre tarjetas (crear una segunda plantilla)
     _fill_nutrition_day(page)
@@ -163,12 +195,16 @@ def test_nutrition_templates_save_reorder_apply(page, server):
     page.fill('#save-meal-template-form input[name="nombre"]', "Cena")
     page.click('[data-action="confirm-meal-template-save"]')
     page.wait_for_selector("#notice-container .notice", timeout=5000)
+    page.click('[data-action="open-daily-dialog"][data-dialog="food-templates-dialog"]')
+    page.wait_for_selector("#food-templates-dialog[open]", timeout=5000)
     expect(page.locator("#nutrition-templates .pt-card")).to_have_count(2)
     _simulate_drag(page, "#nutrition-templates .pt-card:nth-child(2)", "#nutrition-templates")
     page.wait_for_selector("#notice-container .notice-success", timeout=5000)
     page.reload()
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    page.wait_for_selector("#popup-body #nutrition-form", timeout=5000)
+    page.wait_for_selector("#nutrition-form", timeout=5000)
+    page.click('[data-action="open-daily-dialog"][data-dialog="food-templates-dialog"]')
+    page.wait_for_selector("#food-templates-dialog[open]", timeout=5000)
     expect(page.locator("#nutrition-templates .pt-card").first).to_contain_text("Cena")
 
 
@@ -262,3 +298,163 @@ def test_nutrition_saved_day_reorder_without_edit_mode(page, server):
     expect(rows.nth(1).locator('input[name="cantidad"]')).to_have_value("120")
     # Auto-entró en modo edición.
     expect(page.locator("#nutrition-editor-state")).to_have_attribute("data-readonly", "0")
+
+
+def test_nutrition_save_persists_across_reload(page, server, server_db_path):
+    """Guardar un día nuevo desde Diario persiste en SQLite y tras recargar."""
+    _open_popup(page, server)
+    _fill_alimento_form(page)
+
+    iso = _iso(-2)
+    _open_food_day(page, server, iso)
+    page.locator('[data-action="nutrition-toggle-edit"]').click()
+    row = page.locator("#nutrition-rows .nutrition-row").last
+    row.locator('input[name="alimento"]').fill("Avena")
+    row.locator('input[name="cantidad"]').fill("120")
+    page.fill("#param-peso", "69")
+    _save_nutrition(page)
+    expect(page.locator("#nutrition-editor-state")).to_have_attribute("data-has-data", "1")
+
+    # 1) Persistencia directa en SQLite: nutrientes recalculados server-side.
+    rows = _food_rows(server_db_path, iso)
+    assert len(rows) == 1, f"esperada 1 fila en DB, hay {len(rows)}"
+    assert rows[0][1] == "Avena" and rows[0][2] == 120.0
+    assert rows[0][3] == 467.0, f"kcal en DB: {rows[0][3]} (debe recalcularse 389*1.2)"
+
+    # 2) Recarga con la misma fecha: alimento, cantidad y nutrientes siguen.
+    page.goto(server + f"/diario?fecha={iso}&vista=alimentacion")
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_selector("#nutrition-rows .nutrition-row", timeout=5000)
+    expect(page.locator('#nutrition-rows input[name="alimento"]').first).to_have_value("Avena")
+    expect(page.locator('#nutrition-rows input[name="cantidad"]').first).to_have_value("120")
+    expect(page.locator(".consumed-kcal")).to_have_text("467")
+
+
+def test_nutrition_edit_save_persists_updated_quantity(page, server, server_db_path):
+    """Editar la cantidad de un día existente persiste el valor actualizado."""
+    _open_popup(page, server)
+    _fill_alimento_form(page)
+
+    iso = _iso(-3)
+    _open_food_day(page, server, iso)
+    page.locator('[data-action="nutrition-toggle-edit"]').click()
+    row = page.locator("#nutrition-rows .nutrition-row").last
+    row.locator('input[name="alimento"]').fill("Avena")
+    row.locator('input[name="cantidad"]').fill("120")
+    _save_nutrition(page)
+    expect(page.locator("#nutrition-editor-state")).to_have_attribute("data-has-data", "1")
+
+    # Editar la cantidad existente con el submit real del botón (flujo del
+    # usuario) y esperar la respuesta HTTP, no solo un aviso previo.
+    page.locator('[data-action="nutrition-toggle-edit"]').click()
+    page.locator('#nutrition-rows input[name="cantidad"]').first.fill("200")
+    with page.expect_response("**/alimentacion/save") as resp:
+        page.locator('#nutrition-form button[type="submit"]').click()
+    assert resp.value.status == 200
+    page.wait_for_selector("#notice-container .notice-success", timeout=5000)
+    expect(page.locator("#nutrition-editor-state")).to_have_attribute("data-has-data", "1")
+
+    rows = _food_rows(server_db_path, iso)
+    assert len(rows) == 1
+    assert rows[0][2] == 200.0, f"cantidad en DB: {rows[0][2]}"
+    assert rows[0][3] == 778.0, f"kcal en DB: {rows[0][3]} (389*2)"
+
+    page.goto(server + f"/diario?fecha={iso}&vista=alimentacion")
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_selector("#nutrition-rows .nutrition-row", timeout=5000)
+    expect(page.locator('#nutrition-rows input[name="cantidad"]').first).to_have_value("200")
+    expect(page.locator(".consumed-kcal")).to_have_text("778")
+
+
+def test_nutrition_save_error_400_preserves_values_and_shows_notice(page, server):
+    """Un 400 (alimento desconocido) es visible y conserva los valores locales."""
+    _open_popup(page, server)
+    iso = _iso(-4)
+    _open_food_day(page, server, iso)
+    page.locator('[data-action="nutrition-toggle-edit"]').click()
+    row = page.locator("#nutrition-rows .nutrition-row").last
+    row.locator('input[name="alimento"]').fill("No Existe")
+    row.locator('input[name="cantidad"]').fill("100")
+    # Submit real del formulario (el helper _save_nutrition espera success).
+    page.locator('#nutrition-form button[type="submit"]').click()
+    page.wait_for_selector("#notice-container .notice-error", timeout=5000)
+    expect(page.locator("#notice-container")).to_contain_text("no encontrado")
+    expect(page.locator("#nutrition-editor-state")).to_have_attribute("data-readonly", "0")
+    expect(page.locator('#nutrition-rows input[name="alimento"]').first).to_have_value("No Existe")
+    expect(page.locator('#nutrition-rows input[name="cantidad"]').first).to_have_value("100")
+    expect(page.locator('#nutrition-form button[type="submit"]')).to_be_enabled()
+
+
+def test_nutrition_save_double_click_single_request(page, server):
+    """Doble clic en Guardar de alimentación = 1 sola petición."""
+    _open_popup(page, server)
+    _fill_alimento_form(page)
+    iso = _iso(-5)
+    _open_food_day(page, server, iso)
+    page.locator('[data-action="nutrition-toggle-edit"]').click()
+    row = page.locator("#nutrition-rows .nutrition-row").last
+    row.locator('input[name="alimento"]').fill("Avena")
+    row.locator('input[name="cantidad"]').fill("120")
+
+    posts = []
+    page.on(
+        "request",
+        lambda r: (
+            posts.append(r.url) if r.method == "POST" and "alimentacion/save" in r.url else None
+        ),
+    )
+
+    # El fulfill es instantáneo; sin delay el botón se rehabilita antes del
+    # segundo clic y el test no mediría el vuelo real. El delay mantiene la
+    # petición en vuelo durante los dos clics.
+    def _slow_save(route):
+        time.sleep(0.6)
+        route.fulfill(
+            status=200,
+            body=(
+                '<div id="notice-container" hx-swap-oob="innerHTML"><div class="notice notice-success">Día guardado.</div></div>'
+                '<div id="save-outcome" hx-swap-oob="outerHTML" data-ok="1" hidden></div>'
+            ),
+        )
+
+    page.route("**/alimentacion/save", _slow_save)
+    # Clics nativos consecutivos (sin actionability de Playwright): el primer
+    # clic dispara el submit y deshabilita el botón (beforeRequest síncrono);
+    # el segundo clic cae sobre el botón deshabilitado y no genera petición.
+    page.evaluate(
+        """() => {
+            const btn = document.querySelector('#nutrition-form button[type="submit"]');
+            btn.click();
+            btn.click();
+        }"""
+    )
+    page.wait_for_function(
+        """() => {
+            const b = document.querySelector('#nutrition-form button[type="submit"]');
+            return b && b.textContent.trim().startsWith('Guardando');
+        }""",
+        timeout=3000,
+    )
+    page.wait_for_timeout(900)
+    assert len(posts) == 1, f"doble clic generó {len(posts)} peticiones"
+    page.unroute("**/alimentacion/save")
+
+
+def test_nutrition_navigation_with_unsaved_changes_confirms(page, server):
+    """Navegar con cambios sin guardar en alimentación muestra confirmación."""
+    _open_popup(page, server)
+    _fill_alimento_form(page)
+    iso_a = _iso(-6)
+    iso_b = _iso(-7)
+    _open_food_day(page, server, iso_a)
+    page.locator('[data-action="nutrition-toggle-edit"]').click()
+    row = page.locator("#nutrition-rows .nutrition-row").last
+    row.locator('input[name="alimento"]').fill("Avena")
+    row.locator('input[name="cantidad"]').fill("120")
+    page.locator(f'#date-navigator .date-num[data-iso="{iso_b}"]').click()
+    expect(page.locator("#confirm-modal")).to_be_visible()
+    expect(page.locator("#nutrition-form input[name='fecha']")).to_have_value(iso_a)
+    # Guardar y continuar: la navegación espera al guardado.
+    page.locator("#confirm-save").click()
+    page.wait_for_timeout(800)
+    expect(page.locator("#nutrition-form input[name='fecha']")).to_have_value(iso_b)

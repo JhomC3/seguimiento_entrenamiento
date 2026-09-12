@@ -46,6 +46,7 @@ target-version = "py311"
 "src/database.py" = ["DTZ005", "DTZ007", "DTZ011"]
 # Naive local dates: the dashboard calendar contract (fechas d/m/yy).
 "src/dashboard_service.py" = ["DTZ005", "DTZ007", "DTZ011"]
+"src/suggestion_service.py" = ["DTZ005", "DTZ007", "DTZ011"]
 "src/training_service.py" = ["DTZ005", "DTZ007", "DTZ011"]
 "scripts/verify_editor.py" = ["DTZ005", "DTZ007", "DTZ011"]
 "scripts/audit_ui.py" = ["BLE001", "DTZ005", "DTZ007", "DTZ011"]

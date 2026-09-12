@@ -210,6 +210,21 @@ def nutrition_trend_header_oob(title: str = "Nutrición") -> str:
     )
 
 
+def nutrition_trend_data_oob(fig_json: str) -> str:
+    """OOB del JSON inerte de la gráfica nutricional (innerHTML swap)."""
+    return f'<div id="nutrition-trend-data" hx-swap-oob="innerHTML">{fig_json}</div>'
+
+
+def nutrition_trend_empty_oob(visible: bool, message: str = "Sin datos") -> str:
+    """OOB del estado vacío nutricional (outerHTML swap)."""
+    hidden = "" if visible else " hidden"
+    return (
+        f'<div id="nutrition-trend-empty" hx-swap-oob="outerHTML"'
+        f' class="chart-empty"{hidden}>'
+        f"{message}</div>"
+    )
+
+
 def summary_oob(html: str) -> str:
     """OOB del panel derecho de resumen (Fase 2). outerHTML swap.
 

@@ -104,14 +104,71 @@ function positionTooltip(clientX, clientY, plotTop) {
     const vh = window.innerHeight;
     // Izquierda del cursor; arriba fijo de la gráfica (no sigue al punto).
     const rect = el.getBoundingClientRect();
-    let left = clientX + 14;
-    let top = clientY + 14;
-    if (left + rect.width + pad > vw) left = clientX - rect.width - 14;
-    if (left < pad) left = pad;
-    if (top + rect.height + pad > vh) top = clientY - rect.height - 14;
+    let left = clientX - rect.width - 14;
+    let top = (typeof plotTop === 'number' && Number.isFinite(plotTop))
+        ? plotTop + 12
+        : clientY + 14;
+    if (left < pad) left = clientX + 14;
+    if (left + rect.width + pad > vw) left = Math.max(pad, vw - rect.width - pad);
+    if (top + rect.height + pad > vh) top = Math.max(pad, vh - rect.height - pad);
     if (top < pad) top = pad;
     el.style.left = left + 'px';
     el.style.top = top + 'px';
+}
+
+// Contrato nutricional (4 pos.): [etiqueta, kcal_txt, peso_txt, traza].
+// La fecha vive SOLO en la cabecera; los bloques no repiten la x.
+function extractNutritionValuesJS(customdata) {
+    if (!Array.isArray(customdata) || customdata.length !== 4) return null;
+    try {
+        return {
+            periodo: String(customdata[0]),
+            kcal: String(customdata[1]),
+            peso: String(customdata[2]),
+            trace: String(customdata[3]),
+        };
+    } catch (_) { return null; }
+}
+
+function tooltipRowsFor(pt) {
+    const vals = extractPointValuesJS(pt.customdata);
+    if (vals && vals.trace === 'RIR') {
+        // La traza RIR solo aporta su valor: bloque compacto de una fila,
+        // sin las filas vacías de Series/VAR/Reps/Peso/RM.
+        return {trace: vals.trace, single: true, rows: [['RIR', vals.rir]]};
+    }
+    if (vals) {
+        // Orden UX-2: Series, VAR, Reps, Peso, RIR, RM (sin Cobertura)
+        return {
+            trace: vals.trace,
+            rows: [
+                ['Series', vals.series],
+                ['VAR', vals.delta],
+                ['Reps', vals.reps],
+                ['Peso', vals.peso],
+                ['RIR', vals.rir],
+                ['RM', vals.rm],
+            ],
+        };
+    }
+    const nut = extractNutritionValuesJS(pt.customdata);
+    if (nut) {
+        const isPeso = nut.trace === 'peso';
+        return {
+            trace: nut.trace,
+            // Bloque de una sola fila: sin cabecera de traza (duplicaría la
+            // etiqueta, que ya va en mayúsculas por CSS como en la principal).
+            single: true,
+            rows: isPeso ? [['peso', nut.peso === '—' ? '—' : nut.peso + ' kg']] : [['kcal', nut.kcal]],
+        };
+    }
+    return null;
+}
+
+function tooltipHeaderFor(points) {
+    const first = points[0];
+    const vals = extractPointValuesJS(first.customdata) || extractNutritionValuesJS(first.customdata);
+    return vals ? vals.periodo : String(first.x);
 }
 
 function buildTooltipContent(points) {
@@ -142,28 +199,24 @@ function buildTooltipContent(points) {
         const swatchColor = (pt.data && (pt.data.line && pt.data.line.color || pt.data.marker && pt.data.marker.color)) || '';
         block.setAttribute('role', 'group');
         if (traceName) block.setAttribute('aria-label', traceName);
-        const traceEl = document.createElement('div');
-        traceEl.className = 'chart-tooltip__trace';
-        const swatch = document.createElement('span');
-        swatch.className = 'chart-tooltip__swatch';
-        swatch.setAttribute('aria-hidden', 'true');
-        swatch.style.background = swatchColor || 'var(--t-chart-primary)';
-        const nameEl = document.createElement('span');
-        nameEl.className = 'chart-tooltip__trace-name';
-        nameEl.textContent = traceName;
-        traceEl.appendChild(swatch);
-        traceEl.appendChild(nameEl);
-        block.appendChild(traceEl);
-        // Orden UX-2: Series, VAR, Reps, Peso, RIR, RM (sin Cobertura)
-        const rows = [
-            ['Series', vals.series],
-            ['VAR', vals.delta],
-            ['Reps', vals.reps],
-            ['Peso', vals.peso],
-            ['RIR', vals.rir],
-            ['RM', vals.rm],
-        ];
-        rows.forEach(function (pair) {
+        if (!shaped.single) {
+            const traceEl = document.createElement('div');
+            traceEl.className = 'chart-tooltip__trace';
+            const swatch = document.createElement('span');
+            swatch.className = 'chart-tooltip__swatch';
+            swatch.setAttribute('aria-hidden', 'true');
+            swatch.style.background = swatchColor || 'var(--t-chart-primary)';
+            const nameEl = document.createElement('span');
+            nameEl.className = 'chart-tooltip__trace-name';
+            nameEl.textContent = traceName;
+            traceEl.appendChild(swatch);
+            traceEl.appendChild(nameEl);
+            block.appendChild(traceEl);
+        }
+        // Bloque de una fila (nutrición): sin cabecera de traza, el swatch va
+        // junto a la etiqueta para no duplicarla (va en mayúsculas por CSS).
+        const rows = shaped.rows;
+        rows.forEach(function (pair, rowIdx) {
             const label = pair[0], value = pair[1];
             const row = document.createElement('div');
             row.className = 'chart-tooltip__row';
@@ -635,8 +688,12 @@ export function renderPlotFromIds(dataId, plotId, emptyId, opts) {
         .then(function () {
         })
         .then(function () {
-            // Accesibilidad: aria-label y foco visible para el gráfico
-            plotEl.setAttribute('aria-label', 'Gráfica de rendimiento');
+            // Accesibilidad: el plot es focuseable (foco visible en CSS) y los
+            // valores se consultan en el panel Historial (el tooltip es hover-only).
+            const label = plotId === 'nutrition-trend-plot'
+                ? 'Gráfica de nutrición: media de 7 días de calorías y peso corporal.'
+                : 'Gráfica de rendimiento. Consulta los valores por periodo en el panel Historial.';
+            plotEl.setAttribute('aria-label', label);
             plotEl.setAttribute('role', 'img');
             plotEl.setAttribute('tabindex', '0');
             if (!_relayoutBound.has(plotEl)) {
@@ -659,16 +716,34 @@ export function renderUnifiedChart() {
     renderPlotFromIds('unified-chart-data', 'unified-chart-plot', 'unified-chart-empty');
 }
 
+export function renderNutritionTrend() {
+    const dataEl = document.getElementById('nutrition-trend-data');
+    if (!dataEl) return;
+    // Mismo tooltip cristal que la principal; highlight desactivado: el clic
+    // no cambia (la nutricional es solo visualización).
+    renderPlotFromIds('nutrition-trend-data', 'nutrition-trend-plot', 'nutrition-trend-empty', {
+        tooltip: true,
+        highlight: false,
+    });
+}
+
 export function initChartInteractions() {
     // Render after every successful /grafica request: by afterRequest time the
     // OOB swaps have been applied to the DOM (afterSwap does not fire for OOB
     // elements when the main swap is 'none'). Stale protection lives in
     // level-cascade.js (cancelPending aborts in-flight /grafica requests).
+    // La tendencia nutricional viaja en la MISMA respuesta: se renderiza junta.
     document.body.addEventListener('htmx:afterRequest', function (e) {
         const req = e.detail && e.detail.requestConfig;
         const path = req && req.path;
         if (path && path.startsWith('/grafica') && e.detail.successful) {
             renderUnifiedChart();
+            renderNutritionTrend();
+        }
+    });
+    document.body.addEventListener('htmx:oobAfterSwap', function (e) {
+        if (e.detail.target && e.detail.target.id === 'nutrition-trend-data') {
+            renderNutritionTrend();
         }
     });
     // Escape con prioridad existente: dialog/drawer > highlight+acordeón (level-cascade gestiona drawer)

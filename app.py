@@ -20,7 +20,9 @@ from src.cardio_service import (
     CardioAnnotationInput,
     get_day_cardio,
     upsert_cardio_annotation,
+)
 from src.charts import (
+    chart_nutrition_trends,
     chart_pfr_timeline,
     get_exercise_cohort_summary,
     get_exercise_raw_data,
@@ -36,6 +38,7 @@ from src.dashboard_service import (
     translate_error,
 )
 from src.database import (
+    find_plantilla_alimentacion_by_nombre,
     get_active_split_id,
     get_alimentos_catalog,
     get_categories,
@@ -89,7 +92,9 @@ from src.nutrition_service import (
     NUTRIENT_FIELDS,
     apply_meal_template,
     create_alimento,
+    diary_totals,
     entries_from_form,
+    objetivos_diarios,
     save_meal_template,
 )
 from src.response_fragments import (
@@ -103,6 +108,9 @@ from src.response_fragments import (
     fragment_oob,
     notice_oob,
     nutrition_editor_wrap_oob,
+    nutrition_trend_data_oob,
+    nutrition_trend_empty_oob,
+    nutrition_trend_header_oob,
     render_fragment,
     summary_oob,
     undo_result_oob,
@@ -115,6 +123,7 @@ from src.security import (
 )
 from src.split_service import compute_split_metrics, get_split_board, split_items_from_form
 from src.static_assets import is_current_digest, static_url
+from src.suggestion_service import resolve_suggestion
 from src.template_service import apply_template_rows
 from src.training_service import (
     calculate_cycle_week,
@@ -623,6 +632,10 @@ def read_index(
     # (misma técnica anti-parpadeo de la granularidad). El servicio devuelve
     # estado error/empty controlado; nunca propaga a HTTP.
     period_summary = build_period_summary(DB_PATH, [], [], granularity, 8)
+    from src.nutrition_trends import build_nutrition_trends
+
+    _nutrition_df = build_nutrition_trends(DB_PATH, granularity)
+    _nutrition_fig = chart_nutrition_trends(_nutrition_df, granularity)
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -638,6 +651,12 @@ def read_index(
             "systemic_chart_html": chart_shell_html(
                 "Rendimiento",
                 chart_pfr_timeline(DB_PATH, "systemic", "", granularity=granularity),
+            ),
+            "nutrition_trend_html": chart_shell_html(
+                "Nutrición",
+                _nutrition_fig,
+                empty_text="Sin datos de nutrición o peso",
+                prefix="nutrition-trend",
             ),
             "navigator_html": _navigator_html(request, fecha, granularity=granularity),
             "editor_html": _editor_html(request, fecha),
@@ -690,8 +709,12 @@ def diario_page(
     if vista not in {"entrenamiento", "alimentacion"}:
         vista = "entrenamiento"
     fecha_date = _date.fromisoformat(fecha)
+    from src.database import get_diario_by_fecha, get_sets_by_fecha
+
+    session_has_data = bool(get_sets_by_fecha(DB_PATH, fecha_to_db(fecha_date)))
+    food_has_data = bool(get_diario_by_fecha(DB_PATH, fecha))
     context = {
-        "navigator_html": _navigator_html(request, fecha, variant="daily"),
+        "navigator_html": _navigator_html(request, fecha, variant="daily", vista=vista),
         "nutrition_templates_html": _plantillas_alimentacion_list_html(request, fecha),
         "nutrition_editor_html": _nutrition_editor_html(request, fecha),
         "editor_html": _editor_html(request, fecha),
@@ -703,6 +726,11 @@ def diario_page(
         "fecha_display": fecha_display(fecha),
         "daily_date_title": f"{fecha_date.day:02d}/{fecha_date.month:02d}/{fecha_date.year % 100:02d}",
         "vista": vista,
+        "fecha_iso": fecha,
+        "session_has_data": session_has_data,
+        "food_has_data": food_has_data,
+        "training_template_count": len(get_plantillas(DB_PATH)),
+        "food_template_count": len(get_plantillas_alimentacion(DB_PATH)),
         "app_config_json": _daily_app_config(),
     }
     return HTMLResponse(
@@ -712,7 +740,39 @@ def diario_page(
     )
 
 
+@app.get("/registro", response_class=HTMLResponse)
+def registro_legacy(
+    fecha: str = Query(default=""),
+    vista: str = Query(default="entrenamiento"),
+):
+    """Redirect the former registro URL to the single canonical Diario page."""
+    params = []
+    if fecha:
+        try:
+            fecha = date.fromisoformat(fecha).isoformat()
+        except ValueError:
+            fecha = ""
+    if fecha:
+        params.append(f"fecha={fecha}")
+    if vista in {"entrenamiento", "alimentacion"}:
+        params.append(f"vista={vista}")
+    query = "&".join(params)
+    return RedirectResponse(url="/diario" + (f"?{query}" if query else ""), status_code=303)
+
+
 @app.get("/diario/navigator", response_class=HTMLResponse)
+def diario_navigator(
+    request: Request,
+    fecha: str = Query(...),
+    vista: str = Query(default="entrenamiento"),
+):
+    """Fragmento del carrusel de fechas del Diario (variante compacta).
+
+    Los puntos se filtran por ``vista``: entrenamiento o alimentación.
+    """
+    if vista not in {"entrenamiento", "alimentacion"}:
+        vista = "entrenamiento"
+    return HTMLResponse(content=_navigator_html(request, fecha, variant="daily", vista=vista))
 
 
 @app.get("/editor/popup", response_class=HTMLResponse)
@@ -1155,6 +1215,57 @@ def plantilla_aplicar(request: Request, plantilla_id: int, fecha: str = Query(..
     )
 
 
+@app.get("/sugerencia/banner", response_class=HTMLResponse)
+def sugerencia_banner(request: Request, fecha: str = Query(...)):
+    """Banner de rutina sugerida del día (solo lectura, nunca rompe la página)."""
+    try:
+        s = resolve_suggestion(DB_PATH, fecha)
+    except Exception:
+        logging.getLogger("dashboard").exception("banner de sugerencia fallido")
+        return HTMLResponse(content="")
+    if s.tipo == "nada":
+        return HTMLResponse(content="")
+    return HTMLResponse(
+        content=_render_body(
+            templates.TemplateResponse(
+                request=request,
+                name="partials/suggestion_banner.html",
+                context={"tipo": s.tipo, "explicacion": s.explicacion},
+            )
+        )
+    )
+
+
+@app.get("/sugerencia/aplicar", response_class=HTMLResponse)
+def sugerencia_aplicar(request: Request, fecha: str = Query(...)):
+    """Rellena el editor con la sugerencia, sin guardar (como aplicar entreno)."""
+    try:
+        s = resolve_suggestion(DB_PATH, fecha)
+    except Exception as e:
+        return _domain_error_response(request, e, "editor-notice")
+    if s.tipo != "rutina":
+        notice = notice_oob(templates, request, target="editor-notice", message=s.explicacion)
+        return HTMLResponse(content=notice)
+    rows = [
+        {
+            "ejercicio": x.ejercicio,
+            "kg": x.kg if x.kg is not None else "",
+            "reps": x.reps if x.reps is not None else "",
+            "rir": x.rir if x.rir is not None else "",
+            "descanso_seg": x.descanso_seg if x.descanso_seg is not None else "",
+            "velocidad_kmh": x.velocidad_kmh if x.velocidad_kmh is not None else "",
+            "dificultad": x.dificultad if x.dificultad is not None else "",
+        }
+        for x in s.sets
+    ]
+    editor = _editor_html(request, fecha, rows=rows, force_editable=True)
+    notice = notice_oob(templates, request, target="editor-notice", message=s.explicacion)
+    return HTMLResponse(
+        content=notice
+        + editor_wrap_oob(templates, request, editor + STATIC_MARKERS["plantilla_applied"])
+    )
+
+
 @app.get("/splits", response_class=HTMLResponse)
 def splits_view(request: Request, abrir: int | None = Query(None)):
     try:
@@ -1499,12 +1610,15 @@ def grafica_view(
 ):
     """Gráfica + panel de resumen + tendencia nutricional en UNA sola respuesta.
 
-    Targets OOB exclusivos: unified-chart-header/data/empty + period-summary-wrap.
+    Targets OOB exclusivos: unified-chart-header/data/empty +
+    nutrition-trend-header/data/empty + period-summary-wrap.
     Gráfica y panel comparten exactamente la misma selección y granularidad;
-    la ventana del panel es propia (4|8 semanas, default 8) e independiente de
-    las ventanas visuales de la gráfica.
+    la tendencia nutricional comparte la granularidad pero ignora la
+    selección muscular (serie global de kcal + peso). La ventana del panel es
+    propia (4|8 semanas, default 8) e independiente de las ventanas visuales.
     """
     from src.charts import chart_selection
+    from src.nutrition_trends import build_nutrition_trends
     from src.summary_service import build_period_summary
 
     granularity = _validate_granularity(gran)
@@ -1529,6 +1643,31 @@ def grafica_view(
             chart_header_oob("Rendimiento")
             + chart_data_oob("{}")
             + chart_empty_oob(True, empty_text)
+        )
+
+    # Tendencia nutricional global (misma granularidad, sin filtros musculares).
+    try:
+        nutrition_fig = chart_nutrition_trends(
+            build_nutrition_trends(DB_PATH, granularity), granularity
+        )
+    except Exception:
+        import logging as _logging
+
+        _logging.getLogger("dashboard").exception("tendencia nutricional fallida")
+        nutrition_fig = None
+    if nutrition_fig is not None and hasattr(nutrition_fig, "data") and nutrition_fig.data:
+        from src.dashboard_service import _json_for_inline as _inline
+
+        content += (
+            nutrition_trend_header_oob()
+            + nutrition_trend_data_oob(_inline(nutrition_fig.to_json()))
+            + nutrition_trend_empty_oob(False)
+        )
+    else:
+        content += (
+            nutrition_trend_header_oob()
+            + nutrition_trend_data_oob("{}")
+            + nutrition_trend_empty_oob(True, "Sin datos de nutrición o peso")
         )
 
     # El panel viaja en la MISMA respuesta: una petición actualiza ambos y el

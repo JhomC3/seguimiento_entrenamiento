@@ -19,6 +19,7 @@ import {
 } from './row-sortable.js';
 import {
     ensureNutritionEditable,
+    nutritionIsDirty,
     refreshNutritionEditor,
     refreshNutritionRowsOrder,
 } from './nutrition-editor.js';
@@ -137,6 +138,36 @@ export function initLifecycle() {
     document.body.addEventListener('htmx:afterRequest', function (e) {
         scheduleNotices();
         handleEditorState();
+        // Los 5xx y fallos de red no intercambian contenido (beforeSwap solo
+        // permite 4xx): el servidor no llega a enviar un aviso OOB. Para que
+        // un error interno de guardado nunca sea silencioso, se muestra un
+        // aviso genérico en el contenedor del formulario afectado.
+        const elt = e.detail && e.detail.elt;
+        const saveForm = elt && elt.closest
+            ? elt.closest('#session-form, #nutrition-form')
+            : null;
+        if (
+            saveForm &&
+            !e.detail.successful &&
+            e.detail.xhr &&
+            e.detail.xhr.status >= 400
+        ) {
+            const container = saveForm.id === 'session-form'
+                ? document.getElementById('editor-notice')
+                : document.getElementById('notice-container');
+            if (container) {
+                const msg = e.detail.xhr.status === 403
+                    ? 'Solicitud no autorizada. Recarga la página e intenta de nuevo.'
+                    : e.detail.xhr.status >= 500
+                        ? 'Error interno del servidor. Tus cambios no se guardaron.'
+                        : '';
+                if (msg) {
+                    container.innerHTML =
+                        '<div class="notice notice-error" data-dismiss="4500" role="alert">' +
+                        msg + '</div>';
+                }
+            }
+        }
         initTemplateSortable();
         initEntrenoDnD();
         const ptForm = e.detail && e.detail.elt && e.detail.elt.closest
@@ -310,6 +341,26 @@ export function initLifecycle() {
             confirmEntrenoSave();
         }
     }, true);
+
+    // Protección de cierre/recarga con cambios pendientes: el navegador pide
+    // confirmación si algún editor tiene valores sin guardar. isDirty y
+    // nutritionIsDirty son defensivas (false sin formulario o tras guardar,
+    // porque el swap refresca el baseline).
+    window.addEventListener('beforeunload', function (e) {
+        if (!isDirty() && !nutritionIsDirty()) return;
+        e.preventDefault();
+        e.returnValue = '';
+    });
+}
+
+function responseUpdatesNutrition(e) {
+    const req = e.detail && e.detail.requestConfig;
+    const path = (req && req.path) || '';
+    if (path.startsWith('/alimentacion') || path.startsWith('/alimento')) return true;
+    const xhr = e.detail && e.detail.xhr;
+    const txt = xhr && typeof xhr.responseText === 'string' ? xhr.responseText : '';
+    if (txt.includes('nutrition-editor-wrap')) return true;
+    return false;
 }
 
 /* Ctrl+Z local (R1+R2): último campo en edición o nada; lo guardado intacto. */

@@ -4,7 +4,7 @@
 // section multiple times: initializers are idempotent and delegated listeners
 // are bound once on stable roots.
 
-import { initChartInteractions, renderUnifiedChart } from './chart-interaction.js';
+import { initChartInteractions, renderNutritionTrend, renderUnifiedChart } from './chart-interaction.js';
 import { initDateNavigation } from './date-navigation.js';
 import { initEditorPopup } from './editor-popup.js';
 import { initLevelCascade } from './level-cascade.js';
@@ -65,6 +65,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const urlSelection = new URLSearchParams(location.search).get('musculos');
         if (!urlSelection) {
             renderUnifiedChart();
+            renderNutritionTrend();
         }
         initDateNavigation();
         initEditorPopup();

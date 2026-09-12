@@ -133,10 +133,22 @@
     background: var(--t-surfaces-neutral-900);
     z-index: 5;
 }
-/* El thead de nutrición tiene filas tintadas (Objetivo/Consumido): su fondo
-   se hereda de la clase de cada celda en vez del sólido del editor de sesión. */
-#nutrition-panel .table-scroll thead th {
-    background: inherit;
+/* Nutrición: 3 filas de cabecera apiladas con offsets propios y fondo sólido
+   (sin heredar el tintado de la fila, que quedaba transparente al hacer scroll). */
+#nutrition-panel .table-scroll thead tr:nth-child(1) th {
+    top: 0;
+    z-index: 7;
+    background: var(--t-surfaces-neutral-900);
+}
+#nutrition-panel .table-scroll thead tr:nth-child(2) th {
+    top: 24px;
+    z-index: 6;
+    background: var(--t-surfaces-neutral-900);
+}
+#nutrition-panel .table-scroll thead tr:nth-child(3) th {
+    top: 48px;
+    z-index: 6;
+    background: var(--t-surfaces-matte-900);
 }
 #session-editor .table-scroll::-webkit-scrollbar,
 #nutrition-panel .table-scroll::-webkit-scrollbar {
@@ -156,8 +168,8 @@
 /* Controles del editor a 24px (WCAG 2.5.8; scoped: no afecta plantillas) */
 #session-editor .editor-header-actions .edit-toggle,
 #nutrition-panel .editor-header-actions .edit-toggle {
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
 }
 #session-editor .editor-header-actions svg,
 #nutrition-panel .editor-header-actions svg {
@@ -178,9 +190,18 @@
 }
 #session-editor .row-actions .row-btn,
 #nutrition-panel .row-actions .row-btn {
+    position: relative;
     width: 14px;
     height: 14px;
     font-size: 12px;
+}
+/* Hit area >= 24px (WCAG 2.5.8) sin engordar la fila: mismo patrón que
+   .split-item-remove (área visual compacta + ::before expansor). */
+#session-editor .row-actions .row-btn::before,
+#nutrition-panel .row-actions .row-btn::before {
+    content: '';
+    position: absolute;
+    inset: -5px;
 }
 
 /* Colapso de panel: se oculta todo salvo la primera fila del header
@@ -196,6 +217,9 @@
 #nutrition-panel.collapsed .collapse-chevron {
     transform: rotate(-90deg);
 }
+
+/* readonly: el placeholder "s" de Desc vacía no debe parecer dato */
+#session-editor input:disabled::placeholder,#nutrition-panel input:disabled::placeholder{color:transparent}
 
 /* Caja del título del panel (izquierda superior) */
 #session-editor .panel-title-box,
