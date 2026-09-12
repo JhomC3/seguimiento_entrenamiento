@@ -18,6 +18,7 @@ import com.jhomc.healthsync.data.MIGRATION_3_4
 import com.jhomc.healthsync.data.MIGRATION_4_5
 import com.jhomc.healthsync.data.MIGRATION_5_6
 import com.jhomc.healthsync.data.MIGRATION_6_7
+import com.jhomc.healthsync.data.MIGRATION_7_8
 import java.util.concurrent.TimeUnit
 
 /** WorkManager scheduling only; no business logic lives here. */
@@ -77,6 +78,6 @@ object HealthDatabaseBuilder {
                 context.applicationContext,
                 HealthDatabase::class.java,
                 "health_sync.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8).build().also { instance = it }
         }
 }

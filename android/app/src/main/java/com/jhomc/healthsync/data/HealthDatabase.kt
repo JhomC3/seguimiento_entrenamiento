@@ -219,8 +219,9 @@ interface HealthDao {
         NutritionCacheEntity::class,
         PendingWriteEntity::class,
         RestIntervalEntity::class,
+        EntrenoDraftEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class HealthDatabase : RoomDatabase() {
@@ -228,6 +229,7 @@ abstract class HealthDatabase : RoomDatabase() {
     abstract fun trainingCacheDao(): TrainingCacheDao
     abstract fun offlineDao(): OfflineDao
     abstract fun restDao(): RestDao
+    abstract fun entrenoDraftDao(): EntrenoDraftDao
 }
 
 /** Tipos esenciales del catálogo (RecordTypes.kt) + el agregado interno de HR. */

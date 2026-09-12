@@ -4,11 +4,20 @@ import android.app.Application
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.jhomc.healthsync.data.DraftRow
+import com.jhomc.healthsync.data.EntrenoDraftDao
+import com.jhomc.healthsync.data.EntrenoDraftEntity
 import com.jhomc.healthsync.data.RestIntervalEntity
 import com.jhomc.healthsync.data.RestDao
 import com.jhomc.healthsync.data.SecureTargetStore
+import com.jhomc.healthsync.data.canonicalRowsHash
+import com.jhomc.healthsync.data.doneJson
+import com.jhomc.healthsync.data.parseDone
+import com.jhomc.healthsync.data.parsePayload
+import com.jhomc.healthsync.data.payloadJson
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -81,6 +90,9 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
     internal var clockWall: () -> Long = { System.currentTimeMillis() }
     internal var clockElapsed: () -> Long = { SystemClock.elapsedRealtime() }
     internal var restDaoOverride: RestDao? = null
+    internal var draftsDaoOverride: EntrenoDraftDao? = null
+    /** Fila local del día en caché de memoria (la DB es la fuente real). */
+    private var localRowCache: Pair<String, EntrenoDraftEntity?>? = null
 
     private val restTimer = RestTimer()
     private var tickerJob: Job? = null
@@ -112,6 +124,9 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
 
     private fun restDao(): RestDao =
         restDaoOverride ?: HealthDatabaseBuilder.get(getApplication()).restDao()
+
+    private fun draftsDao(): EntrenoDraftDao =
+        draftsDaoOverride ?: HealthDatabaseBuilder.get(getApplication()).entrenoDraftDao()
 
     init {
         load(LocalDate.now().toString())
@@ -151,58 +166,6 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
-    /** Añade una serie en blanco (el editor unificado la pinta con foco). */
-    fun addEntrenoRow() {
-        val fecha = _state.value.fecha
-        val drafts = currentDrafts().toMutableList()
-        if (drafts.size >= 100) return
-        drafts += TrainingSetDraft("", "", "", "", "")
-        draftBuffer = fecha to drafts
-        rebuildEntrenoLists()
-        _structureVersion.value++
-    }
-
-    fun removeEntrenoRow(uuid: String) {
-        val fecha = _state.value.fecha
-        val drafts = currentDrafts().toMutableList()
-        val index = entrenoIds.indexOf(uuid)
-        if (index !in drafts.indices) return
-        drafts.removeAt(index)
-        draftBuffer = fecha to (drafts.ifEmpty { listOf(TrainingSetDraft("", "", "", "", "")) })
-        _doneUuids.value = _doneUuids.value - uuid
-        _expandedUuids.value = _expandedUuids.value - uuid
-        rebuildEntrenoLists()
-        _structureVersion.value++
-        persistProgressive()
-    }
-
-    /**
-     * Nombre del ejercicio (autocompletado, igual que antes). Devuelve true
-     * si hubo cambio estructural (blanco↔visible o cambio HIIT) y la
-     * Activity debe reconstruir (restaurando el foco).
-     */
-    fun setEntrenoExercise(uuid: String, ejercicio: String): Boolean {
-        val fecha = _state.value.fecha
-        val drafts = currentDrafts().toMutableList()
-        val index = entrenoIds.indexOf(uuid)
-        if (index !in drafts.indices) return false
-        val cur = drafts[index]
-        if (cur.ejercicio == ejercicio) return false
-        val wasBlank = cur.isBlank()
-        val wasHiit = cur.isHiit()
-        drafts[index] = cur.copy(ejercicio = ejercicio)
-        draftBuffer = fecha to drafts
-        val nowBlank = drafts[index].isBlank()
-        val nowHiit = drafts[index].isHiit()
-        rebuildEntrenoLists()
-        return if (wasBlank != nowBlank || wasHiit != nowHiit) {
-            _structureVersion.value++
-            true
-        } else {
-            false
-        }
-    }
-
     /** Escritura por teclado (diálogo sobre el valor): actualiza sin reconstruir. */
     fun setEntrenoValue(uuid: String, field: String, text: String) {
         val fecha = _state.value.fecha
@@ -221,6 +184,77 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         }
         draftBuffer = fecha to drafts
         rebuildEntrenoLists()
+        persistLocal()
+    }
+
+    /**
+     * Libreta del bolsillo: persiste borradores+✓ del día en Room en el acto.
+     * Sobrevive a la muerte del proceso, a la falta de red y a reinicios.
+     * La base_hash se fija al crear la fila (contenido del servidor entonces)
+     * y nunca se reescribe en updates: es el punto de comparación para
+     * detectar ediciones web por debajo.
+     */
+    private fun persistLocal() {
+        val fecha = _state.value.fecha
+        val drafts = currentDrafts()
+        val ids = entrenoIds.takeIf { it.size == drafts.size }
+            ?: List(drafts.size) { UUID.randomUUID().toString() }
+        if (ids !== entrenoIds) entrenoIds = ids
+        val rows = drafts.mapIndexed { i, d ->
+            DraftRow(ids[i], d.ejercicio, d.kg, d.reps, d.rir, d.descansoSeg, d.velocidadKmh, d.dificultad)
+        }
+        val done = _doneUuids.value
+        viewModelScope.launch(Dispatchers.IO) {
+            val dao = draftsDao()
+            val existing = runCatching { dao.forFecha(fecha) }.getOrNull()
+            val base = existing?.baseHash ?: serverBaseHash()
+            val entry = EntrenoDraftEntity(fecha, payloadJson(rows), doneJson(done), base, clockWall())
+            runCatching { dao.put(entry) }
+            localRowCache = fecha to entry
+        }
+    }
+
+    /** Hash del contenido actual del servidor (base para detectar web-edits). */
+    private fun serverBaseHash(): String {
+        val sets = _state.value.session?.sets ?: return canonicalRowsHash(emptyList())
+        return canonicalRowsHash(sets.map { DraftRow("", it.ejercicio, numText(it.kg), numText(it.reps), numText(it.rir), numText(it.descansoSeg), numText(it.velocidadKmh), numText(it.dificultad)) })
+    }
+
+    private fun clearLocalRow(fecha: String) {
+        localRowCache = fecha to null
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { draftsDao().clear(fecha) }
+        }
+    }
+
+    private suspend fun clearLocalRowSync(fecha: String) {
+        localRowCache = fecha to null
+        runCatching { draftsDao().clear(fecha) }
+    }
+
+    /**
+     * Reconcilia borrador local vs servidor ANTES de drenar (el drenado ciego
+     * pisaría ediciones web). Sin avisos ni botones, por decisión de diseño:
+     * si el GET fresco difiere de la base del borrador, la web editó por
+     * debajo → reemplazo silencioso (manda lo web, se suelta la op encolada).
+     * Si coincide o no hay red, no se toca nada y el drenado sigue su curso.
+     */
+    private suspend fun reconcileDay(apiBase: String, token: String, fecha: String) {
+        val local = runCatching { draftsDao().forFecha(fecha) }.getOrNull() ?: return
+        val fresh = repository.fetchSession(apiBase, token, fecha)
+        if (fresh !is TrainingResult.Ok) return
+        val freshRows = fresh.value.sets.map {
+            DraftRow("", it.ejercicio, numText(it.kg), numText(it.reps), numText(it.rir), numText(it.descansoSeg), numText(it.velocidadKmh), numText(it.dificultad))
+        }
+        if (canonicalRowsHash(freshRows) == local.baseHash) return
+        // La web trae algo más nuevo: suelta borrador + cola y quédate lo web.
+        runCatching { draftsDao().clear(fecha) }
+        runCatching { repository.dropPending("sesion", fecha) }
+        localRowCache = fecha to null
+        if (_state.value.fecha == fecha && draftBuffer?.first == fecha) {
+            draftBuffer = null
+            _doneUuids.value = emptySet()
+        }
     }
 
     /** Reconstruye grupos+filas preservando UUIDs por índice. */
@@ -228,9 +262,26 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         val fecha = _state.value.fecha
         val dayChanged = entrenoIdsFecha != fecha
         if (dayChanged) {
-            entrenoIds = emptyList()
+            // La memoria manda en el mismo proceso (siempre lo más nuevo);
+            // la fila local solo resucita tras muerte del proceso.
+            val buffered = draftBuffer?.takeIf { it.first == fecha }?.second
+            val row = if (buffered == null) {
+                localRowCache?.takeIf { it.first == fecha }?.second
+            } else {
+                null
+            }
+            if (row != null) {
+                val rows = parsePayload(row.payloadJson)
+                draftBuffer = fecha to rows.map {
+                    TrainingSetDraft(it.ejercicio, it.kg, it.reps, it.rir, it.descansoSeg, it.velocidadKmh, it.dificultad)
+                }
+                entrenoIds = rows.map { it.uuid }
+                _doneUuids.value = parseDone(row.doneJson)
+            } else if (buffered == null) {
+                entrenoIds = emptyList()
+                _doneUuids.value = emptySet()
+            }
             entrenoIdsFecha = fecha
-            _doneUuids.value = emptySet()
             _expandedUuids.value = emptySet()
             restTimer.clearAccum(emptySet())
             seedRestAccum()
@@ -306,9 +357,10 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             else -> return
         }
         draftBuffer = fecha to drafts
-        // Solo stash local aquí (sin enqueue: evita ráfagas al rate-limit).
+        // Libreta local en el acto (sin enqueue: evita ráfagas al rate-limit).
         // Sin bump estructural: la Activity actualiza el valor in-place.
         rebuildEntrenoLists()
+        persistLocal()
     }
 
     fun timerStart(uuid: String) {
@@ -357,23 +409,6 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
-    fun timerReset(uuid: String) {
-        // Reset discreto de display: cierra lo que corra y olvida el acumulado
-        // en memoria. Las filas Room se conservan (auditoría del dato FC).
-        viewModelScope.launch(Dispatchers.IO) {
-            if (restTimer.runningUuid() == uuid) {
-                val elapsed = clockElapsed()
-                restTimer.pendingClose()?.let { toClose ->
-                    runCatching { restDao().close(toClose.intervalId, clockWall(), elapsed) }
-                    restTimer.onClosed(elapsed)
-                }
-            }
-            restTimer.resetDisplay(uuid)
-            _runningUuid.value = restTimer.runningUuid()
-            refreshRestMs()
-        }
-    }
-
     /** Ticker vago: gira siempre pero solo emite con descanso en curso. */
     private fun startTicker() {
         tickerJob?.cancel()
@@ -393,11 +428,12 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
     }
 
     /**
-     * Progresivo local + cola sin drenar en caliente: stash ya está en
-     * draftBuffer; aquí solo enqueue (colapsa a 1 op/día por PK). Un único
+     * Doble persistencia en cada ✓: libreta local (sobrevive a todo) + cola
+     * de envío sin drenar en caliente (colapsa a 1 op/día por PK). Un único
      * POST explícito al final = 1 backup + 1 entrada undo (sin ruido).
      */
     private fun persistProgressive() {
+        persistLocal()
         val fecha = _state.value.fecha
         val sets = currentDrafts().filter { !it.isBlank() }
         if (sets.isEmpty()) return
@@ -442,6 +478,7 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             _state.value = when (res) {
                 is TrainingResult.Ok -> {
                     draftBuffer = null
+                    clearLocalRow(fecha)
                     _state.value.copy(
                         saving = false,
                         session = res.value,
@@ -457,7 +494,7 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
                     _state.value.copy(
                         saving = false,
                         pending = pending,
-                        notice = "Sin LAN: guardado en cola (se enviará al reconectar).",
+                        notice = "Sin LAN: por enviar al servidor (se enviará al reconectar).",
                     )
                 }
             }
@@ -477,6 +514,7 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             val res = withContext(Dispatchers.IO) { repository.deleteSession(apiBase, token, fecha) }
             if (res is TrainingResult.Ok) {
                 draftBuffer = null
+                clearLocalRow(fecha)
                 _state.value = _state.value.copy(
                     saving = false,
                     session = TrainingSession(fecha, _state.value.session?.semana ?: 0, _state.value.session?.dia ?: "", false, emptyList()),
@@ -508,10 +546,23 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             return
         }
         val (apiBase2, token2) = creds
-        // Drenar la cola offline primero (oportunista, como health_outbox).
-        val drained = withContext(Dispatchers.IO) {
-            runCatching { repository.drainOutbox(apiBase2, token2) }.getOrDefault(0)
+        // Libreta local en memoria para resurrección (muerte del proceso).
+        localRowCache = fecha to withContext(Dispatchers.IO) {
+            runCatching { draftsDao().forFecha(fecha) }.getOrNull()
         }
+        // Si hay borrador y el servidor trae algo distinto de su base, la web
+        // editó por debajo: reemplazo silencioso (manda lo web, sin avisos).
+        withContext(Dispatchers.IO) { reconcileDay(apiBase2, token2, fecha) }
+        // Drenar la cola offline (oportunista, como health_outbox). Cada op
+        // entregada o descartada limpia su fila de borrador: ya es servidor.
+        val drained = withContext(Dispatchers.IO) {
+            runCatching {
+                repository.drainOutbox(apiBase2, token2) { acked ->
+                    if (acked.domain == "sesion") clearLocalRowSync(acked.fecha)
+                }
+            }.getOrDefault(0)
+        }
+        val authBlocked = repository.drainAuthBlocked
         val pending = withContext(Dispatchers.IO) { repository.pendingCount() }
         val dots = withContext(Dispatchers.IO) {
             val vista = if (_state.value.vista == "alimentacion") "alimentacion" else "entrenamiento"
@@ -522,7 +573,7 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         }
         _state.value = _state.value.copy(pending = pending, dots = dots)
         if (drained > 0 && _state.value.notice == null && _state.value.error == null) {
-            _state.value = _state.value.copy(notice = "$drained cambio(s) pendiente(s) enviados.")
+            _state.value = _state.value.copy(notice = "$drained cambio(s) enviados al servidor.")
         }
         // Recién drenado: el conteo ya es 0.
         val freshPending = if (drained > 0) 0 else pending
@@ -531,13 +582,6 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             return
         }
         val view = withContext(Dispatchers.IO) { repository.loadSession(apiBase2, token2, fecha) }
-        // Catálogo en la misma carga (pequeño); si falla, el editor sigue con texto libre.
-        val catalog = withContext(Dispatchers.IO) {
-            when (val c = repository.loadCatalog(apiBase2, token2)) {
-                is TrainingResult.Ok -> c.value
-                else -> null
-            }
-        }
         _state.value = _state.value.copy(
             loading = false,
             session = view.session,
@@ -545,10 +589,15 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             error = view.error,
             pending = freshPending,
             dots = dots,
-            catalog = catalog?.exercises ?: _state.value.catalog,
-            categories = catalog?.categories ?: _state.value.categories,
             suggestion = null,
         )
+        // 401 en el drenado: la cola sigue intacta; avisarlo pesa más que un
+        // error de lectura (que ya vendría en view.error si lo hubiera).
+        if (authBlocked && _state.value.error == null) {
+            _state.value = _state.value.copy(
+                error = "Sin autorización: revisa el pairing. Tus datos siguen en el móvil.",
+            )
+        }
         // Día vacío sin error: auto-relleno con la rueda (sin guardar).
         if (view.error == null && (view.session == null || !view.session.hasData)) {
             maybeSuggest(fecha, creds)
@@ -685,7 +734,7 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
-    /** Deshace la última acción global (botón visible; la web es Ctrl+Z). */
+    /** Deshace la última acción global (sin botón visible; red de emergencia). */
     fun undo() {
         val fecha = _state.value.fecha
         _state.value = _state.value.copy(saving = true, error = null, notice = null)
@@ -707,6 +756,7 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             }
             val result = (res as TrainingResult.Ok).value
             draftBuffer = null
+            clearLocalRow(fecha)
             nutritionDraftBuffer = null
             if (result.kind == "entrenos") ensureTemplates(force = true)
             loadInternal(fecha)

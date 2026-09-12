@@ -48,6 +48,15 @@ class TrainingRepository(
         }
     }
 
+    /** GET crudo sin persistir (para reconciliar borrador local vs servidor). */
+    suspend fun fetchSession(apiBase: String, token: String, fecha: String): TrainingResult<TrainingSession> =
+        client.getSession(apiBase, token, fecha)
+
+    /** Descarta la op pendiente de un dominio+fecha (reemplazo silencioso). */
+    suspend fun dropPending(domain: String, fecha: String) {
+        offline.ack(domain, fecha)
+    }
+
     suspend fun saveSession(
         apiBase: String,
         token: String,
@@ -265,10 +274,25 @@ class TrainingRepository(
 
     /**
      * Drena la cola en orden. Como health_outbox: lo último por día gana
-     * (ya colapsado al encolar), el 400/401/404/409/413 descarta, y ante un
-     * fallo transitorio se para conservando el resto. Devuelve enviadas.
+     * (ya colapsado al encolar). Solo `Ok` cuenta como enviada.
+     *
+     * Regla honesta de descarte: el 401 (autorización) NUNCA descarta —la op
+     * se conserva y se avisa— porque borrarla sería perder datos del usuario
+     * por un token caducado. 400/404/409/413 sí descartan (rechazo definitivo
+     * del servidor). Fallo transitorio o 429 paran conservando el resto.
+     * [onAcked] se invoca por cada op confirmada o descartada (para limpiar
+     * el borrador local de esa fecha).
      */
-    suspend fun drainOutbox(apiBase: String, token: String): Int {
+    /** true si el último drenado se paró por 401 (cola intacta, revisar pairing). */
+    var drainAuthBlocked: Boolean = false
+        private set
+
+    suspend fun drainOutbox(
+        apiBase: String,
+        token: String,
+        onAcked: suspend (PendingWriteEntity) -> Unit = {},
+    ): Int {
+        drainAuthBlocked = false
         var delivered = 0
         for (pending in offline.pendingAll()) {
             val path = when (pending.domain) {
@@ -283,12 +307,17 @@ class TrainingRepository(
             when (outcome) {
                 is TrainingResult.Ok -> {
                     offline.ack(pending.domain, pending.fecha)
+                    onAcked(pending)
                     delivered++
                     refreshAfterDrain(apiBase, token, pending)
                 }
                 is TrainingResult.ApiError -> {
+                    if (outcome.status == 401) {
+                        drainAuthBlocked = true
+                        return delivered
+                    }
                     offline.ack(pending.domain, pending.fecha)
-                    delivered++
+                    onAcked(pending)
                 }
                 is TrainingResult.NetworkError -> return delivered
             }

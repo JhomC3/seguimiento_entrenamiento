@@ -71,16 +71,37 @@ class OfflineDrainTest {
     }
 
     @Test
-    fun `drain descarta el 400 y para en fallo de red`() = runBlocking {
+    fun `drain descarta el 400 sin contarlo y para en fallo de red`() = runBlocking {
         db.offlineDao().enqueue(PendingWriteEntity("sesion", "2026-09-07", "SAVE", savePayload("2026-09-07"), 1L))
         server.enqueue(MockResponse().setResponseCode(400).setBody("""{"detail":"Debes registrar al menos una serie."}"""))
-        assertEquals(1, repo.drainOutbox(base, "secret"))
+        var acked = 0
+        assertEquals(0, repo.drainOutbox(base, "secret") { acked++ })
+        assertEquals(1, acked)
         assertEquals(0, repo.pendingCount())
 
         db.offlineDao().enqueue(PendingWriteEntity("diario", "2026-09-07", "SAVE", """{"fecha":"2026-09-07"}""", 2L))
         server.shutdown()
         val deadBase = "http://127.0.0.1:9"
         assertEquals(0, repo.drainOutbox(deadBase, "secret"))
+        assertEquals(1, repo.pendingCount())
+    }
+
+    @Test
+    fun `drain conserva la cola ante 401 y marca bloqueo`() = runBlocking {
+        db.offlineDao().enqueue(PendingWriteEntity("sesion", "2026-09-07", "SAVE", savePayload("2026-09-07"), 1L))
+        server.enqueue(MockResponse().setResponseCode(401).setBody("""{"detail":"Token inválido."}"""))
+        var acked = 0
+        assertEquals(0, repo.drainOutbox(base, "secret") { acked++ })
+        assertEquals(0, acked)
+        assertEquals(1, repo.pendingCount())
+        assertTrue(repo.drainAuthBlocked)
+    }
+
+    @Test
+    fun `drain conserva la cola ante 429`() = runBlocking {
+        db.offlineDao().enqueue(PendingWriteEntity("sesion", "2026-09-07", "SAVE", savePayload("2026-09-07"), 1L))
+        server.enqueue(MockResponse().setResponseCode(429).setBody("límite"))
+        assertEquals(0, repo.drainOutbox(base, "secret"))
         assertEquals(1, repo.pendingCount())
     }
 
