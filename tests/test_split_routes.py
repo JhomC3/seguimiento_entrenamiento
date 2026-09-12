@@ -56,6 +56,7 @@ def test_splits_page_render(tmp_path, monkeypatch):
     assert 'id="splits-section"' in r.text
     # Sin split: estado vacío con CTA de creación.
     assert "Todavía no hay splits guardados" in r.text
+    assert 'class="empty-state split-empty-state-title"' in r.text
     assert 'data-action="split-new"' in r.text
     # Sin contenedor estrecho: la página usa todo el ancho.
     assert "max-w-7xl" not in r.text
@@ -115,14 +116,18 @@ def test_splits_page_resumen_por_tarjeta_v4(tmp_path, monkeypatch):
     assert ">2</strong> series" in r.text
     assert "Pectoral <strong>1</strong>" in r.text
     assert r.text.count('<span class="split-summary-strip-sep">·</span>') == 2
-    # Acciones como iconos agrupados (lápiz/guardar/papelera), con Guardar
-    # deshabilitado en un split guardado.
+    # Acciones como iconos agrupados (check-actual/lápiz/guardar/papelera),
+    # con Guardar deshabilitado en un split guardado.
     assert 'class="split-item-actions"' in r.text
-    assert r.text.count('class="split-action-btn"') == 3
+    assert r.text.count('class="icon-btn split-action-btn"') == 4
+    assert 'aria-label="Marcar como split actual"' in r.text
+    assert 'data-action="split-activate"' in r.text
     assert 'aria-label="Editar el split"' in r.text
     assert 'aria-label="Guardar el split"' in r.text
     assert 'aria-label="Eliminar el split"' in r.text
-    assert re.search(r'data-action="split-save" class="split-action-btn"\s+disabled', r.text)
+    assert re.search(
+        r'data-action="split-save" class="icon-btn split-action-btn"\s+disabled', r.text
+    )
     # Handle de copia de día + botón de borrar día con aria-label (ahora en el
     # label de Ejercicios, no en el header del día).
     assert 'class="split-day-copy-btn"' in r.text
@@ -153,7 +158,9 @@ def test_splits_page_layout_y_editmode(tmp_path, monkeypatch):
     # "Editar" vive en las acciones del toolbar de cada item.
     assert 'data-action="split-edit-open"' not in r.text
     assert 'class="split-item-actions"' in r.text
-    assert re.search(r'data-action="split-save" class="split-action-btn"\s+disabled', r.text)
+    assert re.search(
+        r'data-action="split-save" class="icon-btn split-action-btn"\s+disabled', r.text
+    )
     # El input de nombre se oculta en modo visualización.
     assert "split-name-input" in r.text
 
@@ -194,7 +201,7 @@ def test_split_nuevo_fragmento(tmp_path, monkeypatch):
     assert 'data-editmode="1"' in r.text
     assert 'data-action="split-save"' in r.text
     # Guardar de un item nuevo NO está deshabilitado (aunque no haya cambios).
-    assert 'data-action="split-save" class="split-action-btn" disabled=""' not in r.text
+    assert 'data-action="split-save" class="icon-btn split-action-btn" disabled=""' not in r.text
     assert r.text.count('<div class="split-day-zone"') == 7
     assert 'data-day="LUNES"' in r.text
     assert 'class="split-day-summary"' in r.text
@@ -347,3 +354,95 @@ def test_splits_js_sin_dnd_nativo_paralelo():
     assert "Sortable.create" in src
     assert "sortable-ghost" in src
     assert "sortable-chosen" in src
+
+
+def test_split_activar_marca_unico_y_abre_primero(tmp_path, monkeypatch):
+    from src.database import get_active_split_id, get_splits_summary
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    _guardar(client, nombre="A", dias=("LUNES",), ejercicios=("Press",))
+    _guardar(client, nombre="B", dias=("VIERNES",), ejercicios=("Press",))
+    assert get_active_split_id(db) is None
+    r = client.post("/split/activar/2")
+    assert r.status_code == 200
+    assert "Split actual actualizado." in r.text
+    assert 'id="splits-section" hx-swap-oob="outerHTML"' in r.text
+    assert get_active_split_id(db) == 2
+    # Único: activar otro desmarca el anterior.
+    client.post("/split/activar/1")
+    assert get_active_split_id(db) == 1
+    assert next(s["id"] for s in get_splits_summary(db)) == 1
+    # Idempotente: reactivar el mismo no falla ni duplica.
+    r = client.post("/split/activar/1")
+    assert r.status_code == 200
+    assert get_active_split_id(db) == 1
+    # El activo sale primero y abierto, con check presionado.
+    body = client.get("/splits").text
+    assert body.index("split-item-1") < body.index("split-item-2")
+    section = body[body.index("split-item-1") :]
+    assert 'data-active="1"' in section
+    assert 'aria-pressed="true"' in section
+    assert "<details" in section and "open" in section.split("</summary>")[0]
+
+
+def test_split_activar_abrir_override_y_errores(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    _guardar(client, nombre="A", dias=("LUNES",), ejercicios=("Press",))
+    _guardar(client, nombre="B", dias=("VIERNES",), ejercicios=("Press",))
+    client.post("/split/activar/1")
+    # ?abrir explícito manda sobre el activo.
+    body = client.get("/splits?abrir=2").text
+    assert "Push" in body or "B" in body
+    # Inexistente → 400 con aviso seguro.
+    r = client.post("/split/activar/999")
+    assert r.status_code == 400
+    assert "notice-error" in r.text
+    # Sin CSRF → 403.
+    r = TestClient(appmod.app).post("/split/activar/1")
+    assert r.status_code == 403
+
+
+def test_split_activar_undo_restaura(tmp_path, monkeypatch):
+    from src.database import get_active_split_id
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    clear_undo_stack()
+    client = _client()
+    _guardar(client, nombre="A", dias=("LUNES",), ejercicios=("Press",))
+    _guardar(client, nombre="B", dias=("VIERNES",), ejercicios=("Press",))
+    client.post("/split/activar/2")
+    assert get_active_split_id(db) == 2
+    r = client.post("/undo", data={"fecha": ""})
+    assert r.status_code == 200
+    assert get_active_split_id(db) is None
+    clear_undo_stack()
+
+
+def test_split_eliminar_activo_deja_sin_activo(tmp_path, monkeypatch):
+    from src.database import get_active_split_id
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    _guardar(client, nombre="A", dias=("LUNES",), ejercicios=("Press",))
+    client.post("/split/activar/1")
+    assert get_active_split_id(db) == 1
+    client.post("/split/eliminar/1")
+    assert get_active_split_id(db) is None
+
+
+def test_splits_js_activar_sin_nuevo():
+    """El check de activo existe solo en splits persistidos y el JS lo gestiona."""
+    from pathlib import Path
+
+    item = Path("templates/partials/split_accordion_item.html").read_text(encoding="utf-8")
+    assert 'data-action="split-activate"' in item
+    assert 'data-active="{{ 1 if is_active else 0 }}"' in item
+    js = Path("static/js/splits.js").read_text(encoding="utf-8")
+    assert "case 'split-activate':" in js
+    assert "/split/activar/" in js

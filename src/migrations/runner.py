@@ -19,6 +19,7 @@ from src.migrations import (
     v013_persistent_undo,
     v014_training_fecha_index,
     v015_splits,
+    v016_split_activo,
 )
 
 MIGRATIONS = [
@@ -36,6 +37,7 @@ MIGRATIONS = [
     v013_persistent_undo,
     v014_training_fecha_index,
     v015_splits,
+    v016_split_activo,
 ]
 
 _CURRENT_VERSION = max(m.VERSION for m in MIGRATIONS)

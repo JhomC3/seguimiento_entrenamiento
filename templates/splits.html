@@ -3,14 +3,15 @@
    (items acordeón o estado vacío). El board semanal vive dentro de cada item;
    el scroll horizontal queda contenido en .split-board-scroll. #}
 {% extends "base.html" %}
+{% block title %}Gym Tracker — Splits{% endblock %}
 {% block content %}
-<div class="splits-page">
+<main id="main-content" class="splits-page" tabindex="-1">
     <header class="splits-page-header">
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 workspace-brand">
             <h1 class="text-xl font-black tracking-[0.2em] text-white uppercase">Gestor de splits</h1>
-            <a href="/" class="btn btn-outline">← Dashboard</a>
+            {% include "partials/workspace_nav.html" %}
         </div>
-        <button type="button" data-action="split-new" class="btn btn-primary">Nuevo split</button>
+        <button type="button" data-action="split-new" class="btn btn-primary splits-new-btn">Nuevo split</button>
     </header>
 
     <div class="splits-layout">
@@ -25,13 +26,13 @@
                         <summary class="split-catalog-summary">{{ group }}</summary>
                         <div class="split-catalog-body" data-catalog-list="{{ group }}">
                             {% for ej in group_items %}
-                            <div class="split-item-card split-catalog-chip" role="button" tabindex="0"
+                            <button type="button" class="split-item-card split-catalog-chip"
                                  data-action="split-add-item"
                                  data-ejercicio="{{ ej.ejercicio }}" data-grupo="{{ ej.grupo_muscular }}"
                                  data-item-type="ejercicio"
                                  title="Arrastra al día o haz clic para agregar {{ ej.ejercicio }} al día seleccionado">
                                 <span class="split-item-name">{{ ej.ejercicio }}</span>
-                            </div>
+                            </button>
                             {% endfor %}
                         </div>
                     </details>
@@ -39,17 +40,17 @@
                     <details class="split-catalog-group" data-group="HIIT">
                         <summary class="split-catalog-summary">HIIT</summary>
                         <div class="split-catalog-body" data-catalog-list="HIIT">
-                            <div class="split-item-card split-catalog-chip" role="button" tabindex="0"
+                            <button type="button" class="split-item-card split-catalog-chip"
                                  data-action="split-add-item"
                                  data-ejercicio="HIIT" data-grupo="HIIT"
                                  data-item-type="hiit"
                                  title="Arrastra al día o haz clic para agregar HIIT al día seleccionado">
                                 <span class="split-item-name">HIIT</span>
-                            </div>
+                            </button>
                         </div>
                     </details>
                 </div>
-                <p class="split-empty" id="split-catalog-empty" hidden>Sin resultados para la búsqueda.</p>
+                <p class="empty-state split-empty" id="split-catalog-empty" hidden>Sin resultados para la búsqueda.</p>
             </section>
         </aside>
 
@@ -60,7 +61,7 @@
             </section>
         </div>
     </div>
-</div>
+</main>
 
 <noscript>
     <div class="notice notice-error" role="alert">

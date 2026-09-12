@@ -277,3 +277,51 @@ def test_metricas_by_group_exercises_por_dia(db):
     assert by_day["MARTES"] == {"Pectoral": {"Press": 1}, "HIIT": {"HIIT": 1}}
     # Días sin entrenos: jerarquía vacía.
     assert by_day["MIERCOLES"] == {}
+
+
+def test_set_active_split_unico_e_idempotente(db):
+    import sqlite3
+
+    from src.database import get_active_split_id, get_splits_summary, set_active_split
+
+    a = save_split(db, SplitInput(nombre="A", items=[_item()]))
+    b = save_split(db, SplitInput(nombre="B", items=[_item(dia="VIERNES")]))
+    assert get_active_split_id(db) is None
+    set_active_split(db, b.id)
+    assert get_active_split_id(db) == b.id
+    assert get_splits_summary(db)[0]["id"] == b.id
+    set_active_split(db, a.id)
+    assert get_active_split_id(db) == a.id
+    # Idempotente.
+    set_active_split(db, a.id)
+    assert get_active_split_id(db) == a.id
+    # El índice parcial impide dos activos a nivel DB.
+    with pytest.raises(sqlite3.IntegrityError):
+        conn = sqlite3.connect(db)
+        try:
+            conn.execute("UPDATE training_splits SET activo = 1 WHERE id = ?", (b.id,))
+            conn.commit()
+        finally:
+            conn.close()
+    # Inexistente → NotFound.
+    with pytest.raises(NotFoundError):
+        set_active_split(db, 999)
+
+
+def test_snapshot_restore_con_activo_y_legado(db):
+    from src.database import get_active_split_id, restore_splits, snapshot_splits
+
+    a = save_split(db, SplitInput(nombre="A", items=[_item()]))
+    save_split(db, SplitInput(nombre="B", items=[_item(dia="VIERNES")]))
+    from src.database import set_active_split
+
+    set_active_split(db, 2)
+    snap = snapshot_splits(db)
+    set_active_split(db, a.id)
+    assert get_active_split_id(db) == a.id
+    restore_splits(db, snap)
+    assert get_active_split_id(db) == 2
+    # Snapshot legado sin activo restaura con 0.
+    legacy = [[[1, "A", "c", "u"], [2, "B", "c", "u"]], []]
+    restore_splits(db, legacy)
+    assert get_active_split_id(db) is None

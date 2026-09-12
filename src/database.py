@@ -7,7 +7,7 @@ import pandas as pd
 from config import MUSCLE_CATEGORIES
 from src.db_connection import read_connection, transaction
 from src.migrations.runner import run_migrations
-from src.models import SPLIT_DAYS
+from src.models import SPLIT_DAYS, NotFoundError
 
 
 def init_db(db_path: str) -> None:
@@ -805,27 +805,31 @@ def get_dashboard_catalog(
 
 
 def get_splits_summary(db_path: str) -> list[dict]:
-    """Lista de splits con resumen comparativo (series, días activos, grupos)."""
+    """Lista de splits con resumen comparativo (series, días activos, grupos).
+
+    Orden: split actual primero, luego por updated_at/nombre.
+    """
     if not os.path.exists(db_path):
         return []
     with read_connection(db_path) as conn:
         rows = conn.execute(
-            "SELECT s.id, s.nombre, s.updated_at, "
+            "SELECT s.id, s.nombre, s.updated_at, COALESCE(s.activo, 0), "
             "COUNT(i.id) AS series, "
             "COUNT(DISTINCT i.dia) AS active_days, "
             "GROUP_CONCAT(DISTINCT i.grupo_muscular) AS groups "
             "FROM training_splits s "
             "LEFT JOIN training_split_items i ON i.split_id = s.id "
-            "GROUP BY s.id ORDER BY s.updated_at DESC, s.nombre"
+            "GROUP BY s.id ORDER BY COALESCE(s.activo, 0) DESC, s.updated_at DESC, s.nombre"
         ).fetchall()
     return [
         {
             "id": r[0],
             "nombre": r[1],
             "updated_at": r[2],
-            "series": int(r[3] or 0),
-            "active_days": int(r[4] or 0),
-            "groups": [g for g in (r[5] or "").split(",") if g],
+            "activo": int(r[3] or 0),
+            "series": int(r[4] or 0),
+            "active_days": int(r[5] or 0),
+            "groups": [g for g in (r[6] or "").split(",") if g],
         }
         for r in rows
     ]
@@ -842,7 +846,8 @@ def find_split_by_nombre(db_path: str, nombre: str) -> int | None:
 def get_split(db_path: str, split_id: int) -> dict | None:
     with read_connection(db_path) as conn:
         row = conn.execute(
-            "SELECT id, nombre, created_at, updated_at FROM training_splits WHERE id = ?",
+            "SELECT id, nombre, created_at, updated_at, COALESCE(activo, 0) "
+            "FROM training_splits WHERE id = ?",
             (split_id,),
         ).fetchone()
         if not row:
@@ -870,8 +875,33 @@ def get_split(db_path: str, split_id: int) -> dict | None:
         "nombre": row[1],
         "created_at": row[2],
         "updated_at": row[3],
+        "activo": int(row[4] or 0),
         "items": items,
     }
+
+
+def get_active_split_id(db_path: str) -> int | None:
+    """Id del split actual, o None si no hay ninguno marcado."""
+    if not os.path.exists(db_path):
+        return None
+    with read_connection(db_path) as conn:
+        try:
+            row = conn.execute(
+                "SELECT id FROM training_splits WHERE COALESCE(activo, 0) = 1 LIMIT 1"
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return None
+    return int(row[0]) if row else None
+
+
+def set_active_split(db_path: str, split_id: int) -> None:
+    """Marca un split como actual (único). Idempotente. Una sola transacción."""
+    with transaction(db_path) as conn:
+        row = conn.execute("SELECT id FROM training_splits WHERE id = ?", (split_id,)).fetchone()
+        if not row:
+            raise NotFoundError("El split no existe.")
+        conn.execute("UPDATE training_splits SET activo = 0 WHERE COALESCE(activo, 0) = 1")
+        conn.execute("UPDATE training_splits SET activo = 1 WHERE id = ?", (split_id,))
 
 
 def _insert_split_items(conn, split_id: int, items: list[tuple[str, str, str, str]]) -> None:
@@ -922,9 +952,15 @@ def delete_split(db_path: str, split_id: int) -> None:
 
 def snapshot_splits(db_path: str) -> list:
     with read_connection(db_path) as conn:
-        splits = conn.execute(
-            "SELECT id, nombre, created_at, updated_at FROM training_splits ORDER BY id"
-        ).fetchall()
+        try:
+            splits = conn.execute(
+                "SELECT id, nombre, created_at, updated_at, COALESCE(activo, 0) AS activo "
+                "FROM training_splits ORDER BY id"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            splits = conn.execute(
+                "SELECT id, nombre, created_at, updated_at FROM training_splits ORDER BY id"
+            ).fetchall()
         items = conn.execute(
             "SELECT id, split_id, dia, orden, item_type, ejercicio, grupo_muscular "
             "FROM training_split_items ORDER BY split_id, dia, orden"
@@ -933,22 +969,31 @@ def snapshot_splits(db_path: str) -> list:
 
 
 def restore_splits(db_path: str, snapshot: list) -> None:
-    """Restaura splits e items desde un snapshot del journal (ver mutation_service)."""
+    """Restaura splits e items desde un snapshot del journal (ver mutation_service).
+
+    Acepta snapshots previos a v016 (sin ``activo``): restaura con activo 0.
+    """
     splits, items = snapshot[0], snapshot[1]
 
-    def val(r, idx: int, key: str):
+    def val(r, idx: int, key: str, default=0):
         """Fila sqlite3.Row (legado en memoria) o dict (journal persistido)."""
-        return r[key] if isinstance(r, dict) else r[idx]
+        if isinstance(r, dict):
+            return r.get(key, default)
+        try:
+            return r[idx]
+        except IndexError:
+            return default
 
     with transaction(db_path) as conn:
         conn.execute("DELETE FROM training_split_items")
         conn.execute("DELETE FROM training_splits")
         for r in splits:
             conn.execute(
-                "INSERT INTO training_splits (id, nombre, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT INTO training_splits (id, nombre, created_at, updated_at, activo) "
+                "VALUES (?, ?, ?, ?, ?)",
                 tuple(
-                    val(r, i, k) for i, k in enumerate(("id", "nombre", "created_at", "updated_at"))
+                    val(r, i, k)
+                    for i, k in enumerate(("id", "nombre", "created_at", "updated_at", "activo"))
                 ),
             )
         for r in items:

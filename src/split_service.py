@@ -10,10 +10,14 @@ from src.database import (
 )
 from src.database import (
     find_split_by_nombre,
+    get_active_split_id,
     get_split,
     get_split_catalog,
     insert_split,
     update_split,
+)
+from src.database import (
+    set_active_split as _set_active_split,
 )
 from src.models import (
     SPLIT_DAYS,
@@ -34,8 +38,10 @@ __all__ = [
     "HIIT_NAME",
     "compute_split_metrics",
     "delete_split",
+    "get_active_split_id",
     "get_split_board",
     "save_split",
+    "set_active_split",
     "split_items_from_form",
 ]
 
@@ -105,6 +111,7 @@ def save_split(db_path: str, split_input: SplitInput, split_id: int | None = Non
             nombre=nombre,
             updated_at=(row or {}).get("updated_at", ""),
             updated=updated,
+            activo=bool((row or {}).get("activo", 0)),
         )
 
     if split_id is not None:
@@ -126,6 +133,13 @@ def delete_split(db_path: str, split_id: int) -> None:
     if get_split(db_path, split_id) is None:
         raise NotFoundError("El split no existe.")
     _delete_split(db_path, split_id)
+
+
+def set_active_split(db_path: str, split_id: int) -> None:
+    """Marca el split actual. NotFound si no existe; idempotente."""
+    if get_split(db_path, split_id) is None:
+        raise NotFoundError("El split no existe.")
+    _set_active_split(db_path, split_id)
 
 
 def _items_from_rows(split: dict) -> list[SplitItem]:
@@ -198,7 +212,11 @@ def get_split_board(db_path: str, split_id: int) -> dict:
     items = _items_from_rows(split)
     return {
         "split": Split(
-            id=split["id"], nombre=split["nombre"], updated_at=split["updated_at"], items=items
+            id=split["id"],
+            nombre=split["nombre"],
+            updated_at=split["updated_at"],
+            items=items,
+            activo=bool(split.get("activo", 0)),
         ),
         "metrics": compute_split_metrics(items),
     }

@@ -31,6 +31,7 @@ from src.dashboard_service import (
     translate_error,
 )
 from src.database import (
+    get_active_split_id,
     get_alimentos_catalog,
     get_categories,
     get_dashboard_catalog,
@@ -386,10 +387,17 @@ def _split_accordion_item_html(
     """
     split: Split | None = None
     metrics: SplitMetrics = compute_split_metrics([])
+    is_active = False
     if split_id is not None:
         board = get_split_board(DB_PATH, split_id)
         split = board["split"]
         metrics = board["metrics"]
+        item_uid: str = str(split.id)
+        is_active = bool(getattr(split, "activo", 0))
+    else:
+        # Fragmento "nuevo" sin persistir: uid único por request para que dos
+        # splits nuevos no dupliquen ids (split-nombre-*, sz-*-g*).
+        item_uid = f"nuevo-{uuid.uuid4().hex[:8]}"
     return _render_body(
         templates.TemplateResponse(
             request=request,
@@ -401,18 +409,27 @@ def _split_accordion_item_html(
                 "editmode": "0" if split else "1",
                 "max_items": max_items,
                 "open": open_,
+                "item_uid": item_uid,
+                "is_active": is_active,
             },
         )
     )
 
 
 def _split_section_html(request: Request, abrir_id: int | None = None) -> str:
-    """Contenido de #splits-section: estado vacío o items del acordeón."""
+    """Contenido de #splits-section: estado vacío o items del acordeón.
+
+    Orden server-authoritative: el split actual primero (ver
+    ``get_splits_summary``). Sin ``?abrir``, el actual se renderiza abierto.
+    """
+    active_id = get_active_split_id(DB_PATH)
     items_html = ""
     for s in get_splits_summary(DB_PATH):
-        items_html += _split_accordion_item_html(
-            request, s["id"], open_=(abrir_id is not None and abrir_id == s["id"])
-        )
+        if abrir_id is not None:
+            open_item = abrir_id == s["id"]
+        else:
+            open_item = active_id is not None and active_id == s["id"]
+        items_html += _split_accordion_item_html(request, s["id"], open_=open_item)
     return _render_body(
         templates.TemplateResponse(
             request=request,

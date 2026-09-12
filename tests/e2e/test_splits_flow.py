@@ -769,7 +769,6 @@ def test_eliminar_split_con_confirmacion(page, server):
     )
 
 
-def test_undo_restaura_split(page, server):
     _goto_splits(page, server)
     _nuevo(page)
     _drag_from_catalog(page, "Press", "LUNES")
@@ -777,11 +776,17 @@ def test_undo_restaura_split(page, server):
     page.reload()
     page.wait_for_function("document.body.dataset.appReady === '1'")
     expect(page.locator("#splits-section")).to_contain_text("Undoable")
-    # Deshacer el guardado con Ctrl+Z (no se está editando un campo).
+    posts = []
+
+    def _spy(r):
+        if r.method == "POST" and r.url.endswith("/undo"):
+            posts.append(r.url)
+
+    page.on("request", _spy)
     page.keyboard.press("Control+z")
-    expect(page.locator("#splits-section")).to_contain_text(
-        "Todavía no hay splits guardados", timeout=4000
-    )
+    page.wait_for_timeout(400)
+    expect(page.locator("#splits-section")).to_contain_text("Undoable")
+    assert posts == [], f"Ctrl+Z llamó a /undo: {posts}"
 
 
 # --------------------------------------------------------------------------- #
@@ -891,19 +896,20 @@ def test_acciones_iconos_agrupados(page, server):
     item = _item_by_name(page, "Iconos")
     _open_item(page, item)
     actions = item.locator(".split-item-actions .split-action-btn")
-    expect(actions).to_have_count(3)
-    # Misma fila y orden: lápiz < guardar < papelera.
+    expect(actions).to_have_count(4)
+    # Misma fila y orden: check-actual < lápiz < guardar < papelera.
     tops = actions.evaluate_all("els => els.map(e => Math.round(e.getBoundingClientRect().top))")
     assert len(set(tops)) == 1, tops
     xs = actions.evaluate_all("els => els.map(e => Math.round(e.getBoundingClientRect().left))")
     assert xs == sorted(xs), xs
     # aria-labels y tooltips completos.
-    expect(actions.nth(0)).to_have_attribute("aria-label", "Editar el split")
-    expect(actions.nth(1)).to_have_attribute("aria-label", "Guardar el split")
-    expect(actions.nth(2)).to_have_attribute("aria-label", "Eliminar el split")
-    expect(actions.nth(0)).to_have_attribute("title", "Editar el split")
+    expect(actions.nth(0)).to_have_attribute("aria-label", "Marcar como split actual")
+    expect(actions.nth(1)).to_have_attribute("aria-label", "Editar el split")
+    expect(actions.nth(2)).to_have_attribute("aria-label", "Guardar el split")
+    expect(actions.nth(3)).to_have_attribute("aria-label", "Eliminar el split")
+    expect(actions.nth(1)).to_have_attribute("title", "Editar el split")
     # Guardar deshabilitado en vista, mismo box tras Editar y tras mutar.
-    save_btn = actions.nth(1)
+    save_btn = actions.nth(2)
     expect(save_btn).to_be_disabled()
     box_off = save_btn.bounding_box()
     item.locator('[data-action="split-edit"]').click()
@@ -918,6 +924,32 @@ def test_acciones_iconos_agrupados(page, server):
     box_on = save_btn.bounding_box()
     assert abs(box_on["width"] - box_off["width"]) < 0.5
     assert abs(box_on["height"] - box_off["height"]) < 0.5
+
+
+def test_split_actual_primero_abierto_y_persiste(page, server):
+    _goto_splits(page, server)
+    _nuevo(page)
+    _drag_from_catalog(page, "Press", "LUNES")
+    _save(page, "SplitA")
+    _nuevo(page)
+    _drag_from_catalog(page, "Press", "VIERNES")
+    _save(page, "SplitB")
+    page.reload()
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    item_b = _item_by_name(page, "SplitB")
+    _open_item(page, item_b)
+    item_b.locator('[data-action="split-activate"]').click()
+    expect(page.locator('.split-accordion-item[data-active="1"]')).to_have_count(1)
+    # Tras activar, el actual queda primero y abierto.
+    first = page.locator("#splits-list .split-accordion-item").first
+    expect(first).to_have_attribute("data-active", "1")
+    expect(first.locator("details.split-accordion")).to_have_js_property("open", True)
+    # Persiste tras recargar.
+    page.reload()
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    first = page.locator("#splits-list .split-accordion-item").first
+    expect(first).to_have_attribute("data-active", "1")
+    expect(first.locator("details.split-accordion")).to_have_js_property("open", True)
 
 
 def test_columnas_ancho_completo_sin_hueco(page, server):

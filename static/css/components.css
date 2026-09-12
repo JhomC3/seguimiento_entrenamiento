@@ -670,6 +670,10 @@ input[type="number"]::-webkit-outer-spin-button {
 
 /* Chip del catálogo (variante de .split-item-card: arrastrable o click para
    agregar al día seleccionado; sin grupo visible ni botón de eliminar). */
+button.split-catalog-chip {
+    font: inherit;
+    text-align: left;
+}
 .split-catalog-chip {
     box-sizing: border-box;
     height: var(--split-item-height);
@@ -770,8 +774,8 @@ input[type="number"]::-webkit-outer-spin-button {
     align-items: center;
     justify-content: center;
     flex: none;
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     border-radius: 4px;
     background: var(--t-overlay-white-004);
     border: 1px solid var(--t-surfaces-neutral-800);
@@ -779,9 +783,13 @@ input[type="number"]::-webkit-outer-spin-button {
     cursor: pointer;
     transition: border-color .15s, color .15s;
 }
-.split-day-copy-btn:hover {
+.split-day-copy-btn:hover:not(:disabled) {
     color: var(--t-burgundy-400);
     border-color: var(--t-burgundy-600);
+}
+.split-day-copy-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
 }
 .split-day-copy-btn:focus-visible {
     outline: 2px solid var(--t-burgundy-600);
@@ -819,6 +827,10 @@ input[type="number"]::-webkit-outer-spin-button {
 .split-accordion-item {
     padding: 0;
 }
+/* Split actual: borde discreto en acento (mismo token que el lápiz activo). */
+.split-accordion-item[data-active="1"] {
+    border-color: var(--t-burgundy-600);
+}
 .split-accordion-summary {
     display: flex;
     align-items: center;
@@ -846,6 +858,7 @@ input[type="number"]::-webkit-outer-spin-button {
 .split-accordion-name {
     flex: none;
     max-width: 30%;
+    margin: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -912,6 +925,10 @@ input[type="number"]::-webkit-outer-spin-button {
     gap: 6px;
     margin-left: auto;
 }
+/* Botón de icono canónico 28×28 (base de armonización: los dialectos
+   .split-action-btn, .edit-toggle, .row-btn, .btn-x confluyen aquí;
+   .split-action-btn es su alias directo y conserva su nombre como hook). */
+.icon-btn,
 .split-action-btn {
     flex: none;
     display: inline-flex;
@@ -926,26 +943,31 @@ input[type="number"]::-webkit-outer-spin-button {
     cursor: pointer;
     transition: border-color .15s, color .15s, background .15s;
 }
+.icon-btn:hover:not(:disabled),
 .split-action-btn:hover:not(:disabled) {
     color: var(--t-burgundy-400);
     border-color: var(--t-burgundy-600);
     background: var(--t-overlay-burgundy-020);
 }
+.icon-btn:focus-visible,
 .split-action-btn:focus-visible {
     outline: 2px solid var(--t-burgundy-600);
     outline-offset: 1px;
 }
+.icon-btn[disabled],
 .split-action-btn[disabled] {
     opacity: 0.4;
     cursor: not-allowed;
 }
 /* Modo edición activo: el lápiz se ilumina (acento + glow) sin cambiar su
    tamaño; selector compuesto para no crear una clase suelta en el vocabulario. */
+.icon-btn.is-active,
 .split-action-btn.is-active {
     color: var(--t-burgundy-400);
     border-color: var(--t-burgundy-600);
     filter: drop-shadow(0 0 3px var(--t-burgundy-600));
 }
+.icon-btn svg,
 .split-action-btn svg {
     width: 14px;
     height: 14px;
@@ -959,6 +981,14 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 .split-dirty-hint:not([hidden]) {
     display: inline;
+}
+
+/* Estado vacío canónico: tono y tipografía únicos en Diario y Splits (los
+   textos se conservan por contexto; el layout lo aporta cada clase de
+   contexto). Solo color y tamaño para no alterar espaciados existentes. */
+.empty-state {
+    color: var(--t-surfaces-neutral-400);
+    font-size: 12px;
 }
 
 /* Estado vacío de #splits-section. */

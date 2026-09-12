@@ -149,6 +149,16 @@ function selectDay(itemEl, day) {
     itemEl.querySelectorAll('.split-day-select').forEach(function (btn) {
         btn.setAttribute('aria-pressed', String(btn.dataset.day === day));
     });
+    refreshCopyButtons(itemEl);
+}
+
+function refreshCopyButtons(itemEl) {
+    // La copia va al día seleccionado: deshabilitar el origen cuando coincide
+    // (en vez de avisar de error tras el clic).
+    const selected = selectedDayOf(itemEl);
+    itemEl.querySelectorAll('.split-day-copy-btn').forEach(function (btn) {
+        btn.disabled = btn.dataset.day === selected;
+    });
 }
 
 function selectedDayOf(itemEl) {
@@ -205,7 +215,29 @@ function markDirty(itemEl) {
 }
 
 /* ---------- Tarjetas ---------- */
+function setRemoveLabel(card, day) {
+    const btn = card.querySelector('[data-action="split-item-remove"]');
+    if (btn) {
+        btn.setAttribute('aria-label', 'Eliminar ' + card.dataset.ejercicio + ' del ' + dayLabel(day));
+        btn.title = 'Eliminar';
+    }
+}
+
 function finalizeCard(card, day) {
+    // Las instancias colocadas son <div>: el catálogo clonable usa <button>
+    // nativo y Sortable deposita el clon tal cual. Sin conversión, el board
+    // contendría <button> con <button> anidado (HTML inválido) y el filter del
+    // board (target BUTTON) bloquearía todos los arrastres.
+    if (card.tagName === 'BUTTON') {
+        const div = document.createElement('div');
+        for (const attr of Array.from(card.attributes)) {
+            if (attr.name === 'title' || attr.name === 'type') continue;
+            div.setAttribute(attr.name, attr.value);
+        }
+        while (card.firstChild) div.appendChild(card.firstChild);
+        card.replaceWith(div);
+        card = div;
+    }
     state.uidSeq += 1;
     card.dataset.splitItemId = 'ui-' + state.uidSeq;
     card.dataset.dia = day;
@@ -213,6 +245,8 @@ function finalizeCard(card, day) {
     // HTML5 secuestre el fallback.
     card.draggable = false;
     card.classList.remove('split-catalog-chip');
+    // Clases transitorias de arrastre: una instancia colocada nunca las lleva.
+    card.classList.remove('copy-mode', 'sortable-ghost', 'sortable-chosen', 'sortable-drag');
     card.removeAttribute('role');
     card.removeAttribute('tabindex');
     card.removeAttribute('data-action');
@@ -221,11 +255,10 @@ function finalizeCard(card, day) {
         btn.type = 'button';
         btn.className = 'split-item-remove';
         btn.dataset.action = 'split-item-remove';
-        btn.setAttribute('aria-label', 'Eliminar ' + card.dataset.ejercicio + ' del día');
-        btn.title = 'Eliminar';
         btn.textContent = '−';
         card.appendChild(btn);
     }
+    setRemoveLabel(card, day);
     return card;
 }
 
@@ -513,7 +546,7 @@ function applyDayBlock(key, fromDay, destZone, mode, onHeader, y) {
         // bloque se re-parenta en orden (insertBefore secuencial preserva el
         // orden relativo) y las tarjetas pasan al día destino.
         insertCardsAt(targetList, cards, anchor);
-        cards.forEach(function (c) { c.dataset.dia = toDay; });
+        cards.forEach(function (c) { c.dataset.dia = toDay; setRemoveLabel(c, toDay); });
     } else {
         if (!guardLimit(item, cards.length)) return; // rechazo → origen intacto
         const copies = cards.map(function (c) { return finalizeCard(c.cloneNode(true), toDay); });
@@ -735,6 +768,13 @@ function splitDelete(itemEl) {
     }, null);
 }
 
+function splitActivate(itemEl) {
+    const sid = itemEl && itemEl.dataset.splitId;
+    if (!sid) return;
+    setActive(itemEl);
+    htmx.ajax('POST', '/split/activar/' + sid, { target: 'body', swap: 'none' });
+}
+
 function splitDayClear(itemEl, day) {
     if (!canEdit(itemEl)) return;
     const list = dayList(itemEl, day);
@@ -792,9 +832,14 @@ function requestPath(e) {
     return (e.detail && e.detail.requestConfig && e.detail.requestConfig.path) || '';
 }
 
+function splitIdFromMutationPath(path) {
+    const m = path.match(/^\/split\/(eliminar|activar)\/(\d+)/);
+    return m ? m[2] : null;
+}
+
 function snapshotBeforeMutation(e) {
     const path = requestPath(e);
-    if (MUTATION_PATHS.indexOf(path) === -1 && path.indexOf('/split/eliminar/') === -1) return;
+    if (MUTATION_PATHS.indexOf(path) === -1 && splitIdFromMutationPath(path) === null) return;
     const req = e.detail.requestConfig || {};
     let splitId = null;
     let wasNew = false;
@@ -803,9 +848,11 @@ function snapshotBeforeMutation(e) {
         const hid = form && form.querySelector('input[name="split_id"]');
         wasNew = !(hid && hid.value);
         splitId = hid && hid.value ? hid.value : null;
+    } else {
+        splitId = splitIdFromMutationPath(path);
     }
     state.pendingMutation = {
-        kind: path === '/undo' ? 'undo' : path.indexOf('/split/eliminar/') !== -1 ? 'delete' : 'save',
+        kind: path === '/undo' ? 'undo' : path.indexOf('/split/eliminar/') !== -1 ? 'delete' : path.indexOf('/split/activar/') !== -1 ? 'activate' : 'save',
         splitId: splitId,
         wasNew: wasNew,
     };
@@ -902,6 +949,14 @@ function restoreAfterSectionSwap(e) {
     });
     reconcileState();
     reinitAll();
+    // El split recién activado queda primero y abierto (server-authoritative);
+    // el snapshot previo podía tenerlo colapsado.
+    if (pm && pm.kind === 'activate' && pm.splitId) {
+        const activeEl = itemElByKey(pm.splitId);
+        const openEl = activeEl && activeEl.querySelector('details.split-accordion');
+        if (openEl) openEl.open = true;
+        if (activeEl) setActive(activeEl);
+    }
     state.pendingMutation = null;
 }
 
@@ -995,18 +1050,15 @@ export function initSplits() {
             case 'split-delete':
                 if (itemEl) splitDelete(itemEl);
                 break;
+            case 'split-activate':
+                if (itemEl) splitActivate(itemEl);
+                break;
         }
     });
 
-    document.addEventListener('keydown', function (e) {
-        const chip = e.target.closest && e.target.closest('[data-action="split-add-item"]');
-        if (chip && (e.key === 'Enter' || e.key === ' ')) {
-            e.preventDefault();
-            const target = itemElByKey(state.activeKey);
-            if (!target || !canEdit(target)) { chipNeedEditNotice(); return; }
-            addItemToDay(target, selectedDayOf(target), chip);
-        }
-    });
+    // Sin handler keydown propio para chips: son <button> nativos y Enter/Espacio
+    // ya disparan click (el handler delegado 'split-add-item' lo gestiona; un
+    // listener adicional duplicaría la inserción).
 
     // Teclear el nombre marca el split como modificado (habilita Guardar;
     // también cubre el alta de un split nuevo).
@@ -1076,7 +1128,7 @@ export function initSplits() {
             const html = e.detail.xhr && e.detail.xhr.responseText;
             if (html) insertNewItem(html);
         }
-        if (!e.detail.successful && (MUTATION_PATHS.indexOf(path) !== -1 || path.indexOf('/split/eliminar/') !== -1)) {
+        if (!e.detail.successful && (MUTATION_PATHS.indexOf(path) !== -1 || splitIdFromMutationPath(path) !== null)) {
             state.pendingMutation = null;
         }
     });

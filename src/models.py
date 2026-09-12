@@ -122,6 +122,7 @@ class Split:
     updated_at: str
     items: list[SplitItem] = field(default_factory=list)
     updated: bool = False
+    activo: bool = False
 
 
 @dataclass(frozen=True)
