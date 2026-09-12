@@ -23,12 +23,35 @@ from src.models import (
     TemplateInput,
     TrainingSetInput,
     ValidationError,
+    is_hiit_set,
 )
 
-CLASSIFICATIONS = ["EMPUJE", "JALON", "PIERNA", "TORSO", "FULL BODY", "CORE", "SIN CLASIFICAR"]
+CLASSIFICATIONS = [
+    "EMPUJE",
+    "JALON",
+    "PIERNA",
+    "TORSO",
+    "FULL BODY",
+    "CORE",
+    "HIIT",
+    "SIN CLASIFICAR",
+]
+
+
+def _reject_mixed_hiit(ejercicios: list[str]) -> None:
+    """HIIT nunca se combina con fuerza en la misma sesión/plantilla."""
+    has_hiit = any(is_hiit_set(ej) for ej in ejercicios)
+    has_fuerza = any(not is_hiit_set(ej) for ej in ejercicios)
+    if has_hiit and has_fuerza:
+        raise ValidationError(
+            "HIIT no se puede combinar con otros ejercicios en el mismo entreno. "
+            "Crea una plantilla solo de HIIT."
+        )
 
 
 def classify_template(db_path: str, ejercicios: list[str]) -> str:
+    if ejercicios and all(is_hiit_set(ej) for ej in ejercicios if str(ej).strip()):
+        return "HIIT"
     cats = {
         get_ejercicio_categoria(db_path).get(str(ej).strip().lower())
         for ej in ejercicios
@@ -83,6 +106,7 @@ def save_template(db_path: str, template: TemplateInput) -> Template:
         raise ValidationError("Debes ponerle nombre al entreno.")
     if not ejercicios:
         raise ValidationError("El entreno debe tener al menos un ejercicio.")
+    _reject_mixed_hiit(ejercicios)
     clasificacion = classify_template(db_path, ejercicios)
     existing = find_plantilla_by_nombre(db_path, nombre)
     if existing is not None:
@@ -116,6 +140,7 @@ def edit_template(db_path: str, plantilla_id: int, template: TemplateInput) -> T
         raise ValidationError("El nombre del entreno no puede estar vacío.")
     if not ejercicios:
         raise ValidationError("El entreno debe tener al menos un ejercicio.")
+    _reject_mixed_hiit(ejercicios)
     existing = find_plantilla_by_nombre(db_path, nombre)
     if existing is not None and existing != plantilla_id:
         raise ConflictError(f"Ya existe un entreno llamado '{nombre}'.")
@@ -146,11 +171,19 @@ def apply_template_rows(db_path: str, plantilla_id: int) -> list[TrainingSetInpu
                 reps=s["reps"],
                 rir=s["rir"],
                 descanso_seg=s.get("descanso_seg", ""),
+                velocidad_kmh=s.get("velocidad_kmh", ""),
+                dificultad=s.get("dificultad", ""),
             )
             for s in sets
         )
     else:
-        rows.extend(
-            TrainingSetInput(ejercicio=ej, kg="", reps="", rir="") for ej in plantilla["ejercicios"]
-        )
+        for ej in plantilla["ejercicios"]:
+            if is_hiit_set(ej):
+                rows.append(
+                    TrainingSetInput(
+                        ejercicio="HIIT", kg="", reps="", rir="", velocidad_kmh="", dificultad=""
+                    )
+                )
+            else:
+                rows.append(TrainingSetInput(ejercicio=ej, kg="", reps="", rir=""))
     return rows

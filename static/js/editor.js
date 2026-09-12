@@ -387,6 +387,9 @@ export function initEditorActions() {
             case 'toggle-edit':
                 toggleEdit();
                 break;
+            case 'cancel-session-edit':
+                exitEditMode();
+                break;
             case 'toggle-template-form':
                 guardarPlantillaToggle();
                 break;

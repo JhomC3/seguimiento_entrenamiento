@@ -14,7 +14,7 @@
             </div>
             {% if editing_id == p.id %}
             <form hx-post="/plantilla/editar/{{ p.id }}" hx-swap="none" class="flex flex-col gap-1.5 mt-1.5 pt-1.5 border-t border-neutral-800">
-                {% if error %}<p class="text-xs text-red-400">{{ error }}</p>{% endif %}
+                {% if error %}<p class="form-error">{{ error }}</p>{% endif %}
                 <input name="nombre" aria-label="Nombre del entreno" value="{{ p.nombre }}" class="w-full cell-input" placeholder="Nombre del entreno">
                 <div id="plantilla-edit-rows" class="flex flex-col gap-1">
                     {% for ej in p.ejercicios %}
@@ -28,7 +28,7 @@
                     </div>
                     {% endfor %}
                 </div>
-                <button type="button" data-action="template-row-add" class="row-btn self-start" title="Agregar ejercicio">+</button>
+                <button type="button" data-action="template-row-add" class="row-btn self-start" title="Agregar ejercicio" aria-label="Agregar ejercicio a la plantilla">+</button>
                 <div class="flex gap-1 items-center">
                     <button type="button" data-action="refresh-templates" class="btn-x" aria-label="Cancelar" title="Cancelar">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>

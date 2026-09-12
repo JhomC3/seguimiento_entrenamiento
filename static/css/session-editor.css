@@ -153,7 +153,7 @@
     border-radius: 1.5px;
 }
 
-/* Compactación de controles del editor (scoped: no afecta plantillas ni otros contextos) */
+/* Controles del editor a 24px (WCAG 2.5.8; scoped: no afecta plantillas) */
 #session-editor .editor-header-actions .edit-toggle,
 #nutrition-panel .editor-header-actions .edit-toggle {
     width: 22px;

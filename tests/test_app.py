@@ -2682,3 +2682,92 @@ def test_export_nutrition_csv_restored(tmp_path, monkeypatch):
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/csv")
     assert "Avena" in r.text
+
+
+# ---------------------------------------------------------------------------
+# Diario: datos históricos, estados vacíos, plantillas y navigator compartido
+# ---------------------------------------------------------------------------
+
+
+    db = _setup_db(tmp_path)
+    save_session(
+        db,
+        "2026-07-14",
+        [
+            {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
+            {"ejercicio": "Press", "kg": 85, "reps": 6, "rir": 2},
+        ],
+    )
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/diario?fecha=2026-07-14")
+    assert r.status_code == 200
+    assert 'id="daily-date-title"' in r.text
+    assert ">MARTES 14/07/26</h2>" in r.text
+    assert 'value="80"' in r.text and 'value="85"' in r.text
+    assert "No hay entrenamiento guardado para este día." not in r.text
+    assert 'data-has-data="1"' in r.text
+
+
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/diario?fecha=2026-07-14")
+    assert r.status_code == 200
+    assert "No hay entrenamiento guardado para este día." in r.text
+    assert "No hay alimentación guardada para este día." in r.text
+    assert "daily-date-hint" not in r.text
+    assert r.text.count('class="empty-state daily-empty-state"') == 2
+
+
+    from src.database import replace_diario_by_fecha
+
+    db = _seed_nutrition(tmp_path)
+    replace_diario_by_fecha(
+        db,
+        "2026-07-14",
+        [
+            {
+                "alimento": "Avena",
+                "cantidad_g": 120.0,
+                "kcal": 467.0,
+                "carbohidratos": 82.0,
+                "fibra": 12.0,
+                "proteina": 20.0,
+                "grasa": 8.0,
+                "hierro": 5.0,
+                "calcio": 65.0,
+                "vitamina_c": 0.0,
+                "vitamina_a": 0.0,
+            }
+        ],
+    )
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/diario?fecha=2026-07-14&vista=alimentacion")
+    assert r.status_code == 200
+    assert 'value="Avena"' in r.text
+    assert "No hay alimentación guardada para este día." not in r.text
+    assert 'data-vista="alimentacion"' in r.text
+
+
+def test_diario_conteo_de_plantillas_visible(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    client.post("/plantilla/guardar", data={"nombre": "Torso", "ejercicio": ["Press"]})
+    client.post("/plantilla/guardar", data={"nombre": "Jalon", "ejercicio": ["Curl"]})
+    r = client.get("/diario")
+    # Entrenamiento muestra el conteo; alimentación (0) no muestra "· 0".
+    assert '<span id="daily-training-template-count"> · 2</span>' in r.text
+    assert "Plantillas · 0" not in r.text
+
+
+def test_diario_plantillas_vacias_muestran_estado(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get("/diario")
+    assert "Plantillas" in r.text
+    assert "Plantillas · 0" not in r.text
+    # Los estados vacíos de las listas viven en los diálogos.
+    assert "Aún no hay entrenos" in r.text
+    assert "Guarda un día desde el panel de alimentación" in r.text
+
+

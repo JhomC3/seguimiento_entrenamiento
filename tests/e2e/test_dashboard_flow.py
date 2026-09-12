@@ -194,6 +194,11 @@ def test_apply_template(page, server):
     _goto_date(page, server, iso)
     expect(page.locator("#session-editor")).to_have_attribute("data-editmode", "1")
     expect(page.locator("#editor-state")).to_have_attribute("data-has-data", "0")
+    # La lista de plantillas vive en el diálogo del Diario.
+    page.locator(
+        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
+    ).click()
+    page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
     page.locator("#plantillas-section .pt-card").get_by_role("button", name="Aplicar").click()
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
         "Entreno aplicado", timeout=3000
@@ -211,6 +216,11 @@ def test_template_crud_and_reorder(page, server):
     _create_template(page, server, _iso(5), "A")
     expect(page.locator("#plantillas-section .pt-card")).to_have_count(1)
 
+    # La lista vive en el diálogo del Diario.
+    page.locator(
+        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
+    ).click()
+    page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
     page.locator("#plantillas-section .pt-card").get_by_role("button", name="Editar").click()
     page.locator('#plantillas-section .pt-card form input[name="nombre"]').fill("A-edit")
     page.locator(".pt-card form .btn-check").click()
@@ -220,6 +230,8 @@ def test_template_crud_and_reorder(page, server):
     expect(page.locator("#plantillas-section .pt-card").first).to_have_attribute(
         "data-pt-nombre", "A-edit"
     )
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#training-templates-dialog", state="hidden", timeout=5000)
 
     _open_popup(page, server)
     _fill_row(page, 0, kg="75", reps="8")
@@ -230,6 +242,10 @@ def test_template_crud_and_reorder(page, server):
     page.locator("#save-template-form .btn-check").click()
     expect(page.locator("#confirm-modal")).to_be_visible()
     page.locator("#confirm-save").click()
+    page.locator(
+        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
+    ).click()
+    page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
     expect(page.locator("#plantillas-section .pt-card")).to_have_count(2)
 
     second_id = page.locator("#plantillas-section .pt-card").nth(1).get_attribute("data-pt-id")
@@ -254,6 +270,7 @@ def test_template_crud_and_reorder(page, server):
 
 
 def test_delete_and_undo_session(page, server):
+    """R1: fuera de edición, Ctrl+Z no llama al undo global ni restaura el día."""
     iso = _iso(6)
     _goto_date(page, server, iso)
     _fill_row(page, 0)
@@ -326,6 +343,10 @@ def test_hostile_template_name_does_not_execute(page, server):
     _create_template(page, server, _iso(8), PAYLOAD)
     expect(page.locator("#plantillas-section .pt-card")).to_have_count(1)
 
+    page.locator(
+        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
+    ).click()
+    page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
     page.locator("#plantillas-section .pt-card").first.get_by_role(
         "button", name="Eliminar"
     ).click()
@@ -337,6 +358,9 @@ def test_hostile_template_name_does_not_execute(page, server):
 def test_hostile_exercise_notice_creates_no_image_node(page, server):
     _open_popup(page, server)
 
+    # El alta de ejercicio vive en un diálogo del Diario.
+    page.locator('[data-action="open-daily-dialog"][data-dialog="exercise-create-dialog"]').click()
+    page.wait_for_selector("#exercise-create-dialog[open]", timeout=5000)
     page.fill('#exercise-create-form input[name="ejercicio"]', PAYLOAD)
     page.fill('#exercise-create-form input[name="grupo_muscular"]', "Pectoral")
     page.select_option('#exercise-create-form select[name="categoria"]', "EMPUJE")

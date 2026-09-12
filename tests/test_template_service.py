@@ -287,3 +287,25 @@ def test_reorder_plantillas(db):
     reorder_plantillas(db, [pid_b, pid_a])
     nombres = [p["nombre"] for p in get_plantillas(db)]
     assert nombres == ["B", "A"]
+
+
+def test_classify_hiit(db):
+    assert classify_template(db, ["HIIT"]) == "HIIT"
+    assert classify_template(db, ["hiit"]) == "HIIT"
+
+
+def test_plantilla_mixta_hiit_rechaza(db):
+    with pytest.raises(ValueError, match="HIIT no se puede combinar"):
+        save_template(db, TemplateInput(nombre="Mix", ejercicios=["Press", "HIIT"]))
+    pid = save_template(db, TemplateInput(nombre="Fuerza", ejercicios=["Press"])).id
+    with pytest.raises(ValueError, match="HIIT no se puede combinar"):
+        edit_template(db, pid, TemplateInput(nombre="Fuerza", ejercicios=["Press", "HIIT"]))
+
+
+def test_plantilla_hiit_aplica_filas_hiit(db):
+    pid = save_template(db, TemplateInput(nombre="Cardio", ejercicios=["HIIT"])).id
+    rows = apply_template_rows(db, pid)
+    assert len(rows) == 1
+    assert rows[0].ejercicio == "HIIT"
+    assert rows[0].velocidad_kmh == ""
+    assert rows[0].dificultad == ""

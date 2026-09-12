@@ -361,6 +361,22 @@ def _exercise_form_html(
     )
 
 
+def _template_count_oob(request: Request, kind: str) -> str:
+    """OOB del contador de plantillas del Diario (span dentro del botón).
+
+    ``inner`` es un entero del servidor (nunca datos de usuario): se construye
+    el span directamente, sin pasar por la allow-list de fragmentos.
+    """
+    if kind == "training":
+        count = len(get_plantillas(DB_PATH))
+        target = "daily-training-template-count"
+    else:
+        count = len(get_plantillas_alimentacion(DB_PATH))
+        target = "daily-food-template-count"
+    inner = f" · {count}" if count else ""
+    return f'<span id="{target}" hx-swap-oob="outerHTML">{inner}</span>'
+
+
 def _plantillas_list_html(
     request: Request, *, editing_id: int | None = None, error: str | None = None
 ) -> str:
@@ -956,6 +972,7 @@ def plantilla_alimentacion_guardar(
             _plantillas_alimentacion_list_html(request, _today_iso()),
             swap="outerHTML",
         )
+        + _template_count_oob(request, "food")
     )
 
 
@@ -975,6 +992,7 @@ def plantilla_alimentacion_eliminar(request: Request, plantilla_id: int):
             _plantillas_alimentacion_list_html(request, _today_iso()),
             swap="outerHTML",
         )
+        + _template_count_oob(request, "food")
     )
 
 
@@ -1030,6 +1048,7 @@ def plantilla_guardar(
             _plantillas_list_html(request),
             swap="outerHTML",
         )
+        + _template_count_oob(request, "training")
     )
 
 
@@ -1063,6 +1082,7 @@ def plantilla_editar(
             _plantillas_list_html(request),
             swap="outerHTML",
         )
+        + _template_count_oob(request, "training")
     )
 
 
@@ -1083,6 +1103,7 @@ def plantilla_eliminar(request: Request, plantilla_id: int):
             _plantillas_list_html(request),
             swap="outerHTML",
         )
+        + _template_count_oob(request, "training")
     )
 
 
