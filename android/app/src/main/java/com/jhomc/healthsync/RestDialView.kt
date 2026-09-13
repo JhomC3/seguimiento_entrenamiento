@@ -38,17 +38,17 @@ class RestDialView @JvmOverloads constructor(
     private val sp = resources.displayMetrics.scaledDensity
     private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 12f * dm
+        strokeWidth = 8f * dm
         strokeCap = Paint.Cap.ROUND
     }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = context.getColor(R.color.detail_white)
-        textSize = 28f * sp
+        textSize = 20f * sp
         textAlign = Paint.Align.CENTER
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val want = (96 * dm).toInt()
+        val want = (72 * dm).toInt()
         val size = resolveSize(want, widthMeasureSpec)
         setMeasuredDimension(size, size)
     }
@@ -64,6 +64,15 @@ class RestDialView @JvmOverloads constructor(
         )
         ringPaint.alpha = if (running) 255 else 60
         canvas.drawCircle(cx, cy, r, ringPaint)
-        canvas.drawText(formatMmSs(ms / 1000), cx, cy + textPaint.textSize / 3f, textPaint)
+        // Auto-ajuste: el número manda y siempre cabe (tope 20sp).
+        val t = formatMmSs(ms / 1000)
+        val inner = (r * 2f) * 0.82f
+        var size = 20f * sp
+        textPaint.textSize = size
+        while (size > 10f * sp && textPaint.measureText(t) > inner) {
+            size -= 1f * sp
+            textPaint.textSize = size
+        }
+        canvas.drawText(t, cx, cy + textPaint.textSize / 3f, textPaint)
     }
 }

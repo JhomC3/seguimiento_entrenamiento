@@ -314,26 +314,15 @@ class TrainingDiaryActivity : ComponentActivity() {
         refreshProgress()
         rowsBuiltForStructure = vm.structureVersion.value
         val byUuid = SessionFlowState.flattened(groups).associateBy { it.uuid }
-        val rowsByEjercicio = rows.groupBy { it.draft.ejercicio.trim() }
-        val order = rows.map { it.draft.ejercicio.trim() }.distinct()
-        for (ejercicio in order) {
-            val collapsed = ejercicio in vm.collapsedGroups
-            rowsBox.addView(TextView(this).apply {
-                text = (ejercicio.ifBlank { "(sin nombre)" }) + if (collapsed) " ▸" else " ▾"
-                setTextAppearance(context, R.style.Diary_ExerciseName)
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                )
-                contentDescription = "$ejercicio: contraer o expandir"
-                setOnClickListener { vm.toggleGroup(ejercicio) }
-            })
-            if (collapsed) continue
-            for (row in rowsByEjercicio[ejercicio].orEmpty()) {
-                val item = byUuid[row.uuid] ?: continue
-                val card = rowCard(row, item, row.uuid in expanded, row.uuid in done)
-                cardBodies[row.uuid] = card
-                rowsBox.addView(card)
-            }
+        // Lista plana: cada serie se encabeza con su ejercicio repetido
+        // (centrado de verdad: gravity en código, el estilo por
+        // setTextAppearance la ignora). Sin números de serie a la vista
+        // (el ordinal vive solo en contentDescription por accesibilidad).
+        for (row in rows) {
+            val item = byUuid[row.uuid] ?: continue
+            val card = rowCard(row, item, row.uuid in expanded, row.uuid in done)
+            cardBodies[row.uuid] = card
+            rowsBox.addView(card)
         }
         shownPanels.addAll(expanded)
         updateTick()
@@ -357,10 +346,11 @@ class TrainingDiaryActivity : ComponentActivity() {
             tag = "card_${row.uuid}"
         }
         val headerBtn = Button(this).apply {
-            text = headerText(item, isDone)
+            text = headerText(item, row.draft.ejercicio, isDone)
             minHeight = (64 * dm).toInt()
             isAllCaps = false
-            contentDescription = "Serie ${item.aparenteOrden}: expandir o colapsar"
+            gravity = Gravity.CENTER
+            contentDescription = "${row.draft.ejercicio}, serie ${item.aparenteOrden}: expandir o colapsar"
             setOnClickListener { vm.toggleExpand(item.uuid) }
         }
         headerButtons[item.uuid] = headerBtn
@@ -443,9 +433,10 @@ class TrainingDiaryActivity : ComponentActivity() {
         refreshProgress()
         val done = vm.doneUuids.value
         val byUuid = SessionFlowState.flattened(vm.entrenoGroups.value).associateBy { it.uuid }
+        val draftsByUuid = vm.entrenoRows.value.associate { it.uuid to it.draft }
         for ((uuid, btn) in headerButtons) {
             val item = byUuid[uuid] ?: continue
-            btn.text = headerText(item, uuid in done)
+            btn.text = headerText(item, draftsByUuid[uuid]?.ejercicio ?: "", uuid in done)
         }
     }
 
@@ -531,7 +522,7 @@ class TrainingDiaryActivity : ComponentActivity() {
         rowsBox.findViewWithTag<TextView>("val_${uuid}_vel")?.text = stepperText("Vel.", row.draft, "velocidadKmh")
         rowsBox.findViewWithTag<TextView>("val_${uuid}_dif")?.text = stepperText("Dif.", row.draft, "dificultad")
         if (item != null) {
-            headerButtons[uuid]?.text = headerText(item, uuid in vm.doneUuids.value)
+            headerButtons[uuid]?.text = headerText(item, row.draft.ejercicio, uuid in vm.doneUuids.value)
         }
     }
 
@@ -561,9 +552,9 @@ class TrainingDiaryActivity : ComponentActivity() {
             .show()
     }
 
-    /** Cabecera mínima: solo número de serie + ✓ (los datos viven dentro). */
-    private fun headerText(item: EntrenoItem, isDone: Boolean): String =
-        "Serie ${item.aparenteOrden}" + if (isDone) " ✓" else ""
+    /** Cabecera: nombre repetido centrado + ✓ (sin números a la vista). */
+    private fun headerText(item: EntrenoItem, ejercicio: String, isDone: Boolean): String =
+        ejercicio.trim().ifBlank { "(sin nombre)" } + if (isDone) " ✓" else ""
 
     private fun descansoMsFor(text: String): Long =
         runCatching { (text.trim().toDouble() * 1000).toLong() }.getOrDefault(0L).coerceAtLeast(0L)

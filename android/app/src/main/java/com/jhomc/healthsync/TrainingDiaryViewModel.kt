@@ -95,8 +95,7 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
     internal var draftsDaoOverride: EntrenoDraftDao? = null
     /** Fila local del día en caché de memoria (la DB es la fuente real). */
     private var localRowCache: Pair<String, EntrenoDraftEntity?>? = null
-    /** Grupos colapsados (UI-local; sobrevive a rotación vía ViewModel). */
-    val collapsedGroups = mutableSetOf<String>()
+
 
     private val restTimer = RestTimer()
     private var tickerJob: Job? = null
@@ -286,7 +285,6 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
                 _doneUuids.value = emptySet()
             }
             entrenoIdsFecha = fecha
-            collapsedGroups.clear()
             _expandedUuids.value = emptySet()
             restTimer.clearAccum(emptySet())
             seedRestAccum()
@@ -317,12 +315,6 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
     /** Cada cabecera alterna solo la suya (apertura múltiple). */
     fun toggleExpand(uuid: String) {
         _expandedUuids.value = SessionFlowState.toggleExpanded(_expandedUuids.value, uuid)
-    }
-
-    /** Colapso por ejercicio (UI-local; sobrevive a rotación vía ViewModel). */
-    fun toggleGroup(ejercicio: String) {
-        if (!collapsedGroups.remove(ejercicio)) collapsedGroups.add(ejercicio)
-        _structureVersion.value++
     }
 
     // --- Flujo por serie: check (sin pausa, sin Ir) -------------------------------
