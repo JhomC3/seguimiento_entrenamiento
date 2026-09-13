@@ -24,19 +24,6 @@ data class EntrenoItem(
 ) {
     fun isHiit(): Boolean = ejercicio.trim().equals("HIIT", ignoreCase = true)
 
-    fun summaryLine(timerText: String, done: Boolean): String {
-        val mark = if (done) "✓" else timerText
-        return if (isHiit()) {
-            val vel = velocidadKmh.ifBlank { "–" }
-            val dif = dificultad.ifBlank { "–" }
-            "Serie $aparenteOrden · HIIT ${vel}x$dif · $mark"
-        } else {
-            val kgT = kg.ifBlank { "–" }
-            val repsT = reps.ifBlank { "–" }
-            val rirT = rir.ifBlank { "–" }
-            "Serie $aparenteOrden · ${kgT}x$repsT · RIR $rirT · $mark"
-        }
-    }
 }
 
 data class EntrenoGroup(
@@ -135,20 +122,12 @@ object SessionFlowState {
      * transiciones; solo cablea Room/reloj/red alrededor.
      */
     object WorkoutFlow {
-        /** Ir con descanso previo corriendo: se cierra y anota a [restOwner]. */
-        data class IrEffect(val closeRestOwner: String?, val openWork: String)
-
         /** Guardar: colapsa esta, abre la siguiente y arranca su descanso. */
         data class GuardarEffect(
             val saved: String,
             val nextToExpand: String?,
             val startRest: Boolean,
         )
-
-        fun ir(uuid: String, runningRestOwner: String?, workOpen: Set<String>): IrEffect {
-            if (uuid in workOpen) return IrEffect(null, uuid) // doble tap: ignorar
-            return IrEffect(closeRestOwner = runningRestOwner, openWork = uuid)
-        }
 
         fun guardar(
             uuid: String,

@@ -9,8 +9,6 @@ import com.jhomc.healthsync.data.EntrenoDraftDao
 import com.jhomc.healthsync.data.EntrenoDraftEntity
 import com.jhomc.healthsync.data.RestIntervalEntity
 import com.jhomc.healthsync.data.RestDao
-import com.jhomc.healthsync.data.WorkDao
-import com.jhomc.healthsync.data.WorkIntervalEntity
 import com.jhomc.healthsync.data.SecureTargetStore
 import com.jhomc.healthsync.data.canonicalRowsHash
 import com.jhomc.healthsync.data.doneJson
@@ -95,13 +93,10 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
     internal var clockElapsed: () -> Long = { SystemClock.elapsedRealtime() }
     internal var restDaoOverride: RestDao? = null
     internal var draftsDaoOverride: EntrenoDraftDao? = null
-    internal var workDaoOverride: WorkDao? = null
     /** Fila local del día en caché de memoria (la DB es la fuente real). */
     private var localRowCache: Pair<String, EntrenoDraftEntity?>? = null
-    /** Trabajo abierto por serie (uuid → id de intervalo): se pierde al morir (documentado). */
-    private val openWork = mutableMapOf<String, Long>()
-    private val _workOpen = MutableStateFlow<Set<String>>(emptySet())
-    val workOpen: StateFlow<Set<String>> = _workOpen.asStateFlow()
+    /** Grupos colapsados (UI-local; sobrevive a rotación vía ViewModel). */
+    val collapsedGroups = mutableSetOf<String>()
 
     private val restTimer = RestTimer()
     private var tickerJob: Job? = null
@@ -137,9 +132,6 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
     private fun draftsDao(): EntrenoDraftDao =
         draftsDaoOverride ?: HealthDatabaseBuilder.get(getApplication()).entrenoDraftDao()
 
-    private fun workDao(): WorkDao =
-        workDaoOverride ?: HealthDatabaseBuilder.get(getApplication()).workDao()
-
     init {
         load(LocalDate.now().toString())
         // Ticker vago: corre siempre pero solo emite con descanso en curso.
@@ -150,7 +142,6 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             if (!orphanSweepDone) {
                 orphanSweepDone = true
                 runCatching { restDao().abandonAllOpen(clockWall(), clockElapsed()) }
-                runCatching { workDao().abandonAllOpen(clockWall(), clockElapsed()) }
             }
         }
     }
@@ -295,18 +286,10 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
                 _doneUuids.value = emptySet()
             }
             entrenoIdsFecha = fecha
+            collapsedGroups.clear()
             _expandedUuids.value = emptySet()
             restTimer.clearAccum(emptySet())
             seedRestAccum()
-            // El trabajo abierto no cruza de día: se abandona (fin honesto
-            // como abandono, nunca como cierre inventado).
-            if (openWork.isNotEmpty()) {
-                openWork.clear()
-                _workOpen.value = emptySet()
-                viewModelScope.launch(Dispatchers.IO) {
-                    runCatching { workDao().abandonAllOpen(clockWall(), clockElapsed()) }
-                }
-            }
         }
         rebuildEntrenoLists()
         val flat = SessionFlowState.flattened(_entrenoGroups.value).map { it.uuid }.toSet()
@@ -336,53 +319,24 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         _expandedUuids.value = SessionFlowState.toggleExpanded(_expandedUuids.value, uuid)
     }
 
-    // --- Flujo por serie: Ir + check (sin pausa) --------------------------------
-
-    /**
-     * Ir: corta el descanso en curso (lo anota a su serie) y abre el trabajo
-     * de esta. Sin descanso previo (primera serie) solo abre trabajo.
-     * Doble tap: se ignora. El instante de inicio vive en memoria.
-     */
-    fun ir(uuid: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val effect = SessionFlowState.WorkoutFlow.ir(uuid, restTimer.runningUuid(), openWork.keys)
-            effect.closeRestOwner?.let { closeRunning() }
-            if (uuid in openWork) return@launch
-            val item = SessionFlowState.flattened(_entrenoGroups.value).find { it.uuid == uuid }
-            val wall = clockWall()
-            val id = runCatching {
-                workDao().insert(
-                    WorkIntervalEntity(
-                        fecha = _state.value.fecha,
-                        ejercicio = item?.ejercicio ?: "",
-                        clientSetUuid = uuid,
-                        setOrdenAparente = item?.aparenteOrden ?: 0,
-                        startWallMs = wall,
-                        startElapsedMs = clockElapsed(),
-                        createdAtEpochMs = wall,
-                    ),
-                )
-            }.getOrDefault(-1L)
-            if (id > 0) {
-                openWork[uuid] = id
-                _workOpen.value = openWork.keys.toSet()
-            }
-        }
+    /** Colapso por ejercicio (UI-local; sobrevive a rotación vía ViewModel). */
+    fun toggleGroup(ejercicio: String) {
+        if (!collapsedGroups.remove(ejercicio)) collapsedGroups.add(ejercicio)
+        _structureVersion.value++
     }
+
+    // --- Flujo por serie: check (sin pausa, sin Ir) -------------------------------
+    // Sin botón Ir, el descanso vive entre check y check (incluye el trabajo:
+    // aceptado al quitar el botón). El siguiente check lo cierra y lo anota.
 
     /**
      * Check: guarda la serie (local + cola), la colapsa, auto-expande la
      * siguiente y arranca su descanso. En la última pendiente no se arranca
      * descanso (post-entreno sin sentido: el reloj no queda corriendo).
-     * Sin Ir previo funciona igual (el descanso se corta en este tap).
      */
     fun guardar(uuid: String) {
         viewModelScope.launch(Dispatchers.IO) {
             if (restTimer.runningUuid() != null) closeRunning()
-            openWork.remove(uuid)?.let { workId ->
-                runCatching { workDao().close(workId, clockWall(), clockElapsed()) }
-                _workOpen.value = openWork.keys.toSet()
-            }
             val effect = SessionFlowState.WorkoutFlow.guardar(uuid, _doneUuids.value, _entrenoGroups.value)
             _doneUuids.value = _doneUuids.value + effect.saved
             persistProgressive()

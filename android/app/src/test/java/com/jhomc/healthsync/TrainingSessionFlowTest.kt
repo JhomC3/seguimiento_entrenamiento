@@ -73,20 +73,10 @@ class TrainingSessionFlowTest {
     }
 
     @Test
-    fun `ir abre trabajo y guardar avanza sin descanso final`() {
+    fun `guardar avanza y la ultima no arranca descanso`() {
         val drafts = listOf(draft("Press"), draft("Remo"))
         val (groups, _) = SessionFlowState.build(drafts)
         val flat = SessionFlowState.flattened(groups)
-        // Ir sin descanso previo: solo abre trabajo.
-        var eff = SessionFlowState.WorkoutFlow.ir(flat[0].uuid, null, emptySet())
-        assertNull(eff.closeRestOwner)
-        assertEquals(flat[0].uuid, eff.openWork)
-        // Doble Ir: se ignora.
-        eff = SessionFlowState.WorkoutFlow.ir(flat[0].uuid, null, setOf(flat[0].uuid))
-        assertNull(eff.closeRestOwner)
-        // Ir siguiente con descanso corriendo: lo cierra y anota al previo.
-        eff = SessionFlowState.WorkoutFlow.ir(flat[1].uuid, flat[0].uuid, setOf(flat[0].uuid))
-        assertEquals(flat[0].uuid, eff.closeRestOwner)
         // Guardar intermedio: abre siguiente y arranca descanso.
         var g = SessionFlowState.WorkoutFlow.guardar(flat[0].uuid, emptySet(), groups)
         assertEquals(flat[0].uuid, g.saved)
