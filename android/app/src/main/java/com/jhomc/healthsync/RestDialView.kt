@@ -7,8 +7,8 @@ import android.util.AttributeSet
 import android.view.View
 
 /**
- * Dial del descanso en curso: ruedita con el tiempo dentro. Anillo verde
- * (success_text, ya en paleta) barriendo mientras corre; apagado en reposo.
+ * Mini-dial del descanso: ruedita pequeña con el tiempo dentro. Anillo
+ * burdeos fijo corriendo (sin barrido: era distracción); tenue en reposo.
  * Sin Compose/XML, como el resto de vistas programáticas.
  */
 class RestDialView @JvmOverloads constructor(
@@ -34,13 +34,6 @@ class RestDialView @JvmOverloads constructor(
             invalidate()
         }
 
-    /** Etiqueta pequeña ("Descanso tras Press"): solo informativa. */
-    var label: String = ""
-        set(value) {
-            field = value
-            invalidate()
-        }
-
     private val dm = resources.displayMetrics.density
     private val sp = resources.displayMetrics.scaledDensity
     private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -50,42 +43,27 @@ class RestDialView @JvmOverloads constructor(
     }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = context.getColor(R.color.detail_white)
-        textSize = 40f * sp
+        textSize = 28f * sp
         textAlign = Paint.Align.CENTER
     }
-    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = context.getColor(R.color.neutral_400)
-        textSize = 12f * sp
-        textAlign = Paint.Align.CENTER
-    }
-
-    /** Barrido por minuto: da una vuelta por cada 60 s de descanso. */
-    private fun sweepDeg(): Float = ((ms / 1000) % 60) / 60f * 360f
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val want = (160 * dm).toInt()
+        val want = (96 * dm).toInt()
         val size = resolveSize(want, widthMeasureSpec)
-        setMeasuredDimension(size, (size * 0.75f).toInt())
+        setMeasuredDimension(size, size)
     }
 
     override fun onDraw(canvas: Canvas) {
         val cx = width / 2f
-        val cy = height / 2f - 8f * dm
+        val cy = height / 2f
         val r = (minOf(width, height) / 2f) - ringPaint.strokeWidth
-        // Pista apagada siempre.
-        ringPaint.color = context.getColor(R.color.neutral_500)
-        ringPaint.alpha = 60
+        if (r <= 0) return
+        // Anillo tenue en reposo, burdeos sólido corriendo (colores de la web).
+        ringPaint.color = context.getColor(
+            if (running) R.color.burgundy_400 else R.color.neutral_500,
+        )
+        ringPaint.alpha = if (running) 255 else 60
         canvas.drawCircle(cx, cy, r, ringPaint)
-        // Arco verde solo corriendo.
-        if (running && r > 0) {
-            ringPaint.color = context.getColor(R.color.success_text)
-            ringPaint.alpha = 255
-            canvas.drawArc(cx - r, cy - r, cx + r, cy + r, -90f, sweepDeg(), false, ringPaint)
-        }
-        val t = formatMmSs(ms / 1000)
-        canvas.drawText(t, cx, cy + textPaint.textSize / 3f, textPaint)
-        if (label.isNotBlank()) {
-            canvas.drawText(label, cx, height - 4f * dm, labelPaint)
-        }
+        canvas.drawText(formatMmSs(ms / 1000), cx, cy + textPaint.textSize / 3f, textPaint)
     }
 }

@@ -58,15 +58,16 @@ class TrainingDiaryActivity : ComponentActivity() {
     private lateinit var deleteFoodButton: Button
     private lateinit var mealTemplatesButton: Button
     private lateinit var newFoodButton: Button
-    // --- Solo-registro: dial central + tarjetas Ir/check ---
+    // --- Solo-registro: ejercicio colapsable + series con dial propio ---
     private lateinit var progressView: TextView
-    private lateinit var dialView: RestDialView
+    private lateinit var saveDayButton: Button
     private var rowsBuiltForFecha: String? = null
     private var rowsBuiltForSession: TrainingSession? = null
     private var rowsBuiltForPreview: Int = 0
     private var rowsBuiltForStructure: Int = -1
     private val headerButtons = mutableMapOf<String, Button>()
-    private val statusLines = mutableMapOf<String, TextView>()
+    private val descansoFields = mutableMapOf<String, TextView>()
+    private val dialViews = mutableMapOf<String, RestDialView>()
     private val cardBodies = mutableMapOf<String, LinearLayout>()
     private val shownPanels = mutableSetOf<String>()
 
@@ -103,11 +104,10 @@ class TrainingDiaryActivity : ComponentActivity() {
         todayButton.setOnClickListener { vm.goToday() }
 
         progressView = TextView(this).apply { asSummary() }
-        dialView = RestDialView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-            )
-        }
+        saveDayButton = primaryButton("Guardar entrenamiento")
+        saveDayButton.contentDescription = "Guardar entrenamiento: enviar al servidor ahora"
+        saveDayButton.minHeight = (72 * resources.displayMetrics.density).toInt()
+        saveDayButton.setOnClickListener { vm.load(vm.state.value.fecha) }
         rowsBox.layoutTransition = android.animation.LayoutTransition().apply {
             enableTransitionType(android.animation.LayoutTransition.CHANGING)
         }
@@ -120,8 +120,8 @@ class TrainingDiaryActivity : ComponentActivity() {
             addView(tabsRow())
             addView(statusView)
             addView(progressView)
-            addView(dialView)
             addView(rowsBox)
+            addView(saveDayButton)
             addView(foodBox())
             addView(summaryView)
         }
@@ -151,28 +151,34 @@ class TrainingDiaryActivity : ComponentActivity() {
         }
         lifecycleScope.launch {
             repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
-                vm.restMs.collect { updateDialAndHeaders() }
+                vm.restMs.collect { updateTick() }
             }
         }
         lifecycleScope.launch {
             repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
-                vm.runningUuid.collect { updateDialAndHeaders() }
+                vm.runningUuid.collect { updateTick() }
             }
         }
         lifecycleScope.launch {
             repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
-                vm.workOpen.collect { updateDialAndHeaders() }
+                vm.entrenoRows.collect {
+                    for (uuid in descansoFields.keys.toList()) refreshDescansoField(uuid)
+                }
             }
         }
     }
 
     // --- Solo-registro: visibilidad ---------------------------------------------
+    // summaryView se oculta solo en entreno (alimentación lo sigue usando).
 
     private fun applyTrainingVisibility(isFood: Boolean) {
         val trainVis = if (isFood) View.GONE else View.VISIBLE
-        for (v in listOf(progressView, dialView, rowsBox)) {
+        val foodVis = if (isFood) View.VISIBLE else View.GONE
+        for (v in listOf(progressView, rowsBox, saveDayButton)) {
             v.visibility = trainVis
         }
+        foodBox.visibility = foodVis
+        if (!isFood) summaryView.visibility = View.GONE
     }
 
     // --- Render ---------------------------------------------------------------
@@ -260,7 +266,7 @@ class TrainingDiaryActivity : ComponentActivity() {
             else -> statusView.asStatus("", StatusKind.NOTICE)
         }
         val busy = state.loading || state.saving
-        for (b in listOf(
+        for (b in listOf(saveDayButton,
             prevButton, nextButton, todayButton, trainingTabButton, foodTabButton,
             addFoodButton, saveFoodButton, deleteFoodButton, mealTemplatesButton, newFoodButton)) {
             b.isEnabled = !busy
@@ -281,12 +287,9 @@ class TrainingDiaryActivity : ComponentActivity() {
         }
 
         if (isFood) renderFood(state, busy)
-        summaryView.text = if (isFood) {
-            foodSummaryOf(state)
-        } else if (state.suggestion?.tipo == "descanso" && session?.hasData != true) {
-            state.suggestion.explicacion
-        } else {
-            summaryOf(session)
+        // Resumen final fuera en entreno (oculto); alimentación lo conserva.
+        if (isFood) {
+            summaryView.text = foodSummaryOf(state)
         }
     }
 
@@ -300,11 +303,10 @@ class TrainingDiaryActivity : ComponentActivity() {
         if (!::rowsBox.isInitialized) return
         rowsBox.removeAllViews()
         headerButtons.clear()
-        statusLines.clear()
+        descansoFields.clear()
+        dialViews.clear()
         cardBodies.clear()
         shownPanels.clear()
-        lastDialMs = 0L
-        lastDialLabel = ""
         val rows = vm.entrenoRows.value.filter { !it.draft.isBlank() }
         val groups = vm.entrenoGroups.value
         val done = vm.doneUuids.value
@@ -315,10 +317,17 @@ class TrainingDiaryActivity : ComponentActivity() {
         val rowsByEjercicio = rows.groupBy { it.draft.ejercicio.trim() }
         val order = rows.map { it.draft.ejercicio.trim() }.distinct()
         for (ejercicio in order) {
+            val collapsed = ejercicio in vm.collapsedGroups
             rowsBox.addView(TextView(this).apply {
-                text = ejercicio.ifBlank { "(sin nombre)" }
+                text = (ejercicio.ifBlank { "(sin nombre)" }) + if (collapsed) " ▸" else " ▾"
                 setTextAppearance(context, R.style.Diary_ExerciseName)
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                )
+                contentDescription = "$ejercicio: contraer o expandir"
+                setOnClickListener { vm.toggleGroup(ejercicio) }
             })
+            if (collapsed) continue
             for (row in rowsByEjercicio[ejercicio].orEmpty()) {
                 val item = byUuid[row.uuid] ?: continue
                 val card = rowCard(row, item, row.uuid in expanded, row.uuid in done)
@@ -327,13 +336,14 @@ class TrainingDiaryActivity : ComponentActivity() {
             }
         }
         shownPanels.addAll(expanded)
-        updateDialAndHeaders()
+        updateTick()
     }
 
     private fun refreshProgress() {
         val (total, doneCount, _) = SessionFlowState.progress(vm.entrenoGroups.value, vm.doneUuids.value)
         progressView.text = if (total == 0) {
-            "Sin series este día."
+            val sug = vm.state.value.suggestion
+            if (sug?.tipo == "descanso") sug.explicacion else "Sin series este día."
         } else {
             "$doneCount guardadas de $total"
         }
@@ -347,52 +357,31 @@ class TrainingDiaryActivity : ComponentActivity() {
             tag = "card_${row.uuid}"
         }
         val headerBtn = Button(this).apply {
-            text = headerText(item, row.draft.descansoSeg, isDone)
+            text = headerText(item, isDone)
             minHeight = (64 * dm).toInt()
             isAllCaps = false
-            contentDescription = "Serie ${item.aparenteOrden} ${item.ejercicio}: expandir o colapsar"
+            contentDescription = "Serie ${item.aparenteOrden}: expandir o colapsar"
             setOnClickListener { vm.toggleExpand(item.uuid) }
         }
         headerButtons[item.uuid] = headerBtn
         card.addView(headerBtn)
         if (isExpanded) {
-            card.addView(buildPanel(card, item, row.draft))
+            card.addView(buildPanel(item, row.draft))
         }
         return card
     }
 
     /**
-     * Panel expandido: Ir + check gigantes (símbolos, sin texto), steppers y
-     * estado. Sin INICIAR/PAUSAR: el descanso nace en ✓ y muere en el ▶
-     * siguiente. Sin cronómetro local: el dial central es el reloj.
+     * Panel expandido: steppers, mini-dial propio, campo Descanso y ✓ abajo.
+     * Sin Ir ni INICIAR/PAUSAR: el descanso nace en ✓ y muere en el ✓
+     * siguiente (incluye el trabajo, aceptado al quitar el botón).
      */
-    private fun buildPanel(card: LinearLayout, item: EntrenoItem, draft: TrainingSetDraft): LinearLayout {
+    private fun buildPanel(item: EntrenoItem, draft: TrainingSetDraft): LinearLayout {
         val dm = resources.displayMetrics.density
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             tag = "panel_${item.uuid}"
         }
-        val goRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val irBtn = Button(this).apply {
-            text = "▶"
-            textSize = 28f
-            minHeight = (72 * dm).toInt()
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            contentDescription = "Ir: empezar la serie ${item.aparenteOrden}"
-            setOnClickListener { vm.ir(item.uuid) }
-        }
-        val okBtn = primaryButton("✓")
-        okBtn.textSize = 28f
-        okBtn.minHeight = (72 * dm).toInt()
-        okBtn.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        okBtn.contentDescription = "Guardar la serie ${item.aparenteOrden}"
-        okBtn.setOnClickListener { vm.guardar(item.uuid) }
-        goRow.addView(irBtn)
-        goRow.addView(okBtn)
-        panel.addView(goRow)
-        val status = TextView(this).apply { asSummary() }
-        statusLines[item.uuid] = status
-        panel.addView(status)
         if (item.isHiit()) {
             panel.addView(stepperRow(item, draft, "Vel.", "velocidadKmh", "vel", "Bajar velocidad", "Subir velocidad"))
             panel.addView(stepperRow(item, draft, "Dif.", "dificultad", "dif", "Bajar dificultad", "Subir dificultad"))
@@ -401,7 +390,31 @@ class TrainingDiaryActivity : ComponentActivity() {
             panel.addView(stepperRow(item, draft, "reps", "reps", "reps", "Bajar repeticiones", "Subir repeticiones"))
             panel.addView(stepperRow(item, draft, "RIR", "rir", "rir", "Bajar RIR", "Subir RIR"))
         }
-        refreshStatusLine(item.uuid)
+        val dial = RestDialView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            )
+            tag = "dial_${item.uuid}"
+        }
+        dialViews[item.uuid] = dial
+        panel.addView(dial)
+        val field = TextView(this).apply {
+            asSummary()
+            gravity = Gravity.CENTER
+            tag = "desc_${item.uuid}"
+        }
+        descansoFields[item.uuid] = field
+        panel.addView(field)
+        val okBtn = primaryButton("✓")
+        okBtn.textSize = 32f
+        okBtn.minHeight = (72 * dm).toInt()
+        okBtn.contentDescription = "Guardar la serie ${item.aparenteOrden}"
+        okBtn.setOnClickListener {
+            okBtn.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+            vm.guardar(item.uuid)
+        }
+        panel.addView(okBtn)
+        refreshDescansoField(item.uuid)
         return panel
     }
 
@@ -413,13 +426,14 @@ class TrainingDiaryActivity : ComponentActivity() {
             val card = cardBodies[uuid] ?: continue
             val row = vm.entrenoRows.value.find { it.uuid == uuid } ?: continue
             val item = SessionFlowState.flattened(vm.entrenoGroups.value).find { it.uuid == uuid } ?: continue
-            card.addView(buildPanel(card, item, row.draft))
+            card.addView(buildPanel(item, row.draft))
             shownPanels.add(uuid)
         }
         for (uuid in shownPanels - expanded) {
             val card = cardBodies[uuid] ?: continue
             card.findViewWithTag<LinearLayout>("panel_$uuid")?.let { card.removeView(it) }
-            statusLines.remove(uuid)
+            descansoFields.remove(uuid)
+            dialViews.remove(uuid)
             shownPanels.remove(uuid)
         }
     }
@@ -429,10 +443,9 @@ class TrainingDiaryActivity : ComponentActivity() {
         refreshProgress()
         val done = vm.doneUuids.value
         val byUuid = SessionFlowState.flattened(vm.entrenoGroups.value).associateBy { it.uuid }
-        val draftsByUuid = vm.entrenoRows.value.associate { it.uuid to it.draft }
         for ((uuid, btn) in headerButtons) {
             val item = byUuid[uuid] ?: continue
-            btn.text = headerText(item, draftsByUuid[uuid]?.descansoSeg ?: "", uuid in done)
+            btn.text = headerText(item, uuid in done)
         }
     }
 
@@ -518,9 +531,7 @@ class TrainingDiaryActivity : ComponentActivity() {
         rowsBox.findViewWithTag<TextView>("val_${uuid}_vel")?.text = stepperText("Vel.", row.draft, "velocidadKmh")
         rowsBox.findViewWithTag<TextView>("val_${uuid}_dif")?.text = stepperText("Dif.", row.draft, "dificultad")
         if (item != null) {
-            headerButtons[uuid]?.text = headerText(
-                item, row.draft.descansoSeg, uuid in vm.doneUuids.value,
-            )
+            headerButtons[uuid]?.text = headerText(item, uuid in vm.doneUuids.value)
         }
     }
 
@@ -550,69 +561,47 @@ class TrainingDiaryActivity : ComponentActivity() {
             .show()
     }
 
-    /** Descanso registrado como dato (1 decimal), vacío si no hay. */
-    private fun descansoSuffix(descansoSeg: String): String =
-        if (descansoSeg.isBlank()) "" else " · D $descansoSeg s"
+    /** Cabecera mínima: solo número de serie + ✓ (los datos viven dentro). */
+    private fun headerText(item: EntrenoItem, isDone: Boolean): String =
+        "Serie ${item.aparenteOrden}" + if (isDone) " ✓" else ""
 
-    private fun headerText(item: EntrenoItem, descansoSeg: String, isDone: Boolean): String =
-        item.summaryLine(formatMmSsFromMs(vm.restMs.value[item.uuid] ?: 0L), isDone) +
-            descansoSuffix(descansoSeg)
-
-    private var lastDialMs: Long = 0L
-    private var lastDialLabel: String = ""
+    private fun descansoMsFor(text: String): Long =
+        runCatching { (text.trim().toDouble() * 1000).toLong() }.getOrDefault(0L).coerceAtLeast(0L)
 
     /**
-     * Tick 250ms: dial central + cabeceras + estados, todo in-place (nunca
-     * reconstruye: las animaciones sobreviven).
+     * Tick 250ms: diales por tarjeta + progreso con testigo global, todo
+     * in-place (nunca reconstruye: las animaciones sobreviven). Cada dial
+     * muestra el descanso en curso; en reposo, el registrado de su serie.
      */
-    private fun updateDialAndHeaders() {
-        if (!::rowsBox.isInitialized || !::dialView.isInitialized) return
+    private fun updateTick() {
+        if (!::rowsBox.isInitialized) return
         val rest = vm.restMs.value
         val running = vm.runningUuid.value
-        val done = vm.doneUuids.value
-        val work = vm.workOpen.value
-        val byUuid = SessionFlowState.flattened(vm.entrenoGroups.value).associateBy { it.uuid }
         val draftsByUuid = vm.entrenoRows.value.associate { it.uuid to it.draft }
-        if (running != null) {
-            lastDialMs = rest[running] ?: 0L
-            lastDialLabel = "Descanso tras ${byUuid[running]?.ejercicio ?: ""}"
-            dialView.ms = lastDialMs
-            dialView.running = true
-            dialView.label = lastDialLabel
-        } else {
-            dialView.ms = lastDialMs
-            dialView.running = false
-            dialView.label = lastDialLabel
-        }
-        for ((uuid, btn) in headerButtons) {
-            val item = byUuid[uuid] ?: continue
-            btn.text = headerText(item, draftsByUuid[uuid]?.descansoSeg ?: "", uuid in done)
-        }
-        for (uuid in statusLines.keys.toList()) {
-            refreshStatusLine(uuid)
-        }
-    }
-
-    private fun refreshStatusLine(uuid: String) {
-        val line = statusLines[uuid] ?: return
-        val reg = vm.entrenoRows.value.find { it.uuid == uuid }?.draft?.descansoSeg ?: ""
-        line.text = when {
-            uuid in vm.workOpen.value -> "▶ En serie — dale ✓ al terminar."
-            reg.isNotBlank() -> "Descanso registrado: $reg s · se envía solo."
-            else -> "Sin descanso medido."
-        }
-    }
-
-    private fun summaryOf(session: TrainingSession?): String {
-        if (session == null || !session.hasData) return "Sin entrenamiento guardado para este día."
-        return session.sets.joinToString("\n") { s ->
-            if (s.isHiit()) {
-                "${s.setOrden}. ${s.ejercicio} ${numToText(s.velocidadKmh)} km/h · dif ${numToText(s.dificultad)}"
+        for ((uuid, dial) in dialViews) {
+            if (running != null) {
+                dial.ms = rest[running] ?: 0L
+                dial.running = true
             } else {
-                val rm = if (s.rm != null) " (RM ${s.rm})" else ""
-                "${s.setOrden}. ${s.ejercicio} ${numToText(s.kg)}×${numToText(s.reps)} RIR ${numToText(s.rir)}$rm"
+                dial.ms = descansoMsFor(draftsByUuid[uuid]?.descansoSeg ?: "")
+                dial.running = false
             }
         }
+        val (total, doneCount, _) = SessionFlowState.progress(vm.entrenoGroups.value, vm.doneUuids.value)
+        progressView.text = if (total == 0) {
+            progressView.text
+        } else if (running != null) {
+            "$doneCount guardadas de $total · descanso ${formatMmSs(rest[running] ?: 0L)}"
+        } else {
+            "$doneCount guardadas de $total"
+        }
+    }
+
+    /** Campo Descanso de una tarjeta (valor registrado o —). */
+    private fun refreshDescansoField(uuid: String) {
+        val field = descansoFields[uuid] ?: return
+        val reg = vm.entrenoRows.value.find { it.uuid == uuid }?.draft?.descansoSeg ?: ""
+        field.text = if (reg.isBlank()) "Descanso  —" else "Descanso  $reg s"
     }
 
     // --- B2: alimentación -----------------------------------------------------------
