@@ -58,6 +58,10 @@ interface RestDao {
     @Query("SELECT * FROM rest_intervals WHERE estado = 'ABIERTO' ORDER BY start_wall_ms")
     suspend fun openAll(): List<RestIntervalEntity>
 
+    /** Abiertos de hoy (para reanudar al volver; como mucho hay uno). */
+    @Query("SELECT * FROM rest_intervals WHERE estado = 'ABIERTO' AND fecha = :fecha ORDER BY start_wall_ms")
+    suspend fun openForFecha(fecha: String): List<RestIntervalEntity>
+
     @Query("SELECT * FROM rest_intervals WHERE fecha = :fecha ORDER BY start_wall_ms")
     suspend fun forFecha(fecha: String): List<RestIntervalEntity>
 
@@ -77,6 +81,37 @@ interface RestDao {
             "estado = 'ABANDONADO' WHERE estado = 'ABIERTO'",
     )
     suspend fun abandonAllOpen(endWall: Long, endElapsed: Long)
+
+    /**
+     * Barrido al arrancar: solo huérfanos de OTROS días. Los ABIERTO de hoy
+     * se reanudan al volver (atrás o muerte de proceso el mismo día).
+     */
+    @Query(
+        "UPDATE rest_intervals SET end_wall_ms = :endWall, end_elapsed_ms = :endElapsed, " +
+            "estado = 'ABANDONADO' WHERE estado = 'ABIERTO' AND fecha != :fecha",
+    )
+    suspend fun abandonOpenExcept(fecha: String, endWall: Long, endElapsed: Long)
+
+    /**
+     * Reset del cronómetro: todo lo contado del dueño (ABIERTO y CERRADO)
+     * queda ABANDONADO — excluido del cómputo pero visible para la futura
+     * curva de FC. Sin esto el reset resucitaría al reabrir (seedAccum).
+     */
+    @Query(
+        "UPDATE rest_intervals SET end_wall_ms = :endWall, end_elapsed_ms = :endElapsed, " +
+            "estado = 'ABANDONADO' WHERE client_set_uuid = :uuid AND estado != 'ABANDONADO'",
+    )
+    suspend fun abandonForSet(uuid: String, endWall: Long, endElapsed: Long)
+
+    /**
+     * Reinicio del entreno: todo lo contado del día queda ABANDONADO.
+     * Solo queries, sin migración.
+     */
+    @Query(
+        "UPDATE rest_intervals SET end_wall_ms = :endWall, end_elapsed_ms = :endElapsed, " +
+            "estado = 'ABANDONADO' WHERE fecha = :fecha AND estado != 'ABANDONADO'",
+    )
+    suspend fun abandonForFecha(fecha: String, endWall: Long, endElapsed: Long)
 
     @Query("SELECT * FROM rest_intervals WHERE client_set_uuid = :uuid ORDER BY start_wall_ms")
     suspend fun forSet(uuid: String): List<RestIntervalEntity>

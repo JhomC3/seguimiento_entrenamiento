@@ -89,6 +89,82 @@ class TrainingSessionFlowTest {
     }
 
     @Test
+    fun `crossedThresholds dispara por flanco una vez`() {
+        val marks = listOf(120L, 180L)
+        // Cruce exacto del borde.
+        assertEquals(listOf(120L), SessionFlowState.crossedThresholds(119_900L, 120_000L, marks))
+        // Sin avance o retroceso: nada.
+        assertEquals(emptyList<Long>(), SessionFlowState.crossedThresholds(120_000L, 120_000L, marks))
+        assertEquals(emptyList<Long>(), SessionFlowState.crossedThresholds(130_000L, 125_000L, marks))
+        // Salto que cubre ambas: las dos (el llamante las suena una vez).
+        assertEquals(marks, SessionFlowState.crossedThresholds(100_000L, 200_000L, marks))
+        // Ya pasada: no refire.
+        assertEquals(emptyList<Long>(), SessionFlowState.crossedThresholds(121_000L, 150_000L, marks))
+        assertEquals(listOf(180L), SessionFlowState.crossedThresholds(150_000L, 181_000L, marks))
+    }
+
+    @Test
+    fun `derivePaused rescata pausadas y excluye resto`() {
+        val valid = listOf("a", "b", "c", "d")
+        // Pendiente con cerrados = estaba pausada.
+        assertEquals(
+            setOf("a"),
+            SessionFlowState.derivePaused(listOf("a"), emptySet(), null, valid),
+        )
+        // Hecha, corriendo o ajena al día: fuera.
+        assertEquals(
+            emptySet<String>(),
+            SessionFlowState.derivePaused(listOf("b"), setOf("b"), null, valid),
+        )
+        assertEquals(
+            emptySet<String>(),
+            SessionFlowState.derivePaused(listOf("c"), emptySet(), "c", valid),
+        )
+        assertEquals(
+            emptySet<String>(),
+            SessionFlowState.derivePaused(listOf("zzz"), emptySet(), null, valid),
+        )
+        // Varias pausadas a la vez sobreviven.
+        assertEquals(
+            setOf("a", "d"),
+            SessionFlowState.derivePaused(listOf("a", "a", "d"), setOf("b"), "c", valid),
+        )
+    }
+    @Test
+    fun `dialTap corriendo pausa la suya`() {
+        val t = SessionFlowState.WorkoutFlow.resolveDialTap("u1", emptySet(), "u1", false)
+        assertEquals(SessionFlowState.WorkoutFlow.DialTapDecision.Pause("u1"), t)
+    }
+
+    @Test
+    fun `dialTap pausado reanuda y cierra al otro si corre`() {
+        var t = SessionFlowState.WorkoutFlow.resolveDialTap(null, setOf("u1"), "u1", false)
+        assertEquals(SessionFlowState.WorkoutFlow.DialTapDecision.Resume("u1", null), t)
+        // Reanudar con otro corriendo: primero se cierra el otro.
+        t = SessionFlowState.WorkoutFlow.resolveDialTap("u2", setOf("u1"), "u1", false)
+        assertEquals(SessionFlowState.WorkoutFlow.DialTapDecision.Resume("u1", "u2"), t)
+    }
+
+    @Test
+    fun `dialTap en reposo de pendiente arranca, en hecha o ajena nada`() {
+        // Pendiente en reposo sin nadie corriendo: play.
+        assertEquals(
+            SessionFlowState.WorkoutFlow.DialTapDecision.Start("u1"),
+            SessionFlowState.WorkoutFlow.resolveDialTap(null, emptySet(), "u1", false),
+        )
+        // Hecha en reposo: nada.
+        assertEquals(
+            SessionFlowState.WorkoutFlow.DialTapDecision.Nothing,
+            SessionFlowState.WorkoutFlow.resolveDialTap(null, emptySet(), "u1", true),
+        )
+        // Corre otra serie: jamás tumbarla con un tap.
+        assertEquals(
+            SessionFlowState.WorkoutFlow.DialTapDecision.Nothing,
+            SessionFlowState.WorkoutFlow.resolveDialTap("u2", emptySet(), "u1", false),
+        )
+    }
+
+    @Test
     fun `collectDrafts no se ve afectado por doneSets`() {
         // Los borradores son la fuente; doneSets es solo presentación.
         val drafts = listOf(draft("Press", "80", "8"), draft("Remo", "60", "10"))
@@ -186,6 +262,45 @@ class TrainingSessionFlowTest {
         t.onOpened(2L, "u2", 2_000L, 20_000L)
         assertEquals(2_000L, t.elapsedFor("u1", 99_000L))
         assertEquals(5_000L, t.elapsedFor("u2", 25_000L))
+    }
+
+    @Test
+    fun `clearAccumFor olvida el historial para arrancar de cero`() {
+        val t = RestTimer()
+        t.onOpened(1L, "u1", 1_000L, 10_000L)
+        t.onClosed(15_000L) // 5s de historial
+        t.clearAccumFor("u1")
+        assertEquals(0L, t.elapsedFor("u1", 99_000L))
+        // Reabrir tras limpiar arranca de cero.
+        t.onOpened(2L, "u1", 2_000L, 20_000L)
+        assertEquals(5_000L, t.elapsedFor("u1", 25_000L))
+    }
+
+    @Test
+    fun `abandonRunning descarta sin acumular y respeta ajenos`() {
+        val t = RestTimer()
+        t.onOpened(1L, "u1", 1_000L, 10_000L)
+        t.onClosed(12_000L) // 2s acumulados de u1
+        t.onOpened(2L, "u1", 2_000L, 20_000L)
+        assertTrue(t.abandonRunning("u1"))
+        assertNull(t.runningUuid())
+        assertEquals(0L, t.elapsedFor("u1", 99_000L))
+        // Ajeno intacto: no lo toca.
+        t.onOpened(3L, "u2", 3_000L, 30_000L)
+        assertFalse(t.abandonRunning("u1"))
+        assertEquals("u2", t.runningUuid())
+    }
+
+    @Test
+    fun `resetAll suelta running y olvida todo`() {
+        val t = RestTimer()
+        t.onOpened(1L, "u1", 1_000L, 10_000L)
+        t.onClosed(12_000L)
+        t.onOpened(2L, "u2", 2_000L, 20_000L)
+        t.resetAll()
+        assertNull(t.runningUuid())
+        assertEquals(0L, t.elapsedFor("u1", 99_000L))
+        assertEquals(0L, t.elapsedFor("u2", 99_000L))
     }
 
 }

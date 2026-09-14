@@ -49,6 +49,28 @@ class RestTimer {
         accum[uuid] = (accum[uuid] ?: 0L) + ms
     }
 
+    /**
+     * Descarta el running de [uuid] sin acumular (reset 3 s): el intervalo ya
+     * quedó ABANDONADO en Room y lo contado se olvida. Devuelve true si era él.
+     */
+    fun abandonRunning(uuid: String): Boolean {
+        if (running?.uuid != uuid) return false
+        running = null
+        accum.remove(uuid)
+        return true
+    }
+
+    /** Olvida lo acumulado de [uuid] (reset o arranque fresco desde 0). */
+    fun clearAccumFor(uuid: String) {
+        accum.remove(uuid)
+    }
+
+    /** Reinicio total del día: suelta el running y olvida todo lo contado. */
+    fun resetAll() {
+        running = null
+        accum.clear()
+    }
+
     fun clearAccum(uuids: Set<String>) {
         accum.keys.retainAll(uuids)
         if (running?.uuid !in uuids) running = null
@@ -64,4 +86,7 @@ class RestTimer {
     fun isRunning(uuid: String): Boolean = running?.uuid == uuid
 
     fun runningUuid(): String? = running?.uuid
+
+    /** Id del intervalo en curso (cursor del piip; null sin running). */
+    fun runningIntervalId(): Long? = running?.intervalId
 }

@@ -117,9 +117,38 @@ object SessionFlowState {
     }
 
     /**
+     * Marcas de piip cruzadas en (lastMs, nowMs]: cada marca suena una vez
+     * por descanso. Puro y testeable; el llamante guarda el cursor por
+     * intervalo (nuevo intervalo = cursor fresco, sin refires).
+     */
+    fun crossedThresholds(lastMs: Long, nowMs: Long, marksSec: List<Long>): List<Long> {
+        if (nowMs <= lastMs) return emptyList()
+        return marksSec.filter { m -> lastMs < m * 1000 && m * 1000 <= nowMs }
+    }
+
+    /**
+     * Pausa persistente derivada (sin migración): una serie pendiente con
+     * intervalos CERRADOS y sin running estaba pausada al morir el proceso
+     * (pausar cierra; guardar marca done; reset abandona, no cierra). Al
+     * reabrir el día, el tap cae en Resume y continúa desde el acumulado
+     * en vez de arrancar de cero.
+     */
+    fun derivePaused(
+        closedUuids: Collection<String>,
+        done: Set<String>,
+        running: String?,
+        validIds: Collection<String>,
+    ): Set<String> =
+        closedUuids.toSet() - done - setOfNotNull(running) intersect validIds.toSet()
+
+    /**
      * Máquina pura del flujo por serie: pendiente → en trabajo (Ir) →
      * guardada (check). Sin Android ni Room. El ViewModel la posee para
      * transiciones; solo cablea Room/reloj/red alrededor.
+     *
+     * El descanso pertenece a la SERIE SIGUIENTE: al guardar N se abre el
+     * descanso a nombre de N+1 (su dial late visible) y al guardar N+1 se
+     * cierra y se anota en N+1. La primera serie nunca tiene descanso previo.
      */
     object WorkoutFlow {
         /** Guardar: colapsa esta, abre la siguiente y arranca su descanso. */
@@ -137,6 +166,36 @@ object SessionFlowState {
             val next = nextPending(groups, done + uuid, uuid)
             // Última serie: no se arranca descanso (post-entreno sin sentido).
             return GuardarEffect(saved = uuid, nextToExpand = next?.uuid, startRest = next != null)
+        }
+
+        /**
+         * Decisión pura del tap en el dial (play/pausa/start). Semántica de
+         * cronómetro: el tramo pausado se EXCLUYE del descanso anotado (cada
+         * cierre anota a su dueño; reanudar acumula encima).
+         * - `Pause`: corre [uuid] → cerrarlo (se anota) y marcarlo pausado.
+         * - `Resume`: [uuid] pausado → abrirle tramo nuevo; si corre otro
+         *   ([closeOther]), cerrarlo primero (también se anota a su dueño).
+         * - `Start`: [uuid] pendiente en reposo sin nadie corriendo → abrirle
+         *   su descanso (así un cronómetro reseteado vuelve a andar con tap).
+         * - `Nothing`: serie hecha o corre otra (jamás tumbar timer ajeno).
+         */
+        sealed interface DialTapDecision {
+            data object Nothing : DialTapDecision
+            data class Pause(val uuid: String) : DialTapDecision
+            data class Resume(val uuid: String, val closeOther: String?) : DialTapDecision
+            data class Start(val uuid: String) : DialTapDecision
+        }
+
+        fun resolveDialTap(
+            runningOwner: String?,
+            paused: Set<String>,
+            uuid: String,
+            isDone: Boolean,
+        ): DialTapDecision = when {
+            runningOwner == uuid -> DialTapDecision.Pause(uuid)
+            uuid in paused -> DialTapDecision.Resume(uuid, closeOther = runningOwner)
+            runningOwner == null && !isDone -> DialTapDecision.Start(uuid)
+            else -> DialTapDecision.Nothing
         }
     }
 
