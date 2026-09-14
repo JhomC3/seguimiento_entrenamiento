@@ -27,6 +27,18 @@ fun TextView.asSectionTitle() {
     setTextAppearance(context, R.style.Diary_SectionTitle)
 }
 
+/** Nombre del ejercicio en el diario: grande, centrado (modo registro). */
+fun TextView.asExerciseName() {
+    setTextAppearance(context, R.style.Diary_ExerciseName)
+    textSize = 22f
+    setTypeface(typeface, android.graphics.Typeface.BOLD)
+    if (this is Button) isAllCaps = false
+    gravity = android.view.Gravity.CENTER
+    maxLines = 2
+    ellipsize = android.text.TextUtils.TruncateAt.END
+    includeFontPadding = false
+}
+
 fun TextView.asSummary() {
     setTextAppearance(context, R.style.Diary_Summary)
 }

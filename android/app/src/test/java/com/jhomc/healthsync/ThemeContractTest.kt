@@ -37,7 +37,7 @@ class ThemeContractTest {
     @Test
     fun vocabulario_de_estilos_existe() {
         val content = res("styles.xml").readText()
-        for (style in listOf("Btn.Primary", "Btn.Outline", "Btn.Ghost", "Diary.Title", "Cell.Input")) {
+        for (style in listOf("Btn.Primary", "Btn.Outline", "Btn.Ghost", "Diary.Title", "Diary.ExerciseName", "Cell.Input")) {
             assertTrue("falta $style en styles.xml", content.contains(style))
         }
     }

@@ -1,31 +1,38 @@
 package com.jhomc.healthsync
 
+import android.graphics.Rect
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.text.Editable
 import android.text.InputType
-import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ArrayAdapter
-import android.widget.AutoCompleteTextView
+import android.view.ViewTreeObserver
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.Spinner
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.viewModels
 import android.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 /**
  * Diario de entrenamiento (API v1): ver la sesión del día y editarla.
  * Views programáticas como MainActivity (sin Compose/XML). El estado vive en
  * [TrainingDiaryViewModel] (sobrevive a la rotación); esta Activity solo pinta.
+ *
+ * Celular solo-entrenamiento: sin alimentación, sin botón Hoy, sin contador
+ * global. El descanso pertenece a la serie siguiente: al hacer ✓ nace en la
+ * siguiente (su dial late visible) y muere en su propio ✓.
  *
  * Reglas honestas de v1 (training-api-contract.md §4-§5):
  * - Guardar reemplaza el día completo: si ya había datos se pide confirmación.
@@ -37,93 +44,78 @@ class TrainingDiaryActivity : ComponentActivity() {
     private val vm: TrainingDiaryViewModel by viewModels()
 
     private lateinit var titleView: TextView
-    private lateinit var statusView: TextView
-    private lateinit var summaryView: TextView
+    private lateinit var emptyView: TextView
     private lateinit var rowsBox: LinearLayout
     private lateinit var prevButton: Button
-    private lateinit var todayButton: Button
     private lateinit var nextButton: Button
-    // --- B2: alimentación ---
-    private lateinit var trainingTabButton: Button
-    private lateinit var foodTabButton: Button
-    private lateinit var foodBox: LinearLayout
-    private lateinit var prefillView: TextView
-    private lateinit var pesoInput: EditText
-    private lateinit var factorProtInput: EditText
-    private lateinit var factorGrasaInput: EditText
-    private lateinit var kcalInput: EditText
-    private lateinit var foodRowsBox: LinearLayout
-    private lateinit var addFoodButton: Button
-    private lateinit var saveFoodButton: Button
-    private lateinit var deleteFoodButton: Button
-    private lateinit var mealTemplatesButton: Button
-    private lateinit var newFoodButton: Button
     // --- Solo-registro: ejercicio colapsable + series con dial propio ---
-    private lateinit var progressView: TextView
     private lateinit var saveDayButton: Button
+    private lateinit var resetDayButton: Button
     private var rowsBuiltForFecha: String? = null
     private var rowsBuiltForSession: TrainingSession? = null
     private var rowsBuiltForPreview: Int = 0
     private var rowsBuiltForStructure: Int = -1
     private val headerButtons = mutableMapOf<String, Button>()
+    private val headerDescs = mutableMapOf<String, String>()
     private val descansoFields = mutableMapOf<String, TextView>()
     private val dialViews = mutableMapOf<String, RestDialView>()
+    private val okButtons = mutableMapOf<String, Button>()
     private val cardBodies = mutableMapOf<String, LinearLayout>()
     private val shownPanels = mutableSetOf<String>()
 
-    private data class FoodRowViews(
-        val alimento: AutoCompleteTextView,
-        val cantidad: EditText,
-    )
-    // --- B2 ---
-    private val foodRowViews = mutableListOf<FoodRowViews>()
-    private var foodBuiltForFecha: String? = null
-    private var foodBuiltForNutrition: NutritionDay? = null
-    private var foodBuiltForPreview: Int = 0
-    private var foodNames: List<String> = emptyList()
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Pantalla siempre encendida en el diario: con ella apagada entra Doze
+        // y el ticker (piips 2:00/3:00) se retrasa. Sin permiso: la flag muere
+        // con la ventana al salir (atrás/inicio) y todo vuelve a lo normal.
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        titleView = TextView(this).apply { asTitle() }
-        statusView = TextView(this)
-        summaryView = TextView(this).apply { asSummary() }
+        titleView = TextView(this).apply {
+            asTitle()
+            gravity = Gravity.CENTER
+        }
+        emptyView = TextView(this).apply {
+            asSummary()
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+        }
         rowsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         val navRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             prevButton = Button(context).apply { text = "◀" }
-            todayButton = Button(context).apply { text = "HOY" }
             nextButton = Button(context).apply { text = "▶" }
-            addView(prevButton, navParams())
-            addView(todayButton, navParams())
-            addView(nextButton, navParams())
+            addView(prevButton)
+            addView(titleView, navParams())
+            addView(nextButton)
         }
         prevButton.setOnClickListener { vm.shiftDay(-1) }
         nextButton.setOnClickListener { vm.shiftDay(1) }
-        todayButton.setOnClickListener { vm.goToday() }
 
-        progressView = TextView(this).apply { asSummary() }
         saveDayButton = primaryButton("Guardar entrenamiento")
         saveDayButton.contentDescription = "Guardar entrenamiento: enviar al servidor ahora"
         saveDayButton.minHeight = (72 * resources.displayMetrics.density).toInt()
         saveDayButton.setOnClickListener { vm.load(vm.state.value.fecha) }
+        resetDayButton = Button(this).apply {
+            text = "Reiniciar entreno"
+            asDanger()
+            contentDescription = "Reiniciar entreno: todos los descansos a cero y series desmarcadas"
+            setOnClickListener { confirmResetEntreno() }
+        }
         rowsBox.layoutTransition = android.animation.LayoutTransition().apply {
             enableTransitionType(android.animation.LayoutTransition.CHANGING)
         }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
-            addView(titleView)
+            val pad = (24 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad, pad, pad)
             addView(navRow)
-            addView(tabsRow())
-            addView(statusView)
-            addView(progressView)
+            addView(emptyView)
             addView(rowsBox)
             addView(saveDayButton)
-            addView(foodBox())
-            addView(summaryView)
+            addView(resetDayButton)
         }
         setContentView(ScrollView(this).apply { addView(root) })
 
@@ -146,7 +138,11 @@ class TrainingDiaryActivity : ComponentActivity() {
         }
         lifecycleScope.launch {
             repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
-                vm.doneUuids.collect { refreshHeadersAndProgress() }
+                vm.doneUuids.collect {
+                    refreshHeaders()
+                    updateEmptyView()
+                    refreshCardChrome()
+                }
             }
         }
         lifecycleScope.launch {
@@ -156,7 +152,18 @@ class TrainingDiaryActivity : ComponentActivity() {
         }
         lifecycleScope.launch {
             repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
-                vm.runningUuid.collect { updateTick() }
+                vm.runningUuid.collect {
+                    updateTick()
+                    refreshCardChrome()
+                }
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                vm.pausedUuids.collect {
+                    updateTick()
+                    refreshCardChrome()
+                }
             }
         }
         lifecycleScope.launch {
@@ -168,116 +175,20 @@ class TrainingDiaryActivity : ComponentActivity() {
         }
     }
 
-    // --- Solo-registro: visibilidad ---------------------------------------------
-    // summaryView se oculta solo en entreno (alimentación lo sigue usando).
-
-    private fun applyTrainingVisibility(isFood: Boolean) {
-        val trainVis = if (isFood) View.GONE else View.VISIBLE
-        val foodVis = if (isFood) View.VISIBLE else View.GONE
-        for (v in listOf(progressView, rowsBox, saveDayButton)) {
-            v.visibility = trainVis
-        }
-        foodBox.visibility = foodVis
-        if (!isFood) summaryView.visibility = View.GONE
-    }
-
     // --- Render ---------------------------------------------------------------
-
-    private fun tabsRow(): LinearLayout {
-        trainingTabButton = Button(this).apply { text = "Entrenamiento" }
-        foodTabButton = Button(this).apply { text = "Alimentación" }
-        trainingTabButton.setOnClickListener { vm.setVista("entrenamiento") }
-        foodTabButton.setOnClickListener { vm.setVista("alimentacion") }
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(trainingTabButton, navParams())
-            addView(foodTabButton, navParams())
-        }
-    }
-
-    private fun foodBox(): LinearLayout {
-        prefillView = TextView(this).apply { textSize = 13f }
-        fun param(hint: String): EditText = EditText(this).apply {
-            this.hint = hint
-            inputType = InputType.TYPE_CLASS_NUMBER or
-                InputType.TYPE_NUMBER_FLAG_DECIMAL or
-                InputType.TYPE_NUMBER_FLAG_SIGNED
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        pesoInput = param("peso kg")
-        factorProtInput = param("factor prot")
-        factorGrasaInput = param("factor grasa")
-        kcalInput = param("kcal obj")
-        val paramsRow1 = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(pesoInput); addView(factorProtInput)
-        }
-        val paramsRow2 = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(factorGrasaInput); addView(kcalInput)
-        }
-        foodRowsBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        addFoodButton = Button(this).apply { text = "+ Añadir alimento" }
-        saveFoodButton = primaryButton("Guardar día")
-        deleteFoodButton = Button(this).apply { text = "Eliminar día"; asDanger() }
-        mealTemplatesButton = Button(this).apply { text = "Plantillas comida" }
-        newFoodButton = Button(this).apply { text = "Nuevo alimento" }
-        addFoodButton.setOnClickListener { addFoodRow(FoodDraft("", "")); stashFood() }
-        saveFoodButton.setOnClickListener { confirmFoodSave() }
-        deleteFoodButton.setOnClickListener { confirmFoodDelete() }
-        mealTemplatesButton.setOnClickListener { showMealTemplatesDialog() }
-        newFoodButton.setOnClickListener { showFoodDialog() }
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(prefillView)
-            addView(paramsRow1)
-            addView(paramsRow2)
-            addView(foodRowsBox)
-            addView(addFoodButton)
-            addView(saveFoodButton)
-            addView(deleteFoodButton)
-            addView(mealTemplatesButton)
-            addView(newFoodButton)
-            visibility = android.view.View.GONE
-        }.also { foodBox = it }
-    }
 
     private fun render(state: DiaryUiState) {
         val session = state.session
-        val isFood = state.vista == "alimentacion"
-        trainingTabButton.text = if (isFood) "Entrenamiento" else "● Entrenamiento"
-        foodTabButton.text = if (isFood) "● Alimentación" else "Alimentación"
-        titleView.text = buildString {
-            append("DÍA ${state.title()}")
-            if (!isFood && session != null && (session.semana > 0 || session.dia.isNotEmpty())) {
-                append(" · S${session.semana} ${session.dia}")
-            }
-            if (state.fecha in state.dots) append(" ●")
-        }
-        when {
-            state.loading -> statusView.asStatus("Cargando…", StatusKind.NOTICE)
-            state.saving -> statusView.asStatus("Guardando…", StatusKind.NOTICE)
-            state.error != null -> statusView.asStatus("Error: ${state.error}", StatusKind.ERROR)
-            state.notice != null -> statusView.asStatus(state.notice, StatusKind.SUCCESS)
-            state.stale -> statusView.asStatus("Sin conexión: última copia guardada.", StatusKind.NOTICE)
-            state.pending > 0 -> statusView.asStatus(
-                "${state.pending} por enviar al servidor.", StatusKind.NOTICE,
-            )
-            else -> statusView.asStatus("", StatusKind.NOTICE)
-        }
+        titleView.text = weekdayTitle(state.fecha)
+        // Sin letrero de estado (decisión de producto): ni avisos verdes ni
+        // errores; la cola offline sigue funcionando en silencio.
         val busy = state.loading || state.saving
-        for (b in listOf(saveDayButton,
-            prevButton, nextButton, todayButton, trainingTabButton, foodTabButton,
-            addFoodButton, saveFoodButton, deleteFoodButton, mealTemplatesButton, newFoodButton)) {
+        for (b in listOf(saveDayButton, resetDayButton, prevButton, nextButton)) {
             b.isEnabled = !busy
         }
-        // Visibilidad por pestaña (mismo `vista` que el Diario web).
-        val foodVis = if (isFood) android.view.View.VISIBLE else android.view.View.GONE
-        foodBox.visibility = foodVis
-        applyTrainingVisibility(isFood)
         // Al cambiar de día/sesión/preview, reagrupa. Comparación profunda
         // (no identidad): una recarga idéntica no reconstruye ni mueve scroll.
-        if (!isFood && !busy && (state.fecha != rowsBuiltForFecha || session != rowsBuiltForSession || state.previewId != rowsBuiltForPreview)) {
+        if (!busy && (state.fecha != rowsBuiltForFecha || session != rowsBuiltForSession || state.previewId != rowsBuiltForPreview)) {
             vm.ensureEntrenoBuilt()
             rebuildCards()
             rowsBuiltForFecha = state.fecha
@@ -285,12 +196,7 @@ class TrainingDiaryActivity : ComponentActivity() {
             rowsBuiltForPreview = state.previewId
             rowsBuiltForStructure = vm.structureVersion.value
         }
-
-        if (isFood) renderFood(state, busy)
-        // Resumen final fuera en entreno (oculto); alimentación lo conserva.
-        if (isFood) {
-            summaryView.text = foodSummaryOf(state)
-        }
+        updateEmptyView()
     }
 
     // --- Editor unificado: tarjetas ---------------------------------------------
@@ -303,21 +209,24 @@ class TrainingDiaryActivity : ComponentActivity() {
         if (!::rowsBox.isInitialized) return
         rowsBox.removeAllViews()
         headerButtons.clear()
+        headerDescs.clear()
         descansoFields.clear()
         dialViews.clear()
+        okButtons.clear()
         cardBodies.clear()
         shownPanels.clear()
         val rows = vm.entrenoRows.value.filter { !it.draft.isBlank() }
         val groups = vm.entrenoGroups.value
         val done = vm.doneUuids.value
         val expanded = vm.expandedUuids.value
-        refreshProgress()
+        updateEmptyView()
         rowsBuiltForStructure = vm.structureVersion.value
         val byUuid = SessionFlowState.flattened(groups).associateBy { it.uuid }
         // Lista plana: cada serie se encabeza con su ejercicio repetido
         // (centrado de verdad: gravity en código, el estilo por
         // setTextAppearance la ignora). Sin números de serie a la vista
         // (el ordinal vive solo en contentDescription por accesibilidad).
+        // Todas las tarjetas llevan dial (incluida la primera: referencia).
         for (row in rows) {
             val item = byUuid[row.uuid] ?: continue
             val card = rowCard(row, item, row.uuid in expanded, row.uuid in done)
@@ -328,50 +237,128 @@ class TrainingDiaryActivity : ComponentActivity() {
         updateTick()
     }
 
-    private fun refreshProgress() {
-        val (total, doneCount, _) = SessionFlowState.progress(vm.entrenoGroups.value, vm.doneUuids.value)
-        progressView.text = if (total == 0) {
+    /** Día vacío: aviso en su sitio (la sugerencia de descanso manda). */
+    private fun updateEmptyView() {
+        if (!::emptyView.isInitialized) return
+        val (total, _, _) = SessionFlowState.progress(vm.entrenoGroups.value, vm.doneUuids.value)
+        if (total == 0) {
             val sug = vm.state.value.suggestion
-            if (sug?.tipo == "descanso") sug.explicacion else "Sin series este día."
+            emptyView.text = if (sug?.tipo == "descanso") sug.explicacion else "Sin series este día."
+            emptyView.visibility = View.VISIBLE
         } else {
-            "$doneCount guardadas de $total"
+            emptyView.visibility = View.GONE
         }
     }
 
     private fun rowCard(row: EntrenoRow, item: EntrenoItem, isExpanded: Boolean, isDone: Boolean): LinearLayout {
         val dm = resources.displayMetrics.density
+        // Tarjeta plana y transparente: cero fondos, cero halos, cero capas.
+        // Solo aire entre series. Hecha = nombre en gris; pendiente = blanco.
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 8, 0, 8)
+            background = null
+            val pad = (4 * dm).toInt()
+            setPadding(pad, pad, pad, pad)
             tag = "card_${row.uuid}"
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                bottomMargin = (10 * dm).toInt()
+            }
         }
         val headerBtn = Button(this).apply {
-            text = headerText(item, row.draft.ejercicio, isDone)
-            minHeight = (64 * dm).toInt()
-            isAllCaps = false
+            text = headerText(item, row.draft.ejercicio)
+            asExerciseName()
+            // Sin fondo ni sombra elevada: texto flotando + ripple al pulsar.
+            setBackgroundResource(resolveSelectableBg())
+            stateListAnimator = null
+            if (isDone) setTextColor(context.getColor(R.color.neutral_500))
+            minHeight = (72 * dm).toInt()
             gravity = Gravity.CENTER
             contentDescription = "${row.draft.ejercicio}, serie ${item.aparenteOrden}: expandir o colapsar"
             setOnClickListener { vm.toggleExpand(item.uuid) }
         }
         headerButtons[item.uuid] = headerBtn
+        headerDescs[item.uuid] = headerBtn.contentDescription.toString()
         card.addView(headerBtn)
         if (isExpanded) {
-            card.addView(buildPanel(item, row.draft))
+            card.addView(buildPanel(item, row.draft, isDone))
         }
         return card
     }
 
+    /** Estado de la serie para el círculo de guardado (sin efectos). */
+    private enum class CardBorder { RUNNING, PAUSED, DONE, IDLE }
+
+    private fun cardStateFor(uuid: String): CardBorder = when {
+        vm.runningUuid.value == uuid -> CardBorder.RUNNING
+        uuid in vm.pausedUuids.value -> CardBorder.PAUSED
+        uuid in vm.doneUuids.value -> CardBorder.DONE
+        else -> CardBorder.IDLE
+    }
+
+    /** Círculo de guardado con el color del dial (sin símbolo). */
+    private fun saveCircle(state: CardBorder): Drawable = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(when (state) {
+            CardBorder.RUNNING -> getColor(R.color.burgundy_500)
+            CardBorder.PAUSED -> android.graphics.Color.argb(110, 210, 61, 95)
+            CardBorder.DONE -> getColor(R.color.detail_white)
+            CardBorder.IDLE -> getColor(R.color.neutral_500)
+        })
+    }
+
     /**
-     * Panel expandido: steppers, mini-dial propio, campo Descanso y ✓ abajo.
-     * Sin Ir ni INICIAR/PAUSAR: el descanso nace en ✓ y muere en el ✓
-     * siguiente (incluye el trabajo, aceptado al quitar el botón).
+     * Recolorea círculo + nombre con el estado actual. Barato y sin layout:
+     * solo en cambios de running/pausado/hecho/construcción, nunca en el
+     * tick de 250ms. Sin halos ni capas en las tarjetas.
      */
-    private fun buildPanel(item: EntrenoItem, draft: TrainingSetDraft): LinearLayout {
+    private fun refreshCardChrome() {
+        if (!::rowsBox.isInitialized) return
+        for ((uuid, _) in cardBodies) {
+            val st = cardStateFor(uuid)
+            okButtons[uuid]?.background = saveCircle(st)
+            headerButtons[uuid]?.let { btn ->
+                btn.setTextColor(getColor(
+                    if (st == CardBorder.DONE) R.color.neutral_500 else R.color.detail_white,
+                ))
+                val base = headerDescs[uuid] ?: return@let
+                btn.contentDescription = if (st == CardBorder.RUNNING) "$base, en descanso" else base
+            }
+        }
+    }
+
+    /**
+     * Panel expandido: dial propio arriba (180dp, dueño del descanso), steppers,
+     * campo Descanso y círculo abajo. Todas las series llevan dial (la primera
+     * no arranca descanso sola, pero sirve de referencia y con tap-Start).
+     * Sin Ir ni INICIAR/PAUSAR: el descanso nace en el ✓ anterior y muere en el
+     * ✓ propio (incluye el trabajo). Toque en dial = play/pausa/start.
+     */
+    private fun buildPanel(item: EntrenoItem, draft: TrainingSetDraft, isDone: Boolean): LinearLayout {
         val dm = resources.displayMetrics.density
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             tag = "panel_${item.uuid}"
         }
+        val dial = RestDialView(this).apply {
+            ownerName = item.ejercicio
+            // Toque = play/pausa/start; mantener 3 s = reiniciar.
+            onTap = { vm.onDialTap(item.uuid) }
+            onHoldReset = { vm.resetRest(item.uuid) }
+            startable = !isDone
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                topMargin = (8 * dm).toInt()
+                bottomMargin = (8 * dm).toInt()
+            }
+            tag = "dial_${item.uuid}"
+        }
+        dialViews[item.uuid] = dial
+        panel.addView(dial)
+        paintDial(item.uuid, dial)
         if (item.isHiit()) {
             panel.addView(stepperRow(item, draft, "Vel.", "velocidadKmh", "vel", "Bajar velocidad", "Subir velocidad"))
             panel.addView(stepperRow(item, draft, "Dif.", "dificultad", "dif", "Bajar dificultad", "Subir dificultad"))
@@ -380,14 +367,6 @@ class TrainingDiaryActivity : ComponentActivity() {
             panel.addView(stepperRow(item, draft, "reps", "reps", "reps", "Bajar repeticiones", "Subir repeticiones"))
             panel.addView(stepperRow(item, draft, "RIR", "rir", "rir", "Bajar RIR", "Subir RIR"))
         }
-        val dial = RestDialView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-            )
-            tag = "dial_${item.uuid}"
-        }
-        dialViews[item.uuid] = dial
-        panel.addView(dial)
         val field = TextView(this).apply {
             asSummary()
             gravity = Gravity.CENTER
@@ -395,48 +374,75 @@ class TrainingDiaryActivity : ComponentActivity() {
         }
         descansoFields[item.uuid] = field
         panel.addView(field)
-        val okBtn = primaryButton("✓")
-        okBtn.textSize = 32f
-        okBtn.minHeight = (72 * dm).toInt()
-        okBtn.contentDescription = "Guardar la serie ${item.aparenteOrden}"
-        okBtn.setOnClickListener {
-            okBtn.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
-            vm.guardar(item.uuid)
+        // Círculo de guardado (72dp centrado, sin símbolo: su color es el del dial).
+        val okBtn = Button(this).apply {
+            text = ""
+            background = saveCircle(if (isDone) CardBorder.DONE else cardStateFor(item.uuid))
+            val size = (72 * dm).toInt()
+            minimumWidth = size
+            minimumHeight = size
+            layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                topMargin = (8 * dm).toInt()
+                bottomMargin = (8 * dm).toInt()
+            }
+            contentDescription = "Guardar la serie ${item.aparenteOrden}"
+            setOnClickListener {
+                performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+                vm.guardar(item.uuid)
+            }
         }
+        okButtons[item.uuid] = okBtn
         panel.addView(okBtn)
         refreshDescansoField(item.uuid)
         return panel
     }
 
-    /** Expandir/colapsar in-place (la LayoutTransition lo anima). */
+    /** Expandir/colapsar in-place (la LayoutTransition lo anima). Al abrir, revela la tarjeta. */
     private fun syncPanels() {
         if (!::rowsBox.isInitialized) return
         val expanded = vm.expandedUuids.value
+        val done = vm.doneUuids.value
         for (uuid in expanded - shownPanels) {
             val card = cardBodies[uuid] ?: continue
             val row = vm.entrenoRows.value.find { it.uuid == uuid } ?: continue
             val item = SessionFlowState.flattened(vm.entrenoGroups.value).find { it.uuid == uuid } ?: continue
-            card.addView(buildPanel(item, row.draft))
+            card.addView(buildPanel(item, row.draft, uuid in done))
             shownPanels.add(uuid)
+            revealCard(card)
         }
         for (uuid in shownPanels - expanded) {
             val card = cardBodies[uuid] ?: continue
             card.findViewWithTag<LinearLayout>("panel_$uuid")?.let { card.removeView(it) }
             descansoFields.remove(uuid)
             dialViews.remove(uuid)
+            okButtons.remove(uuid)
             shownPanels.remove(uuid)
         }
+        updateTick()
     }
 
-    /** ✓ in-place: cabecera + progreso, sin reconstruir (no mata la animación). */
-    private fun refreshHeadersAndProgress() {
-        refreshProgress()
-        val done = vm.doneUuids.value
+    /**
+     * Lleva la tarjeta abierta a la vista con scroll mínimo (no-op si ya es
+     * visible). Se ejecuta tras el layout real (no en `post`: la posición
+     * leída antes del layout sale vieja y el scroll termina al fondo).
+     */
+    private fun revealCard(card: LinearLayout) {
+        rowsBox.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                rowsBox.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                card.requestRectangleOnScreen(Rect(0, 0, card.width, card.height), true)
+            }
+        })
+    }
+
+    /** ✓ in-place: cabecera, sin reconstruir (no mata la animación). */
+    private fun refreshHeaders() {
         val byUuid = SessionFlowState.flattened(vm.entrenoGroups.value).associateBy { it.uuid }
         val draftsByUuid = vm.entrenoRows.value.associate { it.uuid to it.draft }
         for ((uuid, btn) in headerButtons) {
             val item = byUuid[uuid] ?: continue
-            btn.text = headerText(item, draftsByUuid[uuid]?.ejercicio ?: "", uuid in done)
+            btn.text = headerText(item, draftsByUuid[uuid]?.ejercicio ?: "")
         }
     }
 
@@ -461,28 +467,28 @@ class TrainingDiaryActivity : ComponentActivity() {
             setOnClickListener { showValueDialog(item, draft, label, draftField, deltaField) }
         }
         val step = stepFor(deltaField)
-        val minus = Button(this).apply {
-            text = "−"
+        // −/+ planos del mismo color del dato (sin el fondo con borde del
+        // botón estándar; el ripple mantiene el feedback táctil).
+        fun flatBtn(text: String, desc: String, onTap: () -> Unit): Button = Button(this).apply {
+            this.text = text
             textSize = 24f
+            setTextColor(context.getColor(R.color.neutral_100))
+            setBackgroundResource(resolveSelectableBg())
             minimumWidth = (64 * dm).toInt()
             minHeight = (56 * dm).toInt()
-            contentDescription = minusDesc
-            setOnClickListener {
-                vm.entrenoDelta(item.uuid, deltaField, -step)
-                refreshStepper(item.uuid)
-            }
+            contentDescription = desc
+            setOnClickListener { onTap() }
+        }
+        val minus = flatBtn("−", minusDesc) {
+            vm.entrenoDelta(item.uuid, deltaField, -step)
+            refreshStepper(item.uuid)
+        }.apply {
             if (longStep != null) setOnLongClickListener { vm.entrenoDelta(item.uuid, deltaField, -longStep); refreshStepper(item.uuid); true }
         }
-        val plus = Button(this).apply {
-            text = "+"
-            textSize = 24f
-            minimumWidth = (64 * dm).toInt()
-            minHeight = (56 * dm).toInt()
-            contentDescription = plusDesc
-            setOnClickListener {
-                vm.entrenoDelta(item.uuid, deltaField, step)
-                refreshStepper(item.uuid)
-            }
+        val plus = flatBtn("+", plusDesc) {
+            vm.entrenoDelta(item.uuid, deltaField, step)
+            refreshStepper(item.uuid)
+        }.apply {
             if (longStep != null) setOnLongClickListener { vm.entrenoDelta(item.uuid, deltaField, longStep); refreshStepper(item.uuid); true }
         }
         return LinearLayout(this).apply {
@@ -522,7 +528,7 @@ class TrainingDiaryActivity : ComponentActivity() {
         rowsBox.findViewWithTag<TextView>("val_${uuid}_vel")?.text = stepperText("Vel.", row.draft, "velocidadKmh")
         rowsBox.findViewWithTag<TextView>("val_${uuid}_dif")?.text = stepperText("Dif.", row.draft, "dificultad")
         if (item != null) {
-            headerButtons[uuid]?.text = headerText(item, row.draft.ejercicio, uuid in vm.doneUuids.value)
+            headerButtons[uuid]?.text = headerText(item, row.draft.ejercicio)
         }
     }
 
@@ -552,39 +558,55 @@ class TrainingDiaryActivity : ComponentActivity() {
             .show()
     }
 
-    /** Cabecera: nombre repetido centrado + ✓ (sin números a la vista). */
-    private fun headerText(item: EntrenoItem, ejercicio: String, isDone: Boolean): String =
-        ejercicio.trim().ifBlank { "(sin nombre)" } + if (isDone) " ✓" else ""
+    /** Confirma el reinicio total (desmarca series y pone descansos a cero). */
+    private fun confirmResetEntreno() {
+        AlertDialog.Builder(this)
+            .setTitle("Reiniciar entreno")
+            .setMessage("Todos los descansos vuelven a 00:00 y las series se desmarcan. Los pesos y reps se conservan. ¿Continuar?")
+            .setPositiveButton("Reiniciar") { _, _ -> vm.resetEntreno() }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    /** Cabecera: nombre repetido centrado (sin números a la vista). El ✓ ya no
+     * se muestra: las realizadas se distinguen por su halo blanco. */
+    private fun headerText(item: EntrenoItem, ejercicio: String): String =
+        ejercicio.trim().ifBlank { "(sin nombre)" }
 
     private fun descansoMsFor(text: String): Long =
         runCatching { (text.trim().toDouble() * 1000).toLong() }.getOrDefault(0L).coerceAtLeast(0L)
 
     /**
-     * Tick 250ms: diales por tarjeta + progreso con testigo global, todo
-     * in-place (nunca reconstruye: las animaciones sobreviven). Cada dial
-     * muestra el descanso en curso; en reposo, el registrado de su serie.
+     * Tick 250ms: diales por tarjeta, todo in-place (nunca reconstruye: las
+     * animaciones sobreviven). Cada dial muestra su propio descanso: solo el
+     * dueño del running late (la serie a hacer, abierta y visible); el resto
+     * muestra el registrado fijo de su serie. Single-running intacto.
      */
-    private fun updateTick() {
-        if (!::rowsBox.isInitialized) return
+    /**
+     * Pinta un dial con su estado actual. Se usa al crearlo (evita el flash
+     * de 00:00: sin esto, el valor real llegaba en el siguiente tick... o
+     * nunca, si está en pausa) y en cada tick.
+     */
+    private fun paintDial(uuid: String, dial: RestDialView) {
         val rest = vm.restMs.value
         val running = vm.runningUuid.value
-        val draftsByUuid = vm.entrenoRows.value.associate { it.uuid to it.draft }
-        for ((uuid, dial) in dialViews) {
-            if (running != null) {
-                dial.ms = rest[running] ?: 0L
-                dial.running = true
-            } else {
-                dial.ms = descansoMsFor(draftsByUuid[uuid]?.descansoSeg ?: "")
-                dial.running = false
-            }
-        }
-        val (total, doneCount, _) = SessionFlowState.progress(vm.entrenoGroups.value, vm.doneUuids.value)
-        progressView.text = if (total == 0) {
-            progressView.text
-        } else if (running != null) {
-            "$doneCount guardadas de $total · descanso ${formatMmSs(rest[running] ?: 0L)}"
+        val paused = vm.pausedUuids.value
+        val draft = vm.entrenoRows.value.find { it.uuid == uuid }?.draft
+        val isRunningOwner = running == uuid
+        dial.ms = if (isRunningOwner) {
+            rest[uuid] ?: 0L
         } else {
-            "$doneCount guardadas de $total"
+            descansoMsFor(draft?.descansoSeg ?: "")
+        }
+        dial.running = isRunningOwner
+        dial.paused = !isRunningOwner && uuid in paused
+        dial.startable = uuid !in vm.doneUuids.value
+    }
+
+    private fun updateTick() {
+        if (!::rowsBox.isInitialized) return
+        for ((uuid, dial) in dialViews) {
+            paintDial(uuid, dial)
         }
     }
 
@@ -595,241 +617,23 @@ class TrainingDiaryActivity : ComponentActivity() {
         field.text = if (reg.isBlank()) "Descanso  —" else "Descanso  $reg s"
     }
 
-    // --- B2: alimentación -----------------------------------------------------------
-    private fun renderFood(state: DiaryUiState, busy: Boolean) {
-        if (state.foods.map { it.nombre } != foodNames) {
-            foodNames = state.foods.map { it.nombre }
-        }
-        val day = state.nutrition
-        prefillView.text = if (day?.prefilled == true) {
-            "Datos del ${day.prefillSource} (heredados, sin guardar)."
-        } else {
-            ""
-        }
-        prefillView.visibility = if (day?.prefilled == true) android.view.View.VISIBLE else android.view.View.GONE
-        if (!busy && (state.fecha != foodBuiltForFecha || day !== foodBuiltForNutrition || state.nutritionPreviewId != foodBuiltForPreview)) {
-            rebuildFoodRows(state)
-        }
-    }
-
-    private fun rebuildFoodRows(state: DiaryUiState) {
-        foodRowsBox.removeAllViews()
-        foodRowViews.clear()
-        val day = state.nutrition
-        val buffered = vm.nutritionDraftBuffer.let { buf -> buf?.takeIf { it.first == state.fecha }?.second }
-        val drafts = buffered
-            ?: day?.entradas?.map { FoodDraft(it.alimento, foodNumToText(it.cantidadG)) }
-                ?.ifEmpty { listOf(FoodDraft("", "")) }
-            ?: listOf(FoodDraft("", ""))
-        drafts.forEach { addFoodRow(it) }
-        if (day != null) {
-            pesoInput.setText(foodNumToText(day.parametros.pesoKg))
-            factorProtInput.setText(foodNumToText(day.parametros.factorProteina))
-            factorGrasaInput.setText(foodNumToText(day.parametros.factorGrasa))
-            kcalInput.setText(foodNumToText(day.parametros.kcalObjetivo))
-        }
-        foodBuiltForFecha = state.fecha
-        foodBuiltForNutrition = day
-        foodBuiltForPreview = state.nutritionPreviewId
-    }
-
-    private fun addFoodRow(draft: FoodDraft) {
-        if (foodRowViews.size >= TRAINING_API_MAX_SETS) {
-            statusView.asStatus("Máximo $TRAINING_API_MAX_SETS alimentos por día.", StatusKind.ERROR)
-            return
-        }
-        val adapter = ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, foodNames)
-        val alimento = AutoCompleteTextView(this).apply {
-            asCellInput()
-            hint = "Alimento"
-            setText(draft.alimento)
-            setAdapter(adapter)
-            threshold = 1
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f)
-        }
-        val cantidad = EditText(this).apply {
-            hint = "g"
-            setText(draft.cantidadG)
-            inputType = InputType.TYPE_CLASS_NUMBER or
-                InputType.TYPE_NUMBER_FLAG_DECIMAL or
-                InputType.TYPE_NUMBER_FLAG_SIGNED
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        val remove = Button(this).apply { text = "Quitar"; asDanger() }
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 8, 0, 8)
-            addView(alimento); addView(cantidad); addView(remove)
-        }
-        foodRowsBox.addView(card)
-        val holders = FoodRowViews(alimento, cantidad)
-        foodRowViews.add(holders)
-        remove.setOnClickListener {
-            foodRowsBox.removeView(card)
-            foodRowViews.remove(holders)
-            stashFood()
-        }
-        val watcher = object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
-            override fun afterTextChanged(s: Editable?) = stashFood()
-        }
-        alimento.addTextChangedListener(watcher)
-        cantidad.addTextChangedListener(watcher)
-    }
-
-    private fun collectFoodDrafts(): List<FoodDraft> = foodRowViews.map {
-        FoodDraft(it.alimento.text.toString().trim(), it.cantidad.text.toString().trim())
-    }
-
-    private fun stashFood() {
-        vm.nutritionDraftBuffer = vm.state.value.fecha to collectFoodDrafts()
-    }
-
-    private fun foodParams(): Map<String, String> = mapOf(
-        "peso_kg" to pesoInput.text.toString(),
-        "factor_proteina" to factorProtInput.text.toString(),
-        "factor_grasa" to factorGrasaInput.text.toString(),
-        "kcal_objetivo" to kcalInput.text.toString(),
-    )
-
-    private fun confirmFoodSave() {
-        val drafts = collectFoodDrafts().filter { it.alimento.isNotBlank() || it.cantidadG.isNotBlank() }
-        if (drafts.isEmpty()) {
-            statusView.asStatus("Error: añade al menos un alimento.", StatusKind.ERROR)
-            return
-        }
-        if (vm.state.value.nutrition?.hasData == true) {
-            AlertDialog.Builder(this)
-                .setTitle("Reemplazar el día")
-                .setMessage("Este día ya tiene alimentación guardada. Guardar la reemplaza por completo. ¿Continuar?")
-                .setPositiveButton("Reemplazar") { _, _ -> vm.saveNutrition(drafts, foodParams()) }
-                .setNegativeButton("Cancelar", null)
-                .show()
-        } else {
-            vm.saveNutrition(drafts, foodParams())
-        }
-    }
-
-    private fun confirmFoodDelete() {
-        AlertDialog.Builder(this)
-            .setTitle("Eliminar día")
-            .setMessage("Se borra la alimentación de este día (los parámetros se conservan). ¿Continuar?")
-            .setPositiveButton("Eliminar") { _, _ -> vm.deleteNutritionDay() }
-            .setNegativeButton("Cancelar", null)
-            .show()
-    }
-
-    private fun foodSummaryOf(state: DiaryUiState): String {
-        val day = state.nutrition ?: return "Sin alimentación guardada para este día."
-        if (!day.hasData && !day.prefilled) return "Sin alimentación guardada para este día."
-        val labels = state.nutrientLabels.associate { it.name to it.label }
-        return NUTRIENT_FIELDS.joinToString("\n") { f ->
-            val label = labels[f] ?: f
-            val got = day.consumido[f] ?: 0.0
-            val want = day.objetivo[f] ?: 0.0
-            "$label: ${foodNumToText(got)}/${foodNumToText(want)}"
-        } + "\nCantidad: ${foodNumToText(day.consumido["cantidad_g"])} g"
-    }
-
-    private fun showMealTemplatesDialog() {
-        vm.ensureMealTemplates()
-        val state = vm.state.value
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 16, 24, 16)
-        }
-        val nameInput = EditText(this).apply { hint = "Nombre de la plantilla" }
-        val saveAs = Button(this).apply { text = "Guardar día como plantilla" }
-        box.addView(nameInput)
-        box.addView(saveAs)
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Plantillas comida (${state.mealTemplates.size})")
-            .setView(ScrollView(this).apply { addView(box) })
-            .setNegativeButton("Cerrar", null)
-            .create()
-        saveAs.setOnClickListener {
-            val nombre = nameInput.text.toString().trim()
-            val entradas = collectFoodDrafts().filter { it.alimento.isNotBlank() }
-            if (nombre.isBlank()) {
-                nameInput.error = "Ponle nombre a la plantilla."
-                return@setOnClickListener
-            }
-            if (entradas.isEmpty()) {
-                statusView.asStatus("Error: el día no tiene alimentos que guardar.", StatusKind.ERROR)
-                return@setOnClickListener
-            }
-            dialog.dismiss()
-            vm.saveMealTemplate(nombre, entradas)
-        }
-        if (state.mealTemplates.isEmpty()) {
-            box.addView(TextView(this).apply { text = "Sin plantillas. Guarda el día actual con un nombre." })
-        }
-        for (tpl in state.mealTemplates) {
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            val label = TextView(this).apply {
-                text = "${tpl.nombre} (${tpl.alimentos.size})"
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            }
-            val apply = Button(this).apply { text = "Aplicar" }
-            apply.setOnClickListener {
-                dialog.dismiss()
-                vm.applyMealTemplate(tpl.id, tpl.nombre)
-            }
-            row.addView(label)
-            row.addView(apply)
-            box.addView(row)
-        }
-        dialog.show()
-    }
-
-    private fun showFoodDialog() {
-        val state = vm.state.value
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 16, 24, 16)
-        }
-        val nombre = EditText(this).apply { hint = "Alimento (por 100 g)" }
-        val categoria = EditText(this).apply { hint = "Categoría" }
-        box.addView(nombre)
-        box.addView(categoria)
-        val labels = state.nutrientLabels.associate { it.name to it.label }
-        val inputs = NUTRIENT_FIELDS.associateWith { field ->
-            EditText(this).apply {
-                hint = labels[field] ?: field
-                setText("0")
-                inputType = InputType.TYPE_CLASS_NUMBER or
-                    InputType.TYPE_NUMBER_FLAG_DECIMAL or
-                    InputType.TYPE_NUMBER_FLAG_SIGNED
-            }.also { box.addView(it) }
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Nuevo alimento")
-            .setView(ScrollView(this).apply { addView(box) })
-            .setPositiveButton("Crear") { _, _ ->
-                val nutrients = NUTRIENT_FIELDS.associateWith { field ->
-                    inputs[field]?.text.toString().trim().replace(",", ".").toDoubleOrNull() ?: -1.0
-                }
-                vm.createFood(
-                    nombre.text.toString().trim(),
-                    categoria.text.toString().trim(),
-                    nutrients,
-                )
-            }
-            .setNegativeButton("Cancelar", null)
-            .show()
-    }
-
     companion object {
         private fun navParams() = LinearLayout.LayoutParams(
             0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f,
         )
 
-        private fun numToText(v: Double?): String {
-            if (v == null) return ""
-            return if (v % 1.0 == 0.0) v.toLong().toString() else v.toString()
+        /** Fondo ripple del framework para botones planos (sin dependencias). */
+        private fun android.content.Context.resolveSelectableBg(): Int {
+            val tv = android.util.TypedValue()
+            theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+            return tv.resourceId
         }
 
-        private fun foodNumToText(v: Double?): String = numToText(v)
+        /** Título del día: "lunes 14/09/26" (semana en español, sin semana S..). */
+        private fun weekdayTitle(fechaIso: String): String = runCatching {
+            val d = LocalDate.parse(fechaIso)
+            val wd = d.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.forLanguageTag("es"))
+            "$wd ${d.format(DateTimeFormatter.ofPattern("dd/MM/yy"))}"
+        }.getOrDefault(fechaIso)
     }
 }
