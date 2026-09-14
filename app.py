@@ -56,7 +56,7 @@ from src.database import (
     init_db,
 )
 from src.db_connection import read_connection
-from src.exercise_service import create_exercise
+from src.exercise_service import categoria_for_grupo, create_exercise, last_exercise_payload
 from src.health_sync_service import MAX_BODY_BYTES, ingest_health_records, parse_payload
 from src.logging_setup import request_id_var, setup_logging
 from src.metrics_engine import rm_ajustado
@@ -255,10 +255,6 @@ def _today_iso() -> str:
     return date.today().strftime("%Y-%m-%d")
 
 
-def _muscle_names() -> list[str]:
-    return sorted({m for c in MUSCLE_CATEGORIES for m in c["muscles"]})
-
-
 GRANULARITY_VALUES = ("day", "week", "month")
 
 
@@ -369,6 +365,18 @@ def _editor_html(
     )
 
 
+def _grupo_options() -> list[dict[str, str]]:
+    """Opciones del combo de grupo muscular (orden del catálogo)."""
+    out: list[dict[str, str]] = []
+    for cat in MUSCLE_CATEGORIES:
+        muscles = cat.get("muscles")
+        if not isinstance(muscles, list):
+            continue
+        for m in muscles:
+            out.append({"nombre": str(m).strip(), "categoria": str(cat["name"])})
+    return out
+
+
 def _exercise_form_html(
     request: Request, *, error: str | None = None, success: str | None = None
 ) -> str:
@@ -377,8 +385,7 @@ def _exercise_form_html(
             request=request,
             name="exercise_create_form.html",
             context={
-                "categories": MUSCLE_CATEGORIES,
-                "muscle_names": _muscle_names(),
+                "grupo_options": _grupo_options(),
                 "error": error,
                 "success": success,
             },
@@ -389,15 +396,16 @@ def _exercise_form_html(
 def _template_count_oob(request: Request, kind: str) -> str:
     """OOB del contador de plantillas del Diario (span dentro del botón).
 
+    Solo alimentación conserva su botón con conteo; el de entrenamiento se
+    retiró del Diario (las plantillas se aplican desde API/diálogos), así que
+    su rama devuelve vacío para no emitir OOB a un target inexistente.
     ``inner`` es un entero del servidor (nunca datos de usuario): se construye
     el span directamente, sin pasar por la allow-list de fragmentos.
     """
     if kind == "training":
-        count = len(get_plantillas(DB_PATH))
-        target = "daily-training-template-count"
-    else:
-        count = len(get_plantillas_alimentacion(DB_PATH))
-        target = "daily-food-template-count"
+        return ""
+    count = len(get_plantillas_alimentacion(DB_PATH))
+    target = "daily-food-template-count"
     inner = f" · {count}" if count else ""
     return f'<span id="{target}" hx-swap-oob="outerHTML">{inner}</span>'
 
@@ -494,8 +502,20 @@ def _split_page_html(request: Request, abrir_id: int | None = None) -> str:
             context={
                 "catalog": get_split_catalog(DB_PATH),
                 "splits_html": _split_section_html(request, abrir_id=abrir_id),
+                "exercise_form_html": _exercise_form_html(request),
                 "app_config_json": {"csrf_token": make_csrf_token(get_csrf_secret())},
             },
+        )
+    )
+
+
+def _split_catalog_html(request: Request) -> str:
+    """Grupos del catálogo de splits (para el OOB `#splits-catalog`)."""
+    return _render_body(
+        templates.TemplateResponse(
+            request=request,
+            name="partials/split_catalog_groups.html",
+            context={"catalog": get_split_catalog(DB_PATH)},
         )
     )
 
@@ -732,7 +752,6 @@ def diario_page(
         "fecha_iso": fecha,
         "session_has_data": session_has_data,
         "food_has_data": food_has_data,
-        "training_template_count": len(get_plantillas(DB_PATH)),
         "food_template_count": len(get_plantillas_alimentacion(DB_PATH)),
         "app_config_json": _daily_app_config(),
     }
@@ -910,7 +929,7 @@ def ejercicio_nuevo(
     request: Request,
     ejercicio: str = Form(..., max_length=MAX_NAME_LEN),
     grupo_muscular: str = Form(..., max_length=MAX_NAME_LEN),
-    categoria: str = Form(..., max_length=MAX_NAME_LEN),
+    categoria: str | None = Form(None, max_length=MAX_NAME_LEN),
 ):
     try:
         create_exercise(DB_PATH, ejercicio, grupo_muscular, categoria)
@@ -923,10 +942,16 @@ def ejercicio_nuevo(
         message=f"Ejercicio '{ejercicio.strip()}' creado.",
     )
     form_html = _exercise_form_html(request)
+    extra = ""
+    if "/splits" in (request.headers.get("hx-current-url", "") or ""):
+        # Alta desde el panel de splits: refresca su catálogo (server-side,
+        # no se re-renderiza solo) para que el chip nuevo exista al instante.
+        extra = fragment_oob(templates, request, "splits-catalog", _split_catalog_html(request))
     return HTMLResponse(
         content=notice_success
         + app_config_oob(_daily_app_config())
         + fragment_oob(templates, request, "exercise-create", form_html, swap="outerHTML")
+        + extra
     )
 
 
@@ -1267,6 +1292,29 @@ def sugerencia_aplicar(request: Request, fecha: str = Query(...)):
         content=notice
         + editor_wrap_oob(templates, request, editor + STATIC_MARKERS["plantilla_applied"])
     )
+
+
+@app.get("/ejercicio/ultimo")
+def ejercicio_ultimo(
+    request: Request,
+    ejercicio: str = Query(default=""),
+    fecha: str = Query(default=""),
+):
+    """Últimas series de un ejercicio para autofill (solo lectura, nunca 500 visible).
+
+    Misma fuente que la rueda (`last_exercise_payload`): serie i → última
+    serie i. `fecha` opcional excluye ese día y posteriores (evita eco).
+    """
+    try:
+        payload = last_exercise_payload(
+            DB_PATH, (ejercicio or "").strip(), (fecha or "").strip() or None
+        )
+    except ValidationError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    except Exception:
+        logging.getLogger("dashboard").exception("ejercicio ultimo fallido")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse({"schema_version": TRAINING_API_SCHEMA_VERSION, **payload})
 
 
 @app.get("/splits", response_class=HTMLResponse)
@@ -2105,7 +2153,11 @@ async def api_training_template_save(request: Request):
 
 @app.post("/api/v1/ejercicio")
 async def api_training_exercise_create(request: Request):
-    """Alta de ejercicio en el catálogo (origen manual). 409 si duplicado."""
+    """Alta de ejercicio en el catálogo (origen manual). 409 si duplicado.
+
+    La categoría se deriva del grupo muscular en el servidor (el campo
+    ``categoria`` se acepta por compatibilidad pero se ignora).
+    """
     auth_error = _require_training_api_token(request)
     if auth_error is not None:
         return auth_error
@@ -2118,7 +2170,7 @@ async def api_training_exercise_create(request: Request):
         return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
     if not isinstance(body, dict):
         return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
-    for field in ("ejercicio", "grupo_muscular", "categoria"):
+    for field in ("ejercicio", "grupo_muscular"):
         value = body.get(field, "")
         if not isinstance(value, str) or not value.strip():
             return JSONResponse({"detail": f"El campo {field} es obligatorio."}, status_code=400)
@@ -2127,9 +2179,11 @@ async def api_training_exercise_create(request: Request):
                 {"detail": f"El campo {field} es demasiado largo (máx. {MAX_NAME_LEN})."},
                 status_code=400,
             )
+    categoria_raw = body.get("categoria", "")
+    categoria = categoria_raw.strip() if isinstance(categoria_raw, str) else ""
     try:
         create_exercise(
-            DB_PATH, str(body["ejercicio"]), str(body["grupo_muscular"]), str(body["categoria"])
+            DB_PATH, str(body["ejercicio"]), str(body["grupo_muscular"]), categoria or None
         )
     except (ValidationError, ConflictError) as exc:
         return _api_domain_error(exc, "dashboard")
@@ -2142,7 +2196,7 @@ async def api_training_exercise_create(request: Request):
             "ejercicio": {
                 "ejercicio": str(body["ejercicio"]).strip(),
                 "grupo_muscular": str(body["grupo_muscular"]).strip(),
-                "categoria": str(body["categoria"]).strip(),
+                "categoria": categoria_for_grupo(str(body["grupo_muscular"])),
             },
         }
     )
@@ -2243,6 +2297,32 @@ def api_training_suggestion(request: Request, fecha: str = Query(default="")):
             ],
         }
     )
+
+
+@app.get("/api/v1/ejercicio/ultimo")
+def api_exercise_last(
+    request: Request,
+    ejercicio: str = Query(default=""),
+    fecha: str = Query(default=""),
+):
+    """Últimas series de un ejercicio (autofill móvil, paridad con web).
+
+    Misma fuente que la rueda. Requiere X-Sync-Token. `fecha` opcional
+    excluye ese día y posteriores.
+    """
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    try:
+        payload = last_exercise_payload(
+            DB_PATH, (ejercicio or "").strip(), (fecha or "").strip() or None
+        )
+    except ValidationError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    except Exception:
+        logging.getLogger("dashboard").exception("API ejercicio ultimo fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse({"schema_version": TRAINING_API_SCHEMA_VERSION, **payload})
 
 
 def _api_float_or_none(value, field: str) -> float | None:

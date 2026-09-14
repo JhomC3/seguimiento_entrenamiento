@@ -58,6 +58,7 @@
 | `POST` | `/api/v1/plantilla-comida/aplicar` | `X-Sync-Token` | Preview recalculado, sin escribir (B2) |
 | `POST` | `/api/v1/plantilla-comida/guardar` | `X-Sync-Token` | Guarda día como plantilla, upsert (B2) |
 | `GET` | `/api/v1/sugerencia?fecha=` | `X-Sync-Token` | Rutina sugerida sin escribir (rueda) |
+| `GET` | `/api/v1/ejercicio/ultimo?ejercicio=&fecha=` | `X-Sync-Token` | Últimas series del ejercicio (autofill) |
 | `GET` | `/api/v1/cardio?fecha=` | `X-Sync-Token` | Sesiones del día con anotación (B3) |
 | `POST` | `/api/v1/cardio/anotacion` | `X-Sync-Token` | Anota sesión; vacío = borrar (B3) |
 | `GET` | `/api/v1/fechas?vista=` | `X-Sync-Token` | Fechas con datos por pestaña (B4) |
@@ -171,8 +172,10 @@ Mismo orden que la web (`orden, nombre`). Sin `updated_at` (interno).
 ```
 
 Preview con la forma de `GET /api/v1/sesion` más `"plantilla_id": 7`: filas
-con kg/reps heredados de la última sesión con la misma secuencia (vía
-`apply_template_rows`), o vacías (`kg: null`) sin historial. **No escribe**:
+con kg/reps de la última vez por ejercicio (vía `apply_template_rows`, sin
+exigir sesión exacta), o vacías (`kg: null`) sin historial. La plantilla
+guarda 1 fila por ejercicio; cada ejercicio arrastra todas sus últimas
+series posicionales. **No escribe**:
 el móvil lo muestra en el editor y el guardado posterior es el
 `POST /api/v1/sesion` normal. `plantilla_id` inexistente → `404`;
 `fecha` inválida → `400` (se valida primero).
@@ -191,11 +194,13 @@ case-insensitive, clasificación server-side). Respuesta:
 ### `POST /api/v1/ejercicio`
 
 ```json
-{"ejercicio": "Sentadilla", "grupo_muscular": "Cuadriceps", "categoria": "PIERNA"}
+{"ejercicio": "Sentadilla", "grupo_muscular": "Cuadriceps"}
 ```
 
-Misma `create_exercise` que la web (`origen='manual'`). Duplicado
-case-insensitive → **`409`**; categoría fuera de `MUSCLE_CATEGORIES` →
+Misma `create_exercise` que la web (`origen='manual'`). La categoría se
+deriva del grupo en el servidor (`categoria` se acepta por compatibilidad
+pero se ignora). Duplicado case-insensitive → **`409`**; grupo fuera de
+`MUSCLE_CATEGORIES` →
 `400`. Sin backup/undo, como la web.
 
 ### `GET /api/v1/undo/peek` y `POST /api/v1/undo`
@@ -324,15 +329,40 @@ se trackearon — igual que la web).
 
 - `tipo`: `rutina` (con sets) | `descanso` (aviso, `sets: []`) | `nada`
   (día con datos, o sin split ni historial para proponer).
-- La rueda avanza por día resuelto: un entreno se cumple solo si lo
-  entrenado contiene todos sus ejercicios (si pedía pierna e hiciste torso,
-  pierna sigue pendiente y los días se corren); descansar un descanso avanza;
+- Manda el split: las filas son los items del día en orden, duplicados
+  incluidos (Press x3 → 3 filas). El historial solo pone valores,
+  posicionalmente por ejercicio (serie 1 → última serie 1, sin importar el
+  orden global de aquel día); si pide más series de las hechas, se replica
+  la última; si hay más historial, se trunca; sin historial → `null`.
+- La rueda avanza por cobertura de series (≥ 2/3 de las programadas):
+  3/4 avanza, 1/2 no, 1/1 exige hacerlo. Descansar un descanso avanza;
   entrenar en descanso avanza sin crear deuda. Día con datos → `nada`.
 - Pesos 1:1 de la última vez de cada ejercicio por su nombre real
-  (`fuente_fecha`); sin historial → `null`. Sin split activo se repite el
+  (`fuente_fecha`); sin split activo se repite el
   último día tal cual; sin historial se manda el calendario.
 - `fecha` ausente/inválida → `400`. Nunca escribe (el guardado posterior es
   el `POST` normal).
+
+### `GET /api/v1/ejercicio/ultimo?ejercicio=&fecha=`
+
+```json
+{
+  "schema_version": 1,
+  "ejercicio": "Press",
+  "fuente_fecha": "2026-09-02",
+  "series": [
+    {"pos": 1, "kg": 79.0, "reps": 8.0, "rir": 1.5,
+     "descanso_seg": null, "velocidad_kmh": null, "dificultad": null},
+    {"pos": 2, "kg": 78.0, "reps": 8.0, "rir": 1.5,
+     "descanso_seg": 90.0, "velocidad_kmh": null, "dificultad": null}
+  ]
+}
+```
+
+- Misma fuente que la rueda (ordinal por ejercicio). `fecha` opcional excluye
+  ese día y posteriores (evita eco del propio día). Sin historial → `series: []`.
+- `ejercicio` ausente/desconocido (salvo `HIIT`) o `fecha` inválida → `400`.
+  Solo lectura (GET, sin CSRF). Paridad web (`GET /ejercicio/ultimo`) y móvil.
 
 ## HIIT: velocidad + dificultad en vez de kg/reps/rir
 

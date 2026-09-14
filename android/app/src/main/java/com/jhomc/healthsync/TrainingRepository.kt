@@ -114,6 +114,13 @@ class TrainingRepository(
         fecha: String,
     ): TrainingResult<Suggestion> = client.getSuggestion(apiBase, token, fecha)
 
+    suspend fun loadExerciseLast(
+        apiBase: String,
+        token: String,
+        ejercicio: String,
+        fecha: String,
+    ): TrainingResult<ExerciseLast> = client.getExerciseLast(apiBase, token, ejercicio, fecha)
+
     // --- B3: cardio (online-only como el resto en B3) ---
 
     suspend fun loadCardioDay(

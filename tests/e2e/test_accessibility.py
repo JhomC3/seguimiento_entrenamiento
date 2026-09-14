@@ -131,8 +131,6 @@ def test_axe_templates_page(page, server):
     page.keyboard.press("Enter")
     page.wait_for_selector("#plantillas-list .pt-card", state="attached", timeout=3000)
     # Auditar el diálogo abierto (la lista es visible dentro de él).
-    page.locator(
-        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
-    ).click()
+    page.evaluate("document.getElementById('training-templates-dialog').showModal()")
     page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
     _assert_no_violations(_run_axe(page), "plantillas")

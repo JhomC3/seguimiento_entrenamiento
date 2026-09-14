@@ -450,6 +450,48 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    // --- Autofill por ejercicio (paridad con la web) --------------------------
+    // Al elegir ejercicio trae sus últimos valores (serie i → última serie i;
+    // si hay menos historial, replica la última). Siempre sobrescribe la fila.
+    // Sin red o sin historial: null (la fila queda en blanco, como la web).
+
+    fun fetchLastSeries(ejercicio: String, pos: Int, onDone: (TrainingSetDraft?) -> Unit) {
+        val fecha = _state.value.fecha
+        val name = ejercicio.trim()
+        if (name.isEmpty() || pos < 1) {
+            onDone(null)
+            return
+        }
+        viewModelScope.launch {
+            val creds = credentials()
+            if (creds == null) {
+                onDone(null)
+                return@launch
+            }
+            val (apiBase, token) = creds
+            val res = withContext(Dispatchers.IO) {
+                repository.loadExerciseLast(apiBase, token, name, fecha)
+            }
+            if (res !is TrainingResult.Ok || res.value.series.isEmpty()) {
+                onDone(null)
+                return@launch
+            }
+            val series = res.value.series
+            val pick = series[minOf(pos, series.size) - 1]
+            onDone(
+                TrainingSetDraft(
+                    name,
+                    numText(pick.kg),
+                    numText(pick.reps),
+                    numText(pick.rir),
+                    numText(pick.descansoSeg),
+                    numText(pick.velocidadKmh),
+                    numText(pick.dificultad),
+                ),
+            )
+        }
+    }
+
     private fun parseParams(raw: Map<String, String>): NutritionParams? {
         fun num(key: String): Double? {
             val t = (raw[key] ?: "").trim().replace(",", ".")

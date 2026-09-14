@@ -1,28 +1,23 @@
 <div class="panel panel-default animate-fade-in">
-    <h4 class="panel-title">Nuevo ejercicio</h4>
-
     <form id="exercise-create-form" hx-post="/ejercicio/nuevo" hx-swap="none" class="flex flex-col gap-2">
         <input
             name="ejercicio" required placeholder="Nombre del ejercicio" aria-label="Nombre del ejercicio"
             class="field-input"
         >
-        <input
-            name="grupo_muscular" required placeholder="Grupo muscular (ej: Pectoral)" list="muscle-list" aria-label="Grupo muscular"
-            class="field-input"
-        >
-        <datalist id="muscle-list">
-            {% for m in muscle_names %}<option value="{{ m }}">{% endfor %}
-        </datalist>
-        <select
-            name="categoria" required aria-label="Categoría"
-            class="field-input"
-        >
-            <option value="">— Categoría —</option>
-            {% for c in categories %}<option value="{{ c.name }}">{{ c.name }}</option>{% endfor %}
-        </select>
+        <div class="combo-wrap">
+            <input
+                name="grupo_muscular" required placeholder="Grupo muscular" aria-label="Grupo muscular"
+                class="field-input" autocomplete="off" role="combobox" aria-expanded="false"
+                aria-controls="grupo-list" aria-autocomplete="list"
+            >
+            <ul id="grupo-list" class="combo-list" role="listbox" aria-label="Grupos musculares" hidden>
+                {% for m in grupo_options %}<li role="option" id="grupo-opt-{{ loop.index }}" data-value="{{ m.nombre }}" data-categoria="{{ m.categoria }}">{{ m.nombre }}</li>{% endfor %}
+            </ul>
+        </div>
+        <input type="hidden" name="categoria" value="">
         <button
             type="submit"
-            class="btn btn-primary h-9"
+            class="btn btn-create w-full"
         >Crear ejercicio</button>
     </form>
 </div>

@@ -61,6 +61,8 @@ def test_api_503_cuando_no_hay_token(tmp_path, monkeypatch):
     c = _client()
     assert c.get("/api/v1/sesion?fecha=2026-09-07", headers=_h("x")).status_code == 503
     assert c.get("/api/v1/ejercicios", headers=_h("x")).status_code == 503
+    assert c.get("/api/v1/sugerencia?fecha=2026-09-07", headers=_h("x")).status_code == 503
+    assert c.get("/api/v1/ejercicio/ultimo?ejercicio=Press", headers=_h("x")).status_code == 503
     assert c.post("/api/v1/sesion", json={}, headers=_h("x")).status_code == 503
     assert c.delete("/api/v1/sesion?fecha=2026-09-07", headers=_h("x")).status_code == 503
 
@@ -335,6 +337,7 @@ def test_api_lan_permite_solo_rutas_api_y_sync(monkeypatch):
         ("POST", "/api/v1/plantilla-comida/guardar"),
         ("POST", "/api/v1/plantilla-comida/aplicar"),
         ("GET", "/api/v1/sugerencia"),
+        ("GET", "/api/v1/ejercicio/ultimo"),
         ("GET", "/api/v1/cardio"),
         ("POST", "/api/v1/cardio/anotacion"),
         ("GET", "/api/v1/fechas"),
@@ -398,7 +401,7 @@ def test_api_plantilla_aplicar_preview_sin_escribir(tmp_path, monkeypatch):
     db = _auth(monkeypatch, tmp_path)
     tpl = _make_template(db)
     fecha = _fecha()
-    # Con historial: hereda kg/reps de la última sesión con la misma secuencia.
+    # Con historial: hereda kg/reps de la última vez por ejercicio.
     ordered = [
         {"ejercicio": "Remo", "kg": 60, "reps": 10, "rir": 2, "descanso_seg": 90},
         {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
@@ -513,6 +516,7 @@ def test_api_ejercicio_alta_y_409_duplicado(tmp_path, monkeypatch):
     )
     assert r.status_code == 200
     assert r.json()["ejercicio"]["ejercicio"] == "Sentadilla"
+    assert r.json()["ejercicio"]["categoria"] == "PIERNA"
     assert c.get("/api/v1/ejercicios", headers=_h()).json()["count"] == 3
     # Duplicado case-insensitive → 409 (no 400).
     dup = c.post(
@@ -521,7 +525,22 @@ def test_api_ejercicio_alta_y_409_duplicado(tmp_path, monkeypatch):
         headers=_h(),
     )
     assert dup.status_code == 409
-    # Categoría inválida → 400; campos ausentes → 400.
+    # La categoría se deriva: aunque venga otra, manda el grupo (EMPUJE).
+    derived = c.post(
+        "/api/v1/ejercicio",
+        json={"ejercicio": "Aperturas", "grupo_muscular": "Pectoral", "categoria": "PIERNA"},
+        headers=_h(),
+    )
+    assert derived.status_code == 200
+    assert derived.json()["ejercicio"]["categoria"] == "EMPUJE"
+    # Sin categoría también vale (se deriva); grupo desconocido → 400.
+    nocat = c.post(
+        "/api/v1/ejercicio",
+        json={"ejercicio": "Curl", "grupo_muscular": "Biceps"},
+        headers=_h(),
+    )
+    assert nocat.status_code == 200
+    assert nocat.json()["ejercicio"]["categoria"] == "TIRON"
     bad = c.post(
         "/api/v1/ejercicio",
         json={"ejercicio": "X", "grupo_muscular": "Y", "categoria": "NOPE"},
@@ -1096,6 +1115,46 @@ def test_api_sugerencia_nada_auth_y_gate(tmp_path, monkeypatch):
     assert c.get("/api/v1/sugerencia").status_code == 401
     assert c.get("/api/v1/sugerencia?fecha=ayer", headers=_h()).status_code == 400
     assert c.get("/api/v1/sugerencia", headers=_h()).status_code == 400
+
+
+def test_api_ejercicio_ultimo_posicional_y_auth(tmp_path, monkeypatch):
+    from src.training_service import save_session
+
+    db = _auth(monkeypatch, tmp_path)
+    c = _client()
+    # Sin auth → 401; auth ok:
+    assert c.get("/api/v1/ejercicio/ultimo?ejercicio=Press").status_code == 401
+    hoy = _fecha()
+    save_session(
+        db,
+        _fecha(-3),
+        [
+            {"ejercicio": "Remo", "kg": 60, "reps": 10, "rir": 2},
+            {"ejercicio": "Press", "kg": 79, "reps": 8, "rir": 1.5},
+            {"ejercicio": "Press", "kg": 78, "reps": 8, "rir": 1.5},
+        ],
+    )
+    r = c.get(f"/api/v1/ejercicio/ultimo?ejercicio=Press&fecha={hoy}", headers=_h())
+    assert r.status_code == 200
+    data = r.json()
+    assert data["schema_version"] == 1
+    assert data["ejercicio"] == "Press"
+    assert [s["pos"] for s in data["series"]] == [1, 2]
+    assert [s["kg"] for s in data["series"]] == [79, 78]
+    # Excluye el propio día y el futuro: con fecha del historial no ve nada posterior.
+    r = c.get("/api/v1/ejercicio/ultimo?ejercicio=Press&fecha=2020-01-01", headers=_h())
+    assert r.json()["series"] == []
+    # HIIT vale sin estar en el catálogo (sin historial → vacío, 200).
+    r = c.get(f"/api/v1/ejercicio/ultimo?ejercicio=HIIT&fecha={hoy}", headers=_h())
+    assert r.status_code == 200
+    assert r.json()["series"] == []
+    assert c.get("/api/v1/ejercicio/ultimo?ejercicio=&fecha=x", headers=_h()).status_code == 400
+    assert c.get("/api/v1/ejercicio/ultimo", headers=_h()).status_code == 400
+    assert (
+        c.get("/api/v1/ejercicio/ultimo?ejercicio=Press&fecha=ayer", headers=_h()).status_code
+        == 400
+    )
+    assert c.get("/api/v1/ejercicio/ultimo?ejercicio=Inexistente", headers=_h()).status_code == 400
 
 
 # --- B3: cardio ------------------------------------------------------------------

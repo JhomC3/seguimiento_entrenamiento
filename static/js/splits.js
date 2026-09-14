@@ -26,6 +26,7 @@
 
 import { showNotice } from './notices.js';
 import { showConfirmDialog } from './state.js';
+import { initExerciseCombo } from './exercise-combo.js';
 
 const SPLIT_DAYS = ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO', 'DOMINGO'];
 const DEFAULT_MAX_ITEMS = 300;
@@ -981,6 +982,7 @@ function reinitAll() {
 
 /* ---------- Init (idempotente, contrato v3: listeners delegados) ---------- */
 export function initSplits() {
+    initExerciseCombo();
     if (!isSplitsPage()) return;
     if (document.body.dataset.splitsReady) return;
     document.body.dataset.splitsReady = '1';
@@ -1139,6 +1141,20 @@ export function initSplits() {
     // #splits-section; restore tras su swap OOB.
     document.body.addEventListener('htmx:beforeRequest', snapshotBeforeMutation);
     document.body.addEventListener('htmx:oobAfterSwap', restoreAfterSectionSwap);
+    // Alta de ejercicio desde el propio panel: el OOB reemplaza los chips
+    // (los Sortable mueren con los nodos) → re-inicializar y reaplicar el
+    // filtro de búsqueda sobre los nodos nuevos.
+    document.body.addEventListener('htmx:oobAfterSwap', function (e) {
+        if (!(e.detail && e.detail.target && e.detail.target.id === 'splits-catalog')) return;
+        try {
+            initCatalogSortables();
+        } catch (err) {
+            console.error('splits: re-init del catálogo falló', err);
+        }
+        refreshCatalogDisabled();
+        const search = document.getElementById('split-catalog-search');
+        if (search) search.dispatchEvent(new Event('input', { bubbles: true }));
+    });
 
     document.body.addEventListener('htmx:afterRequest', function (e) {
         const path = requestPath(e);

@@ -71,7 +71,9 @@ def test_splits_page_catalogo_agrupado_y_detalles(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/splits")
     assert r.status_code == 200
-    assert r.text.count('<details class="split-catalog-group"') == 3  # Pectoral, Biceps, HIIT
+    assert (
+        r.text.count('<details class="split-catalog-group"') == 4
+    )  # Pectoral, Biceps, HIIT + Nuevo ejercicio
     assert 'data-group="Pectoral"' in r.text
     assert 'data-group="Biceps"' in r.text
     assert 'data-group="HIIT"' in r.text

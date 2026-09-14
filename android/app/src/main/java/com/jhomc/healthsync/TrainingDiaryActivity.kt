@@ -86,6 +86,8 @@ class TrainingDiaryActivity : ComponentActivity() {
     private var rowsBuiltForFecha: String? = null
     private var rowsBuiltForSession: TrainingSession? = null
     private var rowsBuiltForPreview: Int = 0
+    /** Mientras se reconstruyen filas (render/sugerencia) no se dispara autofill. */
+    private var buildingRows: Boolean = false
     private var catalogNames: List<String> = emptyList()
     // --- B2 ---
     private val foodRowViews = mutableListOf<FoodRowViews>()
@@ -123,7 +125,15 @@ class TrainingDiaryActivity : ComponentActivity() {
         undoButton = Button(this).apply { text = "Deshacer" }
         cardioTitle = TextView(this).apply { text = "Cardio"; asSectionTitle() }
         cardioBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        addRowButton.setOnClickListener { addRow(TrainingSetDraft("", "", "", "", "")); stash() }
+        addRowButton.setOnClickListener {
+            val inherit = rowViews.lastOrNull()?.ejercicio?.text?.toString()?.trim().orEmpty()
+            addRow(TrainingSetDraft(inherit, "", "", "", "", "", ""))
+            stash()
+            if (inherit.isNotEmpty()) {
+                val holders = rowViews.lastOrNull() ?: return@setOnClickListener
+                requestAutofill(holders)
+            }
+        }
         saveButton.setOnClickListener { confirmSave() }
         deleteButton.setOnClickListener { confirmDelete() }
         templatesButton.setOnClickListener { showTemplatesDialog() }
@@ -276,26 +286,65 @@ class TrainingDiaryActivity : ComponentActivity() {
     }
 
     private fun rebuildRows(state: DiaryUiState) {
-        rowsBox.removeAllViews()
-        rowViews.clear()
-        val buffered = vm.draftBuffer.let { buf -> buf?.takeIf { it.first == state.fecha }?.second }
-        val drafts = buffered
-            ?: state.session?.sets?.map {
-                TrainingSetDraft(
-                    it.ejercicio,
-                    numToText(it.kg),
-                    numToText(it.reps),
-                    numToText(it.rir),
-                    numToText(it.descansoSeg),
-                    numToText(it.velocidadKmh),
-                    numToText(it.dificultad),
-                )
-            }?.ifEmpty { listOf(blankDraft()) }
-            ?: listOf(blankDraft())
-        drafts.forEach { addRow(it) }
-        rowsBuiltForFecha = state.fecha
-        rowsBuiltForSession = state.session
-        rowsBuiltForPreview = state.previewId
+        buildingRows = true
+        try {
+            rowsBox.removeAllViews()
+            rowViews.clear()
+            val buffered = vm.draftBuffer.let { buf -> buf?.takeIf { it.first == state.fecha }?.second }
+            val drafts = buffered
+                ?: state.session?.sets?.map {
+                    TrainingSetDraft(
+                        it.ejercicio,
+                        numToText(it.kg),
+                        numToText(it.reps),
+                        numToText(it.rir),
+                        numToText(it.descansoSeg),
+                        numToText(it.velocidadKmh),
+                        numToText(it.dificultad),
+                    )
+                }?.ifEmpty { listOf(blankDraft()) }
+                ?: listOf(blankDraft())
+            drafts.forEach { addRow(it) }
+            rowsBuiltForFecha = state.fecha
+            rowsBuiltForSession = state.session
+            rowsBuiltForPreview = state.previewId
+        } finally {
+            buildingRows = false
+        }
+    }
+
+    /** Ordinal del ejercicio entre las filas (serie i del mismo ejercicio). */
+    private fun exerciseOrdinal(holders: RowViews): Int {
+        val want = holders.ejercicio.text.toString().trim()
+        if (want.isEmpty()) return 1
+        var pos = 0
+        for (r in rowViews) {
+            if (r.ejercicio.text.toString().trim().equals(want, ignoreCase = true)) pos++
+            if (r === holders) break
+        }
+        return maxOf(pos, 1)
+    }
+
+    /** Pide los últimos valores y sobrescribe la fila (paridad con la web). */
+    private fun requestAutofill(holders: RowViews) {
+        val name = holders.ejercicio.text.toString().trim()
+        if (name.isEmpty()) return
+        val pos = exerciseOrdinal(holders)
+        vm.fetchLastSeries(name, pos) { filled ->
+            runOnUiThread {
+                if (!rowViews.contains(holders)) return@runOnUiThread
+                if (holders.ejercicio.text.toString().trim() != name) return@runOnUiThread
+                if (filled == null) return@runOnUiThread
+                holders.kg.setText(filled.kg)
+                holders.reps.setText(filled.reps)
+                holders.rir.setText(filled.rir)
+                holders.descanso.setText(filled.descansoSeg)
+                holders.velocidad.setText(filled.velocidadKmh)
+                holders.dificultad.setText(filled.dificultad)
+                syncHiitRow(holders)
+                stash()
+            }
+        }
     }
 
     private fun summaryOf(session: TrainingSession?): String {
@@ -384,6 +433,12 @@ class TrainingDiaryActivity : ComponentActivity() {
             override fun afterTextChanged(s: Editable?) {
                 syncHiitRow(holders)
                 stash()
+                // Solo al completar un nombre válido (evita pedir por cada letra).
+                val t = s?.toString()?.trim().orEmpty()
+                if (buildingRows || t.isEmpty()) return
+                val known = t.equals("HIIT", ignoreCase = true) ||
+                    catalogNames.any { it.equals(t, ignoreCase = true) }
+                if (known) requestAutofill(holders)
             }
         })
         kg.addTextChangedListener(watcher)

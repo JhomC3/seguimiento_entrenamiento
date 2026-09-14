@@ -1,0 +1,31 @@
+{# Grupos del catálogo de splits (coherente con splits.html): se renderiza en
+   la página y se refresca por OOB (`#splits-catalog`) tras dar de alta un
+   ejercicio desde el propio panel. #}
+{% for group, group_items in catalog | groupby('grupo_muscular') %}
+<details class="split-catalog-group" data-group="{{ group }}">
+    <summary class="split-catalog-summary">{{ group }}</summary>
+    <div class="split-catalog-body" data-catalog-list="{{ group }}">
+        {% for ej in group_items %}
+        <button type="button" class="split-item-card split-catalog-chip"
+             data-action="split-add-item"
+             data-ejercicio="{{ ej.ejercicio }}" data-grupo="{{ ej.grupo_muscular }}"
+             data-item-type="ejercicio"
+             title="Arrastra al día o haz clic para agregar {{ ej.ejercicio }} al día seleccionado">
+            <span class="split-item-name">{{ ej.ejercicio }}</span>
+        </button>
+        {% endfor %}
+    </div>
+</details>
+{% endfor %}
+<details class="split-catalog-group" data-group="HIIT">
+    <summary class="split-catalog-summary">HIIT</summary>
+    <div class="split-catalog-body" data-catalog-list="HIIT">
+        <button type="button" class="split-item-card split-catalog-chip"
+             data-action="split-add-item"
+             data-ejercicio="HIIT" data-grupo="HIIT"
+             data-item-type="hiit"
+             title="Arrastra al día o haz clic para agregar HIIT al día seleccionado">
+            <span class="split-item-name">HIIT</span>
+        </button>
+    </div>
+</details>

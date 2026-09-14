@@ -4,7 +4,8 @@
 // syncEditorFromContent, setPanelReadonly, handleEditorState, enterEditMode,
 // exitEditMode, toggleEdit, addRowAfter, removeRow, renumberRows, fitRowsToPanel,
 // recalcRM, submitSave, eliminarSesion, stepRir, isHiitRow, syncHiitRow,
-// sessionMode, syncSessionHeaders, syncSessionRows.
+// sessionMode, syncSessionHeaders, syncSessionRows, exerciseOrdinal,
+// autofillRowFromLast.
 
 import { flashEditorNotice } from './notices.js';
 import { initRowSortable, syncSortableState } from './row-sortable.js';
@@ -221,10 +222,105 @@ export function syncSessionRows() {
     syncSessionHeaders();
 }
 
+/* Autofill: al elegir ejercicio trae sus últimos valores (serie i → última
+   serie i del mismo ejercicio; si hay menos historial, replica la última).
+   Siempre sobrescribe la fila (decisión de producto); solo tras cambio real
+   del select y en modo edición. Sin historial o sin red: deja blancos.
+   Anti-pisado: si el usuario tecleó algo entre la petición y la respuesta,
+   se aborta (sus valores mandan). */
+export function exerciseOrdinal(row) {
+    const rows = Array.from(document.querySelectorAll('#set-rows .set-row'));
+    const sel = row && row.querySelector('.ej-select');
+    const want = sel ? sel.value.trim().toLowerCase() : '';
+    if (!want) return 1;
+    let pos = 0;
+    for (const r of rows) {
+        const v = r.querySelector('.ej-select');
+        if (v && v.value.trim().toLowerCase() === want) pos++;
+        if (r === row) break;
+    }
+    return Math.max(pos, 1);
+}
+
+function rowInputSnapshot(row) {
+    const snap = {};
+    row.querySelectorAll('input[name]').forEach(function (input) {
+        snap[input.name] = input.value;
+    });
+    return snap;
+}
+
+function rowInputsTouched(row, snap) {
+    return Array.from(row.querySelectorAll('input[name]')).some(function (input) {
+        return input.value !== (snap[input.name] ?? '');
+    });
+}
+
+function fillRowInputs(row, data) {
+    // Relleno programático: SIN eventos `input` sintéticos (cada `input`
+    // alimenta la pila del Ctrl+Z local R1+R2; el autofill no debe enterrar
+    // el cambio real del usuario). El llamante refresca RM/acciones.
+    if (!row || !data) return;
+    const hiit = isHiitRow(row);
+    const set = function (name, val) {
+        const input = row.querySelector(`input[name="${name}"]`);
+        if (!input) return;
+        input.value = val === null || val === undefined || val === '' ? '' : String(val);
+    };
+    if (hiit) {
+        set('velocidad', data.velocidad_kmh);
+        set('dificultad', data.dificultad);
+        set('descanso', data.descanso_seg);
+    } else {
+        set('kg', data.kg);
+        set('reps', data.reps);
+        set('rir', data.rir);
+        set('descanso', data.descanso_seg);
+    }
+}
+
+const BLANK_FILL = { kg: '', reps: '', rir: '', descanso_seg: '', velocidad_kmh: '', dificultad: '' };
+
+export function autofillRowFromLast(row) {
+    if (editorEditmode() !== '1' || !row || !row.isConnected) return;
+    const sel = row.querySelector('.ej-select');
+    if (!sel) return;
+    const ejercicio = sel.value.trim();
+    if (!ejercicio) return;
+    const pos = exerciseOrdinal(row);
+    const snap = rowInputSnapshot(row);
+    const req = (row._lastReq || 0) + 1;
+    row._lastReq = req;
+    const fecha = currentFecha();
+    const url = `/ejercicio/ultimo?ejercicio=${encodeURIComponent(ejercicio)}`
+        + (fecha ? `&fecha=${encodeURIComponent(fecha)}` : '');
+    fetch(url, { headers: { Accept: 'application/json' } })
+        .then(function (res) { return res.ok ? res.json() : null; })
+        .then(function (payload) {
+            if (!payload || row._lastReq !== req || !row.isConnected) return;
+            const cur = row.querySelector('.ej-select');
+            if (!cur || cur.value.trim() !== ejercicio) return;
+            if (rowInputsTouched(row, snap)) return;
+            const series = Array.isArray(payload.series) ? payload.series : [];
+            syncSessionRows();
+            if (!series.length) {
+                fillRowInputs(row, BLANK_FILL);
+            } else {
+                fillRowInputs(row, series[Math.min(pos, series.length) - 1] || series[series.length - 1]);
+            }
+            syncSessionRows();
+            recalcRM();
+            updateEditActions();
+        })
+        .catch(function () { /* sin red: se queda en blanco como antes */ });
+}
+
 export function addRowAfter(btn) {
     if (editorEditmode() !== '1') return;
     const row = btn.closest('.set-row');
+    const srcExercise = row.querySelector('.ej-select').value;
     const clone = row.cloneNode(true);
+    clone._lastReq = 0;
     clone.querySelector('.ej-select').value = '';
     clone.querySelectorAll('input').forEach(input => { input.value = ''; });
     const badge = clone.querySelector('.rir-badge');
@@ -233,11 +329,16 @@ export function addRowAfter(btn) {
     // La fila nueva hereda el modo de sesión: en sesión HIIT ofrece HIIT.
     if (sessionMode() === 'hiit') {
         clone.querySelector('.ej-select').value = 'HIIT';
+    } else if (srcExercise && srcExercise.trim()) {
+        // Hereda el ejercicio origen y trae su siguiente ordinal (serie N+1).
+        clone.querySelector('.ej-select').value = srcExercise;
     }
     syncSessionRows();
     renumberRows();
     updateEditActions();
     fitRowsToPanel();
+    const sel = clone.querySelector('.ej-select');
+    if (sel && sel.value.trim()) autofillRowFromLast(clone);
 }
 
 export function removeRow(btn) {
@@ -446,7 +547,13 @@ export function initEditorActions() {
             );
             return;
         }
+        const changed = sel.value !== (sel.dataset.prev || '');
         syncSessionRows();
         sel.dataset.prev = sel.value;
+        if (changed && sel.value.trim() && editorEditmode() === '1') {
+            autofillRowFromLast(sel.closest('.set-row'));
+        } else {
+            recalcRM();
+        }
     });
 }

@@ -103,6 +103,13 @@ data class Suggestion(
     val pendienteDesde: String?,
 )
 
+/** Últimas series de un ejercicio (autofill, paridad con la rueda web). */
+data class ExerciseLast(
+    val ejercicio: String,
+    val fuenteFecha: String?,
+    val series: List<SuggestedSet>,
+)
+
 /** Sesión de cardio del día (Health Connect) con su anotación manual. */
 data class CardioSession(
     val hcId: String,

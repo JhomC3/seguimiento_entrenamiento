@@ -193,3 +193,85 @@ def test_split_activo_inexistente_repite(tmp_path):
     assert s.tipo == "rutina"
     assert s.split_id is None
     assert s.ejercicios == ["Press"]
+
+
+def test_split_manda_series_posicionales(tmp_path):
+    """Press x3 en el split → 3 filas con serie1=79, serie2=78, serie3=77."""
+    db = _db(tmp_path)
+    _split(db, {"LUNES": ["Press", "Press", "Press"]})
+    old = _plus(_monday(3), 0)
+    _train(
+        db,
+        old,
+        ("Press", 79, 8, 1.5),
+        ("Press", 78, 8, 1.5),
+        ("Press", 77, 7, 2),
+    )
+    s = resolve_suggestion(db, _monday())
+    assert s.tipo == "rutina"
+    assert [x.kg for x in s.sets] == [79, 78, 77]
+    assert [x.fuente_fecha for x in s.sets] == [old, old, old]
+
+
+def test_split_replica_ultima_si_faltan_series(tmp_path):
+    """Split x3 con historial de 1 serie → replica la última (79,79,79)."""
+    db = _db(tmp_path)
+    _split(db, {"LUNES": ["Press", "Press", "Press"]})
+    old = _plus(_monday(3), 0)
+    _train(db, old, ("Press", 79, 8, 1.5))
+    s = resolve_suggestion(db, _monday())
+    assert [x.kg for x in s.sets] == [79, 79, 79]
+
+
+def test_ordinal_ignora_orden_global(tmp_path):
+    """Remo primero y Press después: Press serie1 sigue siendo 79."""
+    db = _db(tmp_path)
+    _split(db, {"LUNES": ["Press", "Press"]})
+    old = _plus(_monday(3), 0)
+    _train(db, old, ("Remo", 60, 10, 2), ("Press", 79, 8, 1.5), ("Press", 78, 8, 1.5))
+    s = resolve_suggestion(db, _monday())
+    assert [x.kg for x in s.sets] == [79, 78]
+
+
+def test_mayoria_tres_de_cuatro_avanza(tmp_path):
+    """3/4 series (>= 2/3) dan el slot por cumplido: la rueda avanza."""
+    db = _db(tmp_path)
+    _split(db, {"LUNES": ["Press", "Remo", "Curl", "Sentadilla"]})
+    mon = _monday()
+    tue = _plus(mon, 1)
+    _train(db, _plus(mon, -4), ("Sentadilla", 100, 5, 2))
+    _train(
+        db,
+        mon,
+        ("Press", 80, 8, 1),
+        ("Remo", 60, 10, 2),
+        ("Curl", 20, 10, 1),
+    )
+    s = resolve_suggestion(db, tue)
+    assert s.slot_dia != "LUNES"
+
+
+def test_mitad_no_avanza(tmp_path):
+    """1/2 (< 2/3) no cubre: el martes sigue tocando LUNES."""
+    db = _db(tmp_path)
+    _split(db, {"LUNES": ["Press", "Remo"]})
+    mon = _monday()
+    tue = _plus(mon, 1)
+    _train(db, _plus(mon, -4), ("Sentadilla", 100, 5, 2))
+    _train(db, mon, ("Press", 80, 8, 1))
+    s = resolve_suggestion(db, tue)
+    assert s.slot_dia == "LUNES"
+    assert s.pendiente_desde == mon
+
+
+def test_cobertura_bordes():
+    """Ramas límite del cómputo por series (sin DB)."""
+    from src.suggestion_service import _coverage_ratio, _slot_covered
+
+    assert _coverage_ratio([], []) == 1.0
+    assert _coverage_ratio(["Press"], []) == 0.0
+    assert _slot_covered([], []) is True
+    assert _slot_covered(["Press"], []) is False
+    rows = [{"ejercicio": "Press"}, {"ejercicio": "  "}, {"ejercicio": None}]
+    assert _coverage_ratio(["Press", "Press"], rows) == 0.5
+    assert _slot_covered(["Press", "Press"], rows) is False

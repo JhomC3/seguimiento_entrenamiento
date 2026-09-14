@@ -11,7 +11,7 @@
             <h1 class="text-xl font-black tracking-[0.2em] text-white uppercase">Gestor de splits</h1>
             {% include "partials/workspace_nav.html" %}
         </div>
-        <button type="button" data-action="split-new" class="btn btn-primary splits-new-btn">Nuevo split</button>
+        <button type="button" data-action="split-new" class="btn btn-create splits-new-btn">Nuevo split</button>
     </header>
 
     <div class="splits-layout">
@@ -21,36 +21,17 @@
                 <label for="split-catalog-search" class="sr-only">Buscar ejercicio</label>
                 <input id="split-catalog-search" data-action="split-catalog-search" class="field-input" placeholder="Buscar ejercicio…" autocomplete="off">
                 <div id="splits-catalog" class="flex flex-col gap-2">
-                    {% for group, group_items in catalog | groupby('grupo_muscular') %}
-                    <details class="split-catalog-group" data-group="{{ group }}">
-                        <summary class="split-catalog-summary">{{ group }}</summary>
-                        <div class="split-catalog-body" data-catalog-list="{{ group }}">
-                            {% for ej in group_items %}
-                            <button type="button" class="split-item-card split-catalog-chip"
-                                 data-action="split-add-item"
-                                 data-ejercicio="{{ ej.ejercicio }}" data-grupo="{{ ej.grupo_muscular }}"
-                                 data-item-type="ejercicio"
-                                 title="Arrastra al día o haz clic para agregar {{ ej.ejercicio }} al día seleccionado">
-                                <span class="split-item-name">{{ ej.ejercicio }}</span>
-                            </button>
-                            {% endfor %}
-                        </div>
-                    </details>
-                    {% endfor %}
-                    <details class="split-catalog-group" data-group="HIIT">
-                        <summary class="split-catalog-summary">HIIT</summary>
-                        <div class="split-catalog-body" data-catalog-list="HIIT">
-                            <button type="button" class="split-item-card split-catalog-chip"
-                                 data-action="split-add-item"
-                                 data-ejercicio="HIIT" data-grupo="HIIT"
-                                 data-item-type="hiit"
-                                 title="Arrastra al día o haz clic para agregar HIIT al día seleccionado">
-                                <span class="split-item-name">HIIT</span>
-                            </button>
-                        </div>
-                    </details>
+                    {% include "partials/split_catalog_groups.html" %}
                 </div>
                 <p class="empty-state split-empty" id="split-catalog-empty" hidden>Sin resultados para la búsqueda.</p>
+            </section>
+            <section aria-label="Nuevo ejercicio">
+                <details class="split-catalog-group">
+                    <summary class="split-catalog-summary">Nuevo ejercicio</summary>
+                    <div class="split-catalog-body">
+                        <div id="exercise-create" class="w-full">{{ exercise_form_html | safe }}</div>
+                    </div>
+                </details>
             </section>
         </aside>
 

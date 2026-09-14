@@ -2,7 +2,7 @@ from src.database import (
     delete_plantilla,
     find_plantilla_by_nombre,
     get_ejercicio_categoria,
-    get_last_template_session_sets,
+    get_last_exercise_series,
     get_plantilla,
     insert_plantilla,
     update_plantilla,
@@ -158,32 +158,55 @@ def edit_template(db_path: str, plantilla_id: int, template: TemplateInput) -> T
 
 
 def apply_template_rows(db_path: str, plantilla_id: int) -> list[TrainingSetInput]:
+    """Rellena una plantilla con los últimos valores por ejercicio (sin secuencia exacta).
+
+    La plantilla guarda 1 fila por ejercicio (modelo deduplicado): cada
+    ejercicio arrastra TODAS sus últimas series posicionales (Press x3 la
+    última vez → 3 filas). Sin historial → 1 fila en blanco. Nunca exige que
+    el día histórico coincida en orden o ejercicios (esa rigidez dejaba todo
+    en blanco ante cualquier variación).
+    """
     plantilla = get_plantilla(db_path, plantilla_id)
     if plantilla is None:
         raise NotFoundError("La plantilla no existe.")
     rows: list[TrainingSetInput] = []
-    sets = get_last_template_session_sets(db_path, plantilla["ejercicios"])
-    if sets:
-        rows.extend(
-            TrainingSetInput(
-                ejercicio=s["ejercicio"],
-                kg=s["kg"],
-                reps=s["reps"],
-                rir=s["rir"],
-                descanso_seg=s.get("descanso_seg", ""),
-                velocidad_kmh=s.get("velocidad_kmh", ""),
-                dificultad=s.get("dificultad", ""),
-            )
-            for s in sets
-        )
-    else:
-        for ej in plantilla["ejercicios"]:
-            if is_hiit_set(ej):
+    for ej in plantilla["ejercicios"]:
+        if is_hiit_set(ej):
+            hist = get_last_exercise_series(db_path, "HIIT")
+            if hist["series"]:
+                rows.extend(
+                    TrainingSetInput(
+                        ejercicio="HIIT",
+                        kg="",
+                        reps="",
+                        rir="",
+                        descanso_seg=s.get("descanso_seg", ""),
+                        velocidad_kmh=s.get("velocidad_kmh", ""),
+                        dificultad=s.get("dificultad", ""),
+                    )
+                    for s in hist["series"]
+                )
+            else:
                 rows.append(
                     TrainingSetInput(
                         ejercicio="HIIT", kg="", reps="", rir="", velocidad_kmh="", dificultad=""
                     )
                 )
-            else:
-                rows.append(TrainingSetInput(ejercicio=ej, kg="", reps="", rir=""))
+            continue
+        hist = get_last_exercise_series(db_path, ej)
+        if hist["series"]:
+            rows.extend(
+                TrainingSetInput(
+                    ejercicio=s["ejercicio"],
+                    kg=s["kg"],
+                    reps=s["reps"],
+                    rir=s["rir"],
+                    descanso_seg=s.get("descanso_seg", ""),
+                    velocidad_kmh=s.get("velocidad_kmh", ""),
+                    dificultad=s.get("dificultad", ""),
+                )
+                for s in hist["series"]
+            )
+        else:
+            rows.append(TrainingSetInput(ejercicio=ej, kg="", reps="", rir=""))
     return rows

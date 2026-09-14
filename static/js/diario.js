@@ -5,6 +5,7 @@
 // selectable immediately without reloading the page.
 
 import { closeDialog, openDialog } from './modal-dialog.js';
+import { initExerciseCombo } from './exercise-combo.js';
 
 const MODES = ['entrenamiento', 'alimentacion'];
 
@@ -83,6 +84,7 @@ function addOptionToDatalist(listId, name) {
 }
 
 export function initDiario() {
+    initExerciseCombo();
     document.addEventListener('click', (event) => {
         const action = event.target.closest('[data-action]');
         if (!action) return;
@@ -149,8 +151,7 @@ export function initDiario() {
             }
         }
     });
-    document.body.addEventListener('htmx:afterRequest', (event) => {
-        if (!event.detail || !event.detail.successful) return;
+    document.body.addEventListener('htmx:afterRequest', (event) => {        if (!event.detail || !event.detail.successful) return;
         const url = event.detail.xhr ? event.detail.xhr.responseURL : "";
         if (url.includes('/ejercicio/nuevo')) {
             addOptionToSelects('#set-rows .ej-select', pendingExercise);

@@ -37,6 +37,7 @@ OOB_FRAGMENT_TARGETS = (
     "ejercicios-row",
     "splits-section",
     "split-board",
+    "splits-catalog",
     "history-section",
     "period-summary-wrap",
     "dashboard-catalog-list",

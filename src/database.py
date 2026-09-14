@@ -426,35 +426,45 @@ def get_ejercicio_categoria(db_path: str) -> dict[str, str]:
         }
 
 
-def get_last_session_fecha(db_path: str, ejercicio: str) -> str | None:
-    """Última fecha con series de un ejercicio (para la fuente de la sugerencia)."""
-    with read_connection(db_path) as conn:
-        row = conn.execute(
-            "SELECT fecha FROM training_sets WHERE LOWER(ejercicio) = LOWER(?) "
-            "AND fecha IS NOT NULL ORDER BY fecha DESC LIMIT 1",
-            (ejercicio,),
-        ).fetchone()
-    return str(row[0]) if row else None
+def get_last_exercise_series(db_path: str, ejercicio: str, before_fecha: str | None = None) -> dict:
+    """Últimas series de un ejercicio con ordinal propio (1..M).
 
-
-def get_last_session_sets(db_path: str, ejercicio: str) -> list[dict]:
+    El ordinal es posicional por ejercicio: ignora en qué posición global
+    (set_orden) quedó ese día entre otros ejercicios. Si `before_fecha`
+    se pasa (YYYY-MM-DD), solo mira fechas estrictamente anteriores
+    (evita eco del propio día y filtraciones de futuro al sugerir pasado).
+    Devuelve {"fuente_fecha": str|None, "series": [...]}, series ordenadas
+    por set_orden con "pos" 1-indexed.
+    """
+    name = str(ejercicio or "").strip()
+    if not name:
+        return {"fuente_fecha": None, "series": []}
     with read_connection(db_path) as conn:
-        latest = conn.execute(
-            "SELECT fecha FROM training_sets WHERE LOWER(ejercicio) = LOWER(?) "
-            "AND fecha IS NOT NULL ORDER BY fecha DESC LIMIT 1",
-            (ejercicio,),
-        ).fetchone()
+        if before_fecha is not None:
+            latest = conn.execute(
+                "SELECT fecha FROM training_sets WHERE LOWER(ejercicio) = LOWER(?) "
+                "AND fecha IS NOT NULL AND fecha < ? ORDER BY fecha DESC LIMIT 1",
+                (name, str(before_fecha)),
+            ).fetchone()
+        else:
+            latest = conn.execute(
+                "SELECT fecha FROM training_sets WHERE LOWER(ejercicio) = LOWER(?) "
+                "AND fecha IS NOT NULL ORDER BY fecha DESC LIMIT 1",
+                (name,),
+            ).fetchone()
         if latest is None:
-            return []
+            return {"fuente_fecha": None, "series": []}
+        fuente = str(latest[0])
         set_rows = conn.execute(
             "SELECT ejercicio, set_orden, reps, kg, rir, descanso_seg, velocidad_kmh, dificultad FROM training_sets "
             "WHERE LOWER(ejercicio) = LOWER(?) AND fecha = ? ORDER BY set_orden",
-            (ejercicio, latest[0]),
+            (name, fuente),
         ).fetchall()
-    return [
+    series = [
         {
             "ejercicio": r[0],
             "set_orden": r[1],
+            "pos": i + 1,
             "reps": r[2],
             "kg": r[3],
             "rir": r[4],
@@ -462,50 +472,9 @@ def get_last_session_sets(db_path: str, ejercicio: str) -> list[dict]:
             "velocidad_kmh": r[6],
             "dificultad": r[7],
         }
-        for r in set_rows
+        for i, r in enumerate(set_rows)
     ]
-
-
-def get_last_template_session_sets(db_path: str, ejercicios: list[str]) -> list[dict]:
-    """Get the latest complete session matching one workout template.
-
-    Exercise-by-exercise lookups make unrelated Full Body/Torso/Legs sessions
-    bleed into each other. A template identifies one ordered workout, so its
-    carry-over values must come from one matching date.
-    """
-    expected = [str(e).strip().casefold() for e in ejercicios if str(e).strip()]
-    if not expected:
-        return []
-    with read_connection(db_path) as conn:
-        rows = conn.execute(
-            "SELECT fecha, ejercicio, set_orden, reps, kg, rir, descanso_seg, velocidad_kmh, dificultad "
-            "FROM training_sets WHERE fecha IS NOT NULL ORDER BY fecha DESC, set_orden"
-        ).fetchall()
-    by_date: dict[str, list[tuple]] = {}
-    for row in rows:
-        by_date.setdefault(str(row[0]), []).append(row)
-    for session_rows in by_date.values():
-        sequence: list[str] = []
-        for row in session_rows:
-            name = str(row[1]).strip().casefold()
-            if not sequence or sequence[-1] != name:
-                sequence.append(name)
-        if sequence != expected:
-            continue
-        return [
-            {
-                "ejercicio": row[1],
-                "set_orden": row[2],
-                "reps": row[3],
-                "kg": row[4],
-                "rir": row[5],
-                "descanso_seg": row[6],
-                "velocidad_kmh": row[7],
-                "dificultad": row[8],
-            }
-            for row in session_rows
-        ]
-    return []
+    return {"fuente_fecha": fuente, "series": series}
 
 
 # ---------------------------------------------------------------------------

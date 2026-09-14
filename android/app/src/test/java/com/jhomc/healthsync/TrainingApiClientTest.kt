@@ -469,6 +469,33 @@ class TrainingSuggestionClientTest {
             server.shutdown()
         }
     }
+
+    @Test
+    fun `ejercicio ultimo parsea series posicionales`() {
+        val server = MockWebServer()
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"schema_version":1,"ejercicio":"Press","fuente_fecha":"2026-09-02","series":[{"pos":1,"kg":79.0,"reps":8.0,"rir":1.5,"descanso_seg":null,"velocidad_kmh":null,"dificultad":null},{"pos":2,"kg":78.0,"reps":8.0,"rir":1.5,"descanso_seg":90.0,"velocidad_kmh":null,"dificultad":null}]}""",
+            ),
+        )
+        server.start()
+        try {
+            val base = "http://${server.hostName}:${server.port}"
+            val res = client.getExerciseLast(base, "secret", "Press", "2026-09-09")
+            val last = (res as TrainingResult.Ok).value
+            assertEquals("Press", last.ejercicio)
+            assertEquals("2026-09-02", last.fuenteFecha)
+            assertEquals(2, last.series.size)
+            assertEquals(79.0, last.series[0].kg!!, 0.001)
+            assertEquals(1.5, last.series[0].rir!!, 0.001)
+            assertEquals(90.0, last.series[1].descansoSeg!!, 0.001)
+            val path = server.takeRequest().path
+            assertTrue(path!!.startsWith("/api/v1/ejercicio/ultimo?"))
+            assertTrue(path.contains("ejercicio=Press"))
+        } finally {
+            server.shutdown()
+        }
+    }
 }
 
 class TrainingCardioClientTest {

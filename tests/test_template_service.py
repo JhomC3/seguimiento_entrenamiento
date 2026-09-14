@@ -119,10 +119,9 @@ def test_delete_template(db):
     assert get_plantillas(db) == []
 
 
-def test_apply_template_usa_sesion_coincidente_no_mezcla(db):
-    # Una plantilla identifica una sesión completa: la sesión de torso (Press +
-    # Curl) es la única que coincide; la sesión posterior solo de Curl no debe
-    # colarse en los valores de Press.
+def test_apply_template_usa_ultima_vez_por_ejercicio(db):
+    # Por ejercicio, sin exigir sesión exacta: Press trae su última vez y
+    # Curl la suya aunque sea de otro día posterior.
     save_session(
         db,
         "2026-03-01",
@@ -136,7 +135,7 @@ def test_apply_template_usa_sesion_coincidente_no_mezcla(db):
     rows = apply_template_rows(db, pid)
     assert [(r.ejercicio, r.kg, r.reps, r.rir) for r in rows] == [
         ("Press", 80, 8, 1),
-        ("Curl", 20, 10, 0),
+        ("Curl", 22, 12, 1),
     ]
 
 
@@ -217,17 +216,17 @@ def test_apply_template_elige_la_fecha_mas_reciente(db):
     assert [(r.kg, r.reps) for r in rows] == [(85, 6), (22, 10)]
 
 
-def test_apply_template_sin_sesion_coincidente_deja_filas_vacias(db):
-    # Press y Curl nunca se entrenaron juntos en el mismo día: aplicar la
-    # plantilla no debe mezclar sus últimos registros por separado.
+def test_apply_template_sin_sesion_completa_trae_ultima_vez_por_ejercicio(db):
+    # Press y Curl nunca se entrenaron juntos: aplicar trae la última vez de
+    # cada uno por separado (misma fuente que la rueda).
     save_session(db, "2026-02-10", [TrainingSetInput(ejercicio="Press", kg=100, reps=5, rir=1)])
     save_session(db, "2026-02-11", [TrainingSetInput(ejercicio="Curl", kg=18, reps=12, rir=1)])
     save_session(db, "2026-02-12", [TrainingSetInput(ejercicio="Press", kg=102, reps=5, rir=2)])
     pid = save_template(db, TemplateInput(nombre="T", ejercicios=["Curl", "Press"])).id
     rows = apply_template_rows(db, pid)
     assert [(r.ejercicio, r.kg, r.reps, r.rir) for r in rows] == [
-        ("Curl", "", "", ""),
-        ("Press", "", "", ""),
+        ("Curl", 18, 12, 1),
+        ("Press", 102, 5, 2),
     ]
 
 
@@ -309,3 +308,26 @@ def test_plantilla_hiit_aplica_filas_hiit(db):
     assert rows[0].ejercicio == "HIIT"
     assert rows[0].velocidad_kmh == ""
     assert rows[0].dificultad == ""
+
+
+def test_plantilla_hiit_con_historial_trae_velocidad(db):
+    save_session(
+        db,
+        "2026-03-01",
+        [
+            TrainingSetInput(
+                ejercicio="HIIT",
+                kg="",
+                reps="",
+                rir="",
+                velocidad_kmh=10.5,
+                dificultad=3,
+                descanso_seg=60,
+            )
+        ],
+    )
+    pid = save_template(db, TemplateInput(nombre="Cardio", ejercicios=["HIIT"])).id
+    rows = apply_template_rows(db, pid)
+    assert len(rows) == 1
+    assert (rows[0].velocidad_kmh, rows[0].dificultad, rows[0].descanso_seg) == (10.5, 3, 60)
+    assert (rows[0].kg, rows[0].reps, rows[0].rir) == ("", "", "")
