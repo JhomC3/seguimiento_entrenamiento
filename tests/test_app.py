@@ -121,6 +121,36 @@ def test_save_valid_returns_ok_marker(tmp_path, monkeypatch):
     assert rows[0]["descanso_seg"] == 90.0
 
 
+def test_save_descanso_acepta_decimales(tmp_path, monkeypatch):
+    """El descanso acepta decimales (p. ej. lo medido por el móvil: 95.4)."""
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().post(
+        "/entrenamiento/session/save",
+        data={
+            "fecha": _fecha(),
+            "ejercicio": ["Press"],
+            "kg": ["80"],
+            "reps": ["8"],
+            "rir": ["1"],
+            "descanso": ["95.4"],
+        },
+    )
+    assert 'id="save-outcome" hx-swap-oob="outerHTML" data-ok="1"' in r.text
+    from src.database import get_sets_by_fecha
+
+    rows = get_sets_by_fecha(db, _fecha())
+    assert rows[0]["descanso_seg"] == 95.4
+
+
+def test_editor_descanso_step_decimal(tmp_path, monkeypatch):
+    """El input Desc ya no exige múltiplos de 5 (step 0.1)."""
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().get(f"/editor/popup?fecha={_fecha()}")
+    assert 'name="descanso" type="number" step="0.1"' in r.text
+
+
 def test_save_mixto_hiit_rechaza(tmp_path, monkeypatch):
     """Separación estricta: HIIT no se combina con fuerza en la misma sesión."""
     db = _setup_db(tmp_path)

@@ -160,7 +160,7 @@
                         </td>
                         <td class="py-0.5 px-1.5" data-col="descanso">
                              <input
-                                 name="descanso" type="number" step="5" min="0" placeholder="s"
+                                 name="descanso" type="number" step="0.1" min="0" placeholder="s"
                                  aria-label="Descanso, serie {{ loop.index }}"
                                  aria-describedby="descanso-help-{{ loop.index }}"
                                  value="{{ "%g"|format(r.descanso_seg) if r.descanso_seg is not none and r.descanso_seg != "" else "" }}"
