@@ -1,6 +1,10 @@
 package com.jhomc.healthsync
 
 import android.app.Application
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioTrack
+import android.os.PowerManager
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -21,6 +25,7 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +34,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** Pii de descanso: seno puro a esta frecuencia durante 1.5 s (una vez por marca). */
+private const val BEEP_FREQ_HZ = 1200.0
+private const val BEEP_DURATION_MS = 1500L
 
 data class DiaryUiState(
     val fecha: String = LocalDate.now().toString(),
@@ -124,6 +133,43 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
     val restMs: StateFlow<Map<String, Long>> = _restMs.asStateFlow()
     private val _runningUuid = MutableStateFlow<String?>(null)
     val runningUuid: StateFlow<String?> = _runningUuid.asStateFlow()
+    /** Series con descanso pausado (el parcial anotado queda; no sobrevive al atrás). */
+    private val _pausedUuids = MutableStateFlow<Set<String>>(emptySet())
+    val pausedUuids: StateFlow<Set<String>> = _pausedUuids.asStateFlow()
+    /** Piip de descanso: pista generada vaga + cursor por intervalo (sin refires). */
+    private var beepTrack: AudioTrack? = null
+    private var beepCursorFor: Long? = null
+    private var beepCursorMs: Long = 0L
+    /**
+     * Wake lock parcial: CPU despierta mientras corre un descanso para que el
+     * ticker (piips 2:00/3:00) sea puntual con pantalla bloqueada. Sin él,
+     * Doze difiere los ticks. Solo vive durante descansos (segundos-minutos);
+     * el SO lo suelta solo si muere el proceso.
+     */
+    private var restWakeLock: PowerManager.WakeLock? = null
+
+    override fun onCleared() {
+        runCatching { beepTrack?.release() }
+        beepTrack = null
+        runCatching { restWakeLock?.let { if (it.isHeld) it.release() } }
+        restWakeLock = null
+        super.onCleared()
+    }
+
+    /** Sincroniza el wake lock con el estado real (único punto de llamada). */
+    private fun syncWakeLock() {
+        if (restTimer.runningUuid() == null) {
+            restWakeLock?.let { if (it.isHeld) runCatching { it.release() } }
+            return
+        }
+        val lock = restWakeLock ?: runCatching {
+            (getApplication<Application>().getSystemService(android.content.Context.POWER_SERVICE) as PowerManager)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "HealthSync:rest")
+                .apply { setReferenceCounted(false) }
+                .also { restWakeLock = it }
+        }.getOrNull() ?: return
+        if (!lock.isHeld) runCatching { lock.acquire() }
+    }
 
     private fun restDao(): RestDao =
         restDaoOverride ?: HealthDatabaseBuilder.get(getApplication()).restDao()
@@ -132,17 +178,39 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         draftsDaoOverride ?: HealthDatabaseBuilder.get(getApplication()).entrenoDraftDao()
 
     init {
-        load(LocalDate.now().toString())
         // Ticker vago: corre siempre pero solo emite con descanso en curso.
         startTicker()
         viewModelScope.launch(Dispatchers.IO) {
-            // Barrido único de huérfanos: abiertos de sesiones anteriores no se
-            // reanudan; se marcan ABANDONADO con el tick actual.
+            // Barrido único: huérfanos de OTROS días se abandonan; el ABIERTO
+            // de hoy se reanuda (volver con atrás o muerte de proceso el
+            // mismo día no pierde el descanso en curso).
             if (!orphanSweepDone) {
                 orphanSweepDone = true
-                runCatching { restDao().abandonAllOpen(clockWall(), clockElapsed()) }
+                sweepAndResume()
             }
+            withContext(Dispatchers.Main) { load(LocalDate.now().toString()) }
         }
+    }
+
+    /**
+     * Abandona abiertos de otros días y reanuda el de hoy (como mucho hay
+     * uno por single-running; si hubiera varios, conserva el último y los
+     * anteriores se cierran como historia honesta). El reloj elapsed incluye
+     * la ausencia: al volver sigue donde iba.
+     */
+    private suspend fun sweepAndResume() {
+        val wall = clockWall()
+        val elapsed = clockElapsed()
+        val dao = restDao()
+        val today = LocalDate.now().toString()
+        runCatching { dao.abandonOpenExcept(today, wall, elapsed) }
+        val open = runCatching { dao.openForFecha(today) }.getOrDefault(emptyList())
+        open.dropLast(1).forEach { runCatching { dao.close(it.id, wall, elapsed) } }
+        open.lastOrNull()?.let { resume ->
+            restTimer.onOpened(resume.id, resume.clientSetUuid, resume.startWallMs, resume.startElapsedMs)
+            _runningUuid.value = resume.clientSetUuid
+        }
+        refreshRestMs()
     }
 
     /** Borradores actuales (misma fuente que rebuildRows de la Activity). */
@@ -159,12 +227,21 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
     fun seedRestAccum() {
         viewModelScope.launch(Dispatchers.IO) {
             val fecha = _state.value.fecha
-            val closed = runCatching { restDao().forFecha(fecha) }.getOrDefault(emptyList())
-                .filter { it.estado == "CERRADO" && it.endElapsedMs != null }
+            val rows = runCatching { restDao().forFecha(fecha) }.getOrDefault(emptyList())
+            val closed = rows.filter { it.estado == "CERRADO" && it.endElapsedMs != null }
             for (c in closed) {
                 val dur = (c.endElapsedMs!! - c.startElapsedMs).coerceAtLeast(0)
                 restTimer.seedAccum(c.clientSetUuid, dur)
             }
+            // Pausa persistente derivada: pendiente con cerrados y sin running
+            // estaba pausada al morir el proceso → el tap reanuda desde el
+            // acumulado en vez de arrancar de cero (ver derivePaused).
+            _pausedUuids.value = SessionFlowState.derivePaused(
+                closed.map { it.clientSetUuid },
+                _doneUuids.value,
+                restTimer.runningUuid(),
+                entrenoIds,
+            )
             refreshRestMs()
         }
     }
@@ -207,7 +284,7 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             DraftRow(ids[i], d.ejercicio, d.kg, d.reps, d.rir, d.descansoSeg, d.velocidadKmh, d.dificultad)
         }
         val done = _doneUuids.value
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + NonCancellable) {
             val dao = draftsDao()
             val existing = runCatching { dao.forFecha(fecha) }.getOrNull()
             val base = existing?.baseHash ?: serverBaseHash()
@@ -293,11 +370,13 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         val flat = SessionFlowState.flattened(_entrenoGroups.value).map { it.uuid }.toSet()
         _expandedUuids.value = _expandedUuids.value.intersect(flat)
         if (dayChanged && _expandedUuids.value.isEmpty()) {
-            // Primer pintado del día: abre la primera pendiente. Los colapsos
-            // manuales posteriores se respetan (no se reabre solo).
-            SessionFlowState.nextPending(_entrenoGroups.value, _doneUuids.value, null)?.uuid?.let {
-                _expandedUuids.value = setOf(it)
-            }
+            // Primer pintado del día: si hay descanso corriendo (vuelta con
+            // atrás), se abre su dueño para dejar el dial a la vista; si no,
+            // la primera pendiente. Los colapsos manuales posteriores se
+            // respetan (no se reabre solo).
+            val focus = restTimer.runningUuid()?.takeIf { it in flat }
+                ?: SessionFlowState.nextPending(_entrenoGroups.value, _doneUuids.value, null)?.uuid
+            focus?.let { _expandedUuids.value = setOf(it) }
         }
         refreshRestMs()
     }
@@ -317,18 +396,23 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         _expandedUuids.value = SessionFlowState.toggleExpanded(_expandedUuids.value, uuid)
     }
 
-    // --- Flujo por serie: check (sin pausa, sin Ir) -------------------------------
-    // Sin botón Ir, el descanso vive entre check y check (incluye el trabajo:
-    // aceptado al quitar el botón). El siguiente check lo cierra y lo anota.
+    // --- Flujo por serie: check + dial (pausa/reanuda/reset) --------------------
+    // El descanso pertenece a la SERIE SIGUIENTE: nace en el ✓ de la anterior
+    // (late en su tarjeta abierta, visible) y muere en su propio ✓, que lo
+    // anota como descanso_seg (check-to-check, incluye el trabajo). La primera
+    // serie no tiene descanso previo; la última no abre otro al guardarse.
+    // Semántica de cronómetro: cada cierre anota a su dueño; el tramo pausado
+    // se excluye del anotado; reanudar acumula encima (N intervalos por serie).
 
     /**
      * Check: guarda la serie (local + cola), la colapsa, auto-expande la
-     * siguiente y arranca su descanso. En la última pendiente no se arranca
+     * siguiente y le arranca su descanso. En la última pendiente no se abre
      * descanso (post-entreno sin sentido: el reloj no queda corriendo).
      */
     fun guardar(uuid: String) {
         viewModelScope.launch(Dispatchers.IO) {
             if (restTimer.runningUuid() != null) closeRunning()
+            _pausedUuids.value = _pausedUuids.value - uuid
             val effect = SessionFlowState.WorkoutFlow.guardar(uuid, _doneUuids.value, _entrenoGroups.value)
             _doneUuids.value = _doneUuids.value + effect.saved
             persistProgressive()
@@ -337,15 +421,122 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
                 _expandedUuids.value = _expandedUuids.value + effect.nextToExpand
             }
             if (effect.startRest) {
-                openRest(effect.saved)
+                openRest(effect.nextToExpand!!, fresh = true)
             } else {
                 _state.value = _state.value.copy(notice = "Entreno completo.")
             }
         }
     }
 
-    /** Abre el descanso tras una serie guardada (etiquetado a esa serie). */
-    private suspend fun openRest(ownerUuid: String) {
+    /**
+     * Toque en el dial (play/pausa): pausa lo que corre, reanuda lo pausado,
+     * arranca el descanso de una pendiente en reposo (así un cronómetro
+     * reseteado vuelve a andar). En serie hecha o con otro corriendo no hace
+     * nada (jamás tumba timer ajeno).
+     */
+    fun onDialTap(uuid: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            when (val d = SessionFlowState.WorkoutFlow.resolveDialTap(
+                restTimer.runningUuid(), _pausedUuids.value, uuid, uuid in _doneUuids.value,
+            )) {
+                is SessionFlowState.WorkoutFlow.DialTapDecision.Nothing -> Unit
+                is SessionFlowState.WorkoutFlow.DialTapDecision.Pause -> {
+                    closeRunning()
+                    _pausedUuids.value = _pausedUuids.value + d.uuid
+                    _state.value = _state.value.copy(notice = "Descanso en pausa.")
+                }
+                is SessionFlowState.WorkoutFlow.DialTapDecision.Resume -> {
+                    if (d.closeOther != null) closeRunning()
+                    _pausedUuids.value = _pausedUuids.value - d.uuid
+                    openRest(d.uuid)
+                    _state.value = _state.value.copy(notice = "Descanso reanudado.")
+                }
+                is SessionFlowState.WorkoutFlow.DialTapDecision.Start -> {
+                    openRest(d.uuid, fresh = true)
+                    _state.value = _state.value.copy(notice = "Descanso iniciado.")
+                }
+            }
+        }
+    }
+
+    /**
+     * Hold 3 s en el dial: reinicia el cronómetro en curso, pausado o ya
+     * completado de esa serie (00:00, limpia su descanso anotado). Si estaba
+     * completada, vuelve a pendiente y se abre para verla en cero. En reposo
+     * sin nada que reiniciar no hace nada. Los intervalos descartados quedan
+     * ABANDONADO (historia para la futura curva de FC, excluidos del cómputo:
+     * el reset no resucita al reabrir).
+     */
+    fun resetRest(uuid: String) {
+        val running = restTimer.runningUuid()
+        val done = uuid in _doneUuids.value
+        if (running != uuid && uuid !in _pausedUuids.value && !done) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val wall = clockWall()
+            val elapsed = clockElapsed()
+            runCatching { restDao().abandonForSet(uuid, wall, elapsed) }
+            restTimer.abandonRunning(uuid)
+            restTimer.clearAccumFor(uuid)
+            _pausedUuids.value = _pausedUuids.value - uuid
+            _doneUuids.value = _doneUuids.value - uuid
+            val fecha = _state.value.fecha
+            val drafts = currentDrafts().toMutableList()
+            val index = entrenoIds.indexOf(uuid)
+            if (index in drafts.indices && drafts[index].descansoSeg.isNotBlank()) {
+                drafts[index] = drafts[index].copy(descansoSeg = "")
+                draftBuffer = fecha to drafts
+                rebuildEntrenoLists()
+            }
+            persistLocal()
+            val sets = currentDrafts().filter { !it.isBlank() }
+            if (sets.isNotEmpty()) {
+                runCatching { repository.enqueueSessionSave(fecha, sets) }
+                _state.value = _state.value.copy(
+                    pending = runCatching { repository.pendingCount() }.getOrDefault(0),
+                )
+            }
+            _expandedUuids.value = _expandedUuids.value + uuid
+            refreshRestMs()
+        }
+    }
+
+    /**
+     * Reinicio del entreno: todos los descansos a 00:00, series desmarcadas y
+     * primera pendiente abierta. Los pesos/reps se conservan; el historial de
+     * intervalos queda ABANDONADO (no se borra). Con confirmación en la UI.
+     */
+    fun resetEntreno() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val fecha = _state.value.fecha
+            val wall = clockWall()
+            val elapsed = clockElapsed()
+            runCatching { restDao().abandonForFecha(fecha, wall, elapsed) }
+            restTimer.resetAll()
+            _pausedUuids.value = emptySet()
+            _doneUuids.value = emptySet()
+            val drafts = currentDrafts().map {
+                if (it.descansoSeg.isBlank()) it else it.copy(descansoSeg = "")
+            }
+            draftBuffer = fecha to drafts
+            rebuildEntrenoLists()
+            persistProgressive()
+            _expandedUuids.value = emptySet()
+            SessionFlowState.nextPending(_entrenoGroups.value, emptySet(), null)?.uuid?.let {
+                _expandedUuids.value = setOf(it)
+            }
+            refreshRestMs()
+        }
+    }
+
+    /**
+     * Abre el descanso a nombre de la serie dada (limpia su pausa si la tenía).
+     * Con [fresh] el contador arranca de 0 (✓-avance y tap-Start: la siguiente
+     * siempre late desde cero aunque tuviera historial); sin fresh acumula
+     * encima (reanudar tras pausa). El borrador se sobrescribe al guardar.
+     */
+    private suspend fun openRest(ownerUuid: String, fresh: Boolean = false) {
+        _pausedUuids.value = _pausedUuids.value - ownerUuid
+        if (fresh) restTimer.clearAccumFor(ownerUuid)
         val item = SessionFlowState.flattened(_entrenoGroups.value).find { it.uuid == ownerUuid }
         val wall = clockWall()
         val elapsed = clockElapsed()
@@ -397,8 +588,9 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
     /**
      * Cierra el descanso en curso (si lo hay) con su hora real y anota el
      * total acumulado en el campo descanso de esa serie: un dato más, como
-     * kg/reps/RIR (libreta local + cola para auto-subida). Nunca borra:
-     * sin timer previo no toca nada. Devuelve el uuid afectado o null.
+     * kg/reps/RIR (libreta local + cola para auto-subida). Cada cierre anota
+     * a su dueño (pausa, guardado o reanudación ajena). Sin timer previo no
+     * toca nada. Devuelve el uuid afectado o null.
      */
     private suspend fun closeRunning(): String? {
         val toClose = restTimer.pendingClose() ?: return null
@@ -454,7 +646,56 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         val now = try { clockElapsed() } catch (_: Exception) { 0L }
         val ids = SessionFlowState.flattened(_entrenoGroups.value).map { it.uuid }
         _restMs.value = ids.associateWith { restTimer.elapsedFor(it, now) }
-        _runningUuid.value = restTimer.runningUuid()
+        val running = restTimer.runningUuid()
+        _runningUuid.value = running
+        // Wake lock atado al running: puntualidad con pantalla bloqueada.
+        syncWakeLock()
+        // Piip por flanco en 2:00 y 3:00 (una vez por descanso, canal alarma:
+        // suena en silencio; pausado no avanza, reseteado limpia el cursor).
+        if (running != null) {
+            val intervalId = restTimer.runningIntervalId()
+            val elapsed = restTimer.elapsedFor(running, now)
+            if (intervalId != null && beepCursorFor == intervalId) {
+                if (SessionFlowState.crossedThresholds(beepCursorMs, elapsed, REST_BEEP_AT_SEC).isNotEmpty()) {
+                    beep()
+                }
+            }
+            beepCursorFor = intervalId
+            beepCursorMs = elapsed
+        } else {
+            beepCursorFor = null
+        }
+    }
+
+    /** Mismo pii en 2:00 y 3:00 (decisión de producto): seno puro 1.5 s. */
+    private fun beep() {
+        val track = beepTrack ?: runCatching { buildBeepTrack()?.also { beepTrack = it } }.getOrNull() ?: return
+        runCatching {
+            track.stop()
+            track.reloadStaticData()
+            track.play()
+        }
+    }
+
+    /**
+     * Pii generado (seno puro, idéntico en todos los teléfonos: los
+     * ToneGenerator varían por marca). PCM 16-bit mono precomputado en
+     * STREAM_ALARM: suena con el teléfono en silencio (manda ese volumen).
+     */
+    private fun buildBeepTrack(): AudioTrack? {
+        val sampleRate = 22050
+        val frames = (sampleRate * BEEP_DURATION_MS / 1000).toInt()
+        val fade = (sampleRate * 50 / 1000).coerceAtMost(frames / 2)
+        val pcm = ShortArray(frames) { i ->
+            val env = (minOf(i, frames - 1 - i, fade).toFloat() / fade).coerceIn(0f, 1f)
+            (Short.MAX_VALUE * env * kotlin.math.sin(2 * Math.PI * BEEP_FREQ_HZ * i / sampleRate)).toInt().toShort()
+        }
+        return runCatching {
+            AudioTrack(
+                AudioManager.STREAM_ALARM, sampleRate, AudioFormat.CHANNEL_OUT_MONO,
+                AudioFormat.ENCODING_PCM_16BIT, pcm.size * 2, AudioTrack.MODE_STATIC,
+            ).apply { write(pcm, 0, pcm.size) }
+        }.getOrNull()
     }
 
     /**
@@ -467,7 +708,7 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         val fecha = _state.value.fecha
         val sets = currentDrafts().filter { !it.isBlank() }
         if (sets.isEmpty()) return
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO + NonCancellable) {
             runCatching { repository.enqueueSessionSave(fecha, sets) }
             val pending = runCatching { repository.pendingCount() }.getOrDefault(0)
             _state.value = _state.value.copy(pending = pending)

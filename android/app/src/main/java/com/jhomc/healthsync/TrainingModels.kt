@@ -123,6 +123,9 @@ const val RIR_STEP = 0.1
 const val VEL_STEP = 0.5
 const val DIF_STEP = 0.5
 
+/** Marcas del piip de descanso en segundos (una vez por descanso, canal alarma). */
+val REST_BEEP_AT_SEC = listOf(120L, 180L)
+
 /** Estado de descanso por serie para la UI (derivado de rest_intervals). */
 enum class RestState { IDLE, RUNNING, PAUSED }
 
