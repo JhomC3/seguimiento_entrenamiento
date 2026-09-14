@@ -25,6 +25,7 @@ const val NUTRITION_API_MEAL_TEMPLATES_PATH = "/api/v1/plantillas-comida"
 const val NUTRITION_API_MEAL_APPLY_PATH = "/api/v1/plantilla-comida/aplicar"
 const val NUTRITION_API_MEAL_SAVE_PATH = "/api/v1/plantilla-comida/guardar"
 const val SUGGESTION_API_PATH = "/api/v1/sugerencia"
+const val EXERCISE_LAST_API_PATH = "/api/v1/ejercicio/ultimo"
 const val CARDIO_API_DAY_PATH = "/api/v1/cardio"
 const val CARDIO_API_ANNOTATE_PATH = "/api/v1/cardio/anotacion"
 const val DATES_API_PATH = "/api/v1/fechas"
@@ -193,6 +194,25 @@ class TrainingApiClient(
             }
         }
 
+    /** Últimas series de un ejercicio (autofill, misma fuente que la rueda). */
+    fun getExerciseLast(
+        apiBase: String,
+        token: String,
+        ejercicio: String,
+        fecha: String,
+    ): TrainingResult<ExerciseLast> {
+        val url = "$apiBase$EXERCISE_LAST_API_PATH" +
+            "?ejercicio=${java.net.URLEncoder.encode(ejercicio, "UTF-8")}" +
+            "&fecha=${java.net.URLEncoder.encode(fecha, "UTF-8")}"
+        return get(url, token).let { raw ->
+            when (raw) {
+                is TrainingResult.Ok -> parseExerciseLast(raw.value)
+                is TrainingResult.ApiError -> raw
+                is TrainingResult.NetworkError -> raw
+            }
+        }
+    }
+
     // --- B3: cardio ---------------------------------------------------------------
 
     fun getCardioDay(apiBase: String, token: String, fecha: String): TrainingResult<List<CardioSession>> =
@@ -317,6 +337,34 @@ class TrainingApiClient(
                 ),
             )
         }.getOrElse { TrainingResult.ApiError(-1, "Sugerencia malformada del servidor.") }
+    }
+
+    private fun parseExerciseLast(json: JSONObject): TrainingResult<ExerciseLast> {
+        return runCatching {
+            checkVersion(json)?.let { return it }
+            val sets = json.optJSONArray("series")?.let { raw ->
+                (0 until raw.length()).map { i ->
+                    val s = raw.getJSONObject(i)
+                    SuggestedSet(
+                        ejercicio = json.optString("ejercicio", ""),
+                        kg = s.optDoubleOrNull("kg"),
+                        reps = s.optDoubleOrNull("reps"),
+                        rir = s.optDoubleOrNull("rir"),
+                        descansoSeg = s.optDoubleOrNull("descanso_seg"),
+                        fuenteFecha = json.optString("fuente_fecha", "").ifBlank { null },
+                        velocidadKmh = s.optDoubleOrNull("velocidad_kmh"),
+                        dificultad = s.optDoubleOrNull("dificultad"),
+                    )
+                }
+            } ?: emptyList()
+            TrainingResult.Ok(
+                ExerciseLast(
+                    ejercicio = json.optString("ejercicio", ""),
+                    fuenteFecha = json.optString("fuente_fecha", "").ifBlank { null },
+                    series = sets,
+                ),
+            )
+        }.getOrElse { TrainingResult.ApiError(-1, "Último ejercicio malformado del servidor.") }
     }
 
     // --- HTTP -----------------------------------------------------------------

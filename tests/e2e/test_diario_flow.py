@@ -1,7 +1,8 @@
 """Browser tests: standalone daily page (/diario, alias /registro).
 
 Cubre el flujo completo del Diario: carrusel compacto sin semanas, tabs de
-entrenamiento/alimentación, plantillas que no mezclan sesiones, altas de
+entrenamiento/alimentación, plantillas con últimos valores por ejercicio,
+autofill al elegir ejercicio, altas de
 ejercicio y alimento desde diálogos, foco y Escape, ausencia de overflow
 horizontal en móvil, y persistencia REAL del guardado verificada contra
 SQLite. No toca las expectativas de UX-3.
@@ -165,10 +166,9 @@ def test_diario_session_templates_do_not_mix_sessions(page, server):
     expect(page.locator("#confirm-modal")).to_be_visible()
     page.locator("#confirm-save").click()
     _save_session(page)
-    # La plantilla queda guardada y visible en el diálogo de Plantillas.
-    page.locator(
-        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
-    ).click()
+    # La plantilla queda guardada y visible en el diálogo de Plantillas
+    # (sin botón en la vista: se abre por JS en el test).
+    page.evaluate("document.getElementById('training-templates-dialog').showModal()")
     expect(page.locator("#plantillas-section [data-pt-nombre]")).to_have_count(1, timeout=3000)
     page.keyboard.press("Escape")
 
@@ -179,13 +179,11 @@ def test_diario_session_templates_do_not_mix_sessions(page, server):
     _fill_row(page, 0, "Curl", "20", "12", "1")
     _save_session(page)
 
-    # 14) Aplicar la plantilla en un día vacío (hoy+1): debe copiar la sesión
-    # de torso completa (80/16), no mezclar con la sesión B (20).
+    # 14) Aplicar la plantilla en un día vacío (hoy+1): por ejercicio, sin
+    # exigir sesión exacta (Press 80/8 de torso, Curl 20/12 de la sesión B).
     iso_c = _iso(1)
     _goto_date(page, iso_c)
-    page.locator(
-        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
-    ).click()
+    page.evaluate("document.getElementById('training-templates-dialog').showModal()")
     page.locator("#plantillas-section .pt-card", has_text="Torso").get_by_role(
         "button", name="Aplicar"
     ).click()
@@ -197,8 +195,8 @@ def test_diario_session_templates_do_not_mix_sessions(page, server):
     expect(page.locator("#edit-actions button[type='submit']")).to_be_enabled()
     kgs = page.locator('#set-rows input[name="kg"]').evaluate_all("els => els.map(e => e.value)")
     reps = page.locator('#set-rows input[name="reps"]').evaluate_all("els => els.map(e => e.value)")
-    assert kgs == ["80", "16"], f"kg mezclados: {kgs}"
-    assert reps == ["8", "10"], f"reps mezcladas: {reps}"
+    assert kgs == ["80", "20"], f"kg por ejercicio: {kgs}"
+    assert reps == ["8", "12"], f"reps por ejercicio: {reps}"
     # Cerrar el diálogo de plantillas antes de guardar.
     page.keyboard.press("Escape")
     expect(page.locator("#training-templates-dialog")).not_to_be_visible()
@@ -265,40 +263,25 @@ def test_diario_food_flow_with_dialog_create(page, server):
     page.locator('[data-action="daily-mode"][data-vista="entrenamiento"]').click()
     expect(page.locator("#daily-training-view")).to_be_visible()
 
-    # 16) Abrir Nuevo ejercicio (diálogo compacto).
-    page.locator('[data-action="open-daily-dialog"][data-dialog="exercise-create-dialog"]').click()
-    expect(page.locator("#exercise-create-dialog")).to_be_visible()
-    page.locator('#exercise-create-form input[name="ejercicio"]').fill("Press Pausado")
-    page.locator('#exercise-create-form input[name="grupo_muscular"]').fill("Pectoral")
-    page.locator('#exercise-create-form select[name="categoria"]').select_option("EMPUJE")
-    # 17) Crear el ejercicio.
-    page.locator('#exercise-create-form button[type="submit"]').click()
-    expect(page.locator("#exercise-create-dialog")).not_to_be_visible()
-    expect(page.locator("#notice-container .notice")).to_be_visible()
-    # 18) Aparece en el editor sin recargar la página.
-    options = page.locator("#set-rows .ej-select").first.locator("option").all_text_contents()
-    assert "Press Pausado" in options
-
 
 def test_diario_dialogs_restore_focus_and_escape(page, server):
     _open_diario(page, server)
-    trigger = page.locator(
-        '[data-action="open-daily-dialog"][data-dialog="exercise-create-dialog"]'
-    )
+    page.locator('[data-action="daily-mode"][data-vista="alimentacion"]').click()
+    trigger = page.locator('[data-action="open-daily-dialog"][data-dialog="food-create-dialog"]')
     trigger.click()
-    expect(page.locator("#exercise-create-dialog")).to_be_visible()
+    expect(page.locator("#food-create-dialog")).to_be_visible()
     # Foco inicial dentro del diálogo (el módulo modal-dialog enfoca el primer
     # elemento enfocable).
     in_dialog = page.evaluate(
         """() => {
-            const d = document.getElementById('exercise-create-dialog');
+            const d = document.getElementById('food-create-dialog');
             return d.contains(document.activeElement);
         }"""
     )
     assert in_dialog
     # Escape cierra el diálogo.
     page.keyboard.press("Escape")
-    expect(page.locator("#exercise-create-dialog")).not_to_be_visible()
+    expect(page.locator("#food-create-dialog")).not_to_be_visible()
     # 23) El foco vuelve al trigger que abrió el diálogo.
     focused = page.evaluate(
         """() => {
@@ -306,15 +289,13 @@ def test_diario_dialogs_restore_focus_and_escape(page, server):
             return el && el.closest('[data-action="open-daily-dialog"]') ? el.closest('[data-action="open-daily-dialog"]').dataset.dialog : null;
         }"""
     )
-    assert focused == "exercise-create-dialog"
+    assert focused == "food-create-dialog"
 
 
 def test_diario_no_horizontal_overflow_mobile(page, server):
     page.set_viewport_size({"width": 390, "height": 844})
     _open_diario(page, server)
-    page.locator(
-        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
-    ).click()
+    page.evaluate("document.getElementById('training-templates-dialog').showModal()")
     overflow = page.evaluate("() => document.documentElement.scrollWidth > window.innerWidth")
     assert not overflow
 
@@ -616,6 +597,39 @@ def test_diario_sugerencia_banner_aplicar_y_guardar(page, server, server_db_path
     rows = _training_rows(server_db_path, tue)
     assert len(rows) == 1
     assert rows[0][1:4] == ("Press", 70.0, 8.0)
+
+
+def test_diario_autofill_ultimo_ejercicio_y_serie(page, server, server_db_path):
+    """Elegir ejercicio trae sus últimos valores (serie 1 → 79); el + hereda
+    el ejercicio y trae la serie 2 (78)."""
+    from src.training_service import save_session
+
+    db = str(server_db_path)
+    save_session(
+        db,
+        _iso(-3),
+        [
+            {"ejercicio": "Press", "kg": 79, "reps": 8, "rir": 1.5},
+            {"ejercicio": "Press", "kg": 78, "reps": 8, "rir": 1.5},
+        ],
+    )
+    iso = _iso(2)
+    _open_diario(page, server)
+    _goto_date(page, iso)
+    page.wait_for_selector(".htmx-request", state="detached", timeout=10000)
+    if page.locator("#session-editor").get_attribute("data-editmode") != "1":
+        page.locator("#session-editor .pencil-btn").click()
+    row0 = page.locator("#set-rows .set-row").first
+    row0.locator("select[name='ejercicio']").select_option("Press")
+    # El fetch es asíncrono: espera con timeout en vez de sleep fijo.
+    expect(row0.locator('input[name="kg"]')).to_have_value("79", timeout=5000)
+    expect(row0.locator('input[name="reps"]')).to_have_value("8")
+    expect(row0.locator('input[name="rir"]')).to_have_value("1.5")
+    # El + hereda Press y trae su serie 2.
+    row0.locator('[data-action="row-add"]').click()
+    row1 = page.locator("#set-rows .set-row").nth(1)
+    expect(row1.locator("select[name='ejercicio']")).to_have_value("Press")
+    expect(row1.locator('input[name="kg"]')).to_have_value("78", timeout=5000)
 
 
 def test_diario_hiit_pide_velocidad_dificultad(page, server, server_db_path):

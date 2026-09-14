@@ -142,8 +142,16 @@
   nada → vacío. Nunca 500 visible (error → vacío).
 - `GET /sugerencia/aplicar?fecha=` — exige modo edición (misma guarda que
   aplicar plantilla, anti doble-submit); rellena el editor con la sugerencia
-  (pesos de la última vez comparable) sin guardar, con marcador
+  (filas del split en orden con últimos valores posicionales por ejercicio)
+  sin guardar, con marcador
   `#plantilla-applied` y aviso con la explicación. Sin rutina → solo aviso.
+- `GET /ejercicio/ultimo?ejercicio=&fecha=` — JSON solo lectura para autofill:
+  últimas series del ejercicio con `pos` (misma fuente que la rueda);
+  `fecha` excluye ese día y posteriores. El editor (`editor.js`) lo pide al
+  cambiar un select (siempre sobrescribe esa fila según su ordinal entre
+  filas del mismo ejercicio) y al pulsar `+` (hereda el ejercicio origen con
+  su siguiente ordinal); sin historial o sin red deja blancos. Paridad móvil
+  vía `GET /api/v1/ejercicio/ultimo`.
 
 ### `POST /cardio/annotation`
 
@@ -158,17 +166,23 @@
 
 ### `POST /ejercicio/nuevo`
 
-- Campos: `ejercicio`, `grupo_muscular`, `categoria` (form `#exercise-create-form`,
-  `hx-swap="none"`).
+- Campos: `ejercicio`, `grupo_muscular` (select cerrado del form
+  `#exercise-create-form`, `hx-swap="none"`). La `categoria` viaja en hidden
+  (auto-relleno client-side) pero el servidor **siempre la deriva del grupo**
+  (`MUSCLE_CATEGORIES`); grupo desconocido → 400. El formulario vive bajo el
+  catálogo en `/splits`, en grupo colapsable (ya no hay botón en el Diario).
 - OOB: `#notice-container` (success/error), y en éxito `#exercise-create` (outerHTML)
   + `#app-config` (outerHTML, `alimento_map` no afecta pero `categoria_map` sí).
-- Errores: nombre vacío / grupo faltante / categoría inválida / ejercicio duplicado.
+  Si la petición viene de `/splits` (`HX-Current-URL`), además OOB
+  `#splits-catalog` (innerHTML) con los grupos refrescados; el cliente
+  re-inicializa sus Sortable y reaplica el filtro de búsqueda.
+- Errores: nombre vacío / grupo faltante o desconocido / ejercicio duplicado.
 
 ### Plantillas de entrenamiento
 
-- En el Diario viven dentro del diálogo nativo `#training-templates-dialog`; el botón
-  del panel muestra el conteo (`Plantillas · N`) en el span `#daily-training-template-count`,
-  refrescado por OOB en cada mutación de plantillas.
+- En el Diario viven dentro del diálogo nativo `#training-templates-dialog`
+  (sin botón en la vista de entreno; el conteo `Plantillas · N` se retiró y
+  las mutaciones ya no emiten su OOB).
 - `GET /plantillas[?editar=<id>]` → fragmento `plantillas_list.html`
   (`target: '#plantillas-section'`). Tarjetas `#plantillas-list .pt-card[data-pt-id]`
   con acciones Aplicar/Editar/Eliminar; se reordenan arrastrando el cuerpo de la tarjeta.
@@ -237,7 +251,9 @@
   página usa TODO el ancho disponible — sin `max-w-7xl`). **Layout de dos
   columnas** (`.splits-layout`): catálogo a la izquierda
   (`.splits-catalog-col`, `var(--split-catalog-w)` 280px, `position: sticky`
-  con scroll propio; **sin título de panel**, solo buscador + grupos) y
+  con scroll propio; **sin título de panel**, solo buscador + grupos, y debajo
+  el formulario `#exercise-create` de alta de ejercicios con el mismo
+  vocabulario — `panel`, `field-input`, `btn btn-primary`) y
   `#splits-section` a la derecha (`.splits-editor-col`). Móvil: una columna
   con el editor primero (CSS `order`) y el catálogo debajo. Header de página:
   título + `← Dashboard` + botón `data-action="split-new"` **Nuevo split**.

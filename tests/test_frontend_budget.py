@@ -22,15 +22,18 @@ ROOT = Path(__file__).resolve().parents[1]
 # legítimos → 89K aggregate.
 # Revisado 2026-09-08: botón de sugerencia con glow (btn-suggest, +217 B
 # legítimos) supera los 34K por poco → individual a 35K.
-CSS_INDIVIDUAL_MAX = 35 * 1024  # components.css ~34K tras btn-suggest
+# Revisado 2026-09-12: combo custom accesible del alta (siempre hacia abajo,
+# evita abrir hacia arriba del datalist nativo, +~0.9K CSS) → 36K.
+CSS_INDIVIDUAL_MAX = 36 * 1024  # components.css ~35.8K tras combo custom
 # Revisado 2026-09-08: lo mismo empuja el agregado (~91.4K) → 90K.
 # Revisado 2026-09-10: segunda gráfica del dashboard (tendencia nutricional
 # kcal+peso MA7: shell + estilos propios ~1K) → 91K.
 # Revisado 2026-09-11: separación estricta HIIT (placeholder transparente en
 # readonly para el fantasma "s" de Desc, ~0.2K) → 92K.
+# Revisado 2026-09-12: combo custom del alta (+~0.9K CSS) → 93K.
 CSS_AGGREGATE_MAX = (
-    92 * 1024
-)  # ~60K → 84K tooltip → 86K Diario → 89K remediación → 90K sugerencia → 91K nutrición → 92K HIIT-estricto
+    93 * 1024
+)  # ~60K → 84K tooltip → 86K Diario → 89K remediación → 90K sugerencia → 91K nutrición → 92K HIIT-estricto → 93K combo-custom
 JS_INDIVIDUAL_MAX = 64 * 1024
 # Revisado 2026-09-04: remediación UI/UX (drawer por breakpoint, cardio paralelo
 # con aviso, dirty-check Cancel, 9 nutrientes, copy-day, submit splits) +~8K → 200K.
@@ -45,9 +48,21 @@ JS_INDIVIDUAL_MAX = 64 * 1024
 # Revisado 2026-09-11: separación estricta HIIT (modo de sesión, cabeceras
 # dinámicas y bloqueo anti-mezcla en editor.js + nombre HIIT en templates.js,
 # ~+3K) → 212K.
+# Revisado 2026-09-12: autofill por último ejercicio (ordinal por serie,
+# anti-carrera y herencia en row-add en editor.js, ~+3K) + texto del banner de
+# sugerencia (~+0.3K CSS) → 216K.
+# Revisado 2026-09-12: alta de ejercicio en splits (OOB `#splits-catalog` +
+# re-init de Sortable y re-filtro en splits.js, ~+0.3K) → 217K.
+# Revisado 2026-09-12: categoría automática (listener change en splits.js y
+# diario.js, ~+0.5K) → 218K.
+# Revisado 2026-09-12: grupo como texto libre con mapa JSON (sync en input y
+# change, ~+0.4K) → 219K.
+# Revisado 2026-09-12: combo custom accesible del alta (siempre hacia abajo,
+# evita abrir hacia arriba del datalist nativo, ~+3K JS + wrapping relativo)
+# → 223K.
 JS_AGGREGATE_MAX = (
-    212 * 1024
-)  # ~132K → 165K Fase 2 → ~185K TAREA 3 → ~198K remediación → ~201K HIIT → ~203K nutrición → ~205K tooltip → ~209K ctrlz-local → ~212K HIIT-estricto
+    223 * 1024
+)  # ~132K → 165K Fase 2 → ~185K TAREA 3 → ~198K remediación → ~201K HIIT → ~203K nutrición → ~205K tooltip → ~209K ctrlz-local → ~212K HIIT-estricto → ~215K autofill → ~216K splits-alta → ~217K auto-categoria → ~218K grupo-texto → ~223K combo-custom
 
 
 def _size(path: Path) -> int:

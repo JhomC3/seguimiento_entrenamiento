@@ -982,3 +982,44 @@ def test_columnas_ancho_completo_sin_hueco(page, server):
         grid_right = grid_box["x"] + grid_box["width"]
         assert abs(right - grid_right) <= 2, (width, right, grid_right)
         assert _no_overflow(page)
+
+
+def test_splits_crear_ejercicio_refresca_catalogo(page, server, server_db_path):
+    """El alta bajo el catálogo avisa, resetea el form y el chip nuevo existe
+    sin recargar (OOB de `#splits-catalog`)."""
+    import sqlite3
+
+    _goto_splits(page, server)
+    # El alta vive en un grupo colapsable bajo el catálogo.
+    page.locator(
+        ".split-catalog-group > summary.split-catalog-summary", has_text="Nuevo ejercicio"
+    ).click()
+    form = page.locator("#exercise-create #exercise-create-form")
+    expect(form).to_be_visible()
+    form.locator('input[name="ejercicio"]').fill("Press Pausado")
+    form.locator('input[name="grupo_muscular"]').fill("Pectoral")
+    # La categoría se auto-asigna (Pectoral → EMPUJE) sin campo visible.
+    expect(form.locator('input[name="categoria"]')).to_have_value("EMPUJE")
+    expect(form.locator('select[name="grupo_muscular"]')).to_have_count(0)
+    form.locator('button[type="submit"]').click()
+    expect(page.locator("#notice-container .notice-success").first).to_contain_text(
+        "Press Pausado", timeout=5000
+    )
+    chip = page.locator('.split-catalog-chip[data-ejercicio="Press Pausado"]')
+    # El grupo Pectoral arranca colapsado: basta con que el chip exista
+    # (el OOB lo trajo); al abrirlo se ve y es arrastrable.
+    expect(chip).to_be_attached(timeout=5000)
+    page.locator('.split-catalog-group[data-group="Pectoral"] > summary').click()
+    expect(chip).to_be_visible()
+    # El formulario queda limpio para la siguiente alta.
+    expect(form.locator('input[name="ejercicio"]')).to_have_value("")
+    # Persiste en el catálogo.
+    conn = sqlite3.connect(str(server_db_path))
+    try:
+        row = conn.execute(
+            "SELECT grupo_muscular, categoria FROM ejercicios WHERE ejercicio = ?",
+            ("Press Pausado",),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row == ("Pectoral", "EMPUJE")

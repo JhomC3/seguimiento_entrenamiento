@@ -52,6 +52,7 @@ ALLOWED_REMOTE_ROUTES: frozenset = frozenset(
         ("POST", "/api/v1/plantilla-comida/guardar"),
         ("POST", "/api/v1/plantilla-comida/aplicar"),
         ("GET", "/api/v1/sugerencia"),
+        ("GET", "/api/v1/ejercicio/ultimo"),
         ("GET", "/api/v1/cardio"),
         ("POST", "/api/v1/cardio/anotacion"),
         ("GET", "/api/v1/fechas"),

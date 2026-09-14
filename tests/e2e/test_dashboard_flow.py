@@ -195,9 +195,7 @@ def test_apply_template(page, server):
     expect(page.locator("#session-editor")).to_have_attribute("data-editmode", "1")
     expect(page.locator("#editor-state")).to_have_attribute("data-has-data", "0")
     # La lista de plantillas vive en el diálogo del Diario.
-    page.locator(
-        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
-    ).click()
+    page.evaluate("document.getElementById('training-templates-dialog').showModal()")
     page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
     page.locator("#plantillas-section .pt-card").get_by_role("button", name="Aplicar").click()
     expect(page.locator("#editor-notice .notice-success")).to_contain_text(
@@ -217,9 +215,7 @@ def test_template_crud_and_reorder(page, server):
     expect(page.locator("#plantillas-section .pt-card")).to_have_count(1)
 
     # La lista vive en el diálogo del Diario.
-    page.locator(
-        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
-    ).click()
+    page.evaluate("document.getElementById('training-templates-dialog').showModal()")
     page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
     page.locator("#plantillas-section .pt-card").get_by_role("button", name="Editar").click()
     page.locator('#plantillas-section .pt-card form input[name="nombre"]').fill("A-edit")
@@ -242,9 +238,7 @@ def test_template_crud_and_reorder(page, server):
     page.locator("#save-template-form .btn-check").click()
     expect(page.locator("#confirm-modal")).to_be_visible()
     page.locator("#confirm-save").click()
-    page.locator(
-        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
-    ).click()
+    page.evaluate("document.getElementById('training-templates-dialog').showModal()")
     page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
     expect(page.locator("#plantillas-section .pt-card")).to_have_count(2)
 
@@ -351,9 +345,7 @@ def test_hostile_template_name_does_not_execute(page, server):
     _create_template(page, server, _iso(8), PAYLOAD)
     expect(page.locator("#plantillas-section .pt-card")).to_have_count(1)
 
-    page.locator(
-        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
-    ).click()
+    page.evaluate("document.getElementById('training-templates-dialog').showModal()")
     page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
     page.locator("#plantillas-section .pt-card").first.get_by_role(
         "button", name="Eliminar"
@@ -364,14 +356,15 @@ def test_hostile_template_name_does_not_execute(page, server):
 
 
 def test_hostile_exercise_notice_creates_no_image_node(page, server):
-    _open_popup(page, server)
+    # El alta de ejercicio vive en el panel de splits, bajo el catálogo.
+    page.goto(server + "/splits")
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.locator(
+        ".split-catalog-group > summary.split-catalog-summary", has_text="Nuevo ejercicio"
+    ).click()
 
-    # El alta de ejercicio vive en un diálogo del Diario.
-    page.locator('[data-action="open-daily-dialog"][data-dialog="exercise-create-dialog"]').click()
-    page.wait_for_selector("#exercise-create-dialog[open]", timeout=5000)
     page.fill('#exercise-create-form input[name="ejercicio"]', PAYLOAD)
     page.fill('#exercise-create-form input[name="grupo_muscular"]', "Pectoral")
-    page.select_option('#exercise-create-form select[name="categoria"]', "EMPUJE")
     page.click('#exercise-create-form button[type="submit"]')
 
     expect(page.locator("#notice-container .notice")).to_be_visible(timeout=3000)
@@ -641,9 +634,7 @@ def test_keyboard_focus_ring_visible(page, server):
 
 def test_template_delete_uses_custom_modal(page, server):
     _create_template(page, server, _iso(5), "Eliminame")
-    page.locator(
-        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
-    ).click()
+    page.evaluate("document.getElementById('training-templates-dialog').showModal()")
     page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
     page.locator("#plantillas-section .pt-card").get_by_role("button", name="Eliminar").click()
     expect(page.locator("#confirm-modal")).to_be_visible()
@@ -3002,21 +2993,20 @@ def test_daily_dialog_focus_roundtrip(page, server):
     devuelve al botón que lo abrió."""
     page.goto(server + "/diario")
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    trigger = page.locator(
-        '[data-action="open-daily-dialog"][data-dialog="exercise-create-dialog"]'
-    )
+    page.locator('[data-action="daily-mode"][data-vista="alimentacion"]').click()
+    trigger = page.locator('[data-action="open-daily-dialog"][data-dialog="food-create-dialog"]')
     trigger.focus()
     trigger.click()
-    page.wait_for_selector("#exercise-create-dialog[open]", timeout=5000)
+    page.wait_for_selector("#food-create-dialog[open]", timeout=5000)
     page.wait_for_timeout(200)
     inside = page.evaluate(
-        "document.getElementById('exercise-create-dialog').contains(document.activeElement)"
+        "document.getElementById('food-create-dialog').contains(document.activeElement)"
     )
     assert inside, "el foco debe estar dentro del diálogo tras abrirlo"
     page.keyboard.press("Escape")
-    page.wait_for_selector("#exercise-create-dialog", state="hidden", timeout=5000)
+    page.wait_for_selector("#food-create-dialog", state="hidden", timeout=5000)
     restored = page.evaluate(
-        'document.activeElement === document.querySelector(\'[data-action="open-daily-dialog"][data-dialog="exercise-create-dialog"]\')'
+        'document.activeElement === document.querySelector(\'[data-action="open-daily-dialog"][data-dialog="food-create-dialog"]\')'
     )
     assert restored, "el foco debe volver al botón que abrió el diálogo"
 
@@ -3056,9 +3046,7 @@ def test_confirm_dialog_inside_daily_dialog_escape_chain(page, server):
     page.wait_for_selector(
         "#plantillas-section [data-pt-nombre='Torso']", state="attached", timeout=5000
     )
-    page.locator(
-        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
-    ).click()
+    page.evaluate("document.getElementById('training-templates-dialog').showModal()")
     page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
     page.locator("#plantillas-section .pt-card", has_text="Torso").get_by_role(
         "button", name="Eliminar"
@@ -3162,9 +3150,7 @@ def test_training_cards_reorder_and_persist(page, server):
     expect(cards).to_have_count(2, timeout=3000)
     assert cards.nth(0).get_attribute("data-pt-nombre") == "Press Day"
     # La lista vive en el diálogo del Diario: abrirlo para el drag.
-    page.locator(
-        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
-    ).click()
+    page.evaluate("document.getElementById('training-templates-dialog').showModal()")
     page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
     # Mover el segundo arriba con el ratón (cuerpo de la tarjeta).
     _drag_card_up(
@@ -3177,9 +3163,7 @@ def test_training_cards_reorder_and_persist(page, server):
     # Persistencia tras recarga.
     page.reload()
     page.wait_for_function("document.body.dataset.appReady === '1'")
-    page.locator(
-        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
-    ).click()
+    page.evaluate("document.getElementById('training-templates-dialog').showModal()")
     page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
     page.wait_for_selector("#plantillas-list .pt-card", timeout=5000)
     expect(page.locator("#plantillas-list .pt-card").nth(0)).to_have_attribute(
@@ -3206,9 +3190,7 @@ def test_reorder_failure_restores_order_and_notifies(page, server):
         page.wait_for_timeout(400)
     cards = page.locator("#plantillas-list .pt-card")
     expect(cards).to_have_count(2, timeout=3000)
-    page.locator(
-        '[data-action="open-daily-dialog"][data-dialog="training-templates-dialog"]'
-    ).click()
+    page.evaluate("document.getElementById('training-templates-dialog').showModal()")
     page.wait_for_selector("#training-templates-dialog[open]", timeout=5000)
 
     def fail_reorder(route):

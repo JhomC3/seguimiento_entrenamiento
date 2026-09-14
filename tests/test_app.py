@@ -405,11 +405,11 @@ def test_plantilla_eliminar(tmp_path, monkeypatch):
     assert "Aún no hay entrenos" in r.text
 
 
-def test_plantilla_aplicar_rellena_con_la_sesion_coincidente(tmp_path, monkeypatch):
+def test_plantilla_aplicar_rellena_por_ejercicio_sin_secuencia_exacta(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     insert_exercise(db, "Curl", "Biceps", "TIRON")
-    # La plantilla es una sesión completa: solo la fecha con Press+Curl juntos
-    # puede rellenar los valores; la sesión posterior solo de Curl no mezcla.
+    # Por ejercicio (sin exigir sesión exacta): Press trae su última vez y
+    # Curl la suya aunque sea de otro día; ningún orden distinto lo deja en blanco.
     save_session(
         db,
         _fecha(-3),
@@ -426,7 +426,7 @@ def test_plantilla_aplicar_rellena_con_la_sesion_coincidente(tmp_path, monkeypat
     assert 'id="session-editor-wrap" hx-swap-oob="innerHTML"' in r.text
     assert 'data-readonly="0"' in r.text
     assert "Press" in r.text and "Curl" in r.text
-    assert 'value="80"' in r.text and 'value="16"' in r.text
+    assert 'value="80"' in r.text and 'value="20"' in r.text
     assert "Entreno aplicado" in r.text
 
 
@@ -841,12 +841,35 @@ def test_ejercicio_nuevo_oob_markers(tmp_path, monkeypatch):
     assert 'id="notice-container" hx-swap-oob="innerHTML"' in r.text
     assert 'id="exercise-create" hx-swap-oob="outerHTML"' in r.text
     assert "Dominadas" in r.text
+    # Fuera de splits no se refresca su catálogo.
+    assert 'id="splits-catalog"' not in r.text
     r = client.post(
         "/ejercicio/nuevo",
         data={"ejercicio": "   ", "grupo_muscular": "Espalda", "categoria": "TIRON"},
     )
     assert "notice-error" in r.text
     assert 'id="exercise-create" hx-swap-oob="outerHTML"' not in r.text
+
+
+def test_ejercicio_nuevo_desde_splits_refresca_catalogo(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    client = _client()
+    # La página de splits trae el formulario bajo el catálogo.
+    r = client.get("/splits")
+    assert r.status_code == 200
+    assert 'id="exercise-create"' in r.text
+    assert 'id="splits-catalog"' in r.text
+    assert "Crear ejercicio" in r.text
+    # El alta desde splits devuelve el OOB del catálogo con el chip nuevo.
+    r = client.post(
+        "/ejercicio/nuevo",
+        data={"ejercicio": "Fondos", "grupo_muscular": "Pectoral", "categoria": "EMPUJE"},
+        headers={"hx-current-url": "http://testserver/splits"},
+    )
+    assert r.status_code == 200
+    assert 'id="splits-catalog" hx-swap-oob="innerHTML"' in r.text
+    assert 'data-ejercicio="Fondos"' in r.text
 
 
 def test_undo_entrenos_oob_plantillas(tmp_path, monkeypatch):
@@ -2897,16 +2920,22 @@ def test_diario_muestra_alimentacion_historica(tmp_path, monkeypatch):
     assert 'data-vista="alimentacion"' in r.text
 
 
-def test_diario_conteo_de_plantillas_visible(tmp_path, monkeypatch):
+def test_diario_sin_toolbar_de_entrenamiento(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "Torso", "ejercicio": ["Press"]})
     client.post("/plantilla/guardar", data={"nombre": "Jalon", "ejercicio": ["Curl"]})
     r = client.get("/diario")
-    # Entrenamiento muestra el conteo; alimentación (0) no muestra "· 0".
-    assert '<span id="daily-training-template-count"> · 2</span>' in r.text
+    # Sin botones de Plantillas/Nuevo ejercicio en la vista de entreno (el
+    # alta vive en Splits); la alimentación conserva los suyos.
+    assert 'data-dialog="training-templates-dialog"' not in r.text
+    assert 'data-dialog="exercise-create-dialog"' not in r.text
+    assert 'data-dialog="food-create-dialog"' in r.text
     assert "Plantillas · 0" not in r.text
+    # Guardar plantilla ya no emite OOB al contador retirado.
+    r = client.post("/plantilla/guardar", data={"nombre": "Otro", "ejercicio": ["Press"]})
+    assert "daily-training-template-count" not in r.text
 
 
 def test_diario_plantillas_vacias_muestran_estado(tmp_path, monkeypatch):
@@ -3166,3 +3195,28 @@ def test_sugerencia_banner_boton_y_aplicar(tmp_path, monkeypatch):
     assert "Press" in r.text
     assert 'id="plantilla-applied"' in r.text
     assert get_sets_by_fecha(db, tue) == []
+
+
+def test_ejercicio_ultimo_web_posicional(tmp_path, monkeypatch):
+    db = _setup_db(tmp_path)
+    insert_exercise(db, "Remo", "Espalda", "TIRON")
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    c = _client()
+    save_session(
+        db,
+        _fecha(-3),
+        [
+            {"ejercicio": "Remo", "kg": 60, "reps": 10, "rir": 2},
+            {"ejercicio": "Press", "kg": 79, "reps": 8, "rir": 1.5},
+            {"ejercicio": "Press", "kg": 78, "reps": 8, "rir": 1.5},
+        ],
+    )
+    r = c.get("/ejercicio/ultimo", params={"ejercicio": "Press", "fecha": _fecha()})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ejercicio"] == "Press"
+    assert [s["pos"] for s in data["series"]] == [1, 2]
+    assert [s["kg"] for s in data["series"]] == [79, 78]
+    assert r.json()["series"][0]["rir"] == 1.5
+    assert c.get("/ejercicio/ultimo").status_code == 400
+    assert c.get("/ejercicio/ultimo", params={"ejercicio": "Inexistente"}).status_code == 400

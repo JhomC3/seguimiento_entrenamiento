@@ -31,10 +31,6 @@
     <section id="daily-training-view" class="daily-view" role="tabpanel" aria-labelledby="daily-tab-entrenamiento"{% if vista != 'entrenamiento' %} hidden{% endif %}>
         <div class="daily-view-header">
             <h2 class="panel-title">Entrenamiento</h2>
-            <div class="daily-tools">
-                <button type="button" class="btn btn-outline" data-action="open-daily-dialog" data-dialog="training-templates-dialog">Plantillas<span id="daily-training-template-count">{% if training_template_count %} · {{ training_template_count }}{% endif %}</span></button>
-                <button type="button" class="btn btn-primary" data-action="open-daily-dialog" data-dialog="exercise-create-dialog">Nuevo ejercicio</button>
-            </div>
         </div>
         <section id="session-editor" data-editmode="0" class="daily-editor-card panel panel-default">
             <div id="editor-notice" role="status" aria-live="polite" aria-atomic="true"></div>

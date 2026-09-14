@@ -36,8 +36,22 @@
     cursor: not-allowed;
 }
 
-/* Fantasma: acción secundaria en panel (Cancelar/Guardar). */
-.btn-ghost {
+/* Crear: alta de ejercicio / nuevo split. Fondo oscuro con letras burdeos,
+   mismo lenguaje que el botón de sugerencia pero sólido y con aire. */
+.btn-create {
+    height: 36px;
+    padding: 0 20px;
+    color: var(--t-burgundy-400);
+    background: var(--t-surfaces-matte-950);
+    border: 1px solid var(--t-burgundy-700);
+}
+.btn-create:hover {
+    color: var(--t-detail-white);
+    border-color: var(--t-burgundy-400);
+    box-shadow: var(--t-glow-neon-border);
+}
+
+/* Fantasma: acción secundaria en panel (Cancelar/Guardar). */.btn-ghost {
     height: 28px;
     padding: 0 16px;
     color: var(--t-surfaces-neutral-300);
@@ -225,6 +239,53 @@
 .cell-input-sm:focus {
     background: var(--t-overlay-white-008);
     outline: none;
+}
+
+/* Combo del alta de ejercicio: la lista SIEMPRE se despliega hacia abajo
+   (propiedad del bug del <datalist> nativo que abre hacia arriba sin control).
+   El wrap es el ancla posicionada; la lista es absoluta bajo el input. */
+.combo-wrap {
+    position: relative;
+}
+.combo-wrap:has(.combo-list:not([hidden])) {
+    margin-bottom: 184px;
+}
+.combo-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    max-height: 176px;
+    overflow-y: auto;
+    margin: 4px 0 0;
+    padding: 4px;
+    list-style: none;
+    background: var(--t-surfaces-matte-950);
+    border: 1px solid var(--t-surfaces-neutral-800);
+    border-radius: 8px;
+    box-shadow: var(--t-glow-neon-border);
+    scrollbar-width: thin;
+    scrollbar-color: var(--t-overlay-white-014) transparent;
+}
+.combo-list[hidden] {
+    display: none !important;
+}
+.combo-list li[role="option"] {
+    padding: 6px 10px;
+    font-size: 13px;
+    color: var(--t-surfaces-neutral-200);
+    border-radius: 6px;
+    cursor: pointer;
+}
+.combo-list li[role="option"]:hover,
+.combo-list li[role="option"].active,
+.combo-list li[role="option"][aria-selected="true"] {
+    background: var(--t-overlay-burgundy-015);
+    color: var(--t-detail-white);
+}
+.combo-list li[role="option"][hidden] {
+    display: none !important;
 }
 
 /* Campo de formulario (alta de ejercicio/alimento). */
