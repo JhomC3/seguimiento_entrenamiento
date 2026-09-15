@@ -152,7 +152,14 @@ def test_build_editor_defaults_params_on_empty_day(tmp_path):
     assert vm.parametros["factor_proteina"] == 1.5
     assert vm.parametros["factor_grasa"] == 1.1
     assert vm.parametros["kcal_objetivo"] == 2300.0
+    assert vm.parametros["fibra_objetivo"] == 38.0
+    assert vm.parametros["hierro_objetivo"] == 8.0
+    assert vm.parametros["calcio_objetivo"] == 1000.0
+    assert vm.parametros["vitamina_c_objetivo"] == 90.0
+    assert vm.parametros["vitamina_a_objetivo"] == 900.0
     assert vm.objetivo["proteina"] == 105.0
+    assert vm.objetivo["fibra"] == 38.0
+    assert vm.objetivo["vitamina_a"] == 900.0
     assert vm.consumido["cantidad_g"] == 0.0
     assert vm.consumido["kcal"] == 0.0
 

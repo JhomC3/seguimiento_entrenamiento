@@ -671,11 +671,11 @@ def test_api_diario_vacio_con_objetivo_por_defecto(tmp_path, monkeypatch):
         "carbohidratos": 297.0,
         "proteina": 105.0,
         "grasa": 77.0,
-        "fibra": 0.0,
-        "hierro": 0.0,
-        "calcio": 0.0,
-        "vitamina_c": 0.0,
-        "vitamina_a": 0.0,
+        "fibra": 38.0,
+        "hierro": 8.0,
+        "calcio": 1000.0,
+        "vitamina_c": 90.0,
+        "vitamina_a": 900.0,
     }
 
 
@@ -702,6 +702,11 @@ def test_api_diario_post_recalcula_en_servidor(tmp_path, monkeypatch):
         "factor_proteina": 2,
         "factor_grasa": 1,
         "kcal_objetivo": 2500,
+        "fibra_objetivo": 30,
+        "hierro_objetivo": 10,
+        "calcio_objetivo": 1200,
+        "vitamina_c_objetivo": 100,
+        "vitamina_a_objetivo": 800,
     }
     r = c.post("/api/v1/diario", json=body, headers=_h())
     assert r.status_code == 200
@@ -718,7 +723,10 @@ def test_api_diario_post_recalcula_en_servidor(tmp_path, monkeypatch):
     assert data["objetivo"]["proteina"] == 160.0
     assert data["objetivo"]["grasa"] == 80.0
     assert data["objetivo"]["carbohidratos"] == 285.0
+    assert data["objetivo"]["fibra"] == 30.0
+    assert data["objetivo"]["vitamina_a"] == 800.0
     assert data["parametros"]["peso_kg"] == 80.0
+    assert data["parametros"]["calcio_objetivo"] == 1200.0
     # Relectura idéntica.
     assert (
         c.get(f"/api/v1/diario?fecha={fecha}", headers=_h()).json()["consumido"]

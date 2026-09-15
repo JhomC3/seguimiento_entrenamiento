@@ -18,7 +18,7 @@ from src.database import (
 from src.db_connection import read_connection
 from src.metrics_engine import rm_ajustado
 from src.models import ConflictError, NotFoundError, ValidationError, is_hiit_set
-from src.nutrition_service import diary_totals, objetivos_diarios
+from src.nutrition_service import MICRO_DRI_TARGETS, diary_totals, objetivos_diarios
 from src.training_service import (
     calculate_cycle_week,
     day_from_date,
@@ -425,11 +425,7 @@ def build_nutrition_editor(
         "factor_proteina": 1.5,
         "factor_grasa": 1.1,
         "kcal_objetivo": 2300.0,
-        "fibra_objetivo": 0.0,
-        "hierro_objetivo": 0.0,
-        "calcio_objetivo": 0.0,
-        "vitamina_c_objetivo": 0.0,
-        "vitamina_a_objetivo": 0.0,
+        **MICRO_DRI_TARGETS,
     }
     parametros = {**defaults, **{k: float(v) for k, v in params.items()}}
     objetivo = objetivos_diarios(parametros)

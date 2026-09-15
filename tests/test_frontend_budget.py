@@ -60,9 +60,12 @@ JS_INDIVIDUAL_MAX = 64 * 1024
 # Revisado 2026-09-12: combo custom accesible del alta (siempre hacia abajo,
 # evita abrir hacia arriba del datalist nativo, ~+3K JS + wrapping relativo)
 # → 223K.
+# Revisado 2026-09-15: objetivos de micros editables + fix NaN en Consumido
+# (5 inputs DRI/UL, sync live de 9 celdas objetivo, sumas de 9 nutrientes
+# en nutrition-editor.js, ~+0.5K) → 224K.
 JS_AGGREGATE_MAX = (
-    223 * 1024
-)  # ~132K → 165K Fase 2 → ~185K TAREA 3 → ~198K remediación → ~201K HIIT → ~203K nutrición → ~205K tooltip → ~209K ctrlz-local → ~212K HIIT-estricto → ~215K autofill → ~216K splits-alta → ~217K auto-categoria → ~218K grupo-texto → ~223K combo-custom
+    224 * 1024
+)  # ~132K → 165K Fase 2 → ~185K TAREA 3 → ~198K remediación → ~201K HIIT → ~203K nutrición → ~205K tooltip → ~209K ctrlz-local → ~212K HIIT-estricto → ~215K autofill → ~216K splits-alta → ~217K auto-categoria → ~218K grupo-texto → ~223K combo-custom → ~224K micros-editables
 
 
 def _size(path: Path) -> int:

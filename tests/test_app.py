@@ -1159,6 +1159,34 @@ def test_alimentacion_save_guarda_parametros_y_filas(tmp_path, monkeypatch):
     assert params["kcal_objetivo"] == 2750.0
 
 
+def test_alimentacion_save_guarda_objetivos_micros(tmp_path, monkeypatch):
+    from src.database import get_parametros_diarios
+
+    db = _seed_nutrition(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    r = _client().post(
+        "/alimentacion/save",
+        data={
+            "fecha": "2025-04-26",
+            "alimento": ["Avena"],
+            "cantidad": ["120"],
+            "fibra_objetivo": "30",
+            "hierro_objetivo": "10",
+            "calcio_objetivo": "1200",
+            "vitamina_c_objetivo": "100",
+            "vitamina_a_objetivo": "800",
+        },
+    )
+    assert r.status_code == 200
+    params = get_parametros_diarios(db, "2025-04-26")
+    assert params["fibra_objetivo"] == 30.0
+    assert params["hierro_objetivo"] == 10.0
+    assert params["calcio_objetivo"] == 1200.0
+    assert params["vitamina_c_objetivo"] == 100.0
+    assert params["vitamina_a_objetivo"] == 800.0
+    assert "30" in r.text  # objetivo fibra re-renderizado
+
+
 def test_index_app_config_tiene_ciclo_start(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)

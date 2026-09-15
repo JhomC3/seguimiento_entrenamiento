@@ -39,6 +39,48 @@ NUTRIENT_FIELDS: tuple[str, ...] = (
     "vitamina_a",
 )
 
+# Unidad canónica por nutriente en `alimentos` (por 100 g) y en
+# `diario_alimentacion` (por fila). `vitamina_a` son mcg RAE: la hoja y la
+# API hablan siempre en mcg, nunca en IU (1 mcg RAE = 3.33 IU de retinol).
+NUTRIENT_UNITS: dict[str, str] = {
+    "kcal": "kcal",
+    "carbohidratos": "g",
+    "fibra": "g",
+    "proteina": "g",
+    "grasa": "g",
+    "hierro": "mg",
+    "calcio": "mg",
+    "vitamina_c": "mg",
+    "vitamina_a": "mcg",
+}
+
+# Objetivos diarios de micronutrientes para hombre adulto (DRI, NIH Office of
+# Dietary Supplements; Fe 8 mg men 19-50, Ca 1000 mg men 19-50, vitC 90 mg men
+# 19+, vitA 900 mcg RAE men 19+, fibra 38 g AI men 31-50). Claves de
+# `parametros_diarios` (`*_objetivo`).
+MICRO_DRI_TARGETS: dict[str, float] = {
+    "fibra_objetivo": 38.0,
+    "hierro_objetivo": 8.0,
+    "calcio_objetivo": 1000.0,
+    "vitamina_c_objetivo": 90.0,
+    "vitamina_a_objetivo": 900.0,
+}
+
+# Límites superiores tolerables (UL, NIH ODS). `fibra` no tiene UL
+# establecido. Solo informativo para la UI: nunca bloquean el guardado.
+MICRO_UL: dict[str, float | None] = {
+    "fibra": None,
+    "hierro": 45.0,
+    "calcio": 2500.0,
+    "vitamina_c": 2000.0,
+    "vitamina_a": 3000.0,
+}
+
+# Techo de plausibilidad para un alimento por 100 g: ni el aceite puro
+# supera ~900 kcal. Por encima es un error de escala de la hoja (p. ej.
+# valores por unidad o por lote), no un alimento real.
+MAX_KCAL_PER_100G = 900.0
+
 
 def _sheet_round(value) -> float:
     """Redondeo a entero con half-up (equivalente a ROUND de Google Sheets)."""
@@ -169,7 +211,24 @@ def create_alimento(db_path: str, alimento: AlimentoInput) -> None:
     food: dict[str, float | str] = {"nombre": nombre, "categoria": alimento.categoria.strip()}
     for field in NUTRIENT_FIELDS:
         food[field] = _non_negative_float(getattr(alimento, field), field)
+    validate_catalog_row(food)
     insert_alimento(db_path, food)
+
+
+def validate_catalog_row(food: dict) -> None:
+    """Rechaza filas de catálogo físicamente implausibles (error de escala).
+
+    `food` lleva los nueve nutrientes por 100 g. Lanza `ValidationError` si
+    `kcal` supera `MAX_KCAL_PER_100G`.
+    """
+    try:
+        kcal = float(food.get("kcal", 0.0))
+    except (TypeError, ValueError):
+        raise ValidationError("kcal no es un número válido") from None
+    if kcal < 0 or kcal > MAX_KCAL_PER_100G:
+        raise ValidationError(
+            f"kcal fuera de rango plausible por 100 g (0-{MAX_KCAL_PER_100G:g}): {kcal:g}"
+        )
 
 
 def diary_totals(rows: list[dict]) -> dict[str, float]:

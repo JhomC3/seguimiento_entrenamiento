@@ -187,6 +187,27 @@ class TestCreateAlimento:
         with pytest.raises(ConflictError):
             create_alimento(db, AlimentoInput(nombre="avena", kcal=2.0))
 
+    def test_create_alimento_rechaza_kcal_implausible(self, tmp_path):
+        db = str(tmp_path / "g.db")
+        init_db(db)
+        with pytest.raises(ValidationError):
+            create_alimento(db, AlimentoInput(nombre="Arepa", kcal=6900.0))
+        assert find_alimento(db, "Arepa") is None
+
+    def test_micro_dri_targets_son_dri_hombre_adulto(self):
+        from src.nutrition_service import MICRO_DRI_TARGETS, MICRO_UL, NUTRIENT_UNITS
+
+        assert MICRO_DRI_TARGETS == {
+            "fibra_objetivo": 38.0,
+            "hierro_objetivo": 8.0,
+            "calcio_objetivo": 1000.0,
+            "vitamina_c_objetivo": 90.0,
+            "vitamina_a_objetivo": 900.0,
+        }
+        assert MICRO_UL["vitamina_a"] == 3000.0
+        assert MICRO_UL["fibra"] is None
+        assert NUTRIENT_UNITS["vitamina_a"] == "mcg"
+
 
 class TestTargetFormulas:
     def _params(self, **over):

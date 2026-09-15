@@ -239,8 +239,8 @@ pero se ignora). Duplicado case-insensitive → **`409`**; grupo fuera de
     {"orden": 1, "alimento": "Avena", "cantidad_g": 50.0, "kcal": 195.0, "...": "..."}
   ],
   "consumido": {"kcal": 195.0, "...": "...", "cantidad_g": 50.0},
-  "objetivo": {"kcal": 2300.0, "carbohidratos": 297.0, "proteina": 105.0, "grasa": 77.0, "...": 0.0},
-  "parametros": {"peso_kg": 70.0, "factor_proteina": 1.5, "factor_grasa": 1.1, "kcal_objetivo": 2300.0, "...": 0.0}
+  "objetivo": {"kcal": 2300.0, "carbohidratos": 297.0, "proteina": 105.0, "grasa": 77.0, "fibra": 38.0, "hierro": 8.0, "calcio": 1000.0, "vitamina_c": 90.0, "vitamina_a": 900.0},
+  "parametros": {"peso_kg": 70.0, "factor_proteina": 1.5, "factor_grasa": 1.1, "kcal_objetivo": 2300.0, "fibra_objetivo": 38.0, "hierro_objetivo": 8.0, "calcio_objetivo": 1000.0, "vitamina_c_objetivo": 90.0, "vitamina_a_objetivo": 900.0}
 }
 ```
 
@@ -252,7 +252,8 @@ pero se ignora). Duplicado case-insensitive → **`409`**; grupo fuera de
 - `consumido`: suma del día (`diary_totals`) + `cantidad_g` total.
 - `objetivo`: fórmulas Atwater sobre `parametros` (`prot = peso × factor`,
   `grasa = peso × factor`, `kcal` editable, `carb = (kcal − 4prot − 9grasa)/4`).
-- `parametros`: fusión de guardados + defaults web (`70/1.5/1.1/2300`, extras 0).
+- `parametros`: fusión de guardados + defaults web (`70/1.5/1.1/2300` +
+  micros DRI hombre adulto `38/8/1000/90/900`).
 
 ### `POST /api/v1/diario`
 
@@ -272,9 +273,11 @@ pero se ignora). Duplicado case-insensitive → **`409`**; grupo fuera de
   día sin entradas válidas → `400` (el vaciado es el `DELETE`; el `POST`
   nunca borra en silencio — divergencia menor y documentada con la web,
   que sí acepta guardar vacío).
-- Parámetros opcionales: solo `peso_kg/factor_proteina/factor_grasa/
-  kcal_objetivo` (los `*_objetivo` extra los importa la hoja; la web
-  tampoco los edita). Deben ser finitos, `≥ 0`, `peso_kg > 0`; claves
+- Parámetros opcionales: `peso_kg/factor_proteina/factor_grasa/
+  kcal_objetivo` + los 5 objetivos de micros (`fibra_objetivo`,
+  `hierro_objetivo`, `calcio_objetivo`, `vitamina_c_objetivo`,
+  `vitamina_a_objetivo`, defaults DRI hombre adulto 38/8/1000/90/900).
+  Deben ser finitos, `≥ 0`, `peso_kg > 0`; claves
   desconocidas se ignoran. Ausentes → se conservan los previos (UPSERT
   parcial, como la web).
 - Respuesta 200: como el `GET` más `"saved_count": N`.

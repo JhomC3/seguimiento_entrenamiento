@@ -89,6 +89,7 @@ from src.mutation_service import (
 )
 from src.network_access import LanSyncOnlyMiddleware, lan_sync_only_enabled
 from src.nutrition_service import (
+    MICRO_DRI_TARGETS,
     NUTRIENT_FIELDS,
     apply_meal_template,
     create_alimento,
@@ -970,6 +971,11 @@ def alimentacion_save(
     factor_proteina: float | None = Form(None),
     factor_grasa: float | None = Form(None),
     kcal_objetivo: float | None = Form(None),
+    fibra_objetivo: float | None = Form(None),
+    hierro_objetivo: float | None = Form(None),
+    calcio_objetivo: float | None = Form(None),
+    vitamina_c_objetivo: float | None = Form(None),
+    vitamina_a_objetivo: float | None = Form(None),
 ):
     notice = notice_oob(templates, request, target="notice-container", message="Día guardado.")
     parametros = {
@@ -977,6 +983,11 @@ def alimentacion_save(
         "factor_proteina": factor_proteina,
         "factor_grasa": factor_grasa,
         "kcal_objetivo": kcal_objetivo,
+        "fibra_objetivo": fibra_objetivo,
+        "hierro_objetivo": hierro_objetivo,
+        "calcio_objetivo": calcio_objetivo,
+        "vitamina_c_objetivo": vitamina_c_objetivo,
+        "vitamina_a_objetivo": vitamina_a_objetivo,
     }
     parametros = {k: v for k, v in parametros.items() if v is not None}
     try:
@@ -2444,20 +2455,21 @@ NUTRITION_PARAM_DEFAULTS: dict[str, float] = {
     "factor_proteina": 1.5,
     "factor_grasa": 1.1,
     "kcal_objetivo": 2300.0,
-    "fibra_objetivo": 0.0,
-    "hierro_objetivo": 0.0,
-    "calcio_objetivo": 0.0,
-    "vitamina_c_objetivo": 0.0,
-    "vitamina_a_objetivo": 0.0,
+    **MICRO_DRI_TARGETS,
 }
 
-# Parámetros editables desde el cliente (los *_objetivo extra los importa la
-# hoja; la web tampoco los edita). Claves desconocidas se ignoran.
+# Parámetros editables desde el cliente (macros + objetivos de micros DRI).
+# Claves desconocidas se ignoran.
 NUTRITION_EDITABLE_PARAMS: tuple[str, ...] = (
     "peso_kg",
     "factor_proteina",
     "factor_grasa",
     "kcal_objetivo",
+    "fibra_objetivo",
+    "hierro_objetivo",
+    "calcio_objetivo",
+    "vitamina_c_objetivo",
+    "vitamina_a_objetivo",
 )
 
 
@@ -2503,7 +2515,7 @@ def _api_diario_payload(fecha_iso: str) -> dict:
 
 
 def _api_nutrition_params(body: dict) -> dict:
-    """Extrae y valida los 4 parámetros editables. Lanza ValidationError."""
+    """Extrae y valida los 9 parámetros editables. Lanza ValidationError."""
     params: dict[str, float] = {}
     for key in NUTRITION_EDITABLE_PARAMS:
         if key not in body or body[key] is None or str(body[key]).strip() == "":

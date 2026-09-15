@@ -109,7 +109,7 @@ def test_migrations_recorded_in_schema_migrations(tmp_path):
         r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()
     )
     conn.close()
-    assert versions == [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+    assert versions == [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
 
 
 def test_migrates_intermediate_state_without_orden(tmp_path):
@@ -390,16 +390,16 @@ def test_v009_creates_meal_templates(tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM plantilla_alimentos").fetchone()[0] == 0
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 17
+    assert max_version == 18
 
 
-def test_v009_is_latest_schema_version(tmp_path):
+def test_v018_is_latest_schema_version(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
     conn = sqlite3.connect(db_path)
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 17
+    assert max_version == 18
 
 
 def test_v007_migration_idempotent(tmp_path):
@@ -659,7 +659,7 @@ def test_v008_creates_parametros_diarios_and_nullable_qty(tmp_path):
         assert col in params
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 17
+    assert max_version == 18
 
 
 def test_v008_preserves_diario_rows(tmp_path):
@@ -725,6 +725,76 @@ def test_get_save_parametros_diarios(tmp_path):
     params = get_parametros_diarios(db_path, "2025-04-24")
     assert params["peso_kg"] == 70.0
     assert params["factor_proteina"] == 1.4
+
+
+def test_v018_backfill_micro_objetivos_y_curaduria(tmp_path):
+    from src.migrations import v018_nutrition_micro_targets
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    conn.execute("INSERT INTO parametros_diarios (fecha) VALUES ('2025-04-24')")
+    conn.execute(
+        "INSERT INTO alimentos (nombre, categoria, kcal, carbohidratos, fibra, "
+        "proteina, grasa, hierro, calcio, vitamina_c, vitamina_a, origen) VALUES "
+        "('Arepa', 'Procesado', 6900, 1440, 150, 280, 50, 9, 1530, 0, 1710, 'google'),"
+        "('Huevo', 'Animal', 143, 0.7, 0, 12.6, 9.6, 1.7, 50, 0, 0, 'google')"
+    )
+    conn.execute(
+        "INSERT INTO diario_alimentacion (fecha, orden, alimento, cantidad_g, kcal, "
+        "carbohidratos, fibra, proteina, grasa, hierro, calcio, vitamina_c, vitamina_a) "
+        "VALUES ('2025-04-24', 1, 'Bocadillo de guayaba (ICBF)', 50, 0, 0, 0, 0, 0, 0, 0, 0, 0),"
+        "('2025-04-24', 2, 'Yuca cocinada', 100, 0, 0, 0, 0, 0, 0, 0, 0, 0)"
+    )
+    conn.commit()
+    v018_nutrition_micro_targets.migrate(conn)
+    conn.commit()
+    params = conn.execute(
+        "SELECT fibra_objetivo, hierro_objetivo, calcio_objetivo, "
+        "vitamina_c_objetivo, vitamina_a_objetivo "
+        "FROM parametros_diarios WHERE fecha = '2025-04-24'"
+    ).fetchone()
+    assert params == (38.0, 8.0, 1000.0, 90.0, 900.0)
+    arepa = conn.execute(
+        "SELECT kcal, carbohidratos, vitamina_a, origen FROM alimentos WHERE nombre = 'Arepa'"
+    ).fetchone()
+    assert arepa == (69.0, 14.4, 17.1, "manual")
+    huevo = conn.execute(
+        "SELECT vitamina_a, origen FROM alimentos WHERE nombre = 'Huevo'"
+    ).fetchone()
+    assert huevo == (160.0, "manual")
+    huerfanos = {
+        r[0]
+        for r in conn.execute(
+            "SELECT nombre FROM alimentos WHERE nombre IN "
+            "('Bocadillo de guayaba (ICBF)', 'Yuca cocinada')"
+        ).fetchall()
+    }
+    assert huerfanos == {"Bocadillo de guayaba (ICBF)", "Yuca cocinada"}
+    # Idempotente: segunda pasada no cambia nada.
+    v018_nutrition_micro_targets.migrate(conn)
+    conn.commit()
+    assert conn.execute("SELECT COUNT(*) FROM alimentos WHERE nombre = 'Arepa'").fetchone()[0] == 1
+    conn.close()
+
+
+def test_v018_respeta_objetivos_no_cero(tmp_path):
+    from src.migrations import v018_nutrition_micro_targets
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT INTO parametros_diarios (fecha, fibra_objetivo) VALUES ('2025-04-24', 25.0)"
+    )
+    conn.commit()
+    v018_nutrition_micro_targets.migrate(conn)
+    conn.commit()
+    row = conn.execute(
+        "SELECT fibra_objetivo, hierro_objetivo FROM parametros_diarios WHERE fecha = '2025-04-24'"
+    ).fetchone()
+    conn.close()
+    assert row == (25.0, 8.0)
 
 
 def test_replace_diario_accepts_null_cantidad(tmp_path):
@@ -851,7 +921,7 @@ def test_v010_health_records_schema(tmp_path):
         "deleted_at",
     } <= cols
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
-    assert max_version == 17
+    assert max_version == 18
     pk_cols = {
         r[1] for r in conn.execute("PRAGMA table_info(health_records)").fetchall() if r[5] == 1
     }

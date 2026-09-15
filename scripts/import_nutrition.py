@@ -75,6 +75,22 @@ def main() -> int:
 
     print(f"Descargado: {len(df_alimentos)} alimentos, {len(df_diario)} entradas del diario")
 
+    # Guarda anti-corrupción: ningún alimento real supera ~900 kcal/100 g (el
+    # aceite puro ronda 884). Por encima hay un error de escala en la hoja
+    # (p. ej. valores por unidad o por lote, como la Arepa a 6900). Se avisa
+    # y se conserva la fila para no bloquear la importación; la curaduría
+    # vive en las migraciones y en POST /alimento/nuevo (que sí rechaza).
+    for rec in df_alimentos.to_dict(orient="records"):
+        try:
+            kcal = float(rec.get("kcal", 0.0))
+        except (TypeError, ValueError):
+            kcal = 0.0
+        if kcal > 900.0:
+            print(
+                f"AVISO: '{rec.get('nombre')}' trae {kcal:g} kcal/100 g "
+                "(implausible, posible error de escala en la hoja)."
+            )
+
     # El consumido se recalcula desde el catálogo (fuente autoritativa); la hoja
     # puede traer valores desactualizados.
     catalog = {
