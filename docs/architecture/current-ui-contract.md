@@ -220,9 +220,8 @@
 
 - `GET /alimentacion/editor?fecha=` → fragmento `nutrition_editor.html`.
 - `POST /alimentacion/save` — `fecha`, `alimento[]`, `cantidad[]`, `peso_kg`,
-  `factor_proteina`, `factor_grasa`, `kcal_objetivo` + los 5 objetivos de micros
-  (`fibra_objetivo`, `hierro_objetivo`, `calcio_objetivo`, `vitamina_c_objetivo`,
-  `vitamina_a_objetivo`; defaults DRI hombre adulto 38/8/1000/90/900). El servidor recalcula nutrientes
+  `factor_proteina`, `factor_grasa`, `kcal_objetivo` (los objetivos de micros
+  son fijos DRI 38/8/1000/90/900 y no se editan en el panel). El servidor recalcula nutrientes
   contra el catálogo (`ROUND_HALF_UP(catálogo_100g × g / 100)`); nunca confía en el
   cliente. OOB `#nutrition-editor-wrap`. El botón de
   guardado (`#nutrition-edit-actions`) sigue el mismo contrato del editor de sesión:

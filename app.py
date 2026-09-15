@@ -971,11 +971,6 @@ def alimentacion_save(
     factor_proteina: float | None = Form(None),
     factor_grasa: float | None = Form(None),
     kcal_objetivo: float | None = Form(None),
-    fibra_objetivo: float | None = Form(None),
-    hierro_objetivo: float | None = Form(None),
-    calcio_objetivo: float | None = Form(None),
-    vitamina_c_objetivo: float | None = Form(None),
-    vitamina_a_objetivo: float | None = Form(None),
 ):
     notice = notice_oob(templates, request, target="notice-container", message="Día guardado.")
     parametros = {
@@ -983,11 +978,6 @@ def alimentacion_save(
         "factor_proteina": factor_proteina,
         "factor_grasa": factor_grasa,
         "kcal_objetivo": kcal_objetivo,
-        "fibra_objetivo": fibra_objetivo,
-        "hierro_objetivo": hierro_objetivo,
-        "calcio_objetivo": calcio_objetivo,
-        "vitamina_c_objetivo": vitamina_c_objetivo,
-        "vitamina_a_objetivo": vitamina_a_objetivo,
     }
     parametros = {k: v for k, v in parametros.items() if v is not None}
     try:

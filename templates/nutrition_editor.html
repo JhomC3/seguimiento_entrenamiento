@@ -77,11 +77,6 @@
         <input type="hidden" name="factor_proteina" value="{{ '%g'|format(parametros.factor_proteina) }}">
         <input type="hidden" name="factor_grasa" value="{{ '%g'|format(parametros.factor_grasa) }}">
         <input type="hidden" name="kcal_objetivo" value="{{ '%g'|format(parametros.kcal_objetivo) }}">
-        <input type="hidden" name="fibra_objetivo" value="{{ '%g'|format(parametros.fibra_objetivo) }}">
-        <input type="hidden" name="hierro_objetivo" value="{{ '%g'|format(parametros.hierro_objetivo) }}">
-        <input type="hidden" name="calcio_objetivo" value="{{ '%g'|format(parametros.calcio_objetivo) }}">
-        <input type="hidden" name="vitamina_c_objetivo" value="{{ '%g'|format(parametros.vitamina_c_objetivo) }}">
-        <input type="hidden" name="vitamina_a_objetivo" value="{{ '%g'|format(parametros.vitamina_a_objetivo) }}">
 
         <div id="target-params" class="nutri-params flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border px-4 py-2 text-xs">
             <label class="flex items-center gap-2 font-bold text-neutral-300 uppercase tracking-widest">
@@ -107,36 +102,6 @@
                 <input id="param-factor-grasa" type="number" step="0.1" min="0" value="{{ '%g'|format(parametros.factor_grasa) }}"
                        {% if readonly %}disabled{% endif %}
                        class="w-14 cell-input-sm">
-            </label>
-            <label class="flex items-center gap-1.5 text-xs text-neutral-400 uppercase tracking-wider" title="DRI hombre adulto: 38 g">
-                Fibra (g)
-                <input id="param-fibra" type="number" step="1" min="0" value="{{ '%g'|format(parametros.fibra_objetivo) }}"
-                       {% if readonly %}disabled{% endif %}
-                       class="w-16 cell-input-sm">
-            </label>
-            <label class="flex items-center gap-1.5 text-xs text-neutral-400 uppercase tracking-wider" title="DRI hombre adulto: 8 mg · UL 45 mg">
-                Hierro (mg)
-                <input id="param-hierro" type="number" step="1" min="0" value="{{ '%g'|format(parametros.hierro_objetivo) }}"
-                       {% if readonly %}disabled{% endif %}
-                       class="w-16 cell-input-sm">
-            </label>
-            <label class="flex items-center gap-1.5 text-xs text-neutral-400 uppercase tracking-wider" title="DRI hombre adulto: 1000 mg · UL 2500 mg">
-                Calcio (mg)
-                <input id="param-calcio" type="number" step="10" min="0" value="{{ '%g'|format(parametros.calcio_objetivo) }}"
-                       {% if readonly %}disabled{% endif %}
-                       class="w-20 cell-input-sm">
-            </label>
-            <label class="flex items-center gap-1.5 text-xs text-neutral-400 uppercase tracking-wider" title="DRI hombre adulto: 90 mg · UL 2000 mg">
-                Vit C (mg)
-                <input id="param-vitc" type="number" step="5" min="0" value="{{ '%g'|format(parametros.vitamina_c_objetivo) }}"
-                       {% if readonly %}disabled{% endif %}
-                       class="w-16 cell-input-sm">
-            </label>
-            <label class="flex items-center gap-1.5 text-xs text-neutral-400 uppercase tracking-wider" title="DRI hombre adulto: 900 µg · UL 3000 µg">
-                Vit A (µg)
-                <input id="param-vita" type="number" step="50" min="0" value="{{ '%g'|format(parametros.vitamina_a_objetivo) }}"
-                       {% if readonly %}disabled{% endif %}
-                       class="w-20 cell-input-sm">
             </label>
         </div>
 
@@ -179,11 +144,11 @@
                         <th class="py-0.5 px-1.5 text-right font-black target-carb">{{ '%g'|format(objetivo.carbohidratos) }}</th>
                         <th class="py-0.5 px-1.5 text-right font-black target-prot">{{ '%g'|format(objetivo.proteina) }}</th>
                         <th class="py-0.5 px-1.5 text-right font-black target-fat">{{ '%g'|format(objetivo.grasa) }}</th>
-                        <th class="py-0.5 px-1.5 text-right font-black target-fibra">{{ '%g'|format(objetivo.fibra) }}</th>
-                        <th class="py-0.5 px-1.5 text-right font-black target-hierro">{{ '%g'|format(objetivo.hierro) }}</th>
-                        <th class="py-0.5 px-1.5 text-right font-black target-calcio">{{ '%g'|format(objetivo.calcio) }}</th>
-                        <th class="py-0.5 px-1.5 text-right font-black target-vitc">{{ '%g'|format(objetivo.vitamina_c) }}</th>
-                        <th class="py-0.5 px-1.5 text-right font-black target-vita">{{ '%g'|format(objetivo.vitamina_a) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.fibra) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.hierro) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.calcio) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.vitamina_c) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.vitamina_a) }}</th>
                         <th class="py-0.5 px-1.5"></th>
                     </tr>
                     <tr class="nutri-consumed-row font-black text-neutral-100">

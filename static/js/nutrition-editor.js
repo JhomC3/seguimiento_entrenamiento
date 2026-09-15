@@ -35,11 +35,6 @@ const TARGET_CELLS = [
     ['carbohidratos', 'target-carb'],
     ['proteina', 'target-prot'],
     ['grasa', 'target-fat'],
-    ['fibra', 'target-fibra'],
-    ['hierro', 'target-hierro'],
-    ['calcio', 'target-calcio'],
-    ['vitamina_c', 'target-vitc'],
-    ['vitamina_a', 'target-vita'],
 ];
 
 const ROWS_VISIBLE = 17.5;
@@ -73,12 +68,7 @@ function serializeNutrition() {
         form.querySelectorAll('input[type="hidden"][name="peso_kg"], '
             + 'input[type="hidden"][name="factor_proteina"], '
             + 'input[type="hidden"][name="factor_grasa"], '
-            + 'input[type="hidden"][name="kcal_objetivo"], '
-            + 'input[type="hidden"][name="fibra_objetivo"], '
-            + 'input[type="hidden"][name="hierro_objetivo"], '
-            + 'input[type="hidden"][name="calcio_objetivo"], '
-            + 'input[type="hidden"][name="vitamina_c_objetivo"], '
-            + 'input[type="hidden"][name="vitamina_a_objetivo"]')
+            + 'input[type="hidden"][name="kcal_objetivo"]')
     ).map(i => i.value);
     return JSON.stringify([rows, params]);
 }
@@ -290,11 +280,6 @@ function paramsFromInputs() {
         kcal_objetivo: get('param-kcal'),
         factor_proteina: get('param-factor-prot'),
         factor_grasa: get('param-factor-grasa'),
-        fibra_objetivo: get('param-fibra'),
-        hierro_objetivo: get('param-hierro'),
-        calcio_objetivo: get('param-calcio'),
-        vitamina_c_objetivo: get('param-vitc'),
-        vitamina_a_objetivo: get('param-vita'),
     };
 }
 
@@ -304,21 +289,10 @@ function updateObjetivo() {
     const fat = roundHalfUp(p.peso_kg * p.factor_grasa);
     const kcal = roundHalfUp(p.kcal_objetivo);
     const carb = roundHalfUp((kcal - 4 * prot - 9 * fat) / 4);
-    const live = {
-        kcal,
-        carbohidratos: carb,
-        proteina: prot,
-        grasa: fat,
-        fibra: roundHalfUp(p.fibra_objetivo),
-        hierro: roundHalfUp(p.hierro_objetivo),
-        calcio: roundHalfUp(p.calcio_objetivo),
-        vitamina_c: roundHalfUp(p.vitamina_c_objetivo),
-        vitamina_a: roundHalfUp(p.vitamina_a_objetivo),
-    };
     TARGET_CELLS.forEach(([key, cls]) => {
         const cell = document.querySelector('.' + cls);
         if (!cell) return;
-        cell.textContent = String(live[key]);
+        cell.textContent = String({ kcal, carbohidratos: carb, proteina: prot, grasa: fat }[key]);
     });
     const form = document.getElementById('nutrition-form');
     if (!form) return;
@@ -330,11 +304,6 @@ function updateObjetivo() {
     set('kcal_objetivo', p.kcal_objetivo);
     set('factor_proteina', p.factor_proteina);
     set('factor_grasa', p.factor_grasa);
-    set('fibra_objetivo', p.fibra_objetivo);
-    set('hierro_objetivo', p.hierro_objetivo);
-    set('calcio_objetivo', p.calcio_objetivo);
-    set('vitamina_c_objetivo', p.vitamina_c_objetivo);
-    set('vitamina_a_objetivo', p.vitamina_a_objetivo);
 }
 
 function updateConsumido() {
