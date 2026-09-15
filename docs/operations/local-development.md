@@ -13,15 +13,21 @@ uv run playwright install chromium   # browser binaries for e2e tests (one time)
 
 ## Run the dashboard
 
+There is exactly one supported way to run the server for daily use
+(dashboard on this Mac + mobile sync over the LAN):
+
 ```bash
-uv run uvicorn app:app --host 127.0.0.1 --port 8000
+./scripts/start_server.sh
 ```
 
-- **Default binding is loopback-only** (`127.0.0.1`). Do not expose the dashboard
-  on a network without the security review in
-  `docs/architecture/security-model.md` (no authentication exists).
-- Binding `--host 0.0.0.0` is **only** sanctioned through
-  `scripts/start_server.sh`, which activates the LAN sync-only gate: on the LAN
+It generates/persists `data/hc_sync_token` + `data/csrf_secret`, activates
+the LAN sync-only gate and serves `0.0.0.0:8000`. Do not start uvicorn by
+hand for daily use: without the script there is no sync token
+(`POST /sync/health-connect` answers 503) and the phone cannot reach the
+server. Direct `uvicorn` invocations exist only inside test/lighthouse
+tooling (isolated ports/DBs), never as a second startup mode.
+
+- The script activates the LAN sync-only gate: on the LAN
   the server serves **only** `POST /sync/health-connect` (HealthSync, autenticado
   con `X-Sync-Token`) **plus the training diary API v1** (entreno, nutrición,
   plantillas, altas y undo; mismo token; contrato en
@@ -53,7 +59,7 @@ uv run uvicorn app:app --host 127.0.0.1 --port 8000
 - Restore:
   ```bash
   cp data/backups/lifestyle-YYYYMMDD-HHMMSS.db data/lifestyle.db
-  uv run uvicorn app:app --host 127.0.0.1 --port 8000
+  ./scripts/start_server.sh
   ```
 - Schema is versioned in `schema_migrations`; never hand-edit tables.
 - Emergency server undo (no UI affordance by design): `HC_SYNC_TOKEN=$(cat data/hc_sync_token)`,

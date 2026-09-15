@@ -153,7 +153,7 @@ Puertas de calidad (invariantes, ver `AGENTS.md` §8):
 1. `uv run pytest` — unidad + integración + e2e Playwright (servidor aislado + DB temporal).
 2. `uv run ruff format --check .` y `uv run ruff check .`.
 3. `uv run mypy app.py src tests`.
-4. Verificación visual local (`./scripts/start_server.sh` o `uv run uvicorn app:app --host 127.0.0.1 --reload`).
+4. Verificación visual local (`./scripts/start_server.sh`, forma única de arranque).
 5. Auditoría Lighthouse ≥ 90 (Performance, Accessibility, Best Practices, SEO) ante cambios
    visuales significativos; registrar en `docs/operations/release-checklist.md`.
 6. Los contratos de UI (`current-ui-contract.md`) y de sync (`health-sync-contract.md`) se

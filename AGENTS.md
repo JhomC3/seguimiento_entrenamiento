@@ -272,15 +272,12 @@ Antes de dar por completada una tarea, debes:
     ```bash
     ./scripts/build_css.sh
     ```
-    Y ejecutar la app localmente. Arranque recomendado (genera/persiste el token de HealthSync
-    en `data/hc_sync_token` y el secreto CSRF en `data/csrf_secret`; activa el gate LAN
-    sync-only y expone `0.0.0.0:8000` para la app Android):
+    Y ejecutar la app localmente. Arranque único y estándar (genera/persiste el token
+    de HealthSync en `data/hc_sync_token` y el secreto CSRF en `data/csrf_secret`;
+    activa el gate LAN sync-only y expone `0.0.0.0:8000` para la app Android y el
+    dashboard en el Mac — no hay otro modo de arranque para uso diario):
     ```bash
     ./scripts/start_server.sh
-    ```
-    Alternativa solo-dashboard (localhost con auto-reload, sin token → `/sync/health-connect` responde 503):
-    ```bash
-    uv run uvicorn app:app --host 127.0.0.1 --reload
     ```
  5. Si agregas dependencias, actualiza `pyproject.toml` y regenera el lock:
    ```bash
