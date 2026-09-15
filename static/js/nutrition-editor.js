@@ -1,7 +1,7 @@
 // nutrition-editor.js — editor del día de alimentación.
 // Copia fiel del mecanismo del editor de sesión (editor.js) con ids nutrition-*:
 // modo edición con lápiz, altura fija, filas +/− solo en edición, dirty-check.
-// Extras de nutrición: preview de 9 nutrientes, filas Objetivo/Consumido en
+// Extras de nutrición: preview de 21 nutrientes, filas Objetivo/Consumido en
 // vivo, parámetros (peso/factores/kcal) y eliminación del día.
 
 import { clearFieldHistory, getAlimentoMap, hideConfirmDialog, showConfirmDialog } from './state.js';
@@ -18,6 +18,18 @@ const PREVIEW_CELLS = [
     ['calcio', 'calcio-cell'],
     ['vitamina_c', 'vitc-cell'],
     ['vitamina_a', 'vita-cell'],
+    ['magnesio', 'mg-cell'],
+    ['zinc', 'zinc-cell'],
+    ['potasio', 'k-cell'],
+    ['sodio', 'na-cell'],
+    ['vitamina_d', 'vitd-cell'],
+    ['vitamina_e', 'vite-cell'],
+    ['vitamina_k', 'vitk-cell'],
+    ['folato', 'folato-cell'],
+    ['vitamina_b12', 'b12-cell'],
+    ['vitamina_b6', 'b6-cell'],
+    ['yodo', 'yodo-cell'],
+    ['selenio', 'selenio-cell'],
 ];
 const CONSUMED_TARGETS = [
     ['kcal', 'consumed-kcal'],
@@ -29,6 +41,18 @@ const CONSUMED_TARGETS = [
     ['calcio', 'consumed-calcio'],
     ['vitamina_c', 'consumed-vitc'],
     ['vitamina_a', 'consumed-vita'],
+    ['magnesio', 'consumed-mg'],
+    ['zinc', 'consumed-zinc'],
+    ['potasio', 'consumed-k'],
+    ['sodio', 'consumed-na'],
+    ['vitamina_d', 'consumed-vitd'],
+    ['vitamina_e', 'consumed-vite'],
+    ['vitamina_k', 'consumed-vitk'],
+    ['folato', 'consumed-folato'],
+    ['vitamina_b12', 'consumed-b12'],
+    ['vitamina_b6', 'consumed-b6'],
+    ['yodo', 'consumed-yodo'],
+    ['selenio', 'consumed-selenio'],
 ];
 const TARGET_CELLS = [
     ['kcal', 'target-kcal'],
@@ -307,7 +331,7 @@ function updateObjetivo() {
 }
 
 function updateConsumido() {
-    const sums = { kcal: 0, carbohidratos: 0, proteina: 0, grasa: 0, fibra: 0, hierro: 0, calcio: 0, vitamina_c: 0, vitamina_a: 0 };
+    const sums = { kcal: 0, carbohidratos: 0, proteina: 0, grasa: 0, fibra: 0, hierro: 0, calcio: 0, vitamina_c: 0, vitamina_a: 0, magnesio: 0, zinc: 0, potasio: 0, sodio: 0, vitamina_d: 0, vitamina_e: 0, vitamina_k: 0, folato: 0, vitamina_b12: 0, vitamina_b6: 0, yodo: 0, selenio: 0 };
     let grams = 0;
     document.querySelectorAll('#nutrition-rows .nutrition-row').forEach(row => {
         const qtyRaw = (row.querySelector('.cantidad-input')?.value || '').trim();

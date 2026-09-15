@@ -44,6 +44,18 @@ def _catalog_avena() -> dict:
         "calcio": 54.0,
         "vitamina_c": 0.0,
         "vitamina_a": 0.0,
+        "magnesio": 177.0,
+        "zinc": 4.0,
+        "potasio": 429.0,
+        "sodio": 2.0,
+        "vitamina_d": 0.0,
+        "vitamina_e": 1.0,
+        "vitamina_k": 2.0,
+        "folato": 56.0,
+        "vitamina_b12": 0.0,
+        "vitamina_b6": 0.12,
+        "yodo": 0.0,
+        "selenio": 34.0,
     }
 
 
@@ -58,7 +70,7 @@ class TestModels:
         assert alimento.categoria == ""
         assert alimento.kcal == 0.0
         assert alimento.vitamina_a == 0.0
-        assert len(NUTRIENT_FIELDS) == 9
+        assert len(NUTRIENT_FIELDS) == 21
 
 
 class TestCalculation:
@@ -197,16 +209,26 @@ class TestCreateAlimento:
     def test_micro_dri_targets_son_dri_hombre_adulto(self):
         from src.nutrition_service import MICRO_DRI_TARGETS, MICRO_UL, NUTRIENT_UNITS
 
-        assert MICRO_DRI_TARGETS == {
-            "fibra_objetivo": 38.0,
-            "hierro_objetivo": 8.0,
-            "calcio_objetivo": 1000.0,
-            "vitamina_c_objetivo": 90.0,
-            "vitamina_a_objetivo": 900.0,
-        }
+        assert MICRO_DRI_TARGETS["fibra_objetivo"] == 38.0
+        assert MICRO_DRI_TARGETS["hierro_objetivo"] == 8.0
+        assert MICRO_DRI_TARGETS["calcio_objetivo"] == 1000.0
+        assert MICRO_DRI_TARGETS["vitamina_c_objetivo"] == 90.0
+        assert MICRO_DRI_TARGETS["vitamina_a_objetivo"] == 900.0
+        assert MICRO_DRI_TARGETS["magnesio_objetivo"] == 420.0
+        assert MICRO_DRI_TARGETS["zinc_objetivo"] == 11.0
+        assert MICRO_DRI_TARGETS["potasio_objetivo"] == 3400.0
+        assert MICRO_DRI_TARGETS["sodio_objetivo"] == 1500.0
+        assert MICRO_DRI_TARGETS["vitamina_d_objetivo"] == 15.0
+        assert MICRO_DRI_TARGETS["vitamina_b12_objetivo"] == 2.4
+        assert MICRO_DRI_TARGETS["yodo_objetivo"] == 150.0
+        assert MICRO_DRI_TARGETS["selenio_objetivo"] == 55.0
         assert MICRO_UL["vitamina_a"] == 3000.0
+        assert MICRO_UL["sodio"] == 2300.0
         assert MICRO_UL["fibra"] is None
+        assert MICRO_UL["potasio"] is None
         assert NUTRIENT_UNITS["vitamina_a"] == "mcg"
+        assert NUTRIENT_UNITS["vitamina_d"] == "mcg"
+        assert NUTRIENT_UNITS["magnesio"] == "mg"
 
 
 class TestTargetFormulas:

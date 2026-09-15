@@ -239,8 +239,8 @@ pero se ignora). Duplicado case-insensitive → **`409`**; grupo fuera de
     {"orden": 1, "alimento": "Avena", "cantidad_g": 50.0, "kcal": 195.0, "...": "..."}
   ],
   "consumido": {"kcal": 195.0, "...": "...", "cantidad_g": 50.0},
-  "objetivo": {"kcal": 2300.0, "carbohidratos": 297.0, "proteina": 105.0, "grasa": 77.0, "fibra": 38.0, "hierro": 8.0, "calcio": 1000.0, "vitamina_c": 90.0, "vitamina_a": 900.0},
-  "parametros": {"peso_kg": 70.0, "factor_proteina": 1.5, "factor_grasa": 1.1, "kcal_objetivo": 2300.0, "fibra_objetivo": 38.0, "hierro_objetivo": 8.0, "calcio_objetivo": 1000.0, "vitamina_c_objetivo": 90.0, "vitamina_a_objetivo": 900.0}
+  "objetivo": {"kcal": 2300.0, "carbohidratos": 297.0, "proteina": 105.0, "grasa": 77.0, "fibra": 38.0, "hierro": 8.0, "calcio": 1000.0, "vitamina_c": 90.0, "vitamina_a": 900.0, "magnesio": 420.0, "zinc": 11.0, "potasio": 3400.0, "sodio": 1500.0, "vitamina_d": 15.0, "vitamina_e": 15.0, "vitamina_k": 120.0, "folato": 400.0, "vitamina_b12": 2.4, "vitamina_b6": 1.3, "yodo": 150.0, "selenio": 55.0},
+  "parametros": {"peso_kg": 70.0, "factor_proteina": 1.5, "factor_grasa": 1.1, "kcal_objetivo": 2300.0, "fibra_objetivo": 38.0, "hierro_objetivo": 8.0, "calcio_objetivo": 1000.0, "vitamina_c_objetivo": 90.0, "vitamina_a_objetivo": 900.0, "...": "12 micros DRI v019"}
 }
 ```
 
@@ -248,7 +248,7 @@ pero se ignora). Duplicado case-insensitive → **`409`**; grupo fuera de
   parámetros del día previo más cercano (`prefilled: true`,
   `prefill_source: "YYYY-MM-DD"`, badge "Datos del…" en el móvil) con
   `has_data: false`; `200`, no `404` (el vacío es estado válido).
-- `entradas`: 9 nutrientes tal cual en SQLite + `orden`.
+- `entradas`: 21 nutrientes tal cual en SQLite + `orden`.
 - `consumido`: suma del día (`diary_totals`) + `cantidad_g` total.
 - `objetivo`: fórmulas Atwater sobre `parametros` (`prot = peso × factor`,
   `grasa = peso × factor`, `kcal` editable, `carb = (kcal − 4prot − 9grasa)/4`).
@@ -267,7 +267,7 @@ pero se ignora). Duplicado case-insensitive → **`409`**; grupo fuera de
 
 - Reemplazo total idempotente (`save_diary_with_undo_snapshot`): 1–100
   entradas, backup + journal `alimentacion` (comparte la pila de 10).
-- Los 9 nutrientes se **recalculan en servidor**
+- Los 21 nutrientes se **recalculan en servidor**
   (`ROUND_HALF_UP(catálogo_100g × g / 100)`); el cliente nunca los envía.
   Alimento inexistente → `404`; cantidad ≤ 0 o fila parcial → `400`;
   día sin entradas válidas → `400` (el vaciado es el `DELETE`; el `POST`
@@ -293,7 +293,7 @@ se trackearon — igual que la web).
 
 - Lista: `{schema_version, count, alimentos: [{nombre, categoria + 9}],
   meta: {nutrientes: [{name, label}]}}` (las etiquetas replican el alta web).
-- Alta `{nombre, categoria?, 9 nutrientes}` por 100 g, `origen='manual'`;
+- Alta `{nombre, categoria?, 21 nutrientes}` por 100 g, `origen='manual'`;
   duplicado → `409`; nutriente negativo/no-numérico → `400`. Sin
   backup/undo, como la web.
 

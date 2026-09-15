@@ -414,6 +414,18 @@ def build_nutrition_editor(
             calcio=float(r["calcio"]),
             vitamina_c=float(r["vitamina_c"]),
             vitamina_a=float(r["vitamina_a"]),
+            magnesio=float(r["magnesio"]),
+            zinc=float(r["zinc"]),
+            potasio=float(r["potasio"]),
+            sodio=float(r["sodio"]),
+            vitamina_d=float(r["vitamina_d"]),
+            vitamina_e=float(r["vitamina_e"]),
+            vitamina_k=float(r["vitamina_k"]),
+            folato=float(r["folato"]),
+            vitamina_b12=float(r["vitamina_b12"]),
+            vitamina_b6=float(r["vitamina_b6"]),
+            yodo=float(r["yodo"]),
+            selenio=float(r["selenio"]),
         )
         for r in data
     ]

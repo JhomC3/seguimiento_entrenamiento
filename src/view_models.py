@@ -75,6 +75,18 @@ class NutritionEntryRow:
     calcio: float
     vitamina_c: float
     vitamina_a: float
+    magnesio: float
+    zinc: float
+    potasio: float
+    sodio: float
+    vitamina_d: float
+    vitamina_e: float
+    vitamina_k: float
+    folato: float
+    vitamina_b12: float
+    vitamina_b6: float
+    yodo: float
+    selenio: float
 
 
 @dataclass(frozen=True)

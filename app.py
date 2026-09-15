@@ -531,11 +531,23 @@ NUTRIENT_FIELD_LABELS: list[dict[str, str]] = [
     {"name": "calcio", "label": "Calcio (mg)"},
     {"name": "vitamina_c", "label": "Vit C (mg)"},
     {"name": "vitamina_a", "label": "Vit A (µg)"},
+    {"name": "magnesio", "label": "Mg (mg)"},
+    {"name": "zinc", "label": "Zinc (mg)"},
+    {"name": "potasio", "label": "K (mg)"},
+    {"name": "sodio", "label": "Na (mg)"},
+    {"name": "vitamina_d", "label": "Vit D (µg)"},
+    {"name": "vitamina_e", "label": "Vit E (mg)"},
+    {"name": "vitamina_k", "label": "Vit K (µg)"},
+    {"name": "folato", "label": "Folato (µg)"},
+    {"name": "vitamina_b12", "label": "B12 (µg)"},
+    {"name": "vitamina_b6", "label": "B6 (mg)"},
+    {"name": "yodo", "label": "Yodo (µg)"},
+    {"name": "selenio", "label": "Selenio (µg)"},
 ]
 
 
 def _alimento_preview_map() -> dict[str, dict[str, float]]:
-    """Mapa compacto nombre -> 9 nutrientes por 100 g para previsualización client."""
+    """Mapa compacto nombre -> nutrientes por 100 g para previsualización client."""
     return {a["nombre"]: {k: a[k] for k in NUTRIENT_FIELDS} for a in get_alimentos_catalog(DB_PATH)}
 
 
@@ -1026,6 +1038,18 @@ def alimento_nuevo(
     calcio: float = Form(0),
     vitamina_c: float = Form(0),
     vitamina_a: float = Form(0),
+    magnesio: float = Form(0),
+    zinc: float = Form(0),
+    potasio: float = Form(0),
+    sodio: float = Form(0),
+    vitamina_d: float = Form(0),
+    vitamina_e: float = Form(0),
+    vitamina_k: float = Form(0),
+    folato: float = Form(0),
+    vitamina_b12: float = Form(0),
+    vitamina_b6: float = Form(0),
+    yodo: float = Form(0),
+    selenio: float = Form(0),
 ):
     try:
         create_alimento(
@@ -1042,6 +1066,18 @@ def alimento_nuevo(
                 calcio=calcio,
                 vitamina_c=vitamina_c,
                 vitamina_a=vitamina_a,
+                magnesio=magnesio,
+                zinc=zinc,
+                potasio=potasio,
+                sodio=sodio,
+                vitamina_d=vitamina_d,
+                vitamina_e=vitamina_e,
+                vitamina_k=vitamina_k,
+                folato=folato,
+                vitamina_b12=vitamina_b12,
+                vitamina_b6=vitamina_b6,
+                yodo=yodo,
+                selenio=selenio,
             ),
         )
     except Exception as e:
@@ -2448,8 +2484,9 @@ NUTRITION_PARAM_DEFAULTS: dict[str, float] = {
     **MICRO_DRI_TARGETS,
 }
 
-# Parámetros editables desde el cliente (macros + objetivos de micros DRI).
-# Claves desconocidas se ignoran.
+# Parámetros editables desde el cliente vía API (la web solo envía los 4 de
+# macros; los objetivos de micros son fijos DRI en el panel). Claves
+# desconocidas se ignoran.
 NUTRITION_EDITABLE_PARAMS: tuple[str, ...] = (
     "peso_kg",
     "factor_proteina",
@@ -2460,6 +2497,18 @@ NUTRITION_EDITABLE_PARAMS: tuple[str, ...] = (
     "calcio_objetivo",
     "vitamina_c_objetivo",
     "vitamina_a_objetivo",
+    "magnesio_objetivo",
+    "zinc_objetivo",
+    "potasio_objetivo",
+    "sodio_objetivo",
+    "vitamina_d_objetivo",
+    "vitamina_e_objetivo",
+    "vitamina_k_objetivo",
+    "folato_objetivo",
+    "vitamina_b12_objetivo",
+    "vitamina_b6_objetivo",
+    "yodo_objetivo",
+    "selenio_objetivo",
 )
 
 
@@ -2618,7 +2667,7 @@ def api_nutrition_delete_day(request: Request, fecha: str = Query(default="")):
 
 @app.get("/api/v1/alimentos")
 def api_nutrition_foods(request: Request):
-    """Catálogo de alimentos (9 nutrientes por 100 g) + etiquetas del alta."""
+    """Catálogo de alimentos (nutrientes por 100 g) + etiquetas del alta."""
     auth_error = _require_training_api_token(request)
     if auth_error is not None:
         return auth_error
@@ -2835,7 +2884,9 @@ def export_nutrition_csv():
     with read_connection(DB_PATH) as conn:
         df = pd.read_sql_query(
             "SELECT fecha, orden, alimento, cantidad_g, kcal, carbohidratos, fibra, "
-            "proteina, grasa, hierro, calcio, vitamina_c, vitamina_a, origen "
+            "proteina, grasa, hierro, calcio, vitamina_c, vitamina_a, magnesio, zinc, "
+            "potasio, sodio, vitamina_d, vitamina_e, vitamina_k, folato, vitamina_b12, "
+            "vitamina_b6, yodo, selenio, origen "
             "FROM diario_alimentacion ORDER BY fecha, orden",
             conn,
         )

@@ -167,6 +167,35 @@ ALIMENTOS_NUTRIENT_COLUMNS: list[str] = [
     "calcio",
     "vitamina_c",
     "vitamina_a",
+    "magnesio",
+    "zinc",
+    "potasio",
+    "sodio",
+    "vitamina_d",
+    "vitamina_e",
+    "vitamina_k",
+    "folato",
+    "vitamina_b12",
+    "vitamina_b6",
+    "yodo",
+    "selenio",
+]
+
+# Columnas nuevas (v019): opcionales en la hoja; si la hoja aún no las trae
+# se importan en 0.0 (pendiente de curaduría), sin tumbar la importación.
+ALIMENTOS_OPTIONAL_COLUMNS: list[str] = [
+    "magnesio",
+    "zinc",
+    "potasio",
+    "sodio",
+    "vitamina_d",
+    "vitamina_e",
+    "vitamina_k",
+    "folato",
+    "vitamina_b12",
+    "vitamina_b6",
+    "yodo",
+    "selenio",
 ]
 
 _ALIMENTOS_HEADER_MAP: dict[str, str | None] = {
@@ -182,6 +211,18 @@ _ALIMENTOS_HEADER_MAP: dict[str, str | None] = {
     "Calcio (mg)": "calcio",
     "Vitamina C (mg)": "vitamina_c",
     "Vitamina A": "vitamina_a",
+    "Magnesio (mg)": "magnesio",
+    "Zinc (mg)": "zinc",
+    "Potasio (mg)": "potasio",
+    "Sodio (mg)": "sodio",
+    "Vitamina D (mcg)": "vitamina_d",
+    "Vitamina E (mg)": "vitamina_e",
+    "Vitamina K (mcg)": "vitamina_k",
+    "Folato (mcg)": "folato",
+    "Vitamina B12 (mcg)": "vitamina_b12",
+    "Vitamina B6 (mg)": "vitamina_b6",
+    "Yodo (mcg)": "yodo",
+    "Selenio (mcg)": "selenio",
 }
 
 
@@ -191,7 +232,8 @@ def parse_alimentos(csv_text: str) -> pd.DataFrame:
     hierro, calcio, vitamina_c, vitamina_a] (valores por 100 g).
     """
     df_raw = pd.read_csv(io.StringIO(csv_text))
-    missing = [h for h in _ALIMENTOS_HEADER_MAP if h not in df_raw.columns]
+    required = [h for h, f in _ALIMENTOS_HEADER_MAP.items() if f not in ALIMENTOS_OPTIONAL_COLUMNS]
+    missing = [h for h in required if h not in df_raw.columns]
     if missing:
         raise ValueError(f"Encabezados de 'alimentos' faltantes: {missing}")
 
@@ -206,6 +248,9 @@ def parse_alimentos(csv_text: str) -> pd.DataFrame:
         record: dict = {"nombre": nombre, "categoria": str(row["Categoría"]).strip()}
         for header, field in _ALIMENTOS_HEADER_MAP.items():
             if field not in ALIMENTOS_NUTRIENT_COLUMNS:
+                continue
+            if header not in df_raw.columns:
+                record[field] = 0.0
                 continue
             value = parse_float(row[header])
             if value is None:

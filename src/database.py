@@ -491,28 +491,36 @@ _DIARIO_NUTRIENT_COLUMNS = (
     "calcio",
     "vitamina_c",
     "vitamina_a",
+    "magnesio",
+    "zinc",
+    "potasio",
+    "sodio",
+    "vitamina_d",
+    "vitamina_e",
+    "vitamina_k",
+    "folato",
+    "vitamina_b12",
+    "vitamina_b6",
+    "yodo",
+    "selenio",
 )
 
 
 def get_alimentos_catalog(db_path: str) -> list[dict]:
     if not os.path.exists(db_path):
         return []
+    select = ", ".join(["nombre", "categoria", *_DIARIO_NUTRIENT_COLUMNS])
     with read_connection(db_path) as conn:
-        rows = conn.execute(
-            "SELECT nombre, categoria, kcal, carbohidratos, fibra, proteina, grasa, "
-            "hierro, calcio, vitamina_c, vitamina_a "
-            "FROM alimentos ORDER BY nombre"
-        ).fetchall()
+        rows = conn.execute(f"SELECT {select} FROM alimentos ORDER BY nombre").fetchall()
     cols = ("nombre", "categoria", *_DIARIO_NUTRIENT_COLUMNS)
     return [dict(zip(cols, r)) for r in rows]
 
 
 def find_alimento(db_path: str, nombre: str) -> dict | None:
+    select = ", ".join(["nombre", "categoria", *_DIARIO_NUTRIENT_COLUMNS])
     with read_connection(db_path) as conn:
         row = conn.execute(
-            "SELECT nombre, categoria, kcal, carbohidratos, fibra, proteina, grasa, "
-            "hierro, calcio, vitamina_c, vitamina_a "
-            "FROM alimentos WHERE LOWER(nombre) = LOWER(?)",
+            f"SELECT {select} FROM alimentos WHERE LOWER(nombre) = LOWER(?)",
             (nombre.strip(),),
         ).fetchone()
     if row is None:
@@ -522,25 +530,24 @@ def find_alimento(db_path: str, nombre: str) -> dict | None:
 
 
 def insert_alimento(db_path: str, food: dict) -> None:
+    cols = ", ".join(["nombre", "categoria", *_DIARIO_NUTRIENT_COLUMNS, "origen"])
+    placeholders = ", ".join(["?"] * (len(_DIARIO_NUTRIENT_COLUMNS) + 2) + ["'manual'"])
     with transaction(db_path) as conn:
         conn.execute(
-            "INSERT INTO alimentos (nombre, categoria, kcal, carbohidratos, fibra, "
-            "proteina, grasa, hierro, calcio, vitamina_c, vitamina_a, origen) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual')",
+            f"INSERT INTO alimentos ({cols}) VALUES ({placeholders})",
             (
                 food["nombre"],
                 food.get("categoria", ""),
-                *(food[col] for col in _DIARIO_NUTRIENT_COLUMNS),
+                *(food.get(col, 0.0) for col in _DIARIO_NUTRIENT_COLUMNS),
             ),
         )
 
 
 def get_diario_by_fecha(db_path: str, fecha: str) -> list[dict]:
+    select = ", ".join(["orden", "alimento", "cantidad_g", *_DIARIO_NUTRIENT_COLUMNS, "origen"])
     with read_connection(db_path) as conn:
         rows = conn.execute(
-            "SELECT orden, alimento, cantidad_g, kcal, carbohidratos, fibra, proteina, "
-            "grasa, hierro, calcio, vitamina_c, vitamina_a, origen "
-            "FROM diario_alimentacion WHERE fecha = ? ORDER BY orden",
+            f"SELECT {select} FROM diario_alimentacion WHERE fecha = ? ORDER BY orden",
             (fecha,),
         ).fetchall()
     cols = ("orden", "alimento", "cantidad_g", *_DIARIO_NUTRIENT_COLUMNS, "origen")
@@ -570,7 +577,7 @@ def _diario_row_values(conn, fecha: str, rows: list[dict]) -> list[tuple]:
                 int(r.get("orden") or idx),
                 str(r["alimento"]).strip(),
                 cantidad_g,
-                *(float(r[col]) for col in _DIARIO_NUTRIENT_COLUMNS),
+                *(float(r.get(col, 0.0) or 0.0) for col in _DIARIO_NUTRIENT_COLUMNS),
                 str(r.get("origen") or "manual"),
             )
         )
@@ -578,12 +585,14 @@ def _diario_row_values(conn, fecha: str, rows: list[dict]) -> list[tuple]:
 
 
 def replace_diario_by_fecha(db_path: str, fecha: str, rows: list[dict]) -> None:
+    cols = ", ".join(
+        ["fecha", "orden", "alimento", "cantidad_g", *_DIARIO_NUTRIENT_COLUMNS, "origen"]
+    )
+    placeholders = ", ".join(["?"] * (len(_DIARIO_NUTRIENT_COLUMNS) + 5))
     with transaction(db_path) as conn:
         conn.execute("DELETE FROM diario_alimentacion WHERE fecha = ?", (fecha,))
         conn.executemany(
-            "INSERT INTO diario_alimentacion (fecha, orden, alimento, cantidad_g, kcal, "
-            "carbohidratos, fibra, proteina, grasa, hierro, calcio, vitamina_c, "
-            "vitamina_a, origen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            f"INSERT INTO diario_alimentacion ({cols}) VALUES ({placeholders})",
             _diario_row_values(conn, fecha, rows),
         )
 
@@ -608,6 +617,18 @@ _PARAMETROS_COLUMNS = (
     "calcio_objetivo",
     "vitamina_c_objetivo",
     "vitamina_a_objetivo",
+    "magnesio_objetivo",
+    "zinc_objetivo",
+    "potasio_objetivo",
+    "sodio_objetivo",
+    "vitamina_d_objetivo",
+    "vitamina_e_objetivo",
+    "vitamina_k_objetivo",
+    "folato_objetivo",
+    "vitamina_b12_objetivo",
+    "vitamina_b6_objetivo",
+    "yodo_objetivo",
+    "selenio_objetivo",
 )
 
 
@@ -634,18 +655,34 @@ def save_parametros_diarios(db_path: str, fecha: str, params: dict) -> None:
         conn.execute(
             """INSERT INTO parametros_diarios (fecha, peso_kg, factor_proteina,
                    factor_grasa, kcal_objetivo, fibra_objetivo, hierro_objetivo,
-                   calcio_objetivo, vitamina_c_objetivo, vitamina_a_objetivo)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(fecha) DO UPDATE SET
-                   peso_kg = excluded.peso_kg,
-                   factor_proteina = excluded.factor_proteina,
-                   factor_grasa = excluded.factor_grasa,
-                   kcal_objetivo = excluded.kcal_objetivo,
-                   fibra_objetivo = excluded.fibra_objetivo,
-                   hierro_objetivo = excluded.hierro_objetivo,
-                   calcio_objetivo = excluded.calcio_objetivo,
-                   vitamina_c_objetivo = excluded.vitamina_c_objetivo,
-                   vitamina_a_objetivo = excluded.vitamina_a_objetivo""",
+                   calcio_objetivo, vitamina_c_objetivo, vitamina_a_objetivo,
+                   magnesio_objetivo, zinc_objetivo, potasio_objetivo,
+                   sodio_objetivo, vitamina_d_objetivo, vitamina_e_objetivo,
+                   vitamina_k_objetivo, folato_objetivo, vitamina_b12_objetivo,
+                   vitamina_b6_objetivo, yodo_objetivo, selenio_objetivo)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(fecha) DO UPDATE SET
+                    peso_kg = excluded.peso_kg,
+                    factor_proteina = excluded.factor_proteina,
+                    factor_grasa = excluded.factor_grasa,
+                    kcal_objetivo = excluded.kcal_objetivo,
+                    fibra_objetivo = excluded.fibra_objetivo,
+                    hierro_objetivo = excluded.hierro_objetivo,
+                    calcio_objetivo = excluded.calcio_objetivo,
+                    vitamina_c_objetivo = excluded.vitamina_c_objetivo,
+                    vitamina_a_objetivo = excluded.vitamina_a_objetivo,
+                    magnesio_objetivo = excluded.magnesio_objetivo,
+                    zinc_objetivo = excluded.zinc_objetivo,
+                    potasio_objetivo = excluded.potasio_objetivo,
+                    sodio_objetivo = excluded.sodio_objetivo,
+                    vitamina_d_objetivo = excluded.vitamina_d_objetivo,
+                    vitamina_e_objetivo = excluded.vitamina_e_objetivo,
+                    vitamina_k_objetivo = excluded.vitamina_k_objetivo,
+                    folato_objetivo = excluded.folato_objetivo,
+                    vitamina_b12_objetivo = excluded.vitamina_b12_objetivo,
+                    vitamina_b6_objetivo = excluded.vitamina_b6_objetivo,
+                    yodo_objetivo = excluded.yodo_objetivo,
+                    selenio_objetivo = excluded.selenio_objetivo""",
             (
                 fecha,
                 *[float(merged.get(col, 0.0)) for col in _PARAMETROS_COLUMNS],

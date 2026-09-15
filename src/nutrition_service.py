@@ -37,6 +37,18 @@ NUTRIENT_FIELDS: tuple[str, ...] = (
     "calcio",
     "vitamina_c",
     "vitamina_a",
+    "magnesio",
+    "zinc",
+    "potasio",
+    "sodio",
+    "vitamina_d",
+    "vitamina_e",
+    "vitamina_k",
+    "folato",
+    "vitamina_b12",
+    "vitamina_b6",
+    "yodo",
+    "selenio",
 )
 
 # Unidad canónica por nutriente en `alimentos` (por 100 g) y en
@@ -52,6 +64,18 @@ NUTRIENT_UNITS: dict[str, str] = {
     "calcio": "mg",
     "vitamina_c": "mg",
     "vitamina_a": "mcg",
+    "magnesio": "mg",
+    "zinc": "mg",
+    "potasio": "mg",
+    "sodio": "mg",
+    "vitamina_d": "mcg",
+    "vitamina_e": "mg",
+    "vitamina_k": "mcg",
+    "folato": "mcg",
+    "vitamina_b12": "mcg",
+    "vitamina_b6": "mg",
+    "yodo": "mcg",
+    "selenio": "mcg",
 }
 
 # Objetivos diarios de micronutrientes para hombre adulto (DRI, NIH Office of
@@ -64,6 +88,18 @@ MICRO_DRI_TARGETS: dict[str, float] = {
     "calcio_objetivo": 1000.0,
     "vitamina_c_objetivo": 90.0,
     "vitamina_a_objetivo": 900.0,
+    "magnesio_objetivo": 420.0,
+    "zinc_objetivo": 11.0,
+    "potasio_objetivo": 3400.0,
+    "sodio_objetivo": 1500.0,
+    "vitamina_d_objetivo": 15.0,
+    "vitamina_e_objetivo": 15.0,
+    "vitamina_k_objetivo": 120.0,
+    "folato_objetivo": 400.0,
+    "vitamina_b12_objetivo": 2.4,
+    "vitamina_b6_objetivo": 1.3,
+    "yodo_objetivo": 150.0,
+    "selenio_objetivo": 55.0,
 }
 
 # Límites superiores tolerables (UL, NIH ODS). `fibra` no tiene UL
@@ -74,6 +110,18 @@ MICRO_UL: dict[str, float | None] = {
     "calcio": 2500.0,
     "vitamina_c": 2000.0,
     "vitamina_a": 3000.0,
+    "magnesio": 350.0,
+    "zinc": 40.0,
+    "potasio": None,
+    "sodio": 2300.0,
+    "vitamina_d": 100.0,
+    "vitamina_e": 1000.0,
+    "vitamina_k": None,
+    "folato": 1000.0,
+    "vitamina_b12": None,
+    "vitamina_b6": 100.0,
+    "yodo": 1100.0,
+    "selenio": 400.0,
 }
 
 # Techo de plausibilidad para un alimento por 100 g: ni el aceite puro
@@ -115,7 +163,7 @@ def _non_negative_float(value: float | str, field: str) -> float:
 
 
 def calculate_nutrients(food: dict, cantidad_g: float) -> dict[str, float]:
-    """Calcula los nueve nutrientes para `cantidad_g` gramos desde el catálogo."""
+    """Calcula los nutrientes para `cantidad_g` gramos desde el catálogo."""
     factor = Decimal(str(cantidad_g)) / Decimal(100)
     return {field: _sheet_round(Decimal(str(food[field])) * factor) for field in NUTRIENT_FIELDS}
 
@@ -126,6 +174,18 @@ _TARGET_EXTRA_FIELDS: tuple[tuple[str, str], ...] = (
     ("calcio_objetivo", "calcio"),
     ("vitamina_c_objetivo", "vitamina_c"),
     ("vitamina_a_objetivo", "vitamina_a"),
+    ("magnesio_objetivo", "magnesio"),
+    ("zinc_objetivo", "zinc"),
+    ("potasio_objetivo", "potasio"),
+    ("sodio_objetivo", "sodio"),
+    ("vitamina_d_objetivo", "vitamina_d"),
+    ("vitamina_e_objetivo", "vitamina_e"),
+    ("vitamina_k_objetivo", "vitamina_k"),
+    ("folato_objetivo", "folato"),
+    ("vitamina_b12_objetivo", "vitamina_b12"),
+    ("vitamina_b6_objetivo", "vitamina_b6"),
+    ("yodo_objetivo", "yodo"),
+    ("selenio_objetivo", "selenio"),
 )
 
 
@@ -160,7 +220,12 @@ def objetivos_diarios(parametros: dict[str, float]) -> dict[str, float]:
         "grasa": grasa,
     }
     for extra_key, field in _TARGET_EXTRA_FIELDS:
-        target[field] = _sheet_round(Decimal(str(parametros.get(extra_key, 0.0))))
+        # Un decimal: a entero se perderían B12 (2.4) y B6 (1.3).
+        target[field] = float(
+            Decimal(str(parametros.get(extra_key, 0.0))).quantize(
+                Decimal("0.1"), rounding=ROUND_HALF_UP
+            )
+        )
     return target
 
 
@@ -218,7 +283,7 @@ def create_alimento(db_path: str, alimento: AlimentoInput) -> None:
 def validate_catalog_row(food: dict) -> None:
     """Rechaza filas de catálogo físicamente implausibles (error de escala).
 
-    `food` lleva los nueve nutrientes por 100 g. Lanza `ValidationError` si
+    `food` lleva los nutrientes por 100 g. Lanza `ValidationError` si
     `kcal` supera `MAX_KCAL_PER_100G`.
     """
     try:
@@ -232,7 +297,7 @@ def validate_catalog_row(food: dict) -> None:
 
 
 def diary_totals(rows: list[dict]) -> dict[str, float]:
-    """Totales del día sumando los nueve nutrientes almacenados."""
+    """Totales del día sumando los nutrientes almacenados."""
     return {
         field: round(sum(float(r.get(field) or 0.0) for r in rows), 2) for field in NUTRIENT_FIELDS
     }

@@ -22,6 +22,7 @@ from src.migrations import (
     v016_split_activo,
     v017_hiit_velocidad_dificultad,
     v018_nutrition_micro_targets,
+    v019_extra_micros,
 )
 
 MIGRATIONS = [
@@ -42,6 +43,7 @@ MIGRATIONS = [
     v016_split_activo,
     v017_hiit_velocidad_dificultad,
     v018_nutrition_micro_targets,
+    v019_extra_micros,
 ]
 
 _CURRENT_VERSION = max(m.VERSION for m in MIGRATIONS)

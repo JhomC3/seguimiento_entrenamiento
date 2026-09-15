@@ -91,6 +91,18 @@ ALIMENTO_COLUMNS = [
     "calcio",
     "vitamina_c",
     "vitamina_a",
+    "magnesio",
+    "zinc",
+    "potasio",
+    "sodio",
+    "vitamina_d",
+    "vitamina_e",
+    "vitamina_k",
+    "folato",
+    "vitamina_b12",
+    "vitamina_b6",
+    "yodo",
+    "selenio",
 ]
 
 
@@ -114,6 +126,23 @@ def test_parse_alimentos_values():
     assert avena["calcio"] == 54.0
     assert avena["vitamina_c"] == 0.0
     assert avena["vitamina_a"] == 0.0
+    # Sin columnas nuevas en la hoja -> 0.0 (pendiente de curaduría).
+    assert avena["magnesio"] == 0.0
+    assert avena["selenio"] == 0.0
+
+
+def test_parse_alimentos_columnas_nuevas_opcionales():
+    csv_text = (
+        "Alimento,Categoría,cantidad,Calorías (kcal),Carbohidratos (g),Fibra (g),"
+        "Proteína (g),Grasa (g),Hierro (mg),Calcio (mg),Vitamina C (mg),Vitamina A,"
+        "Magnesio (mg),Selenio (mcg)\n"
+        "Avena,Cereal,100,389,68,10,17,6.9,4.2,54,0,0,177,34\n"
+    )
+    df = parse_alimentos(csv_text)
+    avena = df.iloc[0]
+    assert avena["magnesio"] == 177.0
+    assert avena["selenio"] == 34.0
+    assert avena["zinc"] == 0.0
 
 
 def test_parse_alimentos_strips_names_and_categories():

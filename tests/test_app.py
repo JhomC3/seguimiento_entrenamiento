@@ -1257,7 +1257,7 @@ def test_index_renders_nutrition_panel_above_session_editor(tmp_path, monkeypatc
     assert "collapse-chevron" in r.text
 
 
-def test_nutrition_editor_tabla_esquema_11_columnas(tmp_path, monkeypatch):
+def test_nutrition_editor_tabla_esquema_23_columnas(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/alimentacion/editor?fecha=2025-04-24")
@@ -1272,6 +1272,18 @@ def test_nutrition_editor_tabla_esquema_11_columnas(tmp_path, monkeypatch):
         "Calcio (mg)",
         "Vitamina C (mg)",
         "Vitamina A",
+        "Magnesio (mg)",
+        "Zinc (mg)",
+        "Potasio (mg)",
+        "Sodio (mg)",
+        "Vitamina D (mcg)",
+        "Vitamina E (mg)",
+        "Vitamina K (mcg)",
+        "Folato (mcg)",
+        "Vitamina B12 (mcg)",
+        "Vitamina B6 (mg)",
+        "Yodo (mcg)",
+        "Selenio (mcg)",
     ):
         assert label in r.text
     assert "Objetivo" in r.text

@@ -189,6 +189,18 @@ class AlimentoInput:
     calcio: float = 0.0
     vitamina_c: float = 0.0
     vitamina_a: float = 0.0
+    magnesio: float = 0.0
+    zinc: float = 0.0
+    potasio: float = 0.0
+    sodio: float = 0.0
+    vitamina_d: float = 0.0
+    vitamina_e: float = 0.0
+    vitamina_k: float = 0.0
+    folato: float = 0.0
+    vitamina_b12: float = 0.0
+    vitamina_b6: float = 0.0
+    yodo: float = 0.0
+    selenio: float = 0.0
 
 
 @dataclass(frozen=True)

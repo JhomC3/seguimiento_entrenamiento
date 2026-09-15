@@ -676,6 +676,18 @@ def test_api_diario_vacio_con_objetivo_por_defecto(tmp_path, monkeypatch):
         "calcio": 1000.0,
         "vitamina_c": 90.0,
         "vitamina_a": 900.0,
+        "magnesio": 420.0,
+        "zinc": 11.0,
+        "potasio": 3400.0,
+        "sodio": 1500.0,
+        "vitamina_d": 15.0,
+        "vitamina_e": 15.0,
+        "vitamina_k": 120.0,
+        "folato": 400.0,
+        "vitamina_b12": 2.4,
+        "vitamina_b6": 1.3,
+        "yodo": 150.0,
+        "selenio": 55.0,
     }
 
 
@@ -826,6 +838,18 @@ def test_api_alimentos_lista_con_meta(tmp_path, monkeypatch):
         "calcio",
         "vitamina_c",
         "vitamina_a",
+        "magnesio",
+        "zinc",
+        "potasio",
+        "sodio",
+        "vitamina_d",
+        "vitamina_e",
+        "vitamina_k",
+        "folato",
+        "vitamina_b12",
+        "vitamina_b6",
+        "yodo",
+        "selenio",
     ]
 
 

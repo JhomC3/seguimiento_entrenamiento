@@ -120,6 +120,18 @@
                     <col class="nutrient-col">
                     <col class="nutrient-col">
                     <col class="nutrient-col">
+                    <col class="nutrient-col">
+                    <col class="nutrient-col">
+                    <col class="nutrient-col">
+                    <col class="nutrient-col">
+                    <col class="nutrient-col">
+                    <col class="nutrient-col">
+                    <col class="nutrient-col">
+                    <col class="nutrient-col">
+                    <col class="nutrient-col">
+                    <col class="nutrient-col">
+                    <col class="nutrient-col">
+                    <col class="nutrient-col">
                     <col class="set-actions-column">
                 </colgroup>
                 <thead>
@@ -135,6 +147,18 @@
                         <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Calcio (mg)</th>
                         <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Vitamina C (mg)</th>
                         <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Vitamina A</th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Magnesio (mg)</th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Zinc (mg)</th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Potasio (mg)</th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Sodio (mg)</th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Vitamina D (mcg)</th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Vitamina E (mg)</th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Vitamina K (mcg)</th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Folato (mcg)</th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Vitamina B12 (mcg)</th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Vitamina B6 (mg)</th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Yodo (mcg)</th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Selenio (mcg)</th>
                         <th class="py-0.5 px-1.5"></th>
                     </tr>
                     <tr class="nutri-target-row font-black text-neutral-200">
@@ -149,6 +173,18 @@
                         <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.calcio) }}</th>
                         <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.vitamina_c) }}</th>
                         <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.vitamina_a) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.magnesio) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.zinc) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.potasio) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.sodio) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.vitamina_d) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.vitamina_e) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.vitamina_k) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.folato) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.vitamina_b12) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.vitamina_b6) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.yodo) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black">{{ '%g'|format(objetivo.selenio) }}</th>
                         <th class="py-0.5 px-1.5"></th>
                     </tr>
                     <tr class="nutri-consumed-row font-black text-neutral-100">
@@ -165,6 +201,18 @@
                         <th class="py-0.5 px-1.5 text-right font-black consumed-calcio">{{ '%g'|format(consumido.calcio) }}</th>
                         <th class="py-0.5 px-1.5 text-right font-black consumed-vitc">{{ '%g'|format(consumido.vitamina_c) }}</th>
                         <th class="py-0.5 px-1.5 text-right font-black consumed-vita">{{ '%g'|format(consumido.vitamina_a) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black consumed-mg">{{ '%g'|format(consumido.magnesio) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black consumed-zinc">{{ '%g'|format(consumido.zinc) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black consumed-k">{{ '%g'|format(consumido.potasio) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black consumed-na">{{ '%g'|format(consumido.sodio) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black consumed-vitd">{{ '%g'|format(consumido.vitamina_d) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black consumed-vite">{{ '%g'|format(consumido.vitamina_e) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black consumed-vitk">{{ '%g'|format(consumido.vitamina_k) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black consumed-folato">{{ '%g'|format(consumido.folato) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black consumed-b12">{{ '%g'|format(consumido.vitamina_b12) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black consumed-b6">{{ '%g'|format(consumido.vitamina_b6) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black consumed-yodo">{{ '%g'|format(consumido.yodo) }}</th>
+                        <th class="py-0.5 px-1.5 text-right font-black consumed-selenio">{{ '%g'|format(consumido.selenio) }}</th>
                         <th class="py-0.5 px-1.5"></th>
                     </tr>
                 </thead>
@@ -198,6 +246,18 @@
                         <td class="nutrition-preview calcio-cell py-0.5 px-1.5 text-right text-neutral-400">{{ '%g'|format(r.calcio) }}</td>
                         <td class="nutrition-preview vitc-cell py-0.5 px-1.5 text-right text-neutral-400">{{ '%g'|format(r.vitamina_c) }}</td>
                         <td class="nutrition-preview vita-cell py-0.5 px-1.5 text-right text-neutral-400">{{ '%g'|format(r.vitamina_a) }}</td>
+                        <td class="nutrition-preview mg-cell py-0.5 px-1.5 text-right text-neutral-400">{{ '%g'|format(r.magnesio) }}</td>
+                        <td class="nutrition-preview zinc-cell py-0.5 px-1.5 text-right text-neutral-400">{{ '%g'|format(r.zinc) }}</td>
+                        <td class="nutrition-preview k-cell py-0.5 px-1.5 text-right text-neutral-400">{{ '%g'|format(r.potasio) }}</td>
+                        <td class="nutrition-preview na-cell py-0.5 px-1.5 text-right text-neutral-400">{{ '%g'|format(r.sodio) }}</td>
+                        <td class="nutrition-preview vitd-cell py-0.5 px-1.5 text-right text-neutral-400">{{ '%g'|format(r.vitamina_d) }}</td>
+                        <td class="nutrition-preview vite-cell py-0.5 px-1.5 text-right text-neutral-400">{{ '%g'|format(r.vitamina_e) }}</td>
+                        <td class="nutrition-preview vitk-cell py-0.5 px-1.5 text-right text-neutral-400">{{ '%g'|format(r.vitamina_k) }}</td>
+                        <td class="nutrition-preview folato-cell py-0.5 px-1.5 text-right text-neutral-400">{{ '%g'|format(r.folato) }}</td>
+                        <td class="nutrition-preview b12-cell py-0.5 px-1.5 text-right text-neutral-400">{{ '%g'|format(r.vitamina_b12) }}</td>
+                        <td class="nutrition-preview b6-cell py-0.5 px-1.5 text-right text-neutral-400">{{ '%g'|format(r.vitamina_b6) }}</td>
+                        <td class="nutrition-preview yodo-cell py-0.5 px-1.5 text-right text-neutral-400">{{ '%g'|format(r.yodo) }}</td>
+                        <td class="nutrition-preview selenio-cell py-0.5 px-1.5 text-right text-neutral-400">{{ '%g'|format(r.selenio) }}</td>
                         <td class="set-actions-column py-0.5">
                             <div class="row-actions flex w-full items-center justify-center gap-px opacity-0 group-hover:opacity-100 transition-opacity duration-150 {% if readonly %}hidden{% endif %}">
                                 <button type="button" data-action="nutrition-row-remove" class="row-btn" title="Eliminar fila" aria-label="Eliminar fila">−</button>
@@ -230,6 +290,18 @@
                         <td class="nutrition-preview calcio-cell py-0.5 px-1.5 text-right text-neutral-400">—</td>
                         <td class="nutrition-preview vitc-cell py-0.5 px-1.5 text-right text-neutral-400">—</td>
                         <td class="nutrition-preview vita-cell py-0.5 px-1.5 text-right text-neutral-400">—</td>
+                        <td class="nutrition-preview mg-cell py-0.5 px-1.5 text-right text-neutral-400">—</td>
+                        <td class="nutrition-preview zinc-cell py-0.5 px-1.5 text-right text-neutral-400">—</td>
+                        <td class="nutrition-preview k-cell py-0.5 px-1.5 text-right text-neutral-400">—</td>
+                        <td class="nutrition-preview na-cell py-0.5 px-1.5 text-right text-neutral-400">—</td>
+                        <td class="nutrition-preview vitd-cell py-0.5 px-1.5 text-right text-neutral-400">—</td>
+                        <td class="nutrition-preview vite-cell py-0.5 px-1.5 text-right text-neutral-400">—</td>
+                        <td class="nutrition-preview vitk-cell py-0.5 px-1.5 text-right text-neutral-400">—</td>
+                        <td class="nutrition-preview folato-cell py-0.5 px-1.5 text-right text-neutral-400">—</td>
+                        <td class="nutrition-preview b12-cell py-0.5 px-1.5 text-right text-neutral-400">—</td>
+                        <td class="nutrition-preview b6-cell py-0.5 px-1.5 text-right text-neutral-400">—</td>
+                        <td class="nutrition-preview yodo-cell py-0.5 px-1.5 text-right text-neutral-400">—</td>
+                        <td class="nutrition-preview selenio-cell py-0.5 px-1.5 text-right text-neutral-400">—</td>
                         <td class="set-actions-column py-0.5">
                             <div class="row-actions flex w-full items-center justify-center gap-px opacity-0 group-hover:opacity-100 transition-opacity duration-150 {% if readonly %}hidden{% endif %}">
                                 <button type="button" data-action="nutrition-row-remove" class="row-btn" title="Eliminar fila" aria-label="Eliminar fila">−</button>

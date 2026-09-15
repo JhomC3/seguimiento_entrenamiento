@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import config
 from src.database import backup_db, init_db
 from src.fetcher import fetch_sheet_csv
-from src.nutrition_service import NUTRIENT_FIELDS, calculate_nutrients
+from src.nutrition_service import MICRO_DRI_TARGETS, NUTRIENT_FIELDS, calculate_nutrients
 from src.parser import parse_alimentos, parse_diario
 
 _ALIMENTOS_COLUMNS = (
@@ -33,6 +33,18 @@ _ALIMENTOS_COLUMNS = (
     "calcio",
     "vitamina_c",
     "vitamina_a",
+    "magnesio",
+    "zinc",
+    "potasio",
+    "sodio",
+    "vitamina_d",
+    "vitamina_e",
+    "vitamina_k",
+    "folato",
+    "vitamina_b12",
+    "vitamina_b6",
+    "yodo",
+    "selenio",
 )
 
 _DIARIO_COLUMNS = (
@@ -49,6 +61,18 @@ _DIARIO_COLUMNS = (
     "calcio",
     "vitamina_c",
     "vitamina_a",
+    "magnesio",
+    "zinc",
+    "potasio",
+    "sodio",
+    "vitamina_d",
+    "vitamina_e",
+    "vitamina_k",
+    "folato",
+    "vitamina_b12",
+    "vitamina_b6",
+    "yodo",
+    "selenio",
 )
 
 
@@ -110,6 +134,10 @@ def main() -> int:
                 row.update(calculate_nutrients(food, cantidad))
             else:
                 missing_foods.add(row["alimento"])
+        # La hoja solo trae los 9 nutrientes clásicos: los nuevos (v019)
+        # entran en 0.0 hasta que la hoja o el catálogo los curen.
+        for key in NUTRIENT_FIELDS:
+            row.setdefault(key, 0.0)
         diario_rows.append(row)
     if missing_foods:
         print(
@@ -126,8 +154,10 @@ def main() -> int:
             conn.execute("DELETE FROM alimentos WHERE origen = 'google'")
             conn.executemany(
                 "INSERT OR IGNORE INTO alimentos (nombre, categoria, kcal, carbohidratos, "
-                "fibra, proteina, grasa, hierro, calcio, vitamina_c, vitamina_a, origen) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'google')",
+                "fibra, proteina, grasa, hierro, calcio, vitamina_c, vitamina_a, "
+                "magnesio, zinc, potasio, sodio, vitamina_d, vitamina_e, vitamina_k, "
+                "folato, vitamina_b12, vitamina_b6, yodo, selenio, origen) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'google')",
                 [
                     tuple(r[col] for col in _ALIMENTOS_COLUMNS)
                     for r in df_alimentos.to_dict(orient="records")
@@ -136,14 +166,20 @@ def main() -> int:
             conn.executemany(
                 "INSERT INTO diario_alimentacion (fecha, orden, alimento, cantidad_g, kcal, "
                 "carbohidratos, fibra, proteina, grasa, hierro, calcio, vitamina_c, "
-                "vitamina_a, origen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'google')",
+                "vitamina_a, magnesio, zinc, potasio, sodio, vitamina_d, vitamina_e, "
+                "vitamina_k, folato, vitamina_b12, vitamina_b6, yodo, selenio, origen) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'google')",
                 [tuple(r[col] for col in _DIARIO_COLUMNS) for r in diario_rows],
             )
             conn.executemany(
                 """INSERT INTO parametros_diarios (fecha, peso_kg, factor_proteina,
                        factor_grasa, kcal_objetivo, fibra_objetivo, hierro_objetivo,
-                       calcio_objetivo, vitamina_c_objetivo, vitamina_a_objetivo)
-                   VALUES (?, 70, 1.5, 1.1, ?, ?, ?, ?, ?, ?)
+                       calcio_objetivo, vitamina_c_objetivo, vitamina_a_objetivo,
+                       magnesio_objetivo, zinc_objetivo, potasio_objetivo,
+                       sodio_objetivo, vitamina_d_objetivo, vitamina_e_objetivo,
+                       vitamina_k_objetivo, folato_objetivo, vitamina_b12_objetivo,
+                       vitamina_b6_objetivo, yodo_objetivo, selenio_objetivo)
+                   VALUES (?, 70, 1.5, 1.1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(fecha) DO UPDATE SET
                        peso_kg = excluded.peso_kg,
                        factor_proteina = excluded.factor_proteina,
@@ -153,16 +189,24 @@ def main() -> int:
                        hierro_objetivo = excluded.hierro_objetivo,
                        calcio_objetivo = excluded.calcio_objetivo,
                        vitamina_c_objetivo = excluded.vitamina_c_objetivo,
-                       vitamina_a_objetivo = excluded.vitamina_a_objetivo""",
+                       vitamina_a_objetivo = excluded.vitamina_a_objetivo,
+                       magnesio_objetivo = excluded.magnesio_objetivo,
+                       zinc_objetivo = excluded.zinc_objetivo,
+                       potasio_objetivo = excluded.potasio_objetivo,
+                       sodio_objetivo = excluded.sodio_objetivo,
+                       vitamina_d_objetivo = excluded.vitamina_d_objetivo,
+                       vitamina_e_objetivo = excluded.vitamina_e_objetivo,
+                       vitamina_k_objetivo = excluded.vitamina_k_objetivo,
+                       folato_objetivo = excluded.folato_objetivo,
+                       vitamina_b12_objetivo = excluded.vitamina_b12_objetivo,
+                       vitamina_b6_objetivo = excluded.vitamina_b6_objetivo,
+                       yodo_objetivo = excluded.yodo_objetivo,
+                       selenio_objetivo = excluded.selenio_objetivo""",
                 [
                     (
                         p["fecha"],
                         p["kcal_objetivo"],
-                        p.get("fibra_objetivo", 0.0),
-                        p.get("hierro_objetivo", 0.0),
-                        p.get("calcio_objetivo", 0.0),
-                        p.get("vitamina_c_objetivo", 0.0),
-                        p.get("vitamina_a_objetivo", 0.0),
+                        *[p.get(col, 0.0) or MICRO_DRI_TARGETS[col] for col in MICRO_DRI_TARGETS],
                     )
                     for p in diario.params
                 ],
