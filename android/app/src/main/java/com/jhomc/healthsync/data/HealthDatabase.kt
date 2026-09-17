@@ -236,12 +236,14 @@ interface HealthDao {
         RestIntervalEntity::class,
         EntrenoDraftEntity::class,
         WorkIntervalEntity::class,
+        NutritionPublishEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = false,
 )
 abstract class HealthDatabase : RoomDatabase() {
     abstract fun healthDao(): HealthDao
+    abstract fun nutritionPublishDao(): NutritionPublishDao
     abstract fun trainingCacheDao(): TrainingCacheDao
     abstract fun offlineDao(): OfflineDao
     abstract fun restDao(): RestDao

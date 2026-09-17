@@ -6,6 +6,7 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
+import androidx.health.connect.client.records.NutritionRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
@@ -48,6 +49,13 @@ interface HealthConnectGateway {
 
     // Phase 5: provider diagnostics
     suspend fun providerDetail(): ProviderDetail
+
+    // Escritura nutricional (diario -> Health Connect, 1 registro por alimento).
+    // insert es upsert por clientRecordId+clientRecordVersion; el borrado por
+    // clientRecordIds no requiere READ_NUTRITION (solo WRITE, sobre lo propio).
+    suspend fun insertNutrition(records: List<NutritionRecord>): List<String>
+    suspend fun deleteNutritionByClientIds(clientRecordIds: List<String>)
+    suspend fun deleteNutritionByTime(start: Instant, end: Instant)
 }
 
 data class ProviderDetail(
@@ -151,6 +159,29 @@ class RealHealthConnectGateway(context: Context) : HealthConnectGateway {
 
     override fun permissionContract(): ActivityResultContract<Set<String>, Set<String>> =
         PermissionController.createRequestPermissionResultContract()
+
+    override suspend fun insertNutrition(records: List<NutritionRecord>): List<String> {
+        if (records.isEmpty()) return emptyList()
+        return client.insertRecords(records).recordIdsList
+    }
+
+    override suspend fun deleteNutritionByClientIds(clientRecordIds: List<String>) {
+        if (clientRecordIds.isEmpty()) return
+        // Borrado por IDs de cliente en transacción; si un ID no existe el
+        // proveedor falla el lote: se trocea por ID para aislar (ver publisher).
+        client.deleteRecords(
+            NutritionRecord::class,
+            emptyList(),
+            clientRecordIds,
+        )
+    }
+
+    override suspend fun deleteNutritionByTime(start: Instant, end: Instant) {
+        client.deleteRecords(
+            NutritionRecord::class,
+            TimeRangeFilter.between(start, end),
+        )
+    }
 
     override suspend fun providerDetail(): ProviderDetail {
         val installed = runCatching {

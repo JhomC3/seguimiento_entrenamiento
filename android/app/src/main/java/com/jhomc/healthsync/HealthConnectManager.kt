@@ -2,6 +2,7 @@ package com.jhomc.healthsync
 
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.NutritionRecord
 
 /**
  * Facade over [HealthConnectGateway]: availability, provider details and the
@@ -19,12 +20,19 @@ class HealthConnectManager(private val gateway: HealthConnectGateway) {
 
     /**
      * Permisos ESENCIALES: el catálogo completo (17 tipos) + lectura en
-     * segundo plano + historial. Un solo botón pide todo.
+     * segundo plano + historial + escritura nutricional. Un solo botón pide todo.
      */
     fun corePermissions(): Set<String> =
         RecordTypes.all.map { it.permission }.toSet() +
             HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND +
-            HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
+            HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY +
+            nutritionWritePermission()
+
+    /** WRITE_NUTRITION vía SDK (sin hardcodear el string del permiso). */
+    fun nutritionWritePermission(): String =
+        HealthPermission.getWritePermission(NutritionRecord::class)
+
+    fun nutritionWritePermissions(): Set<String> = setOf(nutritionWritePermission())
 
     /** Exposes the underlying gateway for cache invalidation after permission flows. */
     fun gateway(): HealthConnectGateway = gateway

@@ -18,6 +18,7 @@ import com.jhomc.healthsync.data.MIGRATION_7_8
 import com.jhomc.healthsync.data.MIGRATION_8_9
 import com.jhomc.healthsync.data.MIGRATION_9_10
 import com.jhomc.healthsync.data.MIGRATION_10_11
+import com.jhomc.healthsync.data.MIGRATION_11_12
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -228,7 +229,7 @@ class HealthDatabaseMigrationTest {
     }
 
     @Test
-    fun `full chain v9 to v11 converges every known lineage`() {
+    fun `full chain v9 to v12 converges every known lineage`() {
         // Prueba el camino REAL del teléfono: una BD generada por Room (como
         // todas las v9/v10 en uso) degradada al PEOR linaje conocido —
         // tabla nutrition_publish (rama de nutrición, v10 divergente),
@@ -238,8 +239,8 @@ class HealthDatabaseMigrationTest {
         // Room valida TODAS las tablas al migrar: en verde, cualquier
         // teléfono abre.
         val context = ApplicationProvider.getApplicationContext<Context>()
-        context.deleteDatabase("migration-chain-v9-v11.db")
-        Room.databaseBuilder(context, HealthDatabase::class.java, "migration-chain-v9-v11.db")
+        context.deleteDatabase("migration-chain-v9-v12.db")
+        Room.databaseBuilder(context, HealthDatabase::class.java, "migration-chain-v9-v12.db")
             .allowMainThreadQueries()
             .build()
             .apply {
@@ -249,8 +250,8 @@ class HealthDatabaseMigrationTest {
             }
         val raw = FrameworkSQLiteOpenHelperFactory().create(
             SupportSQLiteOpenHelper.Configuration.builder(context)
-                .name("migration-chain-v9-v11.db")
-                .callback(object : SupportSQLiteOpenHelper.Callback(11) {
+                .name("migration-chain-v9-v12.db")
+                .callback(object : SupportSQLiteOpenHelper.Callback(12) {
                     override fun onCreate(db: SupportSQLiteDatabase) {}
                     override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
                 })
@@ -294,12 +295,12 @@ class HealthDatabaseMigrationTest {
         )
         raw.close()
 
-        // Apertura real como en producción: migra 9→10→11 y valida identidad.
-        val db = Room.databaseBuilder(context, HealthDatabase::class.java, "migration-chain-v9-v11.db")
+        // Apertura real como en producción: migra 9→10→11→12 y valida identidad.
+        val db = Room.databaseBuilder(context, HealthDatabase::class.java, "migration-chain-v9-v12.db")
             .addMigrations(
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
                 MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
-                MIGRATION_9_10, MIGRATION_10_11,
+                MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
             )
             .allowMainThreadQueries()
             .build()
@@ -311,8 +312,18 @@ class HealthDatabaseMigrationTest {
                 )
                 assertNotNull(db.healthDao().getState("STEPS_H1"))
             }
-            db.query(SimpleSQLiteQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='nutrition_publish'")).use {
-                assertTrue("nutrition_publish debe desaparecer", !it.moveToFirst())
+            db.query(SimpleSQLiteQuery("SELECT COUNT(*) FROM nutrition_publish")).use {
+                assertTrue(it.moveToFirst())
+                // 10_11 la retiró (linaje divergente) y 11_12 la recrea vacía.
+                assertEquals(0, it.getInt(0))
+            }
+            runBlocking {
+                db.nutritionPublishDao().put(
+                    com.jhomc.healthsync.data.NutritionPublishEntity(
+                        "2026-09-15", "abc", "id-1", "OK", "insert:1", 1000,
+                    ),
+                )
+                assertEquals("OK", db.nutritionPublishDao().forFecha("2026-09-15")?.status)
             }
             // La fila de training_cache sobrevive al rebuild con sus valores.
             db.query(SimpleSQLiteQuery("SELECT ejercicio, kg FROM training_cache WHERE fecha='2026-09-07'")).use {
@@ -322,7 +333,7 @@ class HealthDatabaseMigrationTest {
             }
         } finally {
             db.close()
-            context.deleteDatabase("migration-chain-v9-v11.db")
+            context.deleteDatabase("migration-chain-v9-v12.db")
         }
     }
 

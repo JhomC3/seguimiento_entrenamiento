@@ -3,6 +3,7 @@ package com.jhomc.healthsync
 import android.os.RemoteException
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.records.NutritionRecord
 import androidx.health.connect.client.response.ChangesResponse
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.response.ReadRecordsResponse
@@ -170,4 +171,25 @@ class FakeHealthConnectGateway : HealthConnectGateway {
         installedVersionCode = 1752L,
         minRequiredVersionCode = 1000L,
     )
+
+    // --- Escritura nutricional (para NutritionPublisher) ---
+    val insertedNutrition = mutableListOf<NutritionRecord>()
+    val deletedClientIds = mutableListOf<String>()
+    var failInsertNutrition = false
+    var failDeleteNutrition = false
+
+    override suspend fun insertNutrition(records: List<NutritionRecord>): List<String> {
+        if (failInsertNutrition) throw RemoteException("insert failed")
+        insertedNutrition += records
+        return records.map { "hc-${it.metadata.clientRecordId}" }
+    }
+
+    override suspend fun deleteNutritionByClientIds(clientRecordIds: List<String>) {
+        if (failDeleteNutrition) throw RemoteException("delete failed")
+        deletedClientIds += clientRecordIds
+    }
+
+    override suspend fun deleteNutritionByTime(start: Instant, end: Instant) {
+        if (failDeleteNutrition) throw RemoteException("delete failed")
+    }
 }
