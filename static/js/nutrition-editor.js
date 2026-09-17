@@ -61,12 +61,7 @@ const TARGET_CELLS = [
     ['grasa', 'target-fat'],
 ];
 
-/* Filas enteras visibles (nunca media fila rebanada al borde). Los
-   separadores son solo-pintado (inset, sin layout): el paso es rowH. */
-const ROWS_VISIBLE = 18;
-
 let bound = false;
-let rowHMeasured = null;
 let pendingNavIso = null;
 
 function roundHalfUp(v) {
@@ -210,35 +205,9 @@ function updateEditActionsVisibility() {
     actions.classList.toggle('invisible', !show);
 }
 
-/* ---------- Altura fija: misma fórmula que el editor de sesión ---------- */
-export function fitNutritionRowsToPanel() {
-    const p = panel();
-    const tbody = document.getElementById('nutrition-rows');
-    if (!p || !tbody) return;
-    // Igual que el editor de sesión: no medir en un tab oculto (rects 0).
-    if (!p.isConnected || p.offsetParent === null) return;
-    const scroller = p.querySelector('.table-scroll');
-    const thead = p.querySelector('.table-scroll thead');
-    const theadH = thead ? thead.getBoundingClientRect().height : 20;
-    if (rowHMeasured === null) {
-        const row = tbody.querySelector('.nutrition-row');
-        if (row) {
-            const actions = row.querySelector('.row-actions');
-            const wasHidden = actions && actions.classList.contains('hidden');
-            if (wasHidden) actions.classList.remove('hidden');
-            rowHMeasured = row.getBoundingClientRect().height || 28;
-            if (wasHidden) actions.classList.add('hidden');
-        } else {
-            rowHMeasured = 28;
-        }
-    }
-    /* La scrollbar horizontal clásica ocupa alto dentro del contenedor fijo:
-       se descuenta para que el borde caiga en límite de fila en ambos modos
-       (overlay = 0, clásica ≈ 6). */
-    const hScrollBar = scroller ? scroller.offsetHeight - scroller.clientHeight : 0;
-    const full = theadH + ROWS_VISIBLE * rowHMeasured - hScrollBar;
-    p.style.setProperty('--table-h', full + 'px');
-}
+/* ---------- Altura fija: determinista en CSS (session-editor.css) ---------- */
+/* 18 filas enteras de 24px + thead de 84px (36+24+24) = 516px fijos vía
+   --table-h. Sin medición JS (ver editor.js): el panel nunca se mueve. */
 
 /* ---------- Filas ---------- */
 function renumber() {
@@ -460,7 +429,6 @@ export function refreshNutritionEditor() {
     syncNutritionButtons();
     updateObjetivo();
     updateConsumido();
-    fitNutritionRowsToPanel();
     captureBaseline();
     updateEditActionsVisibility();
     if (pendingNavIso) {

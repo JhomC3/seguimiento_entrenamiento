@@ -4,7 +4,6 @@
 
 import { doNav, updateDateDot } from './date-navigation.js';
 import {
-    fitRowsToPanel,
     handleEditorState,
     initEditorRowSortable,
     recalcRM,
@@ -99,13 +98,11 @@ export function initLifecycle() {
                     setPlantillaAppliedPending(true);
                 }
                 initEditorRowSortable();
-                fitRowsToPanel();
             } else if (e.detail.target.id === 'popup-body') {
                 // Apertura del popup: el editor llega por swap al cuerpo del popup.
                 syncEditorFromContent();
                 initEditorRowSortable();
                 initNutritionRowSortable(refreshNutritionRowsOrder, ensureNutritionEditable);
-                fitRowsToPanel();
                 // Las plantillas (entrenamiento y alimentación) viven en el popup:
                 // re-vincular su DnD tras el swap.
                 initTemplateSortable();
@@ -115,7 +112,6 @@ export function initLifecycle() {
                 document.getElementById('plantilla-applied').remove();
                 setPlantillaAppliedPending(true);
                 initEditorRowSortable();
-                fitRowsToPanel();
             } else if (e.detail.target.id === 'plantillas-section') {
                 initTemplateSortable();
             }
@@ -230,7 +226,6 @@ export function initLifecycle() {
                 setTimeout(function () {
                     recalcRM();
                     syncEditorFromContent();
-                    fitRowsToPanel();
                 }, 100);
                 if (getPendingNav()) {
                     const target = getPendingNav();

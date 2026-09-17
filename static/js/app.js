@@ -7,7 +7,7 @@
 import { initChartInteractions, renderNutritionTrend, renderUnifiedChart } from './chart-interaction.js';
 import { initDateNavigation } from './date-navigation.js';
 import { initLevelCascade } from './level-cascade.js';
-import { fitRowsToPanel, initEditorActions, initEditorRowSortable, syncEditorFromContent } from './editor.js';
+import { initEditorActions, initEditorRowSortable, syncEditorFromContent } from './editor.js';
 import { initLifecycle } from './htmx-lifecycle.js';
 import { ensureNutritionEditable, initNutritionEditor, refreshNutritionRowsOrder } from './nutrition-editor.js';
 import { initNutritionTemplatesDnD } from './nutrition-templates.js';
@@ -77,7 +77,6 @@ document.addEventListener('DOMContentLoaded', function () {
         initEditorRowSortable();
         initTemplateSortable();
         initEntrenoDnD();
-        fitRowsToPanel();
     }
     if (isDiario) {
         initDateNavigation();
@@ -91,7 +90,6 @@ document.addEventListener('DOMContentLoaded', function () {
         initEditorRowSortable();
         initTemplateSortable();
         initEntrenoDnD();
-        fitRowsToPanel();
         initDiario();
     }
     initSplits();
