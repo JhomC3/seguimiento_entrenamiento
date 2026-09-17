@@ -22,7 +22,8 @@ class HealthConnectManagerTest {
         val manager = HealthConnectManager(FakeHealthConnectGateway())
         val expected = RecordTypes.all.map { it.permission }.toSet() +
             androidx.health.connect.client.permission.HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND +
-            androidx.health.connect.client.permission.HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
+            androidx.health.connect.client.permission.HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY +
+            manager.nutritionWritePermission()
         assertEquals(expected, manager.corePermissions())
     }
 

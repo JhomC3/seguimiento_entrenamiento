@@ -102,6 +102,11 @@ class MainActivity : ComponentActivity() {
                 "HealthSync lee tus datos de salud (pasos, frecuencia cardíaca, " +
                 "sueño, ejercicio, peso y composición) SOLO para tu propio " +
                 "análisis personal.\n\n" +
+                "También escribe en Health Connect las comidas de tu diario " +
+                "de alimentación (1 registro por alimento, con energía y " +
+                "nutrientes), para que Google Fit y otras apps puedan leerlas. " +
+                "Lo publicado en Health Connect queda visible para cualquier " +
+                "app con permiso de lectura de nutrición.\n\n" +
                 "Los datos se envían únicamente a tu servidor personal (por " +
                 "defecto, tu propio Mac en tu red) mediante HTTPS con un token " +
                 "secreto. No se comparten con terceros, no se venden y no salen " +

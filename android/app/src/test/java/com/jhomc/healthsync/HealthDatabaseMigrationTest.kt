@@ -258,9 +258,11 @@ class HealthDatabaseMigrationTest {
                 .build(),
         ).writableDatabase
         raw.execSQL("PRAGMA user_version = 9")
+        // Linaje nutrición: la tabla ya existe (base generada con v12); se
+        // siembra una fila para probar que 10_11 la retira y 11_12 la recrea.
         raw.execSQL(
-            "CREATE TABLE nutrition_publish (fecha TEXT NOT NULL PRIMARY KEY, day_hash TEXT NOT NULL, " +
-                "client_ids TEXT NOT NULL, status TEXT NOT NULL, detail TEXT, updated_at_epoch_ms INTEGER NOT NULL)",
+            "INSERT INTO nutrition_publish (fecha, day_hash, client_ids, status, detail, updated_at_epoch_ms) " +
+                "VALUES ('2026-09-15', 'abc', 'id-1', 'OK', 'insert:1', 1000)",
         )
         // training_cache "antigua": mismas columnas, sin DEFAULT NULL.
         raw.execSQL("ALTER TABLE training_cache RENAME TO training_cache_old")

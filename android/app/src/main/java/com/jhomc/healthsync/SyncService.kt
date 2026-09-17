@@ -163,6 +163,8 @@ class SyncService : Service() {
         }
 
         fun summaryOf(report: SyncReport): String = buildString {
+            // Silencio nutricional por diseño: la publicación no se anuncia en
+            // la UI (los contadores siguen en SyncReport/logs para diagnóstico).
             append("Tipos leídos: ${report.typesSynced} | Entregados: ${report.delivered}")
             if (report.failed > 0) append(" | Fallos: ${report.failed}")
             if (report.quarantined > 0) {

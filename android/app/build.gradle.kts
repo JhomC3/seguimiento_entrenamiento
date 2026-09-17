@@ -17,12 +17,11 @@ android {
         minSdk = 26
         targetSdk = 36
         // 2/0.2.0: fix 400 (cuarentena+bisección) + agregados horarios *_H1.
-        // 3/0.2.1: el pre-vuelo acepta el crudo legacy (drena el pendiente) +
-        // re-encolado único + motivo de cuarentena visible.
+        // 4/0.3.0: escritura nutricional a Health Connect (permiso WRITE_NUTRITION).
         // Subir versionCode en cada build entregado: es la única forma de
-        // distinguir APKs en Ajustes (todos eran 1/0.1.0).
-        versionCode = 3
-        versionName = "0.2.1"
+        // distinguir APKs en Ajustes.
+        versionCode = 4
+        versionName = "0.3.0"
     }
 
     compileOptions {

@@ -46,4 +46,13 @@ class ManifestContractTest {
             assertTrue("falta $permission en el manifest", content.contains(permission))
         }
     }
+
+    @Test
+    fun manifest_declares_nutrition_write() {
+        val content = manifest.readText()
+        assertTrue(
+            "falta WRITE_NUTRITION (publicación del diario)",
+            content.contains("android.permission.health.WRITE_NUTRITION"),
+        )
+    }
 }

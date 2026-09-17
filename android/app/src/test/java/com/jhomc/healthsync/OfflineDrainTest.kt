@@ -75,7 +75,7 @@ class OfflineDrainTest {
         db.offlineDao().enqueue(PendingWriteEntity("sesion", "2026-09-07", "SAVE", savePayload("2026-09-07"), 1L))
         server.enqueue(MockResponse().setResponseCode(400).setBody("""{"detail":"Debes registrar al menos una serie."}"""))
         var acked = 0
-        assertEquals(0, repo.drainOutbox(base, "secret") { acked++ })
+        assertEquals(0, repo.drainOutbox(base, "secret", onAcked = { acked++ }))
         assertEquals(1, acked)
         assertEquals(0, repo.pendingCount())
 
@@ -91,7 +91,7 @@ class OfflineDrainTest {
         db.offlineDao().enqueue(PendingWriteEntity("sesion", "2026-09-07", "SAVE", savePayload("2026-09-07"), 1L))
         server.enqueue(MockResponse().setResponseCode(401).setBody("""{"detail":"Token inválido."}"""))
         var acked = 0
-        assertEquals(0, repo.drainOutbox(base, "secret") { acked++ })
+        assertEquals(0, repo.drainOutbox(base, "secret", onAcked = { acked++ }))
         assertEquals(0, acked)
         assertEquals(1, repo.pendingCount())
         assertTrue(repo.drainAuthBlocked)

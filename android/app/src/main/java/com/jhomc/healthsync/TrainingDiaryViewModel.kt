@@ -66,6 +66,9 @@ data class DiaryUiState(
     // --- B4: offline + dots ---
     val pending: Int = 0,
     val dots: Set<String> = emptySet(),
+    // --- Escritura nutricional en Health Connect (réplica eventual) ---
+    // null = sin info; "HC ✓" / "HC …" / "HC sin permiso" / "HC error".
+    val nutritionHc: String? = null,
 ) {
     fun title(): String = runCatching {
         LocalDate.parse(fecha).format(DateTimeFormatter.ofPattern("dd/MM/yy"))
@@ -84,6 +87,18 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
     private val repository: TrainingRepository by lazy {
         val db = HealthDatabaseBuilder.get(application)
         TrainingRepository(db.trainingCacheDao(), db.offlineDao())
+    }
+
+    // Publicación nutricional automática (diario confirmado -> Health Connect).
+    // Lazy para no pedir HC en pantallas solo-entreno; inyectable en tests.
+    internal var nutritionPublisherOverride: NutritionPublisher? = null
+    private val nutritionPublisher: NutritionPublisher by lazy {
+        nutritionPublisherOverride ?: run {
+            val app = getApplication<Application>()
+            val gateway = RealHealthConnectGateway(app)
+            val dao = HealthDatabaseBuilder.get(app).nutritionPublishDao()
+            NutritionPublisher(gateway, dao, HealthConnectManager(gateway))
+        }
     }
 
     private val _state = MutableStateFlow(DiaryUiState())
@@ -842,12 +857,19 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         }
         // Drenar la cola offline (oportunista, como health_outbox). Cada op
         // entregada o descartada limpia su fila de borrador: ya es servidor.
+        // El diario drenado publica en HC con el payload confirmado (nunca borrador).
         val drained = withContext(Dispatchers.IO) {
             ensureActive()
             safeIo {
-                repository.drainOutbox(apiBase2, token2) { acked ->
-                    if (acked.domain == "sesion") clearLocalRowSync(acked.fecha)
-                }
+                repository.drainOutbox(
+                    apiBase2, token2,
+                    onAcked = { acked ->
+                        if (acked.domain == "sesion") clearLocalRowSync(acked.fecha)
+                    },
+                    onNutritionFresh = { drainedFecha, freshDay ->
+                        publishNutritionAsync(drainedFecha, freshDay)
+                    },
+                )
             } ?: 0
         }
         val authBlocked = repository.drainAuthBlocked
@@ -1050,6 +1072,27 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             clearLocalRow(fecha)
             nutritionDraftBuffer = null
             if (result.kind == "entrenos") ensureTemplates(force = true)
+            if (result.kind == "alimentacion") {
+                // El undo nutricional restaura filas en servidor: reconciliar HC
+                // aunque la vista actual no sea alimentación (loadInternal no lo haría).
+                val undoFecha = result.fechaIso ?: fecha
+                viewModelScope.launch {
+                    val fresh = withContext(Dispatchers.IO) {
+                        when (val r = repository.loadNutritionDay(apiBase, token, undoFecha)) {
+                            is TrainingResult.Ok -> r.value
+                            else -> null
+                        }
+                    }
+                    if (fresh == null) {
+                        // Día vacío tras undo (o sin red para releer): intenta borrar
+                        // lo publicado; si no hay red para confirmar, el próximo
+                        // load/drenado lo reconciliará por hash.
+                        publishNutritionAsync(undoFecha, null)
+                    } else {
+                        publishNutritionAsync(undoFecha, fresh)
+                    }
+                }
+            }
             loadInternal(fecha)
             val msg = when (result.kind) {
                 "empty" -> "Nada que deshacer."
@@ -1063,6 +1106,34 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
 
     var nutritionDraftBuffer: Pair<String, List<FoodDraft>>? = null
 
+    /**
+     * Publicación en Health Connect en segundo plano (nunca bloquea el diario).
+     * Solo con dato confirmado por servidor; `null` = día borrado.
+     */
+    private fun publishNutritionAsync(fecha: String, day: NutritionDay?) {
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (day == null) nutritionPublisher.deleteDay(fecha)
+                    else nutritionPublisher.publishDay(day)
+                }.getOrElse { NutritionPublisher.Outcome.Failed("hc_error") }
+            }
+            // Solo pinta si seguimos en la misma fecha (evita parpadeo al pasear).
+            if (_state.value.fecha != fecha) return@launch
+            _state.value = when (outcome) {
+                is NutritionPublisher.Outcome.Published ->
+                    _state.value.copy(nutritionHc = "HC ✓ ${outcome.inserted}")
+                is NutritionPublisher.Outcome.Skipped ->
+                    if (outcome.reason == "up_to_date") _state.value.copy(nutritionHc = "HC ✓")
+                    else _state.value
+                is NutritionPublisher.Outcome.Failed ->
+                    _state.value.copy(
+                        nutritionHc = if (outcome.reason == "sin_permiso") "HC sin permiso" else "HC error",
+                    )
+            }
+        }
+    }
+
     private suspend fun loadNutritionInternal(fecha: String, creds: Pair<String, String>) {
         val (apiBase, token) = creds
         val result = withContext(Dispatchers.IO) { repository.loadNutritionDayCached(apiBase, token, fecha) }
@@ -1074,15 +1145,20 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         }
         val pending = withContext(Dispatchers.IO) { repository.pendingCount() }
         when (result) {
-            is TrainingRepository.CachedDay.Fresh -> _state.value = _state.value.copy(
-                loading = false,
-                nutrition = result.day,
-                stale = false,
-                error = null,
-                pending = pending,
-                foods = foods?.items ?: _state.value.foods,
-                nutrientLabels = foods?.nutrientLabels ?: _state.value.nutrientLabels,
-            )
+            is TrainingRepository.CachedDay.Fresh -> {
+                _state.value = _state.value.copy(
+                    loading = false,
+                    nutrition = result.day,
+                    stale = false,
+                    error = null,
+                    pending = pending,
+                    foods = foods?.items ?: _state.value.foods,
+                    nutrientLabels = foods?.nutrientLabels ?: _state.value.nutrientLabels,
+                )
+                // Reconciliación oportunista: edición web o undo dejan HC obsoleto;
+                // el publisher no-op si el hash ya está publicado.
+                publishNutritionAsync(fecha, result.day)
+            }
             is TrainingRepository.CachedDay.Stale -> _state.value = _state.value.copy(
                 loading = false,
                 nutrition = result.day,
@@ -1204,6 +1280,7 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             _state.value = when (res) {
                 is TrainingResult.Ok -> {
                     nutritionDraftBuffer = null
+                    publishNutritionAsync(fecha, res.value)
                     _state.value.copy(
                         saving = false,
                         nutrition = res.value,
@@ -1238,6 +1315,7 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             val res = withContext(Dispatchers.IO) { repository.deleteNutritionDay(apiBase, token, fecha) }
             if (res is TrainingResult.Ok) {
                 nutritionDraftBuffer = null
+                publishNutritionAsync(fecha, null)
                 loadNutritionInternal(fecha, creds)
                 _state.value = _state.value.copy(saving = false, notice = "Día eliminado.")
             } else if (res is TrainingResult.ApiError) {

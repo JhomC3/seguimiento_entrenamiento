@@ -15,6 +15,8 @@ data class SyncReport(
     val notice: String? = null,
     val quarantined: Int = 0,
     val quarantineSample: String? = null,
+    val nutritionPublished: Int = 0,
+    val nutritionFailed: Int = 0,
 )
 
 /**
@@ -62,6 +64,26 @@ object SyncExecutor {
         }
         val targetRow = repo.ensureTarget(target.url, target.name)
         val upload = repo.uploadPending(client, targetRow, token, store.deviceId())
+        // Nutrición → Health Connect: lo guardado en la web nunca pasa por el
+        // diario móvil, así que el sync empuja los días con datos aún no
+        // publicados (reconciliación por hash; lo publicado es no-op).
+        val nutrition = runCatching {
+            val apiBase = TrainingApiClient.apiBaseFor(target.url, BuildConfig.DEFAULT_API_BASE)
+                ?: return@runCatching null
+            onProgress("Nutrición…")
+            val pendingDiario = db.offlineDao().pendingAll()
+                .filter { it.domain == "diario" }
+                .map { it.fecha }
+                .toSet()
+            NutritionSyncPass.run(
+                apiBase = apiBase,
+                token = token,
+                gateway = gateway,
+                publishDao = db.nutritionPublishDao(),
+                manager = HealthConnectManager(gateway),
+                pendingFechas = pendingDiario,
+            )
+        }.getOrNull()
         return SyncReport(
             typesSynced = sourceResults.size,
             delivered = upload.delivered,
@@ -69,6 +91,8 @@ object SyncExecutor {
             permanentError = upload.permanentError,
             quarantined = upload.quarantined,
             quarantineSample = upload.quarantineSample,
+            nutritionPublished = nutrition?.published ?: 0,
+            nutritionFailed = nutrition?.failed ?: 0,
         )
     }
 }

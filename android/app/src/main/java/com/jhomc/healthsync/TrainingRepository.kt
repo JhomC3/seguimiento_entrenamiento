@@ -301,6 +301,7 @@ class TrainingRepository(
         apiBase: String,
         token: String,
         onAcked: suspend (PendingWriteEntity) -> Unit = {},
+        onNutritionFresh: suspend (fecha: String, day: NutritionDay?) -> Unit = { _, _ -> },
     ): Int {
         drainAuthBlocked = false
         var delivered = 0
@@ -319,7 +320,7 @@ class TrainingRepository(
                     offline.ack(pending.domain, pending.fecha)
                     onAcked(pending)
                     delivered++
-                    refreshAfterDrain(apiBase, token, pending)
+                    refreshAfterDrain(apiBase, token, pending, onNutritionFresh)
                 }
                 is TrainingResult.ApiError -> {
                     if (outcome.status == 401) {
@@ -328,6 +329,10 @@ class TrainingRepository(
                     }
                     offline.ack(pending.domain, pending.fecha)
                     onAcked(pending)
+                    // Descarte definitivo de un borrado también limpia HC vía callback.
+                    if (pending.domain == "diario" && pending.op == "DELETE") {
+                        onNutritionFresh(pending.fecha, null)
+                    }
                 }
                 is TrainingResult.NetworkError -> return delivered
             }
@@ -335,16 +340,25 @@ class TrainingRepository(
         return delivered
     }
 
-    private suspend fun refreshAfterDrain(apiBase: String, token: String, pending: PendingWriteEntity) {
+    private suspend fun refreshAfterDrain(
+        apiBase: String,
+        token: String,
+        pending: PendingWriteEntity,
+        onNutritionFresh: suspend (fecha: String, day: NutritionDay?) -> Unit = { _, _ -> },
+    ) {
         // Tras entregar, la caché refleja el servidor (no el borrador).
         if (pending.domain == "sesion" && pending.op == "SAVE") {
             val fresh = client.getSession(apiBase, token, pending.fecha)
             if (fresh is TrainingResult.Ok) persist(fresh.value)
         } else if (pending.domain == "diario" && pending.op == "SAVE") {
             val fresh = client.getNutritionDay(apiBase, token, pending.fecha)
-            if (fresh is TrainingResult.Ok) persistNutrition(pending.fecha, fresh.value)
+            if (fresh is TrainingResult.Ok) {
+                persistNutrition(pending.fecha, fresh.value)
+                onNutritionFresh(pending.fecha, fresh.value)
+            }
         } else if (pending.op == "DELETE" && pending.domain == "diario") {
             offline.clearNutrition(pending.fecha)
+            onNutritionFresh(pending.fecha, null)
         }
     }
 
