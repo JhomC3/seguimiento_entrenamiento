@@ -62,16 +62,6 @@ export function syncEditorFromContent() {
     captureBaseline();
     updateEditActions();
     syncEditButtons();
-    syncSessionEmptyState();
-}
-
-export function syncSessionEmptyState() {
-    const editor = document.getElementById('session-editor');
-    const st = document.getElementById('editor-state');
-    if (!editor || !st) return;
-    const empty = editor.querySelector('[data-empty-state="session"]');
-    if (!empty) return;
-    empty.hidden = st.dataset.hasData === '1';
 }
 
 export function setPanelReadonly() {
@@ -357,14 +347,15 @@ export function renumberRows() {
 }
 
 /* ---------- Altura del panel: UNA medición estandarizada, constante en todo estado ---------- */
-const ROWS_VISIBLE = 17.5;
-const PANEL_BUFFER = 2;
-const ROW_BORDER_PX = 1;
+/* Filas enteras visibles (nunca media fila rebanada al borde). Los
+   separadores son solo-pintado (inset, sin layout): el paso es rowH. */
+const ROWS_VISIBLE = 18;
 let rowHMeasured = null;
 export function fitRowsToPanel() {
     const editor = document.getElementById('session-editor');
     const tbody = document.getElementById('set-rows');
     if (!editor || !tbody) return;
+    const scroller = editor.querySelector('.table-scroll');
     const thead = editor.querySelector('.table-scroll thead');
     const theadH = thead ? thead.getBoundingClientRect().height : 20;
     if (rowHMeasured === null) {
@@ -379,8 +370,10 @@ export function fitRowsToPanel() {
             rowHMeasured = 28;
         }
     }
-    // Fórmula única: 18 filas + 17 bordes divide-y (1px c/u, solo filas 2..18) + margen único.
-    const full = theadH + ROWS_VISIBLE * rowHMeasured + (ROWS_VISIBLE - 1) * ROW_BORDER_PX + PANEL_BUFFER;
+    // Fórmula única: 18 filas exactas menos la scrollbar horizontal clásica
+    // (0 en overlay) para alinear el borde.
+    const hScrollBar = scroller ? scroller.offsetHeight - scroller.clientHeight : 0;
+    const full = theadH + ROWS_VISIBLE * rowHMeasured - hScrollBar;
     editor.style.setProperty('--table-h', full + 'px');
 }
 

@@ -1,8 +1,6 @@
 <div class="panel panel-default">
     <h3 class="panel-title panel-title-neon panel-title-divider">Entrenamientos</h3>
-    {% if not plantillas %}
-    <p class="text-xs text-neutral-400 text-center">Aún no hay entrenos.<br>Guarda uno desde el editor.</p>
-    {% else %}
+    {% if plantillas %}
     <div id="plantillas-list" class="flex flex-col gap-2.5">
         {% for p in plantillas %}
         <div class="pt-card card" id="pt-card-{{ p.id }}" data-pt-id="{{ p.id }}" data-pt-nombre="{{ p.nombre }}">

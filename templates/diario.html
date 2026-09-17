@@ -36,7 +36,6 @@
             <div id="editor-notice" role="status" aria-live="polite" aria-atomic="true"></div>
             <div id="suggestion-banner" hx-get="/sugerencia/banner?fecha={{ fecha_iso }}" hx-trigger="load" hx-swap="innerHTML"></div>
             <div id="save-outcome" data-ok="0" hidden></div>
-            {% if not session_has_data %}<p class="empty-state daily-empty-state" data-empty-state="session" role="status">No hay entrenamiento guardado para este día.</p>{% endif %}
             <div id="session-editor-wrap">{{ editor_html | safe }}</div>
         </section>
         <section id="cardio-day" class="daily-secondary-card">{{ cardio_html | safe }}</section>
@@ -51,7 +50,6 @@
             </div>
         </div>
         <section id="nutrition-panel" data-editmode="0" class="daily-editor-card panel panel-default">
-            {% if not food_has_data %}<p class="empty-state daily-empty-state" data-empty-state="nutrition" role="status">No hay alimentación guardada para este día.</p>{% endif %}
             <div id="nutrition-editor-wrap">{{ nutrition_editor_html | safe }}</div>
         </section>
     </section>

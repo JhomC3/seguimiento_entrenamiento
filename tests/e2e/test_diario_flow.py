@@ -669,3 +669,66 @@ def test_diario_hiit_pide_velocidad_dificultad(page, server, server_db_path):
     finally:
         conn.close()
     assert r == ("HIIT", None, None, None, 12.3, 7.5)
+
+
+def test_session_row_actions_pill_on_hover_only_in_edit(page, server):
+    """La píldora +/− de sesión aparece en hover solo en edición (D)."""
+    _open_diario(page, server)
+    _fill_row(page, 0)
+    _save_session(page)
+    expect(page.locator("#editor-state")).to_have_attribute("data-readonly", "1")
+    row = page.locator("#set-rows .set-row").first
+    row.hover()
+    page.wait_for_timeout(250)
+    assert (
+        page.evaluate(
+            "getComputedStyle(document.querySelector('#set-rows .set-row .row-actions')).opacity"
+        )
+        == "0"
+    )
+    page.locator('[data-action="toggle-edit"]').click()
+    row.hover()
+    page.wait_for_timeout(250)
+    box = page.evaluate(
+        """() => {
+            const pill = document.querySelector('#set-rows .set-row .row-actions');
+            const p = pill.getBoundingClientRect();
+            const table = document.querySelector(
+                '#session-editor .table-scroll table'
+            ).getBoundingClientRect();
+            return {
+                opacity: getComputedStyle(pill).opacity,
+                pillRight: p.right,
+                tableRight: table.right,
+                position: getComputedStyle(pill.closest('td')).position,
+            };
+        }"""
+    )
+    assert box["opacity"] == "1", box
+    assert box["position"] == "sticky", box
+    assert abs(box["pillRight"] - box["tableRight"]) <= 4, box
+
+
+def test_session_no_sliced_row_at_fold(page, server):
+    """Como en nutrición: el borde cae en límite de fila, sin rebanadas."""
+    _open_diario(page, server)
+    for _ in range(21):
+        page.locator('#set-rows [data-action="row-add"]').first.click()
+    page.evaluate("document.querySelector('#session-editor .table-scroll').scrollTop = 0")
+    page.wait_for_timeout(150)
+    box = page.evaluate(
+        """() => {
+            const sc = document.querySelector('#session-editor .table-scroll');
+            const s = sc.getBoundingClientRect();
+            const rows = Array.from(sc.querySelectorAll('tbody .set-row'));
+            const full = rows.filter(r => r.getBoundingClientRect().bottom <= s.bottom + 1);
+            const partial = rows.filter(r => {
+                const b = r.getBoundingClientRect();
+                return b.top < s.bottom - 1 && b.bottom > s.bottom + 1;
+            });
+            return { n: rows.length, fullCount: full.length, partial: partial.length };
+        }"""
+    )
+    assert box["n"] >= 20, box
+    assert box["partial"] == 0, box
+    assert box["fullCount"] == 18, box

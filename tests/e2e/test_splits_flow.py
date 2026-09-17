@@ -250,8 +250,8 @@ def _card_rect(page, day, item=None):
 
 def test_pagina_estructura_sin_overflow(page, server):
     _goto_splits(page, server)
-    # Estado vacío con CTA.
-    expect(page.locator("#splits-section")).to_contain_text("Todavía no hay splits guardados")
+    # Estado vacío: solo CTA, sin letrero.
+    expect(page.locator("#splits-section")).not_to_contain_text("Todavía no hay splits guardados")
     expect(page.locator('#splits-section [data-action="split-new"]')).to_be_visible()
     # Sin panel ledger v3 ni página fragmento.
     expect(page.locator("#split-summary-panel")).to_have_count(0)
@@ -764,9 +764,7 @@ def test_eliminar_split_con_confirmacion(page, server):
     item.locator('[data-action="split-delete"]').click()
     expect(page.locator("#confirm-modal")).to_be_visible()
     page.locator("#confirm-save").click()
-    expect(page.locator("#splits-section")).to_contain_text(
-        "Todavía no hay splits guardados", timeout=4000
-    )
+    expect(page.locator('#splits-empty [data-action="split-new"]')).to_be_visible(timeout=4000)
 
 
 def test_ctrlz_no_restaura_split_guardado(page, server):

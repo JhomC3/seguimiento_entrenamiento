@@ -154,6 +154,51 @@ def test_undo_alimentacion_restores_parametros(tmp_path):
     assert params["kcal_objetivo"] == 2750.0
 
 
+def test_save_diary_rellena_micros_dri_en_dia_nuevo(tmp_path):
+    from src.database import get_parametros_diarios
+
+    db = _setup_db(tmp_path)
+    save_diary_with_undo_snapshot(
+        db,
+        "2025-04-24",
+        [NutritionEntryInput("Avena", "120")],
+        parametros={"peso_kg": 69.0, "kcal_objetivo": 2750.0},
+    )
+    params = get_parametros_diarios(db, "2025-04-24")
+    assert params["peso_kg"] == 69.0
+    assert params["fibra_objetivo"] == 38.0
+    assert params["magnesio_objetivo"] == 420.0
+    assert params["potasio_objetivo"] == 3400.0
+    assert params["sodio_objetivo"] == 1500.0
+    assert params["vitamina_b12_objetivo"] == 2.4
+    assert params["vitamina_b6_objetivo"] == 1.3
+    assert params["selenio_objetivo"] == 55.0
+
+
+def test_save_diary_repara_micros_en_cero_y_respeta_no_cero(tmp_path):
+    import sqlite3
+
+    from src.database import get_parametros_diarios
+
+    db = _setup_db(tmp_path)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO parametros_diarios (fecha, fibra_objetivo) VALUES ('2025-04-24', 25.0)"
+    )
+    conn.commit()
+    conn.close()
+    save_diary_with_undo_snapshot(
+        db,
+        "2025-04-24",
+        [NutritionEntryInput("Avena", "120")],
+        parametros={"peso_kg": 69.0, "kcal_objetivo": 2750.0},
+    )
+    params = get_parametros_diarios(db, "2025-04-24")
+    assert params["fibra_objetivo"] == 25.0
+    assert params["potasio_objetivo"] == 3400.0
+    assert params["selenio_objetivo"] == 55.0
+
+
 def test_stack_keeps_max_10_mixed_actions(tmp_path):
     db = _setup_db(tmp_path)
     for i in range(12):

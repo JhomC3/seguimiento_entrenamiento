@@ -219,9 +219,14 @@ class TestCreateAlimento:
         assert MICRO_DRI_TARGETS["potasio_objetivo"] == 3400.0
         assert MICRO_DRI_TARGETS["sodio_objetivo"] == 1500.0
         assert MICRO_DRI_TARGETS["vitamina_d_objetivo"] == 15.0
+        assert MICRO_DRI_TARGETS["vitamina_e_objetivo"] == 15.0
+        assert MICRO_DRI_TARGETS["vitamina_k_objetivo"] == 120.0
+        assert MICRO_DRI_TARGETS["folato_objetivo"] == 400.0
         assert MICRO_DRI_TARGETS["vitamina_b12_objetivo"] == 2.4
+        assert MICRO_DRI_TARGETS["vitamina_b6_objetivo"] == 1.3
         assert MICRO_DRI_TARGETS["yodo_objetivo"] == 150.0
         assert MICRO_DRI_TARGETS["selenio_objetivo"] == 55.0
+        assert len(MICRO_DRI_TARGETS) == 17
         assert MICRO_UL["vitamina_a"] == 3000.0
         assert MICRO_UL["sodio"] == 2300.0
         assert MICRO_UL["fibra"] is None

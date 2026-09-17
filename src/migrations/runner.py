@@ -23,6 +23,7 @@ from src.migrations import (
     v017_hiit_velocidad_dificultad,
     v018_nutrition_micro_targets,
     v019_extra_micros,
+    v020_dri_ceros,
 )
 
 MIGRATIONS = [
@@ -44,6 +45,7 @@ MIGRATIONS = [
     v017_hiit_velocidad_dificultad,
     v018_nutrition_micro_targets,
     v019_extra_micros,
+    v020_dri_ceros,
 ]
 
 _CURRENT_VERSION = max(m.VERSION for m in MIGRATIONS)

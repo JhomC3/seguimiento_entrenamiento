@@ -1,5 +1,5 @@
 {# Contenido de #splits-section: lista de items acordeón (splits guardados) o
-   estado vacío con CTA "Crear nuevo split". Los items llegan ya renderizados
+   panel con CTA "Crear nuevo split". Los items llegan ya renderizados
    (eager) en `splits_html`. #}
 {% if splits_html %}
 <div id="splits-list" class="flex flex-col gap-4">
@@ -7,7 +7,6 @@
 </div>
 {% else %}
 <div class="panel panel-default split-empty-state" id="splits-empty">
-    <p class="empty-state split-empty-state-title">Todavía no hay splits guardados</p>
     <button type="button" data-action="split-new" class="btn btn-create">Crear nuevo split</button>
 </div>
 {% endif %}

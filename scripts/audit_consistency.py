@@ -151,7 +151,6 @@ COMPONENT_CLASSES = {
     "split-metric",
     "split-empty",
     "split-empty-state",
-    "split-empty-state-title",
 }
 
 

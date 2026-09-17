@@ -32,7 +32,7 @@ from src.database import (
 )
 from src.db_connection import read_connection, transaction
 from src.models import Session, SplitInput, Template, TemplateInput
-from src.nutrition_service import delete_diary, save_diary
+from src.nutrition_service import MICRO_DRI_TARGETS, delete_diary, save_diary
 from src.split_service import delete_split as _delete_split
 from src.split_service import save_split, set_active_split
 from src.template_service import edit_template, save_template
@@ -202,6 +202,23 @@ def set_active_split_with_undo_snapshot(db_path: str, split_id: int) -> None:
     _journal(db_path, "splits", {"before": _rows_to_dicts(before)})
 
 
+def _parametros_con_dri(parametros: dict, current: dict | None = None) -> dict:
+    """Rellena micros ausentes o en 0 con los DRI (0 = ausencia).
+
+    El formulario y la API solo envían macros (peso/factores/kcal); sin esto,
+    guardar un día nuevo dejaba los 17 objetivos en 0 y la fila Objetivo
+    quedaba vacía. Precedencia: valor explícito no-cero > guardado no-cero >
+    DRI (los importados de la hoja se conservan). Mismo idioma que
+    scripts/import_nutrition.py.
+    """
+    out = dict(parametros)
+    current = current or {}
+    for key, dri in MICRO_DRI_TARGETS.items():
+        if not out.get(key):
+            out[key] = current.get(key) or dri
+    return out
+
+
 def save_diary_with_undo_snapshot(
     db_path: str, fecha_iso: str, entries, parametros: dict | None = None
 ) -> None:
@@ -210,7 +227,7 @@ def save_diary_with_undo_snapshot(
     backup_or_raise(db_path)
     save_diary(db_path, fecha_iso, entries)
     if parametros:
-        save_parametros_diarios(db_path, fecha_iso, parametros)
+        save_parametros_diarios(db_path, fecha_iso, _parametros_con_dri(parametros, params_before))
     _push_alimentacion(
         db_path,
         fecha_iso,
@@ -258,7 +275,9 @@ def undo_last_action(db_path: str, fecha: str) -> dict:
             if entry.get("params_before") is None:
                 delete_parametros_diarios(db_path, fecha_iso)
             else:
-                save_parametros_diarios(db_path, fecha_iso, entry["params_before"])
+                save_parametros_diarios(
+                    db_path, fecha_iso, _parametros_con_dri(entry["params_before"])
+                )
         restored = get_diario_by_fecha(db_path, fecha_iso)
         has_data = "1" if restored else "0"
         _pop_top(db_path)

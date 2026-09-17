@@ -72,9 +72,6 @@
             </div>
             {% endfor %}
             {% endif %}
-            <p class="empty-state split-empty" {% if split and split.items | selectattr('dia', 'equalto', day) | list %}hidden{% endif %}>
-                Suelta ejercicios aquí
-            </p>
         </div>
     </div>
     {% endfor %}

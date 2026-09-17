@@ -18,7 +18,6 @@
 .daily-tools { display: flex; align-items: center; gap: .5rem; }
 .daily-date-heading { display: flex; align-items: baseline; gap: .7rem; margin: 1.25rem 0 1rem; flex-wrap: wrap; }
 .daily-date-heading .panel-title, .daily-view-header .panel-title { margin: 0; }
-.daily-empty-state { margin: 0; padding: .5rem .75rem; border: 1px solid var(--t-surfaces-neutral-800); border-radius: 8px; color: var(--t-surfaces-neutral-400); font-size: 12px; }
 .daily-tabs { display: flex; gap: .25rem; border-bottom: 1px solid var(--t-surfaces-neutral-800); margin-bottom: 1.25rem; }
 .daily-tabs [role="tab"] { padding: .7rem 1rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--t-surfaces-neutral-400); font-size: 12px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
 .daily-tabs [role="tab"][aria-selected="true"] { color: var(--t-burgundy-400); border-bottom-color: var(--t-burgundy-600); }

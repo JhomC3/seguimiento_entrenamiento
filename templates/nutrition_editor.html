@@ -105,60 +105,60 @@
             </label>
         </div>
 
-        <div class="table-scroll overflow-x-auto overflow-y-auto">
+        <div class="table-scroll overflow-x-auto overflow-y-auto" tabindex="0" role="region" aria-label="Tabla de alimentación del día: desplázate horizontalmente para ver todos los nutrientes">
             <table class="w-full text-left border-collapse text-xs">
                 <caption class="sr-only">Diario de alimentación del día</caption>
                 <colgroup>
                     <col class="food-col">
                     <col class="qty-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
-                    <col class="nutrient-col">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-m">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-m">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-s">
+                    <col class="nutrient-col-m">
                     <col class="set-actions-column">
                 </colgroup>
                 <thead>
                     <tr>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider">Alimento</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Cantidad</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Calorías (kcal)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Carbohidratos (g)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Proteína (g)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Grasa (g)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Fibra (g)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Hierro (mg)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Calcio (mg)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Vitamina C (mg)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Vitamina A</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Magnesio (mg)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Zinc (mg)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Potasio (mg)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Sodio (mg)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Vitamina D (mcg)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Vitamina E (mg)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Vitamina K (mcg)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Folato (mcg)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Vitamina B12 (mcg)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Vitamina B6 (mg)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Yodo (mcg)</th>
-                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right">Selenio (mcg)</th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider" title="Alimento" aria-label="Alimento">Alimento</th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Cantidad (g)" aria-label="Cantidad (g)"><span class="nutri-h">Cant.</span><span class="nutri-u">g</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Calorías (kcal)" aria-label="Calorías (kcal)">kcal</th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Carbohidratos (g)" aria-label="Carbohidratos (g)"><span class="nutri-h">Carb</span><span class="nutri-u">g</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Proteína (g)" aria-label="Proteína (g)"><span class="nutri-h">Prot</span><span class="nutri-u">g</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Grasa (g)" aria-label="Grasa (g)"><span class="nutri-h">Grasa</span><span class="nutri-u">g</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Fibra (g)" aria-label="Fibra (g)"><span class="nutri-h">Fibra</span><span class="nutri-u">g</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Hierro (mg)" aria-label="Hierro (mg)"><span class="nutri-h">Hierro</span><span class="nutri-u">mg</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Calcio (mg)" aria-label="Calcio (mg)"><span class="nutri-h">Calcio</span><span class="nutri-u">mg</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Vitamina C (mg)" aria-label="Vitamina C (mg)"><span class="nutri-h">Vit C</span><span class="nutri-u">mg</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Vitamina A" aria-label="Vitamina A">Vit A</th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Magnesio (mg)" aria-label="Magnesio (mg)"><span class="nutri-h">Magnesio</span><span class="nutri-u">mg</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Zinc (mg)" aria-label="Zinc (mg)"><span class="nutri-h">Zinc</span><span class="nutri-u">mg</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Potasio (mg)" aria-label="Potasio (mg)"><span class="nutri-h">Potasio</span><span class="nutri-u">mg</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Sodio (mg)" aria-label="Sodio (mg)"><span class="nutri-h">Sodio</span><span class="nutri-u">mg</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Vitamina D (mcg)" aria-label="Vitamina D (mcg)"><span class="nutri-h">Vit D</span><span class="nutri-u">mcg</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Vitamina E (mg)" aria-label="Vitamina E (mg)"><span class="nutri-h">Vit E</span><span class="nutri-u">mg</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Vitamina K (mcg)" aria-label="Vitamina K (mcg)"><span class="nutri-h">Vit K</span><span class="nutri-u">mcg</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Folato (mcg)" aria-label="Folato (mcg)"><span class="nutri-h">Folato</span><span class="nutri-u">mcg</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Vitamina B12 (mcg)" aria-label="Vitamina B12 (mcg)"><span class="nutri-h">B12</span><span class="nutri-u">mcg</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Vitamina B6 (mg)" aria-label="Vitamina B6 (mg)"><span class="nutri-h">B6</span><span class="nutri-u">mg</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Yodo (mcg)" aria-label="Yodo (mcg)"><span class="nutri-h">Yodo</span><span class="nutri-u">mcg</span></th>
+                        <th scope="col" class="py-0.5 px-1.5 font-bold text-neutral-400 uppercase tracking-wider text-right" title="Selenio (mcg)" aria-label="Selenio (mcg)"><span class="nutri-h">Selenio</span><span class="nutri-u">mcg</span></th>
                         <th class="py-0.5 px-1.5"></th>
                     </tr>
                     <tr class="nutri-target-row font-black text-neutral-200">
