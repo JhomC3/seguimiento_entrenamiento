@@ -48,6 +48,8 @@ class SyncWorker(
                         .putInt("types_synced", report.typesSynced)
                         .putInt("delivered", report.delivered)
                         .putInt("failed", report.failed)
+                        .putInt("quarantined", report.quarantined)
+                        .putString("quarantine_sample", report.quarantineSample ?: "")
                         .putString("permanent_error", report.permanentError ?: "")
                         .build(),
                 )

@@ -44,14 +44,23 @@ data class RecordTypeEntry(
      * cruda es densa y la paginación del proveedor es poco fiable.
      */
     val aggregated: Boolean = false,
+    /**
+     * Agregado por SUMA HORARIA (STEPS_H1 y cía.): como [aggregated], pero el
+     * tramo es 1 h con el valor sumado. [historyDays] acota el bootstrap:
+     * corte hacia adelante (el histórico crudo ya está en el servidor).
+     */
+    val hourlySum: Boolean = false,
+    val historyDays: Int = 30,
 )
 
 object RecordTypes {
 
     /**
      * Catálogo ESENCIAL: solo los tipos que el dashboard realmente consume.
-     * Los 13 del núcleo (Samsung Health los escribe) + 4 añadidos a petición
-     * (distancia, VO2 máx, saturación de oxígeno y tasa metabólica basal).
+     * Núcleo (Samsung Health los escribe) + añadidos a petición (distancia,
+     * VO2 máx, saturación de oxígeno y tasa metabólica basal). Pasos, calorías
+     * y distancia viajan como TOTALES HORARIOS (*_H1, ver HourlySumBucketizer):
+     * su granularidad cruda no aporta al dashboard y saturaba el outbox.
      * Excluidos a propósito (superficie del SDK 1.1.0 que no aporta al
      * dashboard): elevación, velocidad, cadencias, potencia, pisos, empujes
      * de silla, HRV, frecuencia respiratoria, temperaturas, hidratación,
@@ -60,12 +69,12 @@ object RecordTypes {
      */
     val all: List<RecordTypeEntry> = listOf(
         // --- Núcleo (Samsung Health los escribe) ---
-        entry("STEPS", StepsRecord::class, MappingFamily.INTERVAL, core = true),
+        entry("STEPS_H1", StepsRecord::class, MappingFamily.INTERVAL, core = true, hourlySum = true, historyDays = 4),
         entry("HEART_RATE", HeartRateRecord::class, MappingFamily.SERIES, core = true, aggregated = true),
         entry("SLEEP_SESSION", SleepSessionRecord::class, MappingFamily.SESSION, core = true),
         entry("EXERCISE_SESSION", ExerciseSessionRecord::class, MappingFamily.SESSION, core = true),
-        entry("ACTIVE_CALORIES_BURNED", ActiveCaloriesBurnedRecord::class, MappingFamily.INTERVAL, core = true),
-        entry("TOTAL_CALORIES_BURNED", TotalCaloriesBurnedRecord::class, MappingFamily.INTERVAL, core = true),
+        entry("ACTIVE_CALORIES_H1", ActiveCaloriesBurnedRecord::class, MappingFamily.INTERVAL, core = true, hourlySum = true, historyDays = 4),
+        entry("TOTAL_CALORIES_H1", TotalCaloriesBurnedRecord::class, MappingFamily.INTERVAL, core = true, hourlySum = true, historyDays = 4),
         entry("RESTING_HEART_RATE", RestingHeartRateRecord::class, MappingFamily.INSTANT, core = true),
         entry("WEIGHT", WeightRecord::class, MappingFamily.COMPOSITION, core = true),
         entry("HEIGHT", HeightRecord::class, MappingFamily.COMPOSITION, core = true),
@@ -75,7 +84,7 @@ object RecordTypes {
         entry("LEAN_BODY_MASS", LeanBodyMassRecord::class, MappingFamily.COMPOSITION, core = true),
 
         // --- Añadidos a petición del usuario ---
-        entry("DISTANCE", DistanceRecord::class, MappingFamily.INTERVAL),
+        entry("DISTANCE_H1", DistanceRecord::class, MappingFamily.INTERVAL, hourlySum = true, historyDays = 4),
         entry("VO2_MAX", Vo2MaxRecord::class, MappingFamily.INSTANT),
         entry("OXYGEN_SATURATION", OxygenSaturationRecord::class, MappingFamily.SERIES),
         entry("BASAL_METABOLIC_RATE", BasalMetabolicRateRecord::class, MappingFamily.INSTANT),
@@ -103,6 +112,8 @@ private fun entry(
     core: Boolean = false,
     sensitivity: Sensitivity = Sensitivity.NORMAL,
     aggregated: Boolean = false,
+    hourlySum: Boolean = false,
+    historyDays: Int = 30,
 ) = RecordTypeEntry(
     typeName = typeName,
     recordClass = recordClass,
@@ -111,4 +122,6 @@ private fun entry(
     sensitivity = sensitivity,
     core = core,
     aggregated = aggregated,
+    hourlySum = hourlySum,
+    historyDays = historyDays,
 )

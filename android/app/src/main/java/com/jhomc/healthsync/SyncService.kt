@@ -165,6 +165,10 @@ class SyncService : Service() {
         fun summaryOf(report: SyncReport): String = buildString {
             append("Tipos leídos: ${report.typesSynced} | Entregados: ${report.delivered}")
             if (report.failed > 0) append(" | Fallos: ${report.failed}")
+            if (report.quarantined > 0) {
+                append(" | Cuarentena: ${report.quarantined}")
+                report.quarantineSample?.let { append(" ($it)") }
+            }
             report.notice?.let { append(" | Aviso: $it") }
             report.permanentError?.let { append(" | Error: $it") }
         }
@@ -199,6 +203,12 @@ class SyncService : Service() {
                     "El token del APK no coincide con data/hc_sync_token: " +
                     "recompila el APK debug (el token se embebe al compilar) " +
                     "sin regenerar el archivo, y arranca con ./scripts/start_server.sh."
+            }
+            if (report.permanentError?.contains("400") == true) {
+                return "El servidor rechazó un lote (HTTP 400).\n" +
+                    "Las ops inválidas se aíslan en cuarentena y el resto se " +
+                    "entrega: revisa el contador de Cuarentena del resumen. " +
+                    "Si se repite en cada sync, actualiza la app."
             }
             return null
         }

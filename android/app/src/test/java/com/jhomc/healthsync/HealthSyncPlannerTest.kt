@@ -25,14 +25,15 @@ class HealthSyncPlannerTest {
 
     @Test
     fun `exercise and calories sync at noon and evening`() {
-        for (name in listOf("EXERCISE_SESSION", "ACTIVE_CALORIES_BURNED", "TOTAL_CALORIES_BURNED")) {
+        for (name in listOf("EXERCISE_SESSION", "ACTIVE_CALORIES_H1", "TOTAL_CALORIES_H1")) {
             assertEquals(setOf(13, 19), HealthSyncPlanner.windowHours(name))
         }
     }
 
     @Test
     fun `steps and heart rate sync in the evening window`() {
-        assertEquals(setOf(19), HealthSyncPlanner.windowHours("STEPS"))
+        assertEquals(setOf(19), HealthSyncPlanner.windowHours("STEPS_H1"))
+        assertEquals(setOf(19), HealthSyncPlanner.windowHours("DISTANCE_H1"))
         assertEquals(setOf(19), HealthSyncPlanner.windowHours("HEART_RATE"))
     }
 
@@ -61,7 +62,7 @@ class HealthSyncPlannerTest {
         // 19:00 en punto → no cuenta la hora actual: mañana a las 19:00.
         assertEquals(
             at("2026-08-09T19:00:00Z"),
-            HealthSyncPlanner.nextDueMs("STEPS", at("2026-08-08T19:00:00Z"), utc),
+            HealthSyncPlanner.nextDueMs("STEPS_H1", at("2026-08-08T19:00:00Z"), utc),
         )
     }
 }

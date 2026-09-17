@@ -129,6 +129,21 @@ interface HealthDao {
     suspend fun bumpAttempt(targetId: Long, hcId: String)
 
     /**
+     * Reparo: re-encola los registros activos de los tipos dados que no tienen
+     * operación pendiente (p. ej. crudo cuarentenado por un pre-vuelo demasiado
+     * estricto). Idempotente por PK: nunca duplica.
+     */
+    @Query(
+        "INSERT OR IGNORE INTO health_outbox " +
+            "(target_id, hc_id, operation, revision, attempt_count, created_at_epoch_ms) " +
+            "SELECT :targetId, hc_id, 'UPSERT', last_modified_epoch_ms, 0, :nowMs " +
+            "FROM health_records WHERE record_type IN (:types) " +
+            "AND deleted_at_epoch_ms IS NULL " +
+            "AND hc_id NOT IN (SELECT hc_id FROM health_outbox WHERE target_id = :targetId)",
+    )
+    suspend fun requeueByTypes(targetId: Long, types: List<String>, nowMs: Long)
+
+    /**
      * Transactionally persists a change (upsert or logical delete) and
      * enqueues the matching outbox operation for every active target.
      * INSERT OR REPLACE on (target_id, hc_id) guarantees at most one pending
@@ -222,7 +237,7 @@ interface HealthDao {
         EntrenoDraftEntity::class,
         WorkIntervalEntity::class,
     ],
-    version = 9,
+    version = 11,
     exportSchema = false,
 )
 abstract class HealthDatabase : RoomDatabase() {
@@ -234,15 +249,25 @@ abstract class HealthDatabase : RoomDatabase() {
     abstract fun workDao(): WorkDao
 }
 
+/** Tipos crudos retirados del catálogo. El SERVIDOR los sigue aceptando como
+ *  histórico (allow-list), aunque el dispositivo ya no los produce: el pre-vuelo
+ *  de subida debe aceptarlos para drenar el pendiente, no cuarentenarlos. */
+internal val RETIRED_RAW_TYPES = listOf(
+    "STEPS",
+    "ACTIVE_CALORIES_BURNED",
+    "TOTAL_CALORIES_BURNED",
+    "DISTANCE",
+)
+
 /** Tipos esenciales del catálogo (RecordTypes.kt) + el agregado interno de HR. */
 internal val ESSENTIAL_RECORD_TYPES = listOf(
-    "STEPS",
+    "STEPS_H1",  // total horario (corte hacia adelante; el crudo STEPS es histórico)
     "HEART_RATE",
     "HEART_RATE_5MIN",  // agregado por tramos de 5 min (fuera del catálogo HC)
     "SLEEP_SESSION",
     "EXERCISE_SESSION",
-    "ACTIVE_CALORIES_BURNED",
-    "TOTAL_CALORIES_BURNED",
+    "ACTIVE_CALORIES_H1",  // total horario (el crudo es histórico)
+    "TOTAL_CALORIES_H1",  // total horario (el crudo es histórico)
     "RESTING_HEART_RATE",
     "WEIGHT",
     "HEIGHT",
@@ -250,11 +275,79 @@ internal val ESSENTIAL_RECORD_TYPES = listOf(
     "BONE_MASS",
     "BODY_WATER_MASS",
     "LEAN_BODY_MASS",
-    "DISTANCE",
+    "DISTANCE_H1",  // total horario (el crudo DISTANCE es histórico)
     "VO2_MAX",
     "OXYGEN_SATURATION",
     "BASAL_METABOLIC_RATE",
 )
+
+/** v10: retira los 4 tipos crudos en favor de los agregados horarios *_H1
+ *  (corte hacia adelante): estado, espejo y outbox pendiente. Lo ya entregado
+ *  al servidor no se toca (histórico crudo; el servidor prefiere el agregado
+ *  por día cuando existe). */
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    private val retired = RETIRED_RAW_TYPES
+
+    override fun migrate(db: SupportSQLiteDatabase) {
+        val placeholders = retired.joinToString(",") { "?" }
+        // Fuera del outbox primero: el hc_id es la única clave de unión.
+        db.execSQL(
+            "DELETE FROM health_outbox WHERE hc_id IN (" +
+                "SELECT hc_id FROM health_records WHERE record_type IN ($placeholders))",
+            retired.toTypedArray(),
+        )
+        db.execSQL(
+            "DELETE FROM health_records WHERE record_type IN ($placeholders)",
+            retired.toTypedArray(),
+        )
+        db.execSQL(
+            "DELETE FROM health_sync_state WHERE record_type IN ($placeholders)",
+            retired.toTypedArray(),
+        )
+    }
+}
+
+/**
+ * v11: converge los linajes divergentes con versión 10 (dos ramas llegaron a
+ * v10 con distinto esquema: la de nutrición añade `nutrition_publish`) y
+ * normaliza artefactos históricos de DDL (defaults de `training_cache`,
+ * índice de `work_intervals`). Sin esto, Room rechaza la apertura ("cannot
+ * verify data integrity" si coincide versión, "didn't properly handle" si
+ * migra). Solo DDL: ningún dato de salud se toca.
+ */
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Resto de la rama de nutrición (unmerged): su dato vive en el
+        // servidor/diario, la tabla local es caché reconstruible.
+        db.execSQL("DROP TABLE IF EXISTS nutrition_publish")
+        // training_cache con el DDL exacto de las entidades (DEFAULT NULL en
+        // las columnas HIIT): conserva todas las filas.
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS training_cache_new (" +
+                "rowId INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "fecha TEXT NOT NULL, set_orden INTEGER NOT NULL, " +
+                "ejercicio TEXT NOT NULL, kg REAL, reps REAL, rir REAL, " +
+                "descanso_seg REAL, rm REAL, velocidad_kmh REAL DEFAULT NULL, " +
+                "dificultad REAL DEFAULT NULL)",
+        )
+        db.execSQL(
+            "INSERT OR IGNORE INTO training_cache_new " +
+                "(rowId, fecha, set_orden, ejercicio, kg, reps, rir, descanso_seg, rm, velocidad_kmh, dificultad) " +
+                "SELECT rowId, fecha, set_orden, ejercicio, kg, reps, rir, descanso_seg, rm, velocidad_kmh, dificultad " +
+                "FROM training_cache",
+        )
+        db.execSQL("DROP TABLE IF EXISTS training_cache")
+        db.execSQL("ALTER TABLE training_cache_new RENAME TO training_cache")
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_training_cache_fecha ON training_cache (fecha)",
+        )
+        // Índice con el nombre exacto que declaran las entidades.
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_work_intervals_fecha_start " +
+                "ON work_intervals (fecha, start_wall_ms)",
+        )
+    }
+}
 
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -275,23 +368,47 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
  * v3: purga los tipos recortados del catálogo (22 tipos no esenciales) de las
  * tablas locales: estado de sync, registros espejo y operaciones pendientes del
  * outbox. Los datos ya entregados al servidor no se tocan.
+ *
+ * Snapshot congelado a propósito: las migraciones nunca referencian la lista
+ * viva ESSENTIAL_RECORD_TYPES (el catálogo evoluciona; el historial no).
  */
 val MIGRATION_2_3 = object : Migration(2, 3) {
+    private val v2Essential = listOf(
+        "STEPS",
+        "HEART_RATE",
+        "HEART_RATE_5MIN",
+        "SLEEP_SESSION",
+        "EXERCISE_SESSION",
+        "ACTIVE_CALORIES_BURNED",
+        "TOTAL_CALORIES_BURNED",
+        "RESTING_HEART_RATE",
+        "WEIGHT",
+        "HEIGHT",
+        "BODY_FAT",
+        "BONE_MASS",
+        "BODY_WATER_MASS",
+        "LEAN_BODY_MASS",
+        "DISTANCE",
+        "VO2_MAX",
+        "OXYGEN_SATURATION",
+        "BASAL_METABOLIC_RATE",
+    )
+
     override fun migrate(db: SupportSQLiteDatabase) {
-        val placeholders = ESSENTIAL_RECORD_TYPES.joinToString(",") { "?" }
+        val placeholders = v2Essential.joinToString(",") { "?" }
         // Fuera del outbox primero: el hc_id es la única clave de unión.
         db.execSQL(
             "DELETE FROM health_outbox WHERE hc_id IN (" +
                 "SELECT hc_id FROM health_records WHERE record_type NOT IN ($placeholders))",
-            ESSENTIAL_RECORD_TYPES.toTypedArray(),
+            v2Essential.toTypedArray(),
         )
         db.execSQL(
             "DELETE FROM health_records WHERE record_type NOT IN ($placeholders)",
-            ESSENTIAL_RECORD_TYPES.toTypedArray(),
+            v2Essential.toTypedArray(),
         )
         db.execSQL(
             "DELETE FROM health_sync_state WHERE record_type NOT IN ($placeholders)",
-            ESSENTIAL_RECORD_TYPES.toTypedArray(),
+            v2Essential.toTypedArray(),
         )
     }
 }

@@ -35,10 +35,19 @@ Estos límites solo se ajustan con evidencia de consumo (Phase 5.1).
 (por ejemplo `STEPS`, `HEART_RATE`, `SLEEP_SESSION`, `EXERCISE_SESSION`, `WEIGHT`).
 El catálogo **esencial** (17 tipos desde 2026-08-12) vive en
 `android/.../RecordTypes.kt` y se replica en el servidor como allow-list
-amplia en `src/health_sync_service.py` (incluye además el agregado interno
-`HEART_RATE_5MIN`). Los 22 tipos no esenciales ya no se sincronizan; sus datos
+amplia en `src/health_sync_service.py` (incluye además los agregados internos
+`HEART_RATE_5MIN` y `*_H1`, más tipos históricos ya retirados del dispositivo).
+Los 22 tipos no esenciales ya no se sincronizan; sus datos
 históricos se conservan pero el dispositivo los purga localmente (migración
 Room v2→v3).
+
+Desde el corte de agregados horarios, pasos/calorías/distancia viajan como
+totales por hora (`STEPS_H1`, `ACTIVE_CALORIES_H1`, `TOTAL_CALORIES_H1`,
+`DISTANCE_H1`, `hc_id` estable `<PREFIJO>:<hora_epoch_ms>`, re-agregación
+idempotente con solape de 3 días). El crudo (`STEPS`, `*_BURNED`, `DISTANCE`)
+sigue aceptado en el servidor como histórico pero el dispositivo ya no lo
+envía (purga local, migración Room v9→v10); las lecturas por día prefieren el
+agregado cuando existe para no contar doble.
 
 ## 4. Cuerpo de la petición
 

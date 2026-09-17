@@ -78,15 +78,24 @@ def daily_hrv(db_path: str) -> pd.DataFrame:
 
 
 def daily_steps(db_path: str) -> pd.DataFrame:
-    """Pasos totales por día."""
+    """Pasos totales por día.
+
+    Corte hacia adelante: si el día tiene filas agregadas por hora
+    (`STEPS_H1`), esas mandan y el crudo histórico (`STEPS`) se ignora
+    (si se sumaran ambos, el solape contaría doble)."""
     return _daily_agg(
         db_path,
-        f"""
-        SELECT {_local_date("start_epoch_ms")},
-               SUM(json_extract(value_json, '$.value.count')) AS valor
-        FROM health_records
-        WHERE record_type = 'STEPS' AND deleted_at IS NULL
-        GROUP BY fecha
+        """
+        SELECT fecha, COALESCE(nuevo, crudo) AS valor FROM (
+            SELECT date(start_epoch_ms / 1000, 'unixepoch', 'localtime') AS fecha,
+                   SUM(CASE WHEN record_type = 'STEPS_H1'
+                            THEN json_extract(value_json, '$.value.count') END) AS nuevo,
+                   SUM(CASE WHEN record_type = 'STEPS'
+                            THEN json_extract(value_json, '$.value.count') END) AS crudo
+            FROM health_records
+            WHERE record_type IN ('STEPS', 'STEPS_H1') AND deleted_at IS NULL
+            GROUP BY fecha
+        )
         """,
     )
 

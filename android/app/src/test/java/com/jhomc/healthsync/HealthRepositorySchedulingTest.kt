@@ -66,16 +66,16 @@ class HealthRepositorySchedulingTest {
     @Test
     fun `first run picks the highest priority catalog-first type not alphabetical`() = runBlocking {
         gateway.granted = setOf(
-            RecordTypes.byTypeName("STEPS")!!.permission,               // HIGH, primero en catálogo
-            RecordTypes.byTypeName("OXYGEN_SATURATION")!!.permission,  // MEDIUM, alfabético antes
+            RecordTypes.byTypeName("VO2_MAX")!!.permission,          // HIGH, primero en catálogo
+            RecordTypes.byTypeName("OXYGEN_SATURATION")!!.permission, // MEDIUM, alfabético antes
         )
         repo.syncAuthorizedTypes()
-        assertEquals(listOf("STEPS"), gateway.tokenLog)
+        assertEquals(listOf("VO2_MAX"), gateway.tokenLog)
     }
 
     @Test
     fun `progress callback reports the syncing type`() = runBlocking {
-        gateway.granted = setOf(RecordTypes.byTypeName("STEPS")!!.permission)
+        gateway.granted = setOf(RecordTypes.byTypeName("STEPS_H1")!!.permission)
         gateway.pageStore[null] = listOf(Fixtures.steps("hc-1", t, t.plusSeconds(60), count = 100))
         val messages = mutableListOf<String>()
         val repoWithProgress = HealthRepository(
@@ -87,7 +87,7 @@ class HealthRepositorySchedulingTest {
             onProgress = { messages += it },
         )
         repoWithProgress.syncAuthorizedTypes()
-        assertTrue("debe reportar el tipo: $messages", messages.any { it.contains("STEPS") })
+        assertTrue("debe reportar el tipo: $messages", messages.any { it.contains("STEPS_H1") })
     }
 
     @Test
@@ -261,6 +261,87 @@ class HealthRepositorySchedulingTest {
     }
 
     @Test
+    fun `steps sync as hourly sums per day without raw pagination`() = runBlocking {
+        gateway.granted = setOf(RecordTypes.byTypeName("STEPS_H1")!!.permission)
+        val utc = ZoneOffset.UTC
+        gateway.readRecordsHandler = { recordType, start, end, _ ->
+            if (recordType != androidx.health.connect.client.records.StepsRecord::class) {
+                null
+            } else {
+                val dayStart = start.atZone(utc).toLocalDate().atStartOfDay(utc).toInstant()
+                ReadRecordsResponse(
+                    listOf(
+                        Fixtures.steps("s1-$dayStart", dayStart.plusSeconds(3600), dayStart.plusSeconds(3900), count = 100),
+                        Fixtures.steps("s2-$dayStart", dayStart.plusSeconds(3900), dayStart.plusSeconds(4200), count = 200),
+                        Fixtures.steps("s3-$dayStart", dayStart.plusSeconds(7200), dayStart.plusSeconds(7500), count = 50),
+                    ),
+                    null,
+                )
+            }
+        }
+        val utcRepo = HealthRepository(
+            db = db,
+            gateway = gateway,
+            tokenStore = ChangesTokenStore(db.healthDao()),
+            now = { t },
+            pacer = {},
+            zoneId = utc,
+        )
+        val result = utcRepo.syncAuthorizedTypes().single()
+
+        // Bootstrap de corte hacia adelante: historyDays=4 → 5 días × 2 tramos.
+        assertEquals(10, result.backfilled)
+        assertTrue("el path agregado no usa tokens ni paginación cruda", gateway.tokenLog.isEmpty())
+        val rows = db.healthDao().allActiveRecords()
+        assertEquals(10, rows.size)
+        assertTrue(rows.all { it.recordType == "STEPS_H1" })
+        assertTrue(rows.all { it.hcId.startsWith("STEPS_H1:") })
+        assertTrue(rows.all { it.valueJson.contains("\"count\"") })
+
+        // Sin crudo de STEPS almacenado.
+        assertEquals(0, rows.count { it.recordType == "STEPS" })
+    }
+
+    @Test
+    fun `hourly re-aggregation covers only the last three days`() = runBlocking {
+        gateway.granted = setOf(RecordTypes.byTypeName("STEPS_H1")!!.permission)
+        val utc = ZoneOffset.UTC
+        gateway.readRecordsHandler = { recordType, start, end, _ ->
+            if (recordType != androidx.health.connect.client.records.StepsRecord::class) {
+                null
+            } else {
+                val dayStart = start.atZone(utc).toLocalDate().atStartOfDay(utc).toInstant()
+                ReadRecordsResponse(
+                    listOf(Fixtures.steps("s-$dayStart", dayStart, dayStart.plusSeconds(60), count = 10)),
+                    null,
+                )
+            }
+        }
+        val utcRepo = HealthRepository(
+            db = db,
+            gateway = gateway,
+            tokenStore = ChangesTokenStore(db.healthDao()),
+            now = { t },
+            pacer = {},
+            zoneId = utc,
+        )
+        utcRepo.syncAuthorizedTypes()
+        val readsAfterBootstrap = gateway.readLog.size
+
+        // 4 días después: solape de 3 días atrás + 4 hacia delante = 8 días.
+        val later = HealthRepository(
+            db = db,
+            gateway = gateway,
+            tokenStore = ChangesTokenStore(db.healthDao()),
+            now = { t.plusSeconds(4 * 86_400) },
+            pacer = {},
+            zoneId = utc,
+        )
+        later.syncAuthorizedTypes()
+        assertEquals(readsAfterBootstrap + 8, gateway.readLog.size)
+    }
+
+    @Test
     fun `force syncs all eligible types in one run ignoring due dates`() = runBlocking {
         gateway.granted = setOf(
             RecordTypes.byTypeName("SLEEP_SESSION")!!.permission,
@@ -283,7 +364,7 @@ class HealthRepositorySchedulingTest {
     @Test
     fun `force respects cooldowns and continues past a hung type`() = runBlocking {
         gateway.granted = setOf(
-            RecordTypes.byTypeName("STEPS")!!.permission,
+            RecordTypes.byTypeName("STEPS_H1")!!.permission,
             RecordTypes.byTypeName("SLEEP_SESSION")!!.permission,
         )
         // El handler cuelga SOLO las lecturas de SLEEP_SESSION; STEPS va bien.
@@ -303,11 +384,11 @@ class HealthRepositorySchedulingTest {
             readTimeoutMs = 100,
         )
         val results = repoFast.syncAuthorizedTypes(force = true)
-        // SLEEP_SESSION entra en cooldown y STEPS sigue sincronizándose.
+        // SLEEP_SESSION entra en cooldown y STEPS_H1 sigue sincronizándose.
         assertTrue(results.isNotEmpty())
         val sleep = db.healthDao().getState("SLEEP_SESSION")
         assertTrue("SLEEP_SESSION en cooldown", sleep?.cooldownUntilEpochMs != null)
-        assertTrue("STEPS sincronizado", db.healthDao().getState("STEPS")?.nextDueAtEpochMs != null)
+        assertTrue("STEPS_H1 sincronizado", db.healthDao().getState("STEPS_H1")?.nextDueAtEpochMs != null)
     }
 
     @Test
@@ -330,10 +411,8 @@ class HealthRepositorySchedulingTest {
 
     @Test
     fun `nothing due means zero health connect calls`() = runBlocking {
-        gateway.granted = setOf(RecordTypes.byTypeName("STEPS")!!.permission)
-        repo.syncAuthorizedTypes() // primer run: STEPS sincronizado, next_due_at futuro
-        // READ_STEPS cubre también STEPS_CADENCE en el SDK 1.1.0 (permiso compartido):
-        // segundo run para su primer sync, luego nada queda vencido.
+        gateway.granted = setOf(RecordTypes.byTypeName("STEPS_H1")!!.permission)
+        repo.syncAuthorizedTypes() // primer run: STEPS_H1 sincronizado, next_due_at futuro
         repo.syncAuthorizedTypes()
         gateway.tokenLog.clear(); gateway.readLog.clear(); gateway.changesLog.clear()
         repo.syncAuthorizedTypes()

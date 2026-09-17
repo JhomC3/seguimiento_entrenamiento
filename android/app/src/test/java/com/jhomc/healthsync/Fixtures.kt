@@ -1,13 +1,18 @@
 package com.jhomc.healthsync
 
+import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.BodyFatRecord
+import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.metadata.DataOrigin
 import androidx.health.connect.client.records.metadata.Device
 import androidx.health.connect.client.records.metadata.Metadata
+import androidx.health.connect.client.units.Energy
+import androidx.health.connect.client.units.Length
 import androidx.health.connect.client.units.Mass
 import androidx.health.connect.client.units.Percentage
 import java.lang.reflect.Constructor
@@ -59,6 +64,39 @@ object Fixtures {
     ): StepsRecord = StepsRecord(
         start, ZONE, end, ZONE, count,
         metadata(id, lastModified, origin),
+    )
+
+    fun activeCalories(
+        id: String,
+        start: Instant,
+        end: Instant,
+        kcal: Double,
+        lastModified: Instant = end,
+    ): ActiveCaloriesBurnedRecord = ActiveCaloriesBurnedRecord(
+        start, ZONE, end, ZONE, Energy.kilocalories(kcal),
+        metadata(id, lastModified),
+    )
+
+    fun totalCalories(
+        id: String,
+        start: Instant,
+        end: Instant,
+        kcal: Double,
+        lastModified: Instant = end,
+    ): TotalCaloriesBurnedRecord = TotalCaloriesBurnedRecord(
+        start, ZONE, end, ZONE, Energy.kilocalories(kcal),
+        metadata(id, lastModified),
+    )
+
+    fun distance(
+        id: String,
+        start: Instant,
+        end: Instant,
+        meters: Double,
+        lastModified: Instant = end,
+    ): DistanceRecord = DistanceRecord(
+        start, ZONE, end, ZONE, Length.meters(meters),
+        metadata(id, lastModified),
     )
 
     fun heartRate(

@@ -15,19 +15,29 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * Health Connect, elapsed para duraciones inmunes a saltos de hora).
  * Local y oculto, como los descansos. Sin backend en esta fase.
  */
-@Entity(tableName = "work_intervals")
+@Entity(
+    tableName = "work_intervals",
+    // Nombre explícito = el que crea MIGRATION_8_9 (el autogenerado de Room
+    // sería index_work_intervals_fecha_start_wall_ms y no coincidiría).
+    indices = [androidx.room.Index(
+        value = ["fecha", "start_wall_ms"],
+        name = "index_work_intervals_fecha_start",
+    )],
+)
 data class WorkIntervalEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val fecha: String, // ISO YYYY-MM-DD
     val ejercicio: String, // snapshot del nombre al abrir
     @ColumnInfo(name = "client_set_uuid") val clientSetUuid: String,
-    @ColumnInfo(name = "set_orden_aparente") val setOrdenAparente: Int = 0,
+    // Defaults explícitos = los del DDL de MIGRATION_8_9 (sin ellos, Room ve
+    // 'undefined' frente al '0'/'ABIERTO' de las BD ya migradas y rechaza).
+    @ColumnInfo(name = "set_orden_aparente", defaultValue = "0") val setOrdenAparente: Int = 0,
     @ColumnInfo(name = "start_wall_ms") val startWallMs: Long,
     @ColumnInfo(name = "start_elapsed_ms") val startElapsedMs: Long,
     @ColumnInfo(name = "end_wall_ms") val endWallMs: Long? = null,
     @ColumnInfo(name = "end_elapsed_ms") val endElapsedMs: Long? = null,
     /** ABIERTO | CERRADO | ABANDONADO (huérfano de sesión anterior). */
-    val estado: String = "ABIERTO",
+    @ColumnInfo(defaultValue = "'ABIERTO'") val estado: String = "ABIERTO",
     @ColumnInfo(name = "created_at_epoch_ms") val createdAtEpochMs: Long,
 )
 

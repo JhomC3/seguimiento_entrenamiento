@@ -68,6 +68,6 @@ class HealthInventory(
 
     companion object {
         /** Cumulative types: the aggregate total is the recommended read. */
-        val AGGREGATE_TYPES = setOf("STEPS", "ACTIVE_CALORIES_BURNED", "TOTAL_CALORIES_BURNED")
+        val AGGREGATE_TYPES = setOf("STEPS_H1", "ACTIVE_CALORIES_H1", "TOTAL_CALORIES_H1")
     }
 }

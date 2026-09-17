@@ -78,6 +78,21 @@ object RecordMappers {
 
     fun toPayloadJson(record: Record): String = toPayload(record).toString()
 
+    /** Inicio del intervalo (o instante) en epoch ms; null si el tipo no lo tiene. */
+    fun intervalStartMs(record: Record): Long? = intervalStart(record)?.toEpochMilli()
+
+    /**
+     * Magnitud sumable de un intervalo (pasos, kcal, metros) para la
+     * agregación horaria; null para el resto de tipos.
+     */
+    fun intervalValue(record: Record): Double? = when (record) {
+        is StepsRecord -> record.count.toDouble()
+        is ActiveCaloriesBurnedRecord -> record.energy.inKilocalories
+        is TotalCaloriesBurnedRecord -> record.energy.inKilocalories
+        is DistanceRecord -> record.distance.inMeters
+        else -> null
+    }
+
     private fun valueOf(record: Record, entry: RecordTypeEntry): JSONObject =
         when (record) {
             is StepsRecord -> JSONObject().put("count", record.count)

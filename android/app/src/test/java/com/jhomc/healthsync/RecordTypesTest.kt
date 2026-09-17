@@ -49,10 +49,10 @@ class RecordTypesTest {
         assertEquals(17, RecordTypes.all.size)
         val names = RecordTypes.all.map { it.typeName }.toSet()
         for (essential in listOf(
-            "STEPS", "HEART_RATE", "SLEEP_SESSION", "EXERCISE_SESSION",
-            "ACTIVE_CALORIES_BURNED", "TOTAL_CALORIES_BURNED", "RESTING_HEART_RATE",
+            "STEPS_H1", "HEART_RATE", "SLEEP_SESSION", "EXERCISE_SESSION",
+            "ACTIVE_CALORIES_H1", "TOTAL_CALORIES_H1", "RESTING_HEART_RATE",
             "WEIGHT", "HEIGHT", "BODY_FAT", "BONE_MASS", "BODY_WATER_MASS", "LEAN_BODY_MASS",
-            "DISTANCE", "VO2_MAX", "OXYGEN_SATURATION", "BASAL_METABOLIC_RATE",
+            "DISTANCE_H1", "VO2_MAX", "OXYGEN_SATURATION", "BASAL_METABOLIC_RATE",
         )) assertTrue("falta $essential", names.contains(essential))
     }
 
@@ -75,7 +75,18 @@ class RecordTypesTest {
 
     @Test
     fun `type lookup is case-sensitive and stable`() {
-        assertEquals("STEPS", RecordTypes.byTypeName("STEPS")?.typeName)
-        assertEquals(null, RecordTypes.byTypeName("steps"))
+        assertEquals("STEPS_H1", RecordTypes.byTypeName("STEPS_H1")?.typeName)
+        assertEquals(null, RecordTypes.byTypeName("steps_h1"))
+        assertEquals(null, RecordTypes.byTypeName("STEPS"))
+    }
+
+    @Test
+    fun `hourly sums replace the raw interval types`() {
+        val hourly = RecordTypes.all.filter { it.hourlySum }
+        assertEquals(
+            setOf("STEPS_H1", "ACTIVE_CALORIES_H1", "TOTAL_CALORIES_H1", "DISTANCE_H1"),
+            hourly.map { it.typeName }.toSet(),
+        )
+        assertTrue(hourly.all { it.historyDays < 30 })
     }
 }

@@ -160,7 +160,26 @@ class SyncServiceTest {
         val badToken = SyncService.noticeMessage(SyncReport(17, 0, 1, permanentError = "HTTP 401"))
         assertTrue("401 debe explicar el mismatch, fue: $badToken", badToken?.contains("401") == true)
 
+        val badBatch = SyncService.noticeMessage(
+            SyncReport(17, 0, 500, permanentError = "HTTP 400: {\"detail\":\"Operación 2\"}"),
+        )
+        assertTrue("400 debe mencionar cuarentena, fue: $badBatch", badBatch?.contains("Cuarentena") == true)
+
         val ok = SyncService.noticeMessage(SyncReport(17, 42, 0))
         assertTrue("reporte sano no tiene aviso accionable, fue: $ok", ok == null)
+    }
+
+    @Test
+    fun `summaryOf muestra cuarentena cuando hay ops aisladas`() {
+        val text = SyncService.summaryOf(SyncReport(17, 499, 0, quarantined = 1))
+        assertTrue("debe pintar cuarentena, fue: $text", text.contains("Cuarentena: 1"))
+    }
+
+    @Test
+    fun `summaryOf muestra el motivo de cuarentena cuando existe`() {
+        val text = SyncService.summaryOf(
+            SyncReport(17, 0, 0, quarantined = 2, quarantineSample = "record_type fuera de allow-list"),
+        )
+        assertTrue("debe pintar el motivo, fue: $text", text.contains("record_type fuera"))
     }
 }

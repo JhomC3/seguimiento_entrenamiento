@@ -32,7 +32,7 @@ class HealthRepositoryTest {
     private val t0: Instant = Instant.parse("2026-08-08T12:00:00Z")
     private val t1: Instant = Instant.parse("2026-08-08T13:00:00Z")
 
-    private val stepsEntry: RecordTypeEntry = RecordTypes.byTypeName("STEPS")!!
+    private val weightEntry: RecordTypeEntry = RecordTypes.byTypeName("WEIGHT")!!
 
     @Before
     fun setUp() {
@@ -56,93 +56,93 @@ class HealthRepositoryTest {
 
     @Test
     fun `first sync backfills then drains and advances token`() = runBlocking {
-        gateway.backfillQueue.add(listOf(Fixtures.steps("hc-1", t0, t1, count = 100)))
-        gateway.backfillQueue.add(listOf(Fixtures.steps("hc-2", t0, t1, count = 200)))
+        gateway.backfillQueue.add(listOf(Fixtures.weight("hc-1", t0, 82.0)))
+        gateway.backfillQueue.add(listOf(Fixtures.weight("hc-2", t0, 83.0)))
         gateway.changesQueue.add(
-            ChangesResponse(listOf(androidx.health.connect.client.changes.UpsertionChange(Fixtures.steps("hc-3", t0, t1, count = 300))), "next-token", true, false),
+            ChangesResponse(listOf(androidx.health.connect.client.changes.UpsertionChange(Fixtures.weight("hc-3", t0, 84.0))), "next-token", true, false),
         )
-        val result = repo.syncType(stepsEntry)
+        val result = repo.syncType(weightEntry)
         assertEquals(2, result.backfilled)
         assertEquals(1, result.upserts)
         assertEquals(3, db.healthDao().allActiveRecords().size)
-        assertEquals("next-of-next-token", ChangesTokenStore(db.healthDao()).get("STEPS"))
+        assertEquals("next-of-next-token", ChangesTokenStore(db.healthDao()).get("WEIGHT"))
     }
 
     @Test
     fun `second sync without changes produces no duplicates`() = runBlocking {
-        gateway.backfillQueue.add(listOf(Fixtures.steps("hc-1", t0, t1, count = 100)))
-        repo.syncType(stepsEntry)
-        repo.syncType(stepsEntry)
+        gateway.backfillQueue.add(listOf(Fixtures.weight("hc-1", t0, 82.0)))
+        repo.syncType(weightEntry)
+        repo.syncType(weightEntry)
         assertEquals(1, db.healthDao().allActiveRecords().size)
     }
 
     @Test
     fun `update with higher revision replaces value and outbox op`() = runBlocking {
-        gateway.backfillQueue.add(listOf(Fixtures.steps("hc-1", t0, t1, count = 100)))
-        repo.syncType(stepsEntry)
-        val updated = Fixtures.steps("hc-1", t0, t1, count = 900, lastModified = t1.plusSeconds(60))
+        gateway.backfillQueue.add(listOf(Fixtures.weight("hc-1", t0, 82.0)))
+        repo.syncType(weightEntry)
+        val updated = Fixtures.weight("hc-1", t0, 90.0, lastModified = t1.plusSeconds(60))
         gateway.changesQueue.add(
             ChangesResponse(listOf(androidx.health.connect.client.changes.UpsertionChange(updated)), "next-token", false, false),
         )
-        repo.syncType(stepsEntry)
+        repo.syncType(weightEntry)
         val row = db.healthDao().getRecord("hc-1")!!
-        assertTrue(row.valueJson.contains("\"count\":900"))
+        assertTrue(row.valueJson.contains("\"kg\":90"))
         assertEquals(t1.plusSeconds(60).toEpochMilli(), row.lastModifiedEpochMs)
         assertEquals(1, db.healthDao().allActiveRecords().size)
     }
 
     @Test
     fun `deletion propagates as logical delete`() = runBlocking {
-        gateway.backfillQueue.add(listOf(Fixtures.steps("hc-1", t0, t1, count = 100)))
-        repo.syncType(stepsEntry)
+        gateway.backfillQueue.add(listOf(Fixtures.weight("hc-1", t0, 82.0)))
+        repo.syncType(weightEntry)
         gateway.changesQueue.add(
             ChangesResponse(listOf(androidx.health.connect.client.changes.DeletionChange("hc-1")), "next-token", false, false),
         )
-        repo.syncType(stepsEntry)
+        repo.syncType(weightEntry)
         assertNull(db.healthDao().activeRecord("hc-1"))
         assertTrue(db.healthDao().getRecord("hc-1")!!.deletedAtEpochMs != null)
     }
 
     @Test
     fun `expired token triggers backfill and fresh token`() = runBlocking {
-        gateway.backfillQueue.add(listOf(Fixtures.steps("hc-1", t0, t1, count = 100)))
-        repo.syncType(stepsEntry) // token-1 (first sync reserves + drains)
-        gateway.backfillQueue.add(listOf(Fixtures.steps("hc-9", t0, t1, count = 999)))
+        gateway.backfillQueue.add(listOf(Fixtures.weight("hc-1", t0, 82.0)))
+        repo.syncType(weightEntry) // token-1 (first sync reserves + drains)
+        gateway.backfillQueue.add(listOf(Fixtures.weight("hc-9", t0, 99.0)))
         gateway.changesQueue.add(
             ChangesResponse(emptyList(), "stale", false, changesTokenExpired = true),
         )
-        repo.syncType(stepsEntry)
+        repo.syncType(weightEntry)
         assertEquals(2, db.healthDao().allActiveRecords().size)
         val store = ChangesTokenStore(db.healthDao())
-        assertEquals("token-2", store.get("STEPS")) // 1 (first) + 1 (recovery)
+        assertEquals("token-2", store.get("WEIGHT")) // 1 (first) + 1 (recovery)
     }
 
     @Test
     fun `crash mid-page does not advance token nor duplicate`() = runBlocking {
-        gateway.backfillQueue.add(listOf(Fixtures.steps("hc-1", t0, t1, count = 100)))
-        repo.syncType(stepsEntry)
+        gateway.backfillQueue.add(listOf(Fixtures.weight("hc-1", t0, 82.0)))
+        repo.syncType(weightEntry)
         // Second run: page 1 crashes AFTER getChanges returns, before commit.
         gateway.changesQueue.add(
-            ChangesResponse(listOf(androidx.health.connect.client.changes.UpsertionChange(Fixtures.steps("hc-2", t0, t1, count = 200))), "next-token", true, false),
+            ChangesResponse(listOf(androidx.health.connect.client.changes.UpsertionChange(Fixtures.weight("hc-2", t0, 83.0))), "next-token", true, false),
         )
         gateway.crashAfterGetChanges = true
         var crashed = false
         try {
-            repo.syncType(stepsEntry)
+            repo.syncType(weightEntry)
         } catch (e: RuntimeException) {
             crashed = true
         }
         assertTrue(crashed)
         // Token did not advance to next-token; retry processes the same page.
         assertEquals(1, db.healthDao().allActiveRecords().size)
-        repo.syncType(stepsEntry)
+        repo.syncType(weightEntry)
         assertEquals(2, db.healthDao().allActiveRecords().size)
     }
 
     @Test
     fun `ensure target seeds new target once and reuses same url`() = runBlocking {
-        gateway.backfillQueue.add(listOf(Fixtures.steps("hc-1", t0, t1, count = 100)))
-        repo.syncType(stepsEntry)
+        gateway.backfillQueue.add(listOf(Fixtures.weight("hc-1", t0, 82.0)))
+        repo.syncType(weightEntry)
         val first = repo.ensureTarget("https://mac.local:8443/sync/health-connect", "mac")
         assertEquals(1, db.healthDao().pendingOps(first.targetId, 100).size)
         val reused = repo.ensureTarget("https://mac.local:8443/sync/health-connect", "mac")
@@ -168,8 +168,8 @@ class HealthRepositoryTest {
                     .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
                     .build(),
             )
-            gateway.backfillQueue.add(listOf(Fixtures.steps("hc-1", t0, t1, count = 100)))
-            repo.syncType(stepsEntry)
+            gateway.backfillQueue.add(listOf(Fixtures.weight("hc-1", t0, 82.0)))
+            repo.syncType(weightEntry)
             val target = repo.ensureTarget(server.url("/sync/health-connect").toString(), "test")
             val result = repo.uploadPending(client, target, token = "wrong", deviceId = "d")
             assertTrue("esperado permanente, fue: $result", result.permanentError != null)
@@ -197,8 +197,8 @@ class HealthRepositoryTest {
                     .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
                     .build(),
             )
-            gateway.backfillQueue.add(listOf(Fixtures.steps("hc-1", t0, t1, count = 100)))
-            repo.syncType(stepsEntry)
+            gateway.backfillQueue.add(listOf(Fixtures.weight("hc-1", t0, 82.0, lastModified = t1)))
+            repo.syncType(weightEntry)
             val target = repo.ensureTarget(server.url("/sync/health-connect").toString(), "test")
             assertEquals(1, db.healthDao().pendingOps(target.targetId, 100).size)
             val result = repo.uploadPending(client, target, token = "secret", deviceId = "d")

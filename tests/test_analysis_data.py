@@ -136,6 +136,38 @@ def test_steps_suma_diaria(db):
     assert df.iloc[0]["valor"] == 7000
 
 
+def test_steps_horarios_suman_dia(db):
+    conn = sqlite3.connect(db)
+    _insert_hr(
+        conn, "STEPS_H1", '{"count": 4000}', _ts("2026-08-10 09:00"), end=_ts("2026-08-10 10:00")
+    )
+    _insert_hr(
+        conn, "STEPS_H1", '{"count": 3000}', _ts("2026-08-10 15:00"), end=_ts("2026-08-10 16:00")
+    )
+    conn.commit()
+    conn.close()
+    df = daily_steps(db)
+    assert len(df) == 1
+    assert df.iloc[0]["valor"] == 7000
+
+
+def test_steps_prefiere_agregado_y_no_duplica_crudo(db):
+    conn = sqlite3.connect(db)
+    # Mismo día en crudo (histórico) y en agregado (corte): manda el agregado.
+    _insert_hr(conn, "STEPS", '{"count": 9000}', _ts("2026-08-10 09:00"))
+    _insert_hr(
+        conn, "STEPS_H1", '{"count": 7000}', _ts("2026-08-10 09:00"), end=_ts("2026-08-10 10:00")
+    )
+    # Día solo crudo: se conserva.
+    _insert_hr(conn, "STEPS", '{"count": 1000}', _ts("2026-08-09 09:00"))
+    conn.commit()
+    conn.close()
+    df = daily_steps(db).sort_values("fecha").reset_index(drop=True)
+    assert len(df) == 2
+    assert df.iloc[0]["valor"] == 1000
+    assert df.iloc[1]["valor"] == 7000
+
+
 def test_cardio_minutes_suma_diaria(db):
     conn = sqlite3.connect(db)
     _insert_hr(

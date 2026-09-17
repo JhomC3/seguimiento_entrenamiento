@@ -90,6 +90,44 @@ def test_heart_rate_5min_buckets_are_accepted_and_idempotent(tmp_path):
     assert _row(db, "HR5M:1786452000000")["revision"] == 1786452000000
 
 
+def test_hourly_sums_are_accepted_and_idempotent(tmp_path):
+    db = str(tmp_path / "gym.db")
+    init_db(db)
+    hour = {
+        "op": "UPSERT",
+        "hc_id": "STEPS_H1:1786452000000",
+        "record_type": "STEPS_H1",
+        "revision": 1786452000000,
+        "start_epoch_ms": 1786452000000,
+        "end_epoch_ms": 1786455600000,
+        "payload_schema_version": 1,
+        "value": {"count": 7000},
+    }
+    first = ingest_health_records(db, _payload([hour]))
+    assert first.accepted_count == 1
+    row = _row(db, "STEPS_H1:1786452000000")
+    assert row["record_type"] == "STEPS_H1"
+    assert '"count":7000' in row["value_json"]
+
+    # Replay de la misma hora (re-agregación con solape): idempotente.
+    replay = ingest_health_records(db, _payload([hour]))
+    assert replay.accepted_count == 1
+    assert replay.rejected == []
+
+
+def test_hourly_calorie_and_distance_types_are_accepted(tmp_path):
+    db = str(tmp_path / "gym.db")
+    init_db(db)
+    ops = [
+        _upsert("CALA_H1:1", 100, record_type="ACTIVE_CALORIES_H1", count=10),
+        _upsert("CALT_H1:1", 100, record_type="TOTAL_CALORIES_H1", count=20),
+        _upsert("DIST_H1:1", 100, record_type="DISTANCE_H1", count=30),
+    ]
+    result = ingest_health_records(db, _payload(ops))
+    assert result.accepted_count == 3
+    assert result.rejected == []
+
+
 def test_replay_identical_is_acked_without_rewrite(tmp_path):
     db = str(tmp_path / "gym.db")
     init_db(db)

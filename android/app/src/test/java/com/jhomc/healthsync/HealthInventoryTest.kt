@@ -46,29 +46,29 @@ class HealthInventoryTest {
     fun `aggregate totals only for cumulative types`() = runBlocking {
         val gateway = FakeHealthConnectGateway().apply {
             granted = setOf(
-                RecordTypes.byTypeName("STEPS")!!.permission,
+                RecordTypes.byTypeName("STEPS_H1")!!.permission,
                 RecordTypes.byTypeName("HEART_RATE")!!.permission,
             )
-            aggregateTotals["STEPS"] = 9018L
+            aggregateTotals["STEPS_H1"] = 9018L
         }
         val rows = inventory(gateway).todayInventory().associateBy { it.typeName }
-        assertEquals(9018L, rows["STEPS"]!!.aggregateTotal)
+        assertEquals(9018L, rows["STEPS_H1"]!!.aggregateTotal)
         assertNull("HEART_RATE no es acumulativo: sin total", rows["HEART_RATE"]!!.aggregateTotal)
-        assertEquals(listOf("STEPS"), gateway.aggregateTotalLog)
+        assertEquals(listOf("STEPS_H1"), gateway.aggregateTotalLog)
     }
 
     @Test
     fun `a failing type does not break the rest`() = runBlocking {
         val gateway = FakeHealthConnectGateway().apply {
             granted = setOf(
-                RecordTypes.byTypeName("STEPS")!!.permission,
+                RecordTypes.byTypeName("STEPS_H1")!!.permission,
                 RecordTypes.byTypeName("SLEEP_SESSION")!!.permission,
             )
-            failReadsWithForegroundRequired = true // golpea la 1ª lectura (STEPS)
+            failReadsWithForegroundRequired = true // golpea la 1ª lectura (STEPS_H1)
         }
         val rows = inventory(gateway).todayInventory().associateBy { it.typeName }
-        assertTrue("STEPS debe reportar error: ${rows["STEPS"]!!.error}", rows["STEPS"]!!.error != null)
-        assertEquals(0, rows["STEPS"]!!.recordsToday)
+        assertTrue("STEPS_H1 debe reportar error: ${rows["STEPS_H1"]!!.error}", rows["STEPS_H1"]!!.error != null)
+        assertEquals(0, rows["STEPS_H1"]!!.recordsToday)
         assertNull("SLEEP_SESSION sigue intacto", rows["SLEEP_SESSION"]!!.error)
     }
 

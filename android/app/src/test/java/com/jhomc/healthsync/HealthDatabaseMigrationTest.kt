@@ -1,6 +1,8 @@
 package com.jhomc.healthsync
 
 import android.content.Context
+import androidx.room.Room
+import androidx.sqlite.db.SimpleSQLiteQuery
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
@@ -11,6 +13,12 @@ import com.jhomc.healthsync.data.MIGRATION_2_3
 import com.jhomc.healthsync.data.MIGRATION_3_4
 import com.jhomc.healthsync.data.MIGRATION_4_5
 import com.jhomc.healthsync.data.MIGRATION_5_6
+import com.jhomc.healthsync.data.MIGRATION_6_7
+import com.jhomc.healthsync.data.MIGRATION_7_8
+import com.jhomc.healthsync.data.MIGRATION_8_9
+import com.jhomc.healthsync.data.MIGRATION_9_10
+import com.jhomc.healthsync.data.MIGRATION_10_11
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -36,7 +44,7 @@ class HealthDatabaseMigrationTest {
                 "permission_granted INTEGER NOT NULL DEFAULT 0, last_successful_read_at_epoch_ms INTEGER)"
         )
         db.execSQL(
-            "CREATE TABLE sync_targets (target_id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT NOT NULL, " +
+            "CREATE TABLE sync_targets (target_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, url TEXT NOT NULL, " +
                 "name TEXT NOT NULL, active INTEGER NOT NULL, created_at_epoch_ms INTEGER NOT NULL)"
         )
         db.execSQL(
@@ -216,6 +224,161 @@ class HealthDatabaseMigrationTest {
         } finally {
             db.close()
             context.deleteDatabase("migration-test.db")
+        }
+    }
+
+    @Test
+    fun `full chain v9 to v11 converges every known lineage`() {
+        // Prueba el camino REAL del teléfono: una BD generada por Room (como
+        // todas las v9/v10 en uso) degradada al PEOR linaje conocido —
+        // tabla nutrition_publish (rama de nutrición, v10 divergente),
+        // training_cache sin DEFAULT NULL (artefacto de MIGRATION_5_6) e
+        // índice de work_intervals ausente — sellada como v9, abierta con
+        // Room.databaseBuilder + la lista de migraciones de producción.
+        // Room valida TODAS las tablas al migrar: en verde, cualquier
+        // teléfono abre.
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.deleteDatabase("migration-chain-v9-v11.db")
+        Room.databaseBuilder(context, HealthDatabase::class.java, "migration-chain-v9-v11.db")
+            .allowMainThreadQueries()
+            .build()
+            .apply {
+                // Room crea las tablas en diferido: forzar la apertura.
+                runBlocking { healthDao().getState("STEPS") }
+                close()
+            }
+        val raw = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name("migration-chain-v9-v11.db")
+                .callback(object : SupportSQLiteOpenHelper.Callback(11) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {}
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+                })
+                .build(),
+        ).writableDatabase
+        raw.execSQL("PRAGMA user_version = 9")
+        raw.execSQL(
+            "CREATE TABLE nutrition_publish (fecha TEXT NOT NULL PRIMARY KEY, day_hash TEXT NOT NULL, " +
+                "client_ids TEXT NOT NULL, status TEXT NOT NULL, detail TEXT, updated_at_epoch_ms INTEGER NOT NULL)",
+        )
+        // training_cache "antigua": mismas columnas, sin DEFAULT NULL.
+        raw.execSQL("ALTER TABLE training_cache RENAME TO training_cache_old")
+        raw.execSQL(
+            "CREATE TABLE training_cache (rowId INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "fecha TEXT NOT NULL, set_orden INTEGER NOT NULL, ejercicio TEXT NOT NULL, " +
+                "kg REAL, reps REAL, rir REAL, descanso_seg REAL, rm REAL, " +
+                "velocidad_kmh REAL, dificultad REAL)",
+        )
+        raw.execSQL(
+            "INSERT INTO training_cache (rowId, fecha, set_orden, ejercicio, kg, reps, rir, descanso_seg, rm, velocidad_kmh, dificultad) " +
+                "SELECT rowId, fecha, set_orden, ejercicio, kg, reps, rir, descanso_seg, rm, velocidad_kmh, dificultad " +
+                "FROM training_cache_old",
+        )
+        raw.execSQL("DROP TABLE training_cache_old")
+        raw.execSQL(
+            "INSERT INTO training_cache (fecha, set_orden, ejercicio, kg, reps, rir, descanso_seg, rm, velocidad_kmh, dificultad) " +
+                "VALUES ('2026-09-07', 1, 'Press', 80.0, 8.0, 1.0, NULL, 103.9, NULL, NULL)",
+        )
+        raw.execSQL("DROP INDEX IF EXISTS index_work_intervals_fecha_start")
+        raw.execSQL(
+            "INSERT INTO health_sync_state (record_type, changes_token, permission_granted, last_successful_read_at_epoch_ms, " +
+                "next_due_at_epoch_ms, cooldown_until_epoch_ms, priority, bootstrap_page_token, " +
+                "bootstrap_start_epoch_ms, empty_runs) VALUES " +
+                "('STEPS', 'tok-steps', 1, 111, 222, NULL, 1, NULL, NULL, 0)",
+        )
+        raw.execSQL(
+            "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, " +
+                "last_modified_epoch_ms, data_origin_package, time_zone_offset_minutes, " +
+                "payload_schema_version, value_json, deleted_at_epoch_ms, source_updated_at_epoch_ms) VALUES " +
+                "('hc-raw', 'STEPS', 1000, 2000, 5, 'com.samsung.health', NULL, 1, '{}', NULL, 5)",
+        )
+        raw.close()
+
+        // Apertura real como en producción: migra 9→10→11 y valida identidad.
+        val db = Room.databaseBuilder(context, HealthDatabase::class.java, "migration-chain-v9-v11.db")
+            .addMigrations(
+                MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
+                MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
+                MIGRATION_9_10, MIGRATION_10_11,
+            )
+            .allowMainThreadQueries()
+            .build()
+        try {
+            runBlocking {
+                assertNull("el crudo retirado no sobrevive a la cadena", db.healthDao().getState("STEPS"))
+                db.healthDao().upsertState(
+                    com.jhomc.healthsync.data.HealthSyncStateEntity(recordType = "STEPS_H1"),
+                )
+                assertNotNull(db.healthDao().getState("STEPS_H1"))
+            }
+            db.query(SimpleSQLiteQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='nutrition_publish'")).use {
+                assertTrue("nutrition_publish debe desaparecer", !it.moveToFirst())
+            }
+            // La fila de training_cache sobrevive al rebuild con sus valores.
+            db.query(SimpleSQLiteQuery("SELECT ejercicio, kg FROM training_cache WHERE fecha='2026-09-07'")).use {
+                assertTrue(it.moveToFirst())
+                assertEquals("Press", it.getString(0))
+                assertEquals(80.0, it.getDouble(1), 0.001)
+            }
+        } finally {
+            db.close()
+            context.deleteDatabase("migration-chain-v9-v11.db")
+        }
+    }
+
+    @Test
+    fun `migration v9 to v10 retires raw interval types for hourly sums`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = openV2Database(context, "migration-v9-v10.db")
+        try {
+            db.execSQL(
+                "INSERT INTO health_sync_state (record_type, changes_token, permission_granted, last_successful_read_at_epoch_ms, " +
+                    "next_due_at_epoch_ms, cooldown_until_epoch_ms, priority, bootstrap_page_token, " +
+                    "bootstrap_start_epoch_ms, empty_runs) VALUES " +
+                    "('STEPS', 'tok-steps', 1, 111, 222, NULL, 1, NULL, NULL, 0), " +
+                    "('DISTANCE', 'tok-dist', 1, 111, 222, NULL, 1, NULL, NULL, 0), " +
+                    "('STEPS_H1', 'tok-h1', 1, 111, 222, NULL, 1, NULL, NULL, 0), " +
+                    "('SLEEP_SESSION', 'tok-sleep', 1, 111, 222, NULL, 1, NULL, NULL, 0)"
+            )
+            for ((hcId, type) in listOf(
+                "hc-raw-steps" to "STEPS",
+                "hc-raw-dist" to "DISTANCE",
+                "hc-h1" to "STEPS_H1",
+                "hc-sleep" to "SLEEP_SESSION",
+            )) {
+                db.execSQL(
+                    "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, " +
+                        "last_modified_epoch_ms, data_origin_package, time_zone_offset_minutes, " +
+                        "payload_schema_version, value_json, deleted_at_epoch_ms, source_updated_at_epoch_ms) VALUES " +
+                        "(?, ?, 1000, 2000, 5, 'com.samsung.health', NULL, 1, '{}', NULL, 5)",
+                    arrayOf(hcId, type),
+                )
+            }
+            db.execSQL(
+                "INSERT INTO health_outbox (target_id, hc_id, operation, revision, attempt_count, created_at_epoch_ms) VALUES " +
+                    "(1, 'hc-raw-steps', 'UPSERT', 5, 0, 100), " +
+                    "(1, 'hc-raw-dist', 'UPSERT', 5, 0, 100), " +
+                    "(1, 'hc-h1', 'UPSERT', 5, 0, 100)"
+            )
+            MIGRATION_9_10.migrate(db)
+            db.query("SELECT record_type FROM health_sync_state ORDER BY record_type").use { c ->
+                val types = mutableListOf<String>()
+                while (c.moveToNext()) types += c.getString(0)
+                assertEquals(listOf("SLEEP_SESSION", "STEPS_H1"), types)
+            }
+            db.query("SELECT hc_id FROM health_records ORDER BY hc_id").use { c ->
+                val ids = mutableListOf<String>()
+                while (c.moveToNext()) ids += c.getString(0)
+                assertEquals(listOf("hc-h1", "hc-sleep"), ids)
+            }
+            db.query("SELECT hc_id FROM health_outbox").use { c ->
+                val ids = mutableListOf<String>()
+                while (c.moveToNext()) ids += c.getString(0)
+                assertEquals(listOf("hc-h1"), ids)
+            }
+        } finally {
+            db.close()
+            context.deleteDatabase("migration-v9-v10.db")
         }
     }
 

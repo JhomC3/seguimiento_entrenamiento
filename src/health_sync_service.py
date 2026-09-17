@@ -26,12 +26,15 @@ MAX_BODY_BYTES = 1024 * 1024  # 1 MiB, per health-sync-contract.md §2
 ALLOWED_RECORD_TYPES = frozenset(
     {
         "STEPS",
+        "STEPS_H1",  # total horario (corte hacia adelante; el crudo es histórico)
         "HEART_RATE",
         "HEART_RATE_5MIN",  # agregado por tramos de 5 min (fuera del catálogo HC)
         "SLEEP_SESSION",
         "EXERCISE_SESSION",
         "ACTIVE_CALORIES_BURNED",
+        "ACTIVE_CALORIES_H1",  # total horario (el crudo es histórico)
         "TOTAL_CALORIES_BURNED",
+        "TOTAL_CALORIES_H1",  # total horario (el crudo es histórico)
         "RESTING_HEART_RATE",
         "WEIGHT",
         "HEIGHT",
@@ -40,6 +43,7 @@ ALLOWED_RECORD_TYPES = frozenset(
         "BODY_WATER_MASS",
         "LEAN_BODY_MASS",
         "DISTANCE",
+        "DISTANCE_H1",  # total horario (el crudo es histórico)
         "ELEVATION_GAINED",
         "SPEED",
         "STEPS_CADENCE",

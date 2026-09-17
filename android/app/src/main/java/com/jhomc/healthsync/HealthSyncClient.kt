@@ -101,13 +101,60 @@ class HealthSyncClient(
                 when {
                     response.isSuccessful -> parseAck(response.body?.string())
                     response.code == 400 || response.code == 401 || response.code == 413 ->
-                        UploadOutcome.PermanentError("HTTP ${response.code}")
+                        // El cuerpo del 400/401/413 lleva el `detail` del servidor
+                        // (p. ej. "Operación 42: ..."): conservarlo es la única
+                        // forma de saber QUÉ op envenenó el lote. Sin valores del
+                        // usuario, solo el motivo de validación: seguro de mostrar.
+                        UploadOutcome.PermanentError(
+                            "HTTP ${response.code}: ${(response.body?.string() ?: "").take(300)}",
+                        )
                     else -> UploadOutcome.TransientError("HTTP ${response.code}")
                 }
             }
         } catch (e: IOException) {
             UploadOutcome.TransientError(e.message ?: "red no disponible")
         }
+    }
+
+    /**
+     * Pre-vuelo local, espejo de `src/health_sync_service._parse_operation`:
+     * lo que el servidor rechazaría con 400 se detecta aquí ANTES del POST
+     * para cuarentenar la op sin envenenar el lote. Devuelve índice→motivo
+     * de las inválidas (vacío = lote limpio).
+     */
+    fun findInvalidOperations(
+        ops: List<HealthOutboxEntity>,
+        records: Map<String, HealthRecordEntity?>,
+        allowedTypes: Set<String>,
+    ): Map<Int, String> {
+        val bad = LinkedHashMap<Int, String>()
+        for ((index, op) in ops.withIndex()) {
+            val reason = validateOperation(op, records[op.hcId], allowedTypes)
+            if (reason != null) bad[index] = reason
+        }
+        return bad
+    }
+
+    private fun validateOperation(
+        op: HealthOutboxEntity,
+        record: HealthRecordEntity?,
+        allowedTypes: Set<String>,
+    ): String? {
+        if (op.operation != "UPSERT" && op.operation != "DELETE") return "op desconocida '${op.operation}'"
+        if (op.hcId.isBlank()) return "hc_id vacío"
+        if (record == null) return "sin registro local"
+        if (record.recordType !in allowedTypes) return "record_type fuera de allow-list '${record.recordType}'"
+        if (op.revision < 0) return "revision negativa"
+        if (op.operation == "DELETE") return null
+        if (record.startEpochMs < 0) return "start_epoch_ms negativo"
+        val end = record.endEpochMs
+        if (end != null && end < record.startEpochMs) return "end_epoch_ms < start_epoch_ms"
+        try {
+            JSONObject(record.valueJson)
+        } catch (e: Exception) {
+            return "value no es objeto JSON"
+        }
+        return null
     }
 
     private fun parseAck(body: String?): UploadOutcome {

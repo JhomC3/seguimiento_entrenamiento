@@ -13,6 +13,8 @@ data class SyncReport(
     val failed: Int,
     val permanentError: String? = null,
     val notice: String? = null,
+    val quarantined: Int = 0,
+    val quarantineSample: String? = null,
 )
 
 /**
@@ -65,6 +67,8 @@ object SyncExecutor {
             delivered = upload.delivered,
             failed = upload.failed,
             permanentError = upload.permanentError,
+            quarantined = upload.quarantined,
+            quarantineSample = upload.quarantineSample,
         )
     }
 }

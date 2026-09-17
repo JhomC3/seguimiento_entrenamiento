@@ -20,7 +20,7 @@ class RecordMappersTest {
         val record = Fixtures.steps("hc-steps-1", t0, t1, count = 8123, lastModified = t1)
         val json = JSONObject(RecordMappers.toPayloadJson(record))
         assertEquals("hc-steps-1", json.getString("hc_id"))
-        assertEquals("STEPS", json.getString("record_type"))
+        assertEquals("STEPS_H1", json.getString("record_type"))
         assertEquals(t1.toEpochMilli(), json.getLong("revision"))
         assertEquals(t0.toEpochMilli(), json.getLong("start_epoch_ms"))
         assertEquals(t1.toEpochMilli(), json.getLong("end_epoch_ms"))
@@ -28,6 +28,16 @@ class RecordMappersTest {
         assertEquals(-300, json.getInt("time_zone_offset_minutes"))
         assertEquals(1, json.getInt("payload_schema_version"))
         assertEquals(8123L, json.getJSONObject("value").getLong("count"))
+    }
+
+    @Test
+    fun `intervalValue extracts summable magnitudes for hourly types`() {
+        assertEquals(100.0, RecordMappers.intervalValue(Fixtures.steps("s", t0, t1, count = 100))!!, 0.0)
+        assertEquals(12.5, RecordMappers.intervalValue(Fixtures.activeCalories("a", t0, t1, kcal = 12.5))!!, 0.0)
+        assertEquals(7.25, RecordMappers.intervalValue(Fixtures.totalCalories("c", t0, t1, kcal = 7.25))!!, 0.0)
+        assertEquals(1500.0, RecordMappers.intervalValue(Fixtures.distance("d", t0, t1, meters = 1500.0))!!, 0.0)
+        assertEquals(t0.toEpochMilli(), RecordMappers.intervalStartMs(Fixtures.steps("s", t0, t1, count = 100)))
+        assertEquals(null, RecordMappers.intervalValue(Fixtures.weight("w", t0, kg = 70.0)))
     }
 
     @Test

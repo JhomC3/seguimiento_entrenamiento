@@ -117,6 +117,47 @@ class HealthSyncClientTest {
     }
 
     @Test
+    fun `400 conserva el detail del servidor para aislar el veneno`() {
+        val server = MockWebServer()
+        server.enqueue(
+            MockResponse().setResponseCode(400)
+                .setBody("""{"detail":"Operación 3: record_type desconocido 'SPEED'"}"""),
+        )
+        server.start()
+        try {
+            val outcome = client.postBatch(
+                server.url("/sync/health-connect").toString(),
+                token = "secret",
+                payload = JSONObject("{}"),
+            )
+            assertTrue(outcome is UploadOutcome.PermanentError)
+            val detail = (outcome as UploadOutcome.PermanentError).detail
+            assertTrue("el detail debe identificar la op, fue: $detail", detail.contains("Operación 3"))
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `preflight detecta ops invalidas antes del post`() {
+        val okRecord = record("a", 100, 10)
+        val badType = okRecord.copy(hcId = "b", recordType = "SPEED")
+        val badEnd = okRecord.copy(hcId = "c", startEpochMs = 2_000, endEpochMs = 1_000)
+        val badValue = okRecord.copy(hcId = "d", valueJson = "no-json")
+        val records = mapOf("a" to okRecord, "b" to badType, "c" to badEnd, "d" to badValue)
+        val ops = listOf(
+            upsertOp("a", 100),
+            upsertOp("b", 100),
+            upsertOp("c", 100),
+            upsertOp("d", 100),
+            HealthOutboxEntity(1, "e", "NOPE", 100, 0, 1L),
+        )
+        val bad = client.findInvalidOperations(ops, records, setOf("STEPS"))
+        assertEquals(setOf(1, 2, 3, 4), bad.keys)
+        assertTrue(bad[1]!!.contains("allow-list"))
+    }
+
+    @Test
     fun `server 5xx maps to transient error`() {
         val server = MockWebServer()
         server.enqueue(MockResponse().setResponseCode(503))

@@ -35,7 +35,7 @@ class FakeHealthConnectGateway : HealthConnectGateway {
     /** Proveedor con registros paginados de 1 en 1 (sirve para probar el presupuesto por ejecución). */
     val phantomRecords = mutableListOf<Record>()
 
-    /** Resultados de aggregateTotal por typeName (p. ej. "STEPS" → 9018). */
+    /** Resultados de aggregateTotal por typeName (p. ej. "STEPS_H1" → 9018). */
     val aggregateTotals = mutableMapOf<String, Long?>()
     /** Tipos para los que se llamó a aggregateTotal. */
     val aggregateTotalLog = mutableListOf<String>()

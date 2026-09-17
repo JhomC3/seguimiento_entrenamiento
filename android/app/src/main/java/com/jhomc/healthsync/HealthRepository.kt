@@ -62,7 +62,23 @@ data class UploadResult(
     val delivered: Int,
     val failed: Int,
     val permanentError: String? = null,
+    /** Ops eliminadas del outbox por inválidas (pre-vuelo o 400 aislado). */
+    val quarantined: Int = 0,
+    /** Primer motivo de cuarentena (para mostrar en el panel, no solo contar). */
+    val quarantineSample: String? = null,
 )
+
+/**
+ * Tipos que el SERVIDOR acepta (espejo de ALLOWED_RECORD_TYPES): catálogo
+ * actual + crudos retirados (histórico pendiente de drenar). Solo el servidor
+ * valida de verdad; el pre-vuelo nunca debe ser más estricto que él.
+ */
+private val UPLOAD_ALLOWED_TYPES: Set<String> =
+    (com.jhomc.healthsync.data.ESSENTIAL_RECORD_TYPES +
+        com.jhomc.healthsync.data.RETIRED_RAW_TYPES).toSet()
+
+/** Marca de reparación única del re-encolado de crudo (sync_meta). */
+private const val LEGACY_REQUEUE_KEY = "legacy_raw_requeued_v1"
 
 /** Token expired signal, per the 1.1.0 SDK contract (changesTokenExpired + exception). */
 class ChangesTokenExpiredException(message: String) : RuntimeException(message)
@@ -169,7 +185,7 @@ class HealthRepository(
 
     /** Backfill window used for first sync and token-expiry recovery. */
     suspend fun syncType(entry: RecordTypeEntry): TypeSyncResult {
-        if (entry.aggregated) return syncAggregatedType(entry)
+        if (entry.aggregated || entry.hourlySum) return syncAggregatedType(entry)
         val state = dao.getState(entry.typeName)
         val token = state?.changesToken
         val bootstrapInProgress = state?.bootstrapStartEpochMs != null
@@ -188,6 +204,7 @@ class HealthRepository(
      * (solape que captura publicaciones tardías). Idempotente por hc_id.
      */
     private suspend fun syncAggregatedType(entry: RecordTypeEntry): TypeSyncResult {
+        if (entry.hourlySum) return syncHourlySumType(entry)
         val end = now()
         val lastSync = dao.getState(entry.typeName)?.lastSuccessfulReadAtEpochMs
         val startMs = lastSync?.let { it - AGGREGATE_OVERLAP_MS }
@@ -204,6 +221,43 @@ class HealthRepository(
             }
             val entities = HrBucketizer.bucketize(samples)
                 .map { HrBucketizer.toEntity(it, now().toEpochMilli()) }
+            if (entities.isNotEmpty()) {
+                db.withTransaction { dao.applyBackfillPage(entities, now().toEpochMilli()) }
+                total += entities.size
+            }
+            onProgress("${entry.typeName}: día $day ($total tramos)")
+            day = day.plusDays(1)
+            if (!day.isAfter(lastDay)) pace()
+        }
+        return TypeSyncResult(recordType = entry.typeName, backfilled = total)
+    }
+
+    /**
+     * Tipos de suma horaria (STEPS_H1 y cía.): se leen POR DÍA — una llamada
+     * acotada por día, sin paginación — y los intervalos se suman por hora
+     * ANTES de subir. Bootstrap = [RecordTypeEntry.historyDays] (corte hacia
+     * adelante: el histórico crudo ya vive en el servidor); normal = últimos
+     * 3 días de solape (captura publicaciones tardías). Idempotente por hc_id.
+     */
+    private suspend fun syncHourlySumType(entry: RecordTypeEntry): TypeSyncResult {
+        val end = now()
+        val lastSync = dao.getState(entry.typeName)?.lastSuccessfulReadAtEpochMs
+        val startMs = lastSync?.let { it - AGGREGATE_OVERLAP_MS }
+            ?: (end.toEpochMilli() - entry.historyDays * 24 * 3_600_000)
+        var day = Instant.ofEpochMilli(startMs).atZone(zoneId).toLocalDate()
+        val lastDay = end.atZone(zoneId).toLocalDate()
+        var total = 0
+        while (!day.isAfter(lastDay)) {
+            val dayStart = day.atStartOfDay(zoneId).toInstant()
+            val dayEnd = dayStart.plus(1, ChronoUnit.DAYS).let { if (it.isAfter(end)) end else it }
+            val page = readPage(entry, dayStart, dayEnd, null)
+            val intervals = page.records.mapNotNull { record ->
+                val value = RecordMappers.intervalValue(record) ?: return@mapNotNull null
+                val start = RecordMappers.intervalStartMs(record) ?: return@mapNotNull null
+                start to value
+            }
+            val entities = HourlySumBucketizer.bucketize(intervals)
+                .map { HourlySumBucketizer.toEntity(entry.typeName, it, now().toEpochMilli()) }
             if (entities.isNotEmpty()) {
                 db.withTransaction { dao.applyBackfillPage(entities, now().toEpochMilli()) }
                 total += entities.size
@@ -303,8 +357,14 @@ class HealthRepository(
 
     /**
      * Delivery phase: upload pending outbox ops for every active target in
-     * bounded batches. Only server-confirmed ops are marked delivered;
-     * permanent errors stop the batch loop for that target.
+     * bounded batches. Only server-confirmed ops are marked delivered.
+     *
+     * Resiliencia ante 400 (el servidor rechaza el lote COMPLETO por una sola
+     * op inválida): pre-vuelo local espejo del servidor, bisección del lote
+     * hasta aislar la op envenenada y cuarentena con reporte. La cuarentena
+     * elimina la op del outbox (nunca podría entregarse) pero la cuenta en el
+     * reporte: nunca hay pérdida silenciosa. 401/413 y errores de nivel-lote
+     * no bisecan: paran como antes.
      */
     suspend fun uploadPending(
         client: HealthSyncClient,
@@ -312,13 +372,45 @@ class HealthRepository(
         token: String,
         deviceId: String,
     ): UploadResult {
+        if (deviceId.isBlank()) {
+            return UploadResult(target.targetId, 0, 0, "device_id vacío (pre-vuelo local)")
+        }
+        // Reparo único: el pre-vuelo 0.2.0 fue más estricto que el servidor y
+        // cuarentenó crudo pendiente válido (fuera del outbox, pero con el
+        // registro intacto). Se re-encola UNA vez; la entrega es idempotente
+        // en el servidor (mismo hc_id+revisión) y el flag evita el bucle.
+        if (dao.getMeta(LEGACY_REQUEUE_KEY)?.value != "1") {
+            db.withTransaction {
+                dao.requeueByTypes(
+                    target.targetId,
+                    com.jhomc.healthsync.data.RETIRED_RAW_TYPES,
+                    now().toEpochMilli(),
+                )
+                dao.putMeta(SyncMetaEntity(LEGACY_REQUEUE_KEY, "1"))
+            }
+        }
         var delivered = 0
         var failed = 0
+        var quarantined = 0
+        var quarantineSample: String? = null
         var batchOps = MAX_BATCH_OPERATIONS
         while (true) {
             val batch = dao.pendingOps(target.targetId, batchOps)
             if (batch.isEmpty()) break
             val records = batch.associate { it.hcId to dao.getRecord(it.hcId) }
+            // Pre-vuelo: huérfanos (sin registro local) e inválidos según las
+            // reglas del servidor van a cuarentena sin pisar la red.
+            val bad = client.findInvalidOperations(batch, records, UPLOAD_ALLOWED_TYPES)
+            if (bad.isNotEmpty()) {
+                db.withTransaction {
+                    bad.keys.forEach { dao.dropOp(target.targetId, batch[it].hcId) }
+                }
+                quarantined += bad.size
+                if (quarantineSample == null) quarantineSample = bad.values.first()
+                onProgress("Cuarentena: ${bad.size} ops inválidas (${bad.values.first()})")
+                batchOps = MAX_BATCH_OPERATIONS
+                continue
+            }
             val payload = client.buildBatchPayload(deviceId, batch, records)
             if (payload.toString().length > MAX_BATCH_BYTES && batch.size > 1) {
                 // Lote sobredimensionado (tipos con series grandes, p. ej.
@@ -333,25 +425,67 @@ class HealthRepository(
                     batchOps = MAX_BATCH_OPERATIONS
                 }
                 is UploadOutcome.PermanentError -> {
-                    if (outcome.detail == "HTTP 413" && batchOps > 1) {
+                    val code = permanentCode(outcome.detail)
+                    if (code == 413 && batchOps > 1) {
                         // El servidor rechaza por tamaño (estima más conservador):
                         // partir a la mitad y reintentar en vez de rendirse.
                         batchOps = (batch.size / 2).coerceAtLeast(1)
                         continue
                     }
-                    return UploadResult(target.targetId, delivered, failed + batch.size, outcome.detail)
+                    if (code == 400 && !isBatchLevelError(outcome.detail)) {
+                        if (batch.size > 1) {
+                            // Una op del lote es inválida: bisecar hasta aislarla.
+                            batchOps = (batch.size / 2).coerceAtLeast(1)
+                            continue
+                        }
+                        // Lote de 1 op que sigue en 400: es el veneno.
+                        // Cuarentena con reporte y se sigue con el resto.
+                        db.withTransaction { dao.dropOp(target.targetId, batch.single().hcId) }
+                        quarantined++
+                        if (quarantineSample == null) {
+                            quarantineSample = outcome.detail.take(150)
+                        }
+                        onProgress("Cuarentena: 1 op rechazada (${outcome.detail.take(120)})")
+                        batchOps = MAX_BATCH_OPERATIONS
+                        continue
+                    }
+                    return UploadResult(
+                        target.targetId, delivered, failed + batch.size, outcome.detail,
+                        quarantined, quarantineSample,
+                    )
                 }
                 is UploadOutcome.TransientError -> {
                     db.withTransaction { batch.forEach { dao.bumpAttempt(target.targetId, it.hcId) } }
                     failed += batch.size
-                    return UploadResult(target.targetId, delivered, failed)
+                    return UploadResult(
+                        target.targetId, delivered, failed,
+                        quarantined = quarantined, quarantineSample = quarantineSample,
+                    )
                 }
             }
             delivered += batch.size
             onProgress("Entregados $delivered ops al servidor")
         }
-        return UploadResult(target.targetId, delivered, failed)
+        return UploadResult(
+            target.targetId, delivered, failed,
+            quarantined = quarantined, quarantineSample = quarantineSample,
+        )
     }
+
+    /**
+     * Errores 400 de NIVEL-LOTE (afectan al cuerpo entero, no a una op): bisecar
+     * no los resuelve (todas las mitades fallan) y terminaría cuarentenando todo
+     * el outbox. Acoplado a los mensajes de `src/health_sync_service.py`.
+     */
+    private fun isBatchLevelError(detail: String): Boolean =
+        detail.contains("schema_version") ||
+            detail.contains("device_id") ||
+            detail.contains("operations") ||
+            detail.contains("objeto JSON") ||
+            detail.contains("Máximo")
+
+    private fun permanentCode(detail: String): Int? =
+        detail.substringAfter("HTTP ", "").substringBefore(":").trim().toIntOrNull()
 
     /** Replay the active buffer into a brand-new target (seed, not re-sync). */
     suspend fun seedNewTarget(targetId: Long) {

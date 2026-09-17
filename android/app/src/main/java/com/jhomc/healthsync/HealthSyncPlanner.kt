@@ -8,9 +8,9 @@ import java.time.ZoneId
  *
  *  - Mañana (9:00): sueño, FC en reposo y composición corporal — datos que
  *    solo existen al despertar o se miden por la mañana.
- *  - Mediodía (13:00) y tarde (19:00): sesiones de ejercicio y calorías —
- *    frescura del entreno sin despertadas continuas.
- *  - Tarde (19:00): pasos, HR (tramos de 5 min) y el resto.
+ *  - Mediodía (13:00) y tarde (19:00): sesiones de ejercicio y calorías
+ *    horarias — frescura del entreno sin despertadas continuas.
+ *  - Tarde (19:00): pasos y distancia horarios, HR (tramos de 5 min) y el resto.
  *
  * El worker despierta cada hora pero solo sincroniza tipos vencidos: la
  * mayoría de las horas NO hace llamadas. El botón directo fuerza todo.
@@ -29,10 +29,10 @@ object HealthSyncPlanner {
         "LEAN_BODY_MASS",
         -> setOf(9)
         "EXERCISE_SESSION",
-        "ACTIVE_CALORIES_BURNED",
-        "TOTAL_CALORIES_BURNED",
+        "ACTIVE_CALORIES_H1",
+        "TOTAL_CALORIES_H1",
         -> setOf(13, 19)
-        else -> setOf(19) // STEPS, HEART_RATE y el resto
+        else -> setOf(19) // STEPS_H1, DISTANCE_H1, HEART_RATE y el resto
     }
 
     /** Primera ventana del día para ordenar candidatos. */
