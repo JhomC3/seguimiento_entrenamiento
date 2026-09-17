@@ -6,6 +6,8 @@
 
 import { closeDialog, openDialog } from './modal-dialog.js';
 import { initExerciseCombo } from './exercise-combo.js';
+import { fitRowsToPanel } from './editor.js';
+import { fitNutritionRowsToPanel } from './nutrition-editor.js';
 
 const MODES = ['entrenamiento', 'alimentacion'];
 
@@ -42,6 +44,11 @@ function setMode(mode, push = true) {
     });
     document.querySelector('#daily-training-view')?.toggleAttribute('hidden', mode !== 'entrenamiento');
     document.querySelector('#daily-food-view')?.toggleAttribute('hidden', mode !== 'alimentacion');
+    // El fit se omite en tabs ocultos (rects 0): re-mide al mostrar, ya con layout.
+    requestAnimationFrame(function () {
+        fitRowsToPanel();
+        fitNutritionRowsToPanel();
+    });
     document.querySelector('#daily-page')?.setAttribute('data-vista', mode);
     const legend = document.getElementById('navigator-legend');
     if (legend) {

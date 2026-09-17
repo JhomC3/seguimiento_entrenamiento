@@ -202,7 +202,7 @@
             </table>
         </div>
 
-        <div id="edit-actions" class="mt-1 h-7 flex items-center gap-2 invisible">
+        <div id="edit-actions" class="mt-1 h-7 flex items-center gap-2{% if readonly %} invisible{% endif %}">
             <button
                 type="button"
                 data-action="cancel-session-edit"

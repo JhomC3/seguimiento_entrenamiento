@@ -355,6 +355,9 @@ export function fitRowsToPanel() {
     const editor = document.getElementById('session-editor');
     const tbody = document.getElementById('set-rows');
     if (!editor || !tbody) return;
+    // Tab inactivo (display:none): los rects son 0 y fijarían una altura
+    // basura. Se omite; diario.js y el settle de navegación re-miden al mostrar.
+    if (!editor.isConnected || editor.offsetParent === null) return;
     const scroller = editor.querySelector('.table-scroll');
     const thead = editor.querySelector('.table-scroll thead');
     const theadH = thead ? thead.getBoundingClientRect().height : 20;

@@ -24,6 +24,10 @@
 .daily-view { display: flex; flex-direction: column; gap: .85rem; }
 .daily-view[hidden] { display: none; }
 .daily-view-header { align-items: end; }
+/* Banner de sugerencia async (load + re-fetch por fecha): altura mínima
+   reservada para que su llegada no empuja la tabla (CLS). El aviso de
+   descanso puede ser más alto: salto residual menor aceptado. */
+#daily-page #suggestion-banner { display: block; min-height: 28px; }
 .daily-editor-card, .daily-secondary-card { min-width: 0; }
 .daily-dialog { width: min(92vw, 620px); max-height: min(88vh, 760px); padding: 0; border: 0; background: transparent; color: var(--t-surfaces-neutral-100); }
 .daily-dialog::backdrop { background: var(--t-overlay-backdrop-popup); backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2); }

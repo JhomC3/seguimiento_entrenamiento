@@ -60,7 +60,9 @@ def test_empty_future_is_editable(tmp_path, monkeypatch):
     assert 'duration-150 hidden"' not in r.text
     assert 'data-readonly="0"' in r.text
     assert 'data-has-data="0"' in r.text
-    assert 'id="edit-actions" class="mt-1 h-7 flex items-center gap-2 invisible"' in r.text
+    # Día editable: el servidor ya renderiza las acciones visibles (sin
+    # parpadeo): el `invisible` solo aparece con readonly=1.
+    assert 'id="edit-actions" class="mt-1 h-7 flex items-center gap-2"' in r.text
     assert 'aria-label="Cancelar"' in r.text
 
 
