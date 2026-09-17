@@ -3,8 +3,8 @@
 // Public API: initDateNavigation, doNav, requestNavigate, updateDateDot.
 
 import { getCicloStart, getCurrentIso, getPendingNav, isDirty, setCurrentIso, setPendingNav, showConfirmDialog } from './state.js';
-import { submitSave } from './editor.js';
-import { nutritionIsDirty, requestNutritionNav } from './nutrition-editor.js';
+import { fitRowsToPanel, submitSave } from './editor.js';
+import { fitNutritionRowsToPanel, nutritionIsDirty, requestNutritionNav } from './nutrition-editor.js';
 import { showNotice } from './notices.js';
 
 const DIA_MAP = {
@@ -58,8 +58,15 @@ export function doNav(iso, force) {
     if (inFlightIso === iso) return;
     inFlightIso = iso;
     updateDateTitle(iso);
-    const actions = document.getElementById('edit-actions');
-    if (actions) actions.classList.add('invisible');
+    // Pre-oculta AMBAS barras (sesión + nutrición): los swaps llegan en
+    // distinto orden y la barra pendiente conservaría el día anterior y
+    // parpadearía. `invisible` reserva el hueco (sin layout shift).
+    for (const id of ['edit-actions', 'nutrition-edit-actions']) {
+        document.getElementById(id)?.classList.add('invisible');
+    }
+    for (const id of ['session-editor-wrap', 'nutrition-editor-wrap']) {
+        document.getElementById(id)?.setAttribute('aria-busy', 'true');
+    }
     setCurrentIso(iso);
     document.querySelectorAll('.date-num.selected').forEach(b => {
         b.classList.remove('selected');
@@ -122,12 +129,21 @@ export function doNav(iso, force) {
             })
         );
     }
+    // Asentamiento único: estabiliza la altura una vez con el contenido
+    // completo (los fits por swap quedan como mejora progresiva). Los fits
+    // ignoran tabs ocultos (rects 0).
+    function settleNavFlight() {
+        inFlightIso = null;
+        for (const id of ['session-editor-wrap', 'nutrition-editor-wrap']) {
+            document.getElementById(id)?.removeAttribute('aria-busy');
+        }
+        fitRowsToPanel();
+        fitNutritionRowsToPanel();
+    }
     Promise.all(jobs)
-        .then(function () {
-            inFlightIso = null;
-        })
+        .then(settleNavFlight)
         .catch(function () {
-            inFlightIso = null;
+            settleNavFlight();
             showNotice('No se pudo cargar el día. Reintenta.', 'error');
         });
     if (btn) {

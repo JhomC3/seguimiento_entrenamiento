@@ -215,6 +215,8 @@ export function fitNutritionRowsToPanel() {
     const p = panel();
     const tbody = document.getElementById('nutrition-rows');
     if (!p || !tbody) return;
+    // Igual que el editor de sesión: no medir en un tab oculto (rects 0).
+    if (!p.isConnected || p.offsetParent === null) return;
     const scroller = p.querySelector('.table-scroll');
     const thead = p.querySelector('.table-scroll thead');
     const theadH = thead ? thead.getBoundingClientRect().height : 20;
@@ -351,7 +353,7 @@ function updateConsumido() {
         if (cell) cell.textContent = String(Math.round(sums[key]));
     });
     const gramsCell = document.querySelector('.consumed-grams');
-    if (gramsCell) gramsCell.textContent = grams > 0 ? Math.round(grams) + ' g' : '—';
+    if (gramsCell) gramsCell.textContent = grams > 0 ? '(' + Math.round(grams) + ' g)' : '—';
 }
 
 /* ---------- Eliminar día ---------- */

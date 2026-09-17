@@ -107,10 +107,15 @@
     background: var(--t-overlay-white-006);
 }
 
-/* Tabla: altura fija estable (variable en el panel, sobrevive a los swaps) */
-#session-editor .table-scroll,
+/* Tabla: altura fija estable (variable en el panel, sobrevive a los swaps).
+   Fallbacks por editor según su thead (sesión 1 fila, nutrición 3 filas)
+   para que el primer pintado pre-JS no salte al aplicar --table-h. */
+#session-editor .table-scroll {
+    height: var(--table-h, 528px);
+    scrollbar-gutter: stable;
+}
 #nutrition-panel .table-scroll {
-    height: var(--table-h, 538px);
+    height: var(--table-h, 588px);
     scrollbar-gutter: stable;
 }
 /* Firefox no soporta ::-webkit-scrollbar: usa scrollbar estándar fino y sutil.
@@ -309,7 +314,7 @@
     width: var(--nutri-food-w);
 }
 #nutrition-panel .qty-col {
-    width: 64px;
+    width: 92px;
 }
 /* Tiers de nutriente según el nombre (S/M); la unidad va en 2ª línea. */
 #nutrition-panel .nutrient-col-s {
@@ -399,6 +404,18 @@
 #session-form input[name="rir"] {
     -moz-appearance: textfield;
     appearance: textfield;
+}
+/* Cantidad (nutrición): mismo patrón que RIR — los spinners nativos robaban
+   ~16px dentro de la columna y recortaban valores de 3 cifras. */
+#nutrition-form input[name="cantidad"]::-webkit-outer-spin-button,
+#nutrition-form input[name="cantidad"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+#nutrition-form input[name="cantidad"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+    font-variant-numeric: tabular-nums;
 }
 .rir-step {
     position: relative;

@@ -330,7 +330,7 @@ def test_nutrition_create_edit_save_reload_delete(page, server):
     expect(row.locator(".kcal-cell")).to_have_text("467")
     expect(row.locator(".prot-cell")).to_have_text("20")
     expect(page.locator(".consumed-kcal")).to_have_text("467")
-    expect(page.locator(".consumed-grams")).to_have_text("120 g")
+    expect(page.locator(".consumed-grams")).to_have_text("(120 g)")
 
     # 3) Parámetros en vivo: peso 69 + kcal 2750 -> prot 104, grasa 76, carb 413
     page.fill("#param-peso", "69")

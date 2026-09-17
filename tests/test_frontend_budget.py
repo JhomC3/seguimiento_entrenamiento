@@ -34,8 +34,10 @@ CSS_INDIVIDUAL_MAX = 36 * 1024  # components.css ~35.8K tras combo custom
 # Revisado 2026-09-16: píldora flotante de acciones en ambos editores +
 # Alimento/Cantidad fijas + scrollbar gruesa + altura de cabecera clavada
 # (lote nutri-scroll, ~+2.3K) → 98K.
+# Revisado 2026-09-17: estabilidad del Diario (fallbacks de altura por editor,
+# min-height del banner de sugerencia, Cantidad 92px sin spinners, ~+0.7K) → 99K.
 CSS_AGGREGATE_MAX = (
-    98 * 1024
+    99 * 1024
 )  # ~60K → 84K tooltip → 86K Diario → 89K remediación → 90K sugerencia → 91K nutrición → 92K HIIT-estricto → 93K combo-custom → 95K nutri-scroll → 98K nutri-pill+sticky
 JS_INDIVIDUAL_MAX = 64 * 1024
 # Revisado 2026-09-04: remediación UI/UX (drawer por breakpoint, cardio paralelo
@@ -66,8 +68,10 @@ JS_INDIVIDUAL_MAX = 64 * 1024
 # Revisado 2026-09-15: objetivos de micros editables + fix NaN en Consumido
 # (5 inputs DRI/UL, sync live de 9 celdas objetivo, sumas de 9 nutrientes
 # en nutrition-editor.js, ~+0.5K) → 224K.
+# Revisado 2026-09-17: estabilidad del Diario (pre-ocultado de ambas barras,
+# aria-busy + settle único de navegación, guards de tab oculto, ~+0.6K) → 225K.
 JS_AGGREGATE_MAX = (
-    224 * 1024
+    225 * 1024
 )  # ~132K → 165K Fase 2 → ~185K TAREA 3 → ~198K remediación → ~201K HIIT → ~203K nutrición → ~205K tooltip → ~209K ctrlz-local → ~212K HIIT-estricto → ~215K autofill → ~216K splits-alta → ~217K auto-categoria → ~218K grupo-texto → ~223K combo-custom → ~224K micros-editables
 
 
