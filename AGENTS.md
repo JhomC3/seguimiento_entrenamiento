@@ -240,11 +240,6 @@ Referencia completa: `docs/architecture/web-standards.md`. Principios vinculante
 
 ### Flujo recomendado con OpenCode
 
-- Usa `/refine` solo cuando la solicitud sea ambigua o tenga varias decisiones abiertas.
-- Para tareas no triviales, empieza con `/plan` y revisa el plan antes de usar `/implement`.
-- Usa `/review` después de implementar; el agente reviewer no tiene permiso para editar.
-- Usa `/security-review` cuando el cambio toque autenticación, datos sensibles, red o Health Connect.
-- Los agentes de `.opencode/agents/` son roles especializados de análisis y no sustituyen estas instrucciones.
 - No se hacen commits ni pushes automáticamente; la rama y el diff deben revisarse antes de confirmar cambios.
 - Las skills del proyecto complementan estas instrucciones; las reglas permanentes siguen viviendo aquí.
 
