@@ -260,8 +260,8 @@
   título + `← Dashboard` + botón `data-action="split-new"` **Nuevo split**.
   `?abrir=<id>` valida el id y renderiza ese item ya expandido (modo vista);
   sin `?abrir`, el split actual (si hay) se renderiza primero y abierto.
-- **`#splits-section`** contiene el **estado vacío** ("Todavía no hay splits
-  guardados" + `data-action="split-new"` "Crear nuevo split") o
+- **`#splits-section`** contiene el panel vacío `#splits-empty` (solo
+  `data-action="split-new"` "Crear nuevo split", sin letrero) o
   `#splits-list` con **un item por split** (`partials/split_accordion.html` +
   `split_accordion_item.html`; `split_list.html` fue retirado). Cada item es
   un **acordeón** (`<details class="split-accordion">` nativo):
@@ -450,8 +450,10 @@ hook se conservan como alias):
 - **Formularios:** `.form-error` (errores, color semántico por token).
 - **Contenedores:** `.panel` (+`.panel-tight`/`.panel-default`/`.panel-spacious`),
   `.panel-title` (+`.panel-title-neon`, `.panel-title-divider`), `.card`.
-- **Estados vacíos:** `.empty-state` (tono 12px neutral-400 único en Diario y
-  Splits; cada contexto conserva su texto y layout).
+- **Estados vacíos:** sin letreros (2026-09-17, a petición expresa): los días
+  sin datos, las listas de plantillas y el catálogo vacíos se renderizan sin
+  placa informativa. `.empty-state` se conserva como vocabulario para avisos
+  con función (p. ej. `#split-catalog-empty` "Sin resultados").
 - **Splits:** `.splits-page`, `.splits-page-header`, `.splits-layout`,
   `.splits-editor-col`, `.splits-catalog-col`, `.split-columns`,
   `.split-board-scroll`, `.split-day-zone` (+`.drop-target` durante el
@@ -470,7 +472,7 @@ hook se conservan como alias):
   `.split-summary-row`, `.split-summary-total`, `.split-summary-name`,
   `.split-summary-group`, `.split-summary-group-toggle`,
   `.split-summary-group-body`, `.split-summary-exercise`,
-  `.split-summary-chevron`, `.split-empty-state`, `.split-empty-state-title`,
+  `.split-summary-chevron`, `.split-empty-state`,
   `.split-metric`, `.split-empty`.
 - El gate `scripts/audit_consistency.py` (CI, `tests/test_ui_consistency.py`) prohíbe
   reintroducir utilidades de color inline, micro-tipografía y hex literales.
@@ -533,17 +535,16 @@ hook se conservan como alias):
   `.btn btn-outline`; la página activa se marca con `aria-current="page"` y
   color/borde borgoña (`.workspace-nav .btn[aria-current="page"]`).
 
-## 4.2. Estados vacíos del Diario
+## 4.2. Días vacíos del Diario (sin letreros)
 
-- "No hay entrenamiento guardado para este día." / "No hay alimentación guardada
-  para este día." cuando la fecha no tiene datos de ese dominio, con el
-  componente `.empty-state` (compartido con Splits; textos intactos).
+- Sin placa informativa: la fecha sin datos de un dominio renderiza el editor
+  directamente (vacío y editable si es hoy, solo lectura si tiene prefill).
 - Los botones de crear (Nuevo ejercicio / Nuevo alimento) y Plantillas siguen
   visibles en días vacíos.
 
 ## 5. Estados de UI (siempre diseñados)
 
-- Vacío: "Sin datos" / "Aún no hay entrenos" / placeholder del día.
+- Vacío: "Sin datos" (gráficas, con shell estable) / día sin filas.
 - Carga: `htmx-indicator` en filas de la cascada; Plotly se carga bajo demanda
   (un único script SRI tras JSON de gráfica no vacío; fallo → aviso `role="alert"`).
 - Error: notices `role="alert"`; éxito: regiones `role="status" aria-live="polite"`.

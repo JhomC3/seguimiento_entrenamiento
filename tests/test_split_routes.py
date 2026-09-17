@@ -54,9 +54,8 @@ def test_splits_page_render(tmp_path, monkeypatch):
     assert "Curl" in r.text
     assert 'data-item-type="hiit"' in r.text
     assert 'id="splits-section"' in r.text
-    # Sin split: estado vacío con CTA de creación.
-    assert "Todavía no hay splits guardados" in r.text
-    assert 'class="empty-state split-empty-state-title"' in r.text
+    # Sin split: solo el CTA de creación, sin letrero.
+    assert "Todavía no hay splits guardados" not in r.text
     assert 'data-action="split-new"' in r.text
     # Sin contenedor estrecho: la página usa todo el ancho.
     assert "max-w-7xl" not in r.text
@@ -320,7 +319,8 @@ def test_undo_split_restaura_lista(tmp_path, monkeypatch):
     r = client.post("/undo", data={"fecha": ""})
     assert r.status_code == 200
     assert 'id="splits-section" hx-swap-oob="outerHTML"' in r.text
-    assert "Todavía no hay splits guardados" in r.text
+    assert "Todavía no hay splits guardados" not in r.text
+    assert 'data-action="split-new"' in r.text
     assert get_split(db, 1) is None
     clear_undo_stack()
 

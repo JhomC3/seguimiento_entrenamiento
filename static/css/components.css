@@ -1142,16 +1142,11 @@ button.split-catalog-chip {
     font-size: 12px;
 }
 
-/* Estado vacío de #splits-section. */
+/* Estado vacío de #splits-section (panel con CTA, sin letrero). */
 .split-empty-state {
     align-items: center;
     text-align: center;
     padding: 40px 16px;
-}
-.split-empty-state-title {
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--t-surfaces-neutral-300);
 }
 
 /* Resumen jerárquico dentro de cada tarjeta (grupo colapsable). */

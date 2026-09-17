@@ -359,7 +359,7 @@ def test_plantillas_section_lives_in_popup(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/editor/popup?fecha=2026-08-12")
     assert 'id="plantillas-section"' in r.text
-    assert "Aún no hay entrenos" in r.text
+    assert "Aún no hay entrenos" not in r.text
     home = _client().get("/").text
     assert 'id="plantillas-section"' not in home
 
@@ -402,7 +402,7 @@ def test_plantilla_eliminar(tmp_path, monkeypatch):
     client.post("/plantilla/guardar", data={"nombre": "Mi Empuje", "ejercicio": ["Press"]})
     r = client.post("/plantilla/eliminar/1")
     assert "Entreno eliminado" in r.text
-    assert "Aún no hay entrenos" in r.text
+    assert 'id="plantillas-list"' not in r.text
 
 
 def test_plantilla_aplicar_rellena_por_ejercicio_sin_secuencia_exacta(tmp_path, monkeypatch):
@@ -881,7 +881,7 @@ def test_undo_entrenos_oob_plantillas(tmp_path, monkeypatch):
     r = client.post("/undo", data={"fecha": _fecha()})
     assert r.status_code == 200
     assert 'id="plantillas-section" hx-swap-oob="outerHTML"' in r.text
-    assert "Aún no hay entrenos" in r.text
+    assert 'id="plantillas-list"' not in r.text
 
 
 def test_domain_errors_return_400_with_notice(tmp_path, monkeypatch):
@@ -1178,6 +1178,8 @@ def test_alimentacion_editor_micros_no_editables_con_dri(tmp_path, monkeypatch):
     assert 'id="param-vita"' not in r.text
     # Fila Objetivo con los DRI fijos.
     assert "38" in r.text
+    for dri in ("3400", "1500", "900", "2.4", "1.3"):
+        assert dri in r.text, dri
 
 
 def test_index_app_config_tiene_ciclo_start(tmp_path, monkeypatch):
@@ -2503,7 +2505,7 @@ def test_dashboard_catalog_empty_db(tmp_path, monkeypatch):
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/")
     assert 'id="dashboard-catalog"' in r.text
-    assert "No hay ejercicios registrados" in r.text
+    assert "No hay ejercicios registrados" not in r.text
 
 
 def test_dashboard_catalog_no_info_button(tmp_path, monkeypatch):
@@ -2911,15 +2913,15 @@ def test_diario_muestra_entrenamiento_historico(tmp_path, monkeypatch):
     assert 'data-has-data="1"' in r.text
 
 
-def test_diario_estado_vacio_entrenamiento_y_alimentacion(tmp_path, monkeypatch):
+def test_diario_sin_letreros_de_estado_vacio(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     monkeypatch.setattr(appmod, "DB_PATH", db)
     r = _client().get("/diario?fecha=2026-07-14")
     assert r.status_code == 200
-    assert "No hay entrenamiento guardado para este día." in r.text
-    assert "No hay alimentación guardada para este día." in r.text
-    assert "daily-date-hint" not in r.text
-    assert r.text.count('class="empty-state daily-empty-state"') == 2
+    assert "No hay entrenamiento guardado para este día." not in r.text
+    assert "No hay alimentación guardada para este día." not in r.text
+    assert "daily-empty-state" not in r.text
+    assert "data-empty-state" not in r.text
 
 
 def test_diario_muestra_alimentacion_historica(tmp_path, monkeypatch):
@@ -2977,9 +2979,9 @@ def test_diario_plantillas_vacias_muestran_estado(tmp_path, monkeypatch):
     r = _client().get("/diario")
     assert "Plantillas" in r.text
     assert "Plantillas · 0" not in r.text
-    # Los estados vacíos de las listas viven en los diálogos.
-    assert "Aún no hay entrenos" in r.text
-    assert "Guarda un día desde el panel de alimentación" in r.text
+    # Sin letreros de estado vacío en las listas.
+    assert "Aún no hay entrenos" not in r.text
+    assert "Guarda un día desde el panel de alimentación" not in r.text
 
 
 def test_navigator_diario_incluye_fechas_de_alimentacion(tmp_path, monkeypatch):

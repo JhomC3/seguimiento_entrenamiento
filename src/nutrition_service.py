@@ -78,10 +78,19 @@ NUTRIENT_UNITS: dict[str, str] = {
     "selenio": "mcg",
 }
 
-# Objetivos diarios de micronutrientes para hombre adulto (DRI, NIH Office of
-# Dietary Supplements; Fe 8 mg men 19-50, Ca 1000 mg men 19-50, vitC 90 mg men
-# 19+, vitA 900 mcg RAE men 19+, fibra 38 g AI men 31-50). Claves de
-# `parametros_diarios` (`*_objetivo`).
+# Objetivos diarios de micronutrientes para hombre de 31-50 años (DRI del
+# Food and Nutrition Board; fichas NIH Office of Dietary Supplements):
+# fibra 38 g AI 19-50 · hierro 8 mg RDA hombres 19-50 · calcio 1000 mg RDA
+# 19-50 · vitamina C 90 mg RDA hombres (+35 mg fumadores) · vitamina A
+# 900 mcg RAE RDA hombres · magnesio 420 mg RDA hombres 31-50 (400 mg en
+# 19-30) · zinc 11 mg RDA hombres · potasio 3400 mg AI hombres 19+
+# (NASEM 2019, antes 4700) · sodio 1500 mg AI 19-50 (NASEM 2019; CDRR 2300) ·
+# vitamina D 15 mcg RDA 19-70 · vitamina E 15 mg RDA alfa-tocoferol ·
+# vitamina K 120 mcg AI hombres 19+ · folato 400 mcg DFE RDA adultos ·
+# vitamina B12 2.4 mcg RDA adultos · vitamina B6 1.3 mg RDA 19-50 ·
+# yodo 150 mcg RDA adultos · selenio 55 mcg RDA adultos.
+# Claves de `parametros_diarios` (`*_objetivo`). Carbohidratos, proteína y
+# grasa NO están aquí: se calculan por Atwater desde peso/factores/kcal.
 MICRO_DRI_TARGETS: dict[str, float] = {
     "fibra_objetivo": 38.0,
     "hierro_objetivo": 8.0,
@@ -103,7 +112,8 @@ MICRO_DRI_TARGETS: dict[str, float] = {
 }
 
 # Límites superiores tolerables (UL, NIH ODS). `fibra` no tiene UL
-# establecido. Solo informativo para la UI: nunca bloquean el guardado.
+# establecido; `sodio` 2300 es el CDRR 2019 (no hay UL). Solo informativo
+# para la UI: nunca bloquean el guardado.
 MICRO_UL: dict[str, float | None] = {
     "fibra": None,
     "hierro": 45.0,

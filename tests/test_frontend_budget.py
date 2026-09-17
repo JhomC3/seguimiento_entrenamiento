@@ -31,9 +31,12 @@ CSS_INDIVIDUAL_MAX = 36 * 1024  # components.css ~35.8K tras combo custom
 # Revisado 2026-09-11: separación estricta HIIT (placeholder transparente en
 # readonly para el fantasma "s" de Desc, ~0.2K) → 92K.
 # Revisado 2026-09-12: combo custom del alta (+~0.9K CSS) → 93K.
+# Revisado 2026-09-16: píldora flotante de acciones en ambos editores +
+# Alimento/Cantidad fijas + scrollbar gruesa + altura de cabecera clavada
+# (lote nutri-scroll, ~+2.3K) → 98K.
 CSS_AGGREGATE_MAX = (
-    93 * 1024
-)  # ~60K → 84K tooltip → 86K Diario → 89K remediación → 90K sugerencia → 91K nutrición → 92K HIIT-estricto → 93K combo-custom
+    98 * 1024
+)  # ~60K → 84K tooltip → 86K Diario → 89K remediación → 90K sugerencia → 91K nutrición → 92K HIIT-estricto → 93K combo-custom → 95K nutri-scroll → 98K nutri-pill+sticky
 JS_INDIVIDUAL_MAX = 64 * 1024
 # Revisado 2026-09-04: remediación UI/UX (drawer por breakpoint, cardio paralelo
 # con aviso, dirty-check Cancel, 9 nutrientes, copy-day, submit splits) +~8K → 200K.

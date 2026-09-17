@@ -61,9 +61,9 @@ const TARGET_CELLS = [
     ['grasa', 'target-fat'],
 ];
 
-const ROWS_VISIBLE = 17.5;
-const PANEL_BUFFER = 2;
-const ROW_BORDER_PX = 1;
+/* Filas enteras visibles (nunca media fila rebanada al borde). Los
+   separadores son solo-pintado (inset, sin layout): el paso es rowH. */
+const ROWS_VISIBLE = 18;
 
 let bound = false;
 let rowHMeasured = null;
@@ -215,6 +215,7 @@ export function fitNutritionRowsToPanel() {
     const p = panel();
     const tbody = document.getElementById('nutrition-rows');
     if (!p || !tbody) return;
+    const scroller = p.querySelector('.table-scroll');
     const thead = p.querySelector('.table-scroll thead');
     const theadH = thead ? thead.getBoundingClientRect().height : 20;
     if (rowHMeasured === null) {
@@ -229,7 +230,11 @@ export function fitNutritionRowsToPanel() {
             rowHMeasured = 28;
         }
     }
-    const full = theadH + ROWS_VISIBLE * rowHMeasured + (ROWS_VISIBLE - 1) * ROW_BORDER_PX + PANEL_BUFFER;
+    /* La scrollbar horizontal clásica ocupa alto dentro del contenedor fijo:
+       se descuenta para que el borde caiga en límite de fila en ambos modos
+       (overlay = 0, clásica ≈ 6). */
+    const hScrollBar = scroller ? scroller.offsetHeight - scroller.clientHeight : 0;
+    const full = theadH + ROWS_VISIBLE * rowHMeasured - hScrollBar;
     p.style.setProperty('--table-h', full + 'px');
 }
 
@@ -386,15 +391,6 @@ export function requestNutritionNav(iso) {
 }
 
 /* ---------- Eventos delegados ---------- */
-export function syncNutritionEmptyState() {
-    const p = panel();
-    const st = document.getElementById('nutrition-editor-state');
-    if (!p || !st) return;
-    const empty = p.querySelector('[data-empty-state="nutrition"]');
-    if (!empty) return;
-    empty.hidden = st.dataset.hasData === '1';
-}
-
 function onClick(e) {
     const el = e.target.closest('[data-action]');
     if (!el) return;
@@ -460,7 +456,6 @@ export function refreshNutritionEditor() {
     if (st && p) p.dataset.editmode = st.dataset.readonly === '1' ? '0' : '1';
     handleNutritionState();
     syncNutritionButtons();
-    syncNutritionEmptyState();
     updateObjetivo();
     updateConsumido();
     fitNutritionRowsToPanel();

@@ -125,6 +125,12 @@
 #session-editor .table-scroll table,
 #nutrition-panel .table-scroll table {
     table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+/* Separador de sesión (mismo caso que nutrición). */
+#session-editor .table-scroll tbody td:not(.set-actions-column) {
+    box-shadow: inset 0 -1px 0 var(--t-surfaces-neutral-800);
 }
 #session-editor .table-scroll thead th,
 #nutrition-panel .table-scroll thead th {
@@ -138,15 +144,16 @@
 #nutrition-panel .table-scroll thead tr:nth-child(1) th {
     top: 0;
     z-index: 7;
+    height: 36px;
     background: var(--t-surfaces-neutral-900);
 }
 #nutrition-panel .table-scroll thead tr:nth-child(2) th {
-    top: 24px;
+    top: 36px;
     z-index: 6;
     background: var(--t-surfaces-neutral-900);
 }
 #nutrition-panel .table-scroll thead tr:nth-child(3) th {
-    top: 48px;
+    top: 60px;
     z-index: 6;
     background: var(--t-surfaces-matte-900);
 }
@@ -164,6 +171,25 @@
     background: var(--t-overlay-white-007);
     border-radius: 1.5px;
 }
+/* Nutrición: scrollbar visible y arrastrable (6px + track sutil). */
+#nutrition-panel .table-scroll {
+    scrollbar-width: auto;
+    scrollbar-color: var(--t-overlay-white-014) var(--t-overlay-white-004);
+}
+#nutrition-panel .table-scroll::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+#nutrition-panel .table-scroll::-webkit-scrollbar-track {
+    background: var(--t-overlay-white-004);
+}
+#nutrition-panel .table-scroll::-webkit-scrollbar-thumb {
+    background: var(--t-overlay-white-014);
+    border-radius: 3px;
+}
+#nutrition-panel .table-scroll::-webkit-scrollbar-thumb:hover {
+    background: var(--t-overlay-white-035);
+}
 
 /* Controles del editor a 24px (WCAG 2.5.8; scoped: no afecta plantillas) */
 #session-editor .editor-header-actions .edit-toggle,
@@ -176,16 +202,11 @@
     width: 13px;
     height: 13px;
 }
-/* La columna de acciones (botones −/+) se ancla con un <col> del mismo nombre:
-   sin él, table-layout: fixed la haría auto y repartiría el sobrante a la mitad. */
+/* La columna de acciones ocupa 0: los botones viven en una píldora flotante
+   sticky-right (ver .row-actions abajo). El <col> se conserva para que
+   table-layout: fixed no reparta su ancho al resto. */
 #session-editor .set-actions-column,
 #nutrition-panel .set-actions-column {
-    width: 30px;
-}
-/* Solo en modo edición la columna de acciones existe: en readonly colapsa
-   y el ancho liberado se redistribuye a la columna auto. */
-#session-editor[data-editmode="0"] .set-actions-column,
-#nutrition-panel[data-editmode="0"] .set-actions-column {
     width: 0;
 }
 #session-editor .row-actions .row-btn,
@@ -202,6 +223,43 @@
     content: '';
     position: absolute;
     inset: -5px;
+}
+/* Píldora flotante de acciones (ambos editores): celda sticky-right sobre
+   la tabla. Aparición por opacidad en hover (no display: rompería clics e2e);
+   focus-within por teclado, :active en táctil, oculta en readonly. */
+#session-editor td.set-actions-column,
+#nutrition-panel td.set-actions-column {
+    position: sticky;
+    right: 0;
+    z-index: 3;
+    overflow: visible;
+    background: transparent;
+}
+#session-editor .row-actions,
+#nutrition-panel .row-actions {
+    display: inline-flex;
+    width: auto;
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--t-overlay-white-004);
+    border: 1px solid var(--t-overlay-white-008);
+    border-radius: 9999px;
+    padding: 2px 5px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+#nutrition-panel .nutrition-row:focus-within .row-actions,
+#nutrition-panel .nutrition-row:active .row-actions,
+#session-editor .set-row:focus-within .row-actions,
+#session-editor .set-row:active .row-actions {
+    opacity: 1;
+}
+#session-editor[data-editmode="0"] .row-actions,
+#nutrition-panel[data-editmode="0"] .row-actions {
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
 
 /* Colapso de panel: se oculta todo salvo la primera fila del header
@@ -230,15 +288,105 @@
     padding: 5px 12px;
 }
 
-/* Columnas de la tabla de alimentación (nutrición; la sesión reparte por defecto) */
+/* Nutrición (21 nutrientes): anchos en px + width:max-content para que la
+   tabla desborde con scroll horizontal confinado. */
+#nutrition-panel {
+    --nutri-food-w: 180px;
+}
+#nutrition-panel .table-scroll {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+}
+#nutrition-panel .table-scroll:focus-visible {
+    outline: 2px solid var(--t-burgundy-600);
+    outline-offset: -2px;
+}
+#nutrition-panel .table-scroll table {
+    width: max-content;
+    min-width: 100%;
+}
 #nutrition-panel .food-col {
-    width: 26%;
+    width: var(--nutri-food-w);
 }
 #nutrition-panel .qty-col {
-    width: 9%;
+    width: 64px;
 }
-#nutrition-panel .nutrient-col {
-    width: 7.5%;
+/* Tiers de nutriente según el nombre (S/M); la unidad va en 2ª línea. */
+#nutrition-panel .nutrient-col-s {
+    width: 64px;
+}
+#nutrition-panel .nutrient-col-m {
+    width: 80px;
+}
+/* Cabecera en dos líneas: nombre + unidad (detalle en title/aria). */
+#nutrition-panel .table-scroll thead tr:nth-child(1) th .nutri-h {
+    display: block;
+}
+#nutrition-panel .table-scroll thead tr:nth-child(1) th .nutri-u {
+    display: block;
+    font-weight: 400;
+    text-transform: none;
+}
+/* Cabecera fila 1 en dos líneas; filas 2-3 en una. Alturas 36/24/24px
+   para offsets sticky exactos (36/60px). */
+#nutrition-panel .table-scroll thead th {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    height: 24px;
+    box-sizing: border-box;
+    vertical-align: middle;
+}
+#nutrition-panel .table-scroll tbody td:not(.set-actions-column),
+#nutrition-panel .nutri-target-row th,
+#nutrition-panel .nutri-consumed-row th {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+}
+/* Alimento + Cantidad fijas: sticky-left con fondo sólido (oculta lo que
+   pasa por debajo) y separador; z: esquina fila 1 a 8, cuerpo a 2. */
+#nutrition-panel .table-scroll thead th:first-child,
+#nutrition-panel .table-scroll tbody td:first-child {
+    left: 0;
+}
+#nutrition-panel .table-scroll thead th:nth-child(2),
+#nutrition-panel .table-scroll tbody td:nth-child(2) {
+    left: var(--nutri-food-w);
+}
+#nutrition-panel .table-scroll thead tr:nth-child(1) th:nth-child(-n+2) {
+    z-index: 8;
+}
+/* Esquinas Objetivo/Consumido a z 7 (sobre deslizantes, bajo fila 1). */
+#nutrition-panel .table-scroll thead tr:nth-child(2) th:nth-child(-n+2),
+#nutrition-panel .table-scroll thead tr:nth-child(3) th:nth-child(-n+2) {
+    z-index: 7;
+}
+#nutrition-panel .table-scroll thead th:nth-child(-n+2),
+#nutrition-panel .table-scroll tbody td:nth-child(-n+2) {
+    position: sticky;
+}
+#nutrition-panel .table-scroll tbody td:nth-child(-n+2) {
+    z-index: 2;
+    background: var(--t-surfaces-neutral-900);
+    transition: background-color .15s cubic-bezier(.4, 0, .2, 1);
+}
+#nutrition-panel .table-scroll thead th:nth-child(2) {
+    box-shadow: inset -1px 0 0 var(--t-surfaces-neutral-800);
+}
+#nutrition-panel[data-editmode="1"] .nutrition-row:hover td:nth-child(-n+2) {
+    background: var(--t-surfaces-neutral-800);
+}
+/* Separadores solo-pintado (el divide-y de tr no pinta con border-separate
+   en Chrome; el inset no ocupa layout y el paso sigue siendo rowH). */
+#nutrition-panel .table-scroll tbody td:not(.set-actions-column) {
+    box-shadow: inset 0 -1px 0 var(--t-surfaces-neutral-800);
+}
+#nutrition-panel .table-scroll tbody td:nth-child(2):not(.set-actions-column) {
+    box-shadow:
+        inset -1px 0 0 var(--t-surfaces-neutral-800),
+        inset 0 -1px 0 var(--t-surfaces-neutral-800);
 }
 
 /* RIR: cualquier decimal es válido (step="any"); las flechas propias avanzan 0,1.

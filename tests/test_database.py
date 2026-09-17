@@ -109,7 +109,7 @@ def test_migrations_recorded_in_schema_migrations(tmp_path):
         r[0] for r in conn.execute("SELECT version FROM schema_migrations").fetchall()
     )
     conn.close()
-    assert versions == [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    assert versions == [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
 
 
 def test_migrates_intermediate_state_without_orden(tmp_path):
@@ -414,16 +414,16 @@ def test_v009_creates_meal_templates(tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM plantilla_alimentos").fetchone()[0] == 0
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 19
+    assert max_version == 20
 
 
-def test_v019_is_latest_schema_version(tmp_path):
+def test_v020_is_latest_schema_version(tmp_path):
     db_path = str(tmp_path / "test.db")
     init_db(db_path)
     conn = sqlite3.connect(db_path)
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 19
+    assert max_version == 20
 
 
 def test_v007_migration_idempotent(tmp_path):
@@ -683,7 +683,7 @@ def test_v008_creates_parametros_diarios_and_nullable_qty(tmp_path):
         assert col in params
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
     conn.close()
-    assert max_version == 19
+    assert max_version == 20
 
 
 def test_v008_preserves_diario_rows(tmp_path):
@@ -821,6 +821,65 @@ def test_v018_respeta_objetivos_no_cero(tmp_path):
     assert row == (25.0, 8.0)
 
 
+def test_v020_rellena_dri_en_cero_y_respeta_no_cero(tmp_path):
+    from src.migrations import v020_dri_ceros
+
+    db_path = str(tmp_path / "test.db")
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    conn.execute("INSERT INTO parametros_diarios (fecha) VALUES ('2025-04-24')")
+    conn.execute(
+        "INSERT INTO parametros_diarios (fecha, fibra_objetivo, potasio_objetivo) "
+        "VALUES ('2025-04-25', 25.0, 0.0)"
+    )
+    conn.commit()
+    v020_dri_ceros.migrate(conn)
+    conn.commit()
+    cols = (
+        "fibra_objetivo, hierro_objetivo, calcio_objetivo, vitamina_c_objetivo, "
+        "vitamina_a_objetivo, magnesio_objetivo, zinc_objetivo, potasio_objetivo, "
+        "sodio_objetivo, vitamina_d_objetivo, vitamina_e_objetivo, vitamina_k_objetivo, "
+        "folato_objetivo, vitamina_b12_objetivo, vitamina_b6_objetivo, yodo_objetivo, "
+        "selenio_objetivo"
+    )
+    row = conn.execute(
+        f"SELECT {cols} FROM parametros_diarios WHERE fecha = '2025-04-24'"
+    ).fetchone()
+    assert row == (
+        38.0,
+        8.0,
+        1000.0,
+        90.0,
+        900.0,
+        420.0,
+        11.0,
+        3400.0,
+        1500.0,
+        15.0,
+        15.0,
+        120.0,
+        400.0,
+        2.4,
+        1.3,
+        150.0,
+        55.0,
+    )
+    custom = conn.execute(
+        "SELECT fibra_objetivo, potasio_objetivo FROM parametros_diarios WHERE fecha = '2025-04-25'"
+    ).fetchone()
+    assert custom == (25.0, 3400.0)
+    # Idempotente: segunda pasada no cambia nada.
+    v020_dri_ceros.migrate(conn)
+    conn.commit()
+    assert (
+        conn.execute("SELECT COUNT(*) FROM parametros_diarios WHERE fibra_objetivo = 0").fetchone()[
+            0
+        ]
+        == 0
+    )
+    conn.close()
+
+
 def test_replace_diario_accepts_null_cantidad(tmp_path):
     from src.database import get_diario_by_fecha, replace_diario_by_fecha
 
@@ -945,7 +1004,7 @@ def test_v010_health_records_schema(tmp_path):
         "deleted_at",
     } <= cols
     max_version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
-    assert max_version == 19
+    assert max_version == 20
     pk_cols = {
         r[1] for r in conn.execute("PRAGMA table_info(health_records)").fetchall() if r[5] == 1
     }

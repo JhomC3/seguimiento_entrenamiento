@@ -5,11 +5,7 @@
    - cada nombre de ejercicio es un botón de selección
    - sin botones "Seleccionar", sin drag, sin clases split-* #}
 
-{% if not dashboard_catalog %}
-<div class="flex flex-col gap-2">
-    <p class="split-empty">No hay ejercicios registrados.</p>
-</div>
-{% else %}
+{% if dashboard_catalog %}
 <div class="flex flex-col gap-2">
     {% for group in dashboard_catalog %}
     <section class="db-group" data-group="{{ group.name }}">
