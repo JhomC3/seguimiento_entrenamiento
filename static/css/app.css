@@ -1,4 +1,4 @@
-/* app.css — CSS import manifest. Order defines cascade precedence. */
+/* app.css — CSS import manifest. Order defines cascade precedence. (v2) */
 @import "tokens.css";
 @import "theme.css";
 @import "components.css";
