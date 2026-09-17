@@ -36,8 +36,10 @@ CSS_INDIVIDUAL_MAX = 36 * 1024  # components.css ~35.8K tras combo custom
 # (lote nutri-scroll, ~+2.3K) → 98K.
 # Revisado 2026-09-17: estabilidad del Diario (fallbacks de altura por editor,
 # min-height del banner de sugerencia, Cantidad 92px sin spinners, ~+0.7K) → 99K.
+# Revisado 2026-09-17 (2): foco interior en celdas (anillo sin recorte) +
+# rotación de fingerprint v2/v3, ~+0.4K → 100K.
 CSS_AGGREGATE_MAX = (
-    99 * 1024
+    100 * 1024
 )  # ~60K → 84K tooltip → 86K Diario → 89K remediación → 90K sugerencia → 91K nutrición → 92K HIIT-estricto → 93K combo-custom → 95K nutri-scroll → 98K nutri-pill+sticky
 JS_INDIVIDUAL_MAX = 64 * 1024
 # Revisado 2026-09-04: remediación UI/UX (drawer por breakpoint, cardio paralelo

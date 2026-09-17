@@ -205,6 +205,16 @@
     background: var(--t-overlay-white-035);
 }
 
+/* Foco interior en celdas: el td recorta (overflow hidden, 2px verticales)
+   y el outline global (2px + offset 2px) se cortaba arriba/abajo. En negativo
+   pinta dentro del input y nunca se recorta. */
+#session-editor .cell-input:focus-visible,
+#session-editor .cell-select:focus-visible,
+#nutrition-panel .cell-input:focus-visible,
+#nutrition-panel .cell-select:focus-visible {
+    outline-offset: -2px !important;
+}
+
 /* Controles del editor a 24px (WCAG 2.5.8; scoped: no afecta plantillas) */
 #session-editor .editor-header-actions .edit-toggle,
 #nutrition-panel .editor-header-actions .edit-toggle {
