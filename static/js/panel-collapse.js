@@ -1,10 +1,7 @@
 // panel-collapse.js — owns: colapso de los paneles desde el chevron del header.
 // Toggle de la clase `collapsed` sobre el propio panel (#session-editor /
-// #nutrition-panel); el estado se persiste en localStorage y al expandir se
-// re-ejecuta el fit de altura del panel.
-
-import { fitRowsToPanel } from './editor.js';
-import { fitNutritionRowsToPanel } from './nutrition-editor.js';
+// #nutrition-panel); el estado se persiste en localStorage. La altura de la
+// tabla es fija en CSS, así que colapsar/expandir no requiere re-medición.
 
 const PANELS = ['session-editor', 'nutrition-panel'];
 const KEYS = {
@@ -22,10 +19,6 @@ function applyCollapsed(panelId, collapsed) {
         localStorage.setItem(KEYS[panelId], collapsed ? '1' : '0');
     } catch (err) {
         // localStorage puede no estar disponible: no bloquea el colapso.
-    }
-    if (!collapsed) {
-        if (panelId === 'session-editor') fitRowsToPanel();
-        else if (panelId === 'nutrition-panel') fitNutritionRowsToPanel();
     }
 }
 

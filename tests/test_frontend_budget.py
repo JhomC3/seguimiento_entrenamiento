@@ -69,9 +69,11 @@ JS_INDIVIDUAL_MAX = 64 * 1024
 # (5 inputs DRI/UL, sync live de 9 celdas objetivo, sumas de 9 nutrientes
 # en nutrition-editor.js, ~+0.5K) → 224K.
 # Revisado 2026-09-17: estabilidad del Diario (pre-ocultado de ambas barras,
-# aria-busy + settle único de navegación, guards de tab oculto, ~+0.6K) → 225K.
+# aria-busy + settle de navegación, ~+0.6K) → 225K.
+# Revisado 2026-09-17 (2): altura determinista en CSS, medición JS eliminada
+# (~-3.7K) → 222K.
 JS_AGGREGATE_MAX = (
-    225 * 1024
+    222 * 1024
 )  # ~132K → 165K Fase 2 → ~185K TAREA 3 → ~198K remediación → ~201K HIIT → ~203K nutrición → ~205K tooltip → ~209K ctrlz-local → ~212K HIIT-estricto → ~215K autofill → ~216K splits-alta → ~217K auto-categoria → ~218K grupo-texto → ~223K combo-custom → ~224K micros-editables
 
 

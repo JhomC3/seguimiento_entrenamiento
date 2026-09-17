@@ -3,8 +3,8 @@
 // Public API: initDateNavigation, doNav, requestNavigate, updateDateDot.
 
 import { getCicloStart, getCurrentIso, getPendingNav, isDirty, setCurrentIso, setPendingNav, showConfirmDialog } from './state.js';
-import { fitRowsToPanel, submitSave } from './editor.js';
-import { fitNutritionRowsToPanel, nutritionIsDirty, requestNutritionNav } from './nutrition-editor.js';
+import { submitSave } from './editor.js';
+import { nutritionIsDirty, requestNutritionNav } from './nutrition-editor.js';
 import { showNotice } from './notices.js';
 
 const DIA_MAP = {
@@ -129,16 +129,13 @@ export function doNav(iso, force) {
             })
         );
     }
-    // Asentamiento único: estabiliza la altura una vez con el contenido
-    // completo (los fits por swap quedan como mejora progresiva). Los fits
-    // ignoran tabs ocultos (rects 0).
+    // Asentamiento: las alturas son fijas en CSS, aquí solo se limpia el
+    // estado de vuelo (aria-busy) cuando todos los swaps terminaron.
     function settleNavFlight() {
         inFlightIso = null;
         for (const id of ['session-editor-wrap', 'nutrition-editor-wrap']) {
             document.getElementById(id)?.removeAttribute('aria-busy');
         }
-        fitRowsToPanel();
-        fitNutritionRowsToPanel();
     }
     Promise.all(jobs)
         .then(settleNavFlight)

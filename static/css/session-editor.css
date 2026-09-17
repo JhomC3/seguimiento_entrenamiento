@@ -107,16 +107,27 @@
     background: var(--t-overlay-white-006);
 }
 
-/* Tabla: altura fija estable (variable en el panel, sobrevive a los swaps).
-   Fallbacks por editor según su thead (sesión 1 fila, nutrición 3 filas)
-   para que el primer pintado pre-JS no salte al aplicar --table-h. */
-#session-editor .table-scroll {
-    height: var(--table-h, 528px);
+/* Altura determinista en CSS, sin medición JS (el `height` en `tr` es mínimo:
+   si una plataforma renderiza más alto, la tabla crece hacia dentro con
+   scroll interno y el panel no se mueve):
+   sesión 20 + 18×24 = 452px · nutrición 84 + 18×24 = 516px. */
+#session-editor {
+    --table-h: 452px;
+}
+#nutrition-panel {
+    --table-h: 516px;
+}
+#session-editor .table-scroll,
+#nutrition-panel .table-scroll {
+    height: var(--table-h);
     scrollbar-gutter: stable;
 }
-#nutrition-panel .table-scroll {
-    height: var(--table-h, 588px);
-    scrollbar-gutter: stable;
+#session-editor .table-scroll thead tr {
+    height: 20px;
+}
+#session-editor .table-scroll tbody tr.set-row,
+#nutrition-panel .table-scroll tbody tr.nutrition-row {
+    height: 24px;
 }
 /* Firefox no soporta ::-webkit-scrollbar: usa scrollbar estándar fino y sutil.
    (En Chrome/Safari estas propiedades anulan ::-webkit-scrollbar, por eso van aisladas.) */

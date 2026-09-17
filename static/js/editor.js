@@ -2,7 +2,7 @@
 // DOM owned: #session-editor, #session-form, #set-rows, #editor-state, #edit-actions.
 // Public API: initEditorActions, syncEditButtons, updateEditActions,
 // syncEditorFromContent, setPanelReadonly, handleEditorState, enterEditMode,
-// exitEditMode, toggleEdit, addRowAfter, removeRow, renumberRows, fitRowsToPanel,
+// exitEditMode, toggleEdit, addRowAfter, removeRow, renumberRows,
 // recalcRM, submitSave, eliminarSesion, stepRir, isHiitRow, syncHiitRow,
 // sessionMode, syncSessionHeaders, syncSessionRows, exerciseOrdinal,
 // autofillRowFromLast.
@@ -326,7 +326,6 @@ export function addRowAfter(btn) {
     syncSessionRows();
     renumberRows();
     updateEditActions();
-    fitRowsToPanel();
     const sel = clone.querySelector('.ej-select');
     if (sel && sel.value.trim()) autofillRowFromLast(clone);
 }
@@ -337,7 +336,6 @@ export function removeRow(btn) {
     syncSessionRows();
     renumberRows();
     updateEditActions();
-    fitRowsToPanel();
 }
 
 export function renumberRows() {
@@ -346,39 +344,11 @@ export function renumberRows() {
     });
 }
 
-/* ---------- Altura del panel: UNA medición estandarizada, constante en todo estado ---------- */
-/* Filas enteras visibles (nunca media fila rebanada al borde). Los
-   separadores son solo-pintado (inset, sin layout): el paso es rowH. */
-const ROWS_VISIBLE = 18;
-let rowHMeasured = null;
-export function fitRowsToPanel() {
-    const editor = document.getElementById('session-editor');
-    const tbody = document.getElementById('set-rows');
-    if (!editor || !tbody) return;
-    // Tab inactivo (display:none): los rects son 0 y fijarían una altura
-    // basura. Se omite; diario.js y el settle de navegación re-miden al mostrar.
-    if (!editor.isConnected || editor.offsetParent === null) return;
-    const scroller = editor.querySelector('.table-scroll');
-    const thead = editor.querySelector('.table-scroll thead');
-    const theadH = thead ? thead.getBoundingClientRect().height : 20;
-    if (rowHMeasured === null) {
-        const row = tbody.querySelector('.set-row');
-        if (row) {
-            const actions = row.querySelector('.row-actions');
-            const wasHidden = actions && actions.classList.contains('hidden');
-            if (wasHidden) actions.classList.remove('hidden');
-            rowHMeasured = row.getBoundingClientRect().height || 28;
-            if (wasHidden) actions.classList.add('hidden');
-        } else {
-            rowHMeasured = 28;
-        }
-    }
-    // Fórmula única: 18 filas exactas menos la scrollbar horizontal clásica
-    // (0 en overlay) para alinear el borde.
-    const hScrollBar = scroller ? scroller.offsetHeight - scroller.clientHeight : 0;
-    const full = theadH + ROWS_VISIBLE * rowHMeasured - hScrollBar;
-    editor.style.setProperty('--table-h', full + 'px');
-}
+/* ---------- Altura del panel: determinista en CSS (session-editor.css) ---------- */
+/* 18 filas enteras de 24px + thead de 20px = 452px fijos vía --table-h. Sin
+   medición JS: medir SIEMPRE difería del primer pintado y producía el salto
+   de altura en cada carga/navegación. Si una plataforma renderiza filas más
+   altas, la tabla crece hacia dentro (scroll interno); el panel no se mueve. */
 
 /* Sortable de filas con el re-numbering y dirty-state del editor.
    El arrastre está siempre activo: si el editor está en solo lectura, el
