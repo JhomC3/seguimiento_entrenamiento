@@ -216,6 +216,8 @@ export function syncSessionRows() {
    serie i del mismo ejercicio; si hay menos historial, replica la última).
    Siempre sobrescribe la fila (decisión de producto); solo tras cambio real
    del select y en modo edición. Sin historial o sin red: deja blancos.
+   El descanso nunca se hereda: los cronómetros arrancan de cero en cada
+   entreno nuevo (defensa client-side aunque el servidor mandara valor).
    Anti-pisado: si el usuario tecleó algo entre la petición y la respuesta,
    se aborta (sus valores mandan). */
 export function exerciseOrdinal(row) {
@@ -260,12 +262,12 @@ function fillRowInputs(row, data) {
     if (hiit) {
         set('velocidad', data.velocidad_kmh);
         set('dificultad', data.dificultad);
-        set('descanso', data.descanso_seg);
+        set('descanso', '');
     } else {
         set('kg', data.kg);
         set('reps', data.reps);
         set('rir', data.rir);
-        set('descanso', data.descanso_seg);
+        set('descanso', '');
     }
 }
 

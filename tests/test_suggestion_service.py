@@ -155,8 +155,32 @@ def test_pesos_ultima_vez_y_sin_historial(tmp_path):
     assert s.slot_dia == "LUNES"
     press = next(x for x in s.sets if x.ejercicio == "Press")
     assert (press.kg, press.reps, press.rir, press.fuente_fecha) == (80, 8, 1, old)
+    # El descanso nunca se hereda: cronómetros de cero.
+    assert press.descanso_seg is None
     curl = next(x for x in s.sets if x.ejercicio == "Curl")
     assert (curl.kg, curl.reps, curl.fuente_fecha) == (None, None, None)
+    assert curl.descanso_seg is None
+
+
+def test_sugerencia_no_hereda_descanso(tmp_path):
+    """Con descanso guardado en el historial, la sugerencia lo trae vacío."""
+    import sqlite3
+
+    db = _db(tmp_path)
+    _split(db, {"LUNES": ["Press"]})
+    old = _plus(_monday(3), 0)
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, "
+        "descanso_seg, origen) VALUES (1, 'LUNES', ?, 1, 'Press', 8, 80, 1, 120, 'manual')",
+        (old,),
+    )
+    conn.commit()
+    conn.close()
+    s = resolve_suggestion(db, _monday())
+    assert s.tipo == "rutina"
+    assert s.sets[0].kg == 80
+    assert s.sets[0].descanso_seg is None
 
 
 def test_sin_split_repite_ultimo_dia_tal_cual(tmp_path):
@@ -170,6 +194,8 @@ def test_sin_split_repite_ultimo_dia_tal_cual(tmp_path):
     assert s.ejercicios == ["Pullover"]
     assert s.sets[0].kg == 40
     assert s.sets[0].fuente_fecha == last
+    # El descanso nunca se hereda.
+    assert s.sets[0].descanso_seg is None
 
 
 def test_sin_split_ni_historial_nada(tmp_path):

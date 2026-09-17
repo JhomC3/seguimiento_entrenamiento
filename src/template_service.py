@@ -165,6 +165,9 @@ def apply_template_rows(db_path: str, plantilla_id: int) -> list[TrainingSetInpu
     última vez → 3 filas). Sin historial → 1 fila en blanco. Nunca exige que
     el día histórico coincida en orden o ejercicios (esa rigidez dejaba todo
     en blanco ante cualquier variación).
+
+    El descanso nunca se hereda: los cronómetros arrancan de cero en cada
+    entreno nuevo (solo kg/reps/rir y velocidad/dificultad se copian).
     """
     plantilla = get_plantilla(db_path, plantilla_id)
     if plantilla is None:
@@ -180,7 +183,7 @@ def apply_template_rows(db_path: str, plantilla_id: int) -> list[TrainingSetInpu
                         kg="",
                         reps="",
                         rir="",
-                        descanso_seg=s.get("descanso_seg", ""),
+                        descanso_seg="",
                         velocidad_kmh=s.get("velocidad_kmh", ""),
                         dificultad=s.get("dificultad", ""),
                     )
@@ -201,7 +204,7 @@ def apply_template_rows(db_path: str, plantilla_id: int) -> list[TrainingSetInpu
                     kg=s["kg"],
                     reps=s["reps"],
                     rir=s["rir"],
-                    descanso_seg=s.get("descanso_seg", ""),
+                    descanso_seg="",
                     velocidad_kmh=s.get("velocidad_kmh", ""),
                     dificultad=s.get("dificultad", ""),
                 )

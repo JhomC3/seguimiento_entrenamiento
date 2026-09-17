@@ -51,6 +51,10 @@ def last_exercise_payload(db_path: str, ejercicio: str, before_fecha: str | None
     fechas estrictamente anteriores: evita eco del propio día y futuro).
     Devuelve {"ejercicio", "fuente_fecha", "series": [{pos, kg, reps, rir,
     descanso_seg, velocidad_kmh, dificultad}]}.
+
+    El descanso nunca se hereda (`descanso_seg` siempre None): los
+    cronómetros arrancan de cero en cada entreno nuevo; kg/reps/rir y
+    velocidad/dificultad sí se copian.
     """
     name = str(ejercicio or "").strip()
     if not name:
@@ -70,7 +74,7 @@ def last_exercise_payload(db_path: str, ejercicio: str, before_fecha: str | None
             "kg": s["kg"],
             "reps": s["reps"],
             "rir": s["rir"],
-            "descanso_seg": s["descanso_seg"],
+            "descanso_seg": None,
             "velocidad_kmh": s["velocidad_kmh"],
             "dificultad": s["dificultad"],
         }

@@ -984,8 +984,11 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             val res = withContext(Dispatchers.IO) { repository.applyTemplate(apiBase, token, plantillaId, fecha) }
             _state.value = when (res) {
                 is TrainingResult.Ok -> {
+                    // El descanso nunca se hereda: los cronómetros arrancan de
+                    // cero en cada entreno nuevo (defensa client-side aunque el
+                    // servidor mandara valor).
                     draftBuffer = fecha to res.value.sets.map {
-                        TrainingSetDraft(it.ejercicio, numText(it.kg), numText(it.reps), numText(it.rir), numText(it.descansoSeg), numText(it.velocidadKmh), numText(it.dificultad))
+                        TrainingSetDraft(it.ejercicio, numText(it.kg), numText(it.reps), numText(it.rir), "", numText(it.velocidadKmh), numText(it.dificultad))
                     }
                     _state.value.copy(
                         saving = false,
@@ -1188,8 +1191,10 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         val suggestion = res.value
         when (suggestion.tipo) {
             "rutina" -> {
+                // El descanso nunca se hereda: los diales arrancan de cero en
+                // cada entreno nuevo aunque el servidor mandara valor.
                 draftBuffer = fecha to suggestion.sets.map {
-                    TrainingSetDraft(it.ejercicio, numText(it.kg), numText(it.reps), numText(it.rir), numText(it.descansoSeg), numText(it.velocidadKmh), numText(it.dificultad))
+                    TrainingSetDraft(it.ejercicio, numText(it.kg), numText(it.reps), numText(it.rir), "", numText(it.velocidadKmh), numText(it.dificultad))
                 }
                 _state.value = _state.value.copy(
                     suggestion = suggestion,
@@ -1204,7 +1209,8 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
     // --- Autofill por ejercicio (paridad con la web) --------------------------
     // Al elegir ejercicio trae sus últimos valores (serie i → última serie i;
     // si hay menos historial, replica la última). Siempre sobrescribe la fila.
-    // Sin red o sin historial: null (la fila queda en blanco, como la web).
+    // El descanso nunca se hereda (diales desde cero). Sin red o sin
+    // historial: null (la fila queda en blanco, como la web).
 
     fun fetchLastSeries(ejercicio: String, pos: Int, onDone: (TrainingSetDraft?) -> Unit) {
         val fecha = _state.value.fecha
@@ -1235,7 +1241,7 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
                     numText(pick.kg),
                     numText(pick.reps),
                     numText(pick.rir),
-                    numText(pick.descansoSeg),
+                    "",
                     numText(pick.velocidadKmh),
                     numText(pick.dificultad),
                 ),

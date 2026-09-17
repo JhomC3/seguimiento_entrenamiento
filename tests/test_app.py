@@ -416,8 +416,8 @@ def test_plantilla_aplicar_rellena_por_ejercicio_sin_secuencia_exacta(tmp_path, 
         db,
         _fecha(-3),
         [
-            {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1},
-            {"ejercicio": "Curl", "kg": 16, "reps": 10, "rir": 0},
+            {"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1, "descanso_seg": 90},
+            {"ejercicio": "Curl", "kg": 16, "reps": 10, "rir": 0, "descanso_seg": 60},
         ],
     )
     save_session(db, _fecha(-2), [{"ejercicio": "Curl", "kg": 20, "reps": 12, "rir": 1}])
@@ -429,6 +429,8 @@ def test_plantilla_aplicar_rellena_por_ejercicio_sin_secuencia_exacta(tmp_path, 
     assert 'data-readonly="0"' in r.text
     assert "Press" in r.text and "Curl" in r.text
     assert 'value="80"' in r.text and 'value="20"' in r.text
+    # El descanso nunca se hereda: cronómetros de cero aunque haya historial.
+    assert 'value="90"' not in r.text and 'value="60"' not in r.text
     assert "Entreno aplicado" in r.text
 
 
@@ -3234,6 +3236,25 @@ def test_sugerencia_banner_boton_y_aplicar(tmp_path, monkeypatch):
     assert get_sets_by_fecha(db, tue) == []
 
 
+def test_sugerencia_aplicar_no_hereda_descanso(tmp_path, monkeypatch):
+    """Con descanso guardado, la sugerencia aplicada trae Desc vacío (cero)."""
+    db = _sugerencia_split_db(tmp_path)
+    monkeypatch.setattr(appmod, "DB_PATH", db)
+    c = _client()
+    mon = _last_monday()
+    tue = (datetime.date.fromisoformat(mon) + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    save_session(
+        db,
+        (datetime.date.fromisoformat(mon) - datetime.timedelta(days=7)).strftime("%Y-%m-%d"),
+        [{"ejercicio": "Press", "kg": 70, "reps": 8, "rir": 1, "descanso_seg": 90}],
+    )
+    r = c.get(f"/sugerencia/aplicar?fecha={tue}")
+    assert r.status_code == 200
+    assert "Press" in r.text
+    assert 'name="descanso"' in r.text
+    assert 'value="90"' not in r.text
+
+
 def test_ejercicio_ultimo_web_posicional(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     insert_exercise(db, "Remo", "Espalda", "TIRON")
@@ -3244,8 +3265,8 @@ def test_ejercicio_ultimo_web_posicional(tmp_path, monkeypatch):
         _fecha(-3),
         [
             {"ejercicio": "Remo", "kg": 60, "reps": 10, "rir": 2},
-            {"ejercicio": "Press", "kg": 79, "reps": 8, "rir": 1.5},
-            {"ejercicio": "Press", "kg": 78, "reps": 8, "rir": 1.5},
+            {"ejercicio": "Press", "kg": 79, "reps": 8, "rir": 1.5, "descanso_seg": 45},
+            {"ejercicio": "Press", "kg": 78, "reps": 8, "rir": 1.5, "descanso_seg": 60},
         ],
     )
     r = c.get("/ejercicio/ultimo", params={"ejercicio": "Press", "fecha": _fecha()})
@@ -3254,6 +3275,8 @@ def test_ejercicio_ultimo_web_posicional(tmp_path, monkeypatch):
     assert data["ejercicio"] == "Press"
     assert [s["pos"] for s in data["series"]] == [1, 2]
     assert [s["kg"] for s in data["series"]] == [79, 78]
+    # El descanso nunca se hereda en el autofill (cronómetros de cero).
+    assert [s["descanso_seg"] for s in data["series"]] == [None, None]
     assert r.json()["series"][0]["rir"] == 1.5
     assert c.get("/ejercicio/ultimo").status_code == 400
     assert c.get("/ejercicio/ultimo", params={"ejercicio": "Inexistente"}).status_code == 400

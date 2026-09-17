@@ -180,7 +180,8 @@ def test_apply_template_conserva_multiples_series(db):
     assert [r.reps for r in rows] == [6, 5, 10]
 
 
-def test_apply_template_conserva_rir_y_descanso(db):
+def test_apply_template_conserva_rir_y_no_hereda_descanso(db):
+    # El RIR se hereda; el descanso nunca: los cronómetros arrancan de cero.
     save_session(
         db,
         "2026-03-01",
@@ -191,7 +192,7 @@ def test_apply_template_conserva_rir_y_descanso(db):
     )
     pid = save_template(db, TemplateInput(nombre="T", ejercicios=["Press", "Curl"])).id
     rows = apply_template_rows(db, pid)
-    assert [(r.rir, r.descanso_seg) for r in rows] == [(1, 120), (0, 60)]
+    assert [(r.rir, r.descanso_seg) for r in rows] == [(1, ""), (0, "")]
 
 
 def test_apply_template_elige_la_fecha_mas_reciente(db):
@@ -329,5 +330,6 @@ def test_plantilla_hiit_con_historial_trae_velocidad(db):
     pid = save_template(db, TemplateInput(nombre="Cardio", ejercicios=["HIIT"])).id
     rows = apply_template_rows(db, pid)
     assert len(rows) == 1
-    assert (rows[0].velocidad_kmh, rows[0].dificultad, rows[0].descanso_seg) == (10.5, 3, 60)
+    # Velocidad/dificultad se heredan; el descanso arranca de cero.
+    assert (rows[0].velocidad_kmh, rows[0].dificultad, rows[0].descanso_seg) == (10.5, 3, "")
     assert (rows[0].kg, rows[0].reps, rows[0].rir) == ("", "", "")

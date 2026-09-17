@@ -142,14 +142,17 @@
   nada → vacío. Nunca 500 visible (error → vacío).
 - `GET /sugerencia/aplicar?fecha=` — exige modo edición (misma guarda que
   aplicar plantilla, anti doble-submit); rellena el editor con la sugerencia
-  (filas del split en orden con últimos valores posicionales por ejercicio)
+  (filas del split en orden con últimos valores posicionales por ejercicio,
+  excepto el descanso que siempre llega vacío: los cronómetros arrancan de
+  cero en cada entreno nuevo)
   sin guardar, con marcador
   `#plantilla-applied` y aviso con la explicación. Sin rutina → solo aviso.
 - `GET /ejercicio/ultimo?ejercicio=&fecha=` — JSON solo lectura para autofill:
   últimas series del ejercicio con `pos` (misma fuente que la rueda);
   `fecha` excluye ese día y posteriores. El editor (`editor.js`) lo pide al
   cambiar un select (siempre sobrescribe esa fila según su ordinal entre
-  filas del mismo ejercicio) y al pulsar `+` (hereda el ejercicio origen con
+  filas del mismo ejercicio, excepto el descanso que siempre queda vacío)
+  y al pulsar `+` (hereda el ejercicio origen con
   su siguiente ordinal); sin historial o sin red deja blancos. Paridad móvil
   vía `GET /api/v1/ejercicio/ultimo`.
 
@@ -195,7 +198,8 @@
 - `GET /plantilla/aplicar/{id}?fecha=` — exige modo edición; confirmación de reemplazo
   si el día tiene datos; OOB `#editor-notice` + `#session-editor-wrap`
   (con marcador `#plantilla-applied` para el dirty-baseline). No escribe en SQLite:
-  solo rellena el editor; el usuario revisa y pulsa Guardar.
+  solo rellena el editor (últimos kg/reps/rir por ejercicio, descanso siempre
+  vacío: los cronómetros arrancan de cero); el usuario revisa y pulsa Guardar.
 - Reordenamiento **solo con ratón** (decisión explícita del usuario; desviación de WCAG
   2.1.1 documentada en `web-standards.md`): tarjetas y filas de editor se arrastran desde
   cualquier parte no-control de la fila (el `dragstart` de las tarjetas excluye

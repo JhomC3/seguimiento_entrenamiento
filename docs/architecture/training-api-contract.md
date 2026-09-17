@@ -175,7 +175,8 @@ Preview con la forma de `GET /api/v1/sesion` más `"plantilla_id": 7`: filas
 con kg/reps de la última vez por ejercicio (vía `apply_template_rows`, sin
 exigir sesión exacta), o vacías (`kg: null`) sin historial. La plantilla
 guarda 1 fila por ejercicio; cada ejercicio arrastra todas sus últimas
-series posicionales. **No escribe**:
+series posicionales. El descanso nunca se hereda (`descanso_seg: null`):
+los cronómetros arrancan de cero en cada entreno nuevo. **No escribe**:
 el móvil lo muestra en el editor y el guardado posterior es el
 `POST /api/v1/sesion` normal. `plantilla_id` inexistente → `404`;
 `fecha` inválida → `400` (se valida primero).
@@ -337,6 +338,8 @@ se trackearon — igual que la web).
   posicionalmente por ejercicio (serie 1 → última serie 1, sin importar el
   orden global de aquel día); si pide más series de las hechas, se replica
   la última; si hay más historial, se trunca; sin historial → `null`.
+  El descanso nunca se hereda (`descanso_seg: null`): los cronómetros
+  arrancan de cero en cada entreno nuevo.
 - La rueda avanza por cobertura de series (≥ 2/3 de las programadas):
   3/4 avanza, 1/2 no, 1/1 exige hacerlo. Descansar un descanso avanza;
   entrenar en descanso avanza sin crear deuda. Día con datos → `nada`.
@@ -357,13 +360,15 @@ se trackearon — igual que la web).
     {"pos": 1, "kg": 79.0, "reps": 8.0, "rir": 1.5,
      "descanso_seg": null, "velocidad_kmh": null, "dificultad": null},
     {"pos": 2, "kg": 78.0, "reps": 8.0, "rir": 1.5,
-     "descanso_seg": 90.0, "velocidad_kmh": null, "dificultad": null}
+     "descanso_seg": null, "velocidad_kmh": null, "dificultad": null}
   ]
 }
 ```
 
 - Misma fuente que la rueda (ordinal por ejercicio). `fecha` opcional excluye
   ese día y posteriores (evita eco del propio día). Sin historial → `series: []`.
+  El descanso nunca se hereda (`descanso_seg` siempre `null`): los
+  cronómetros arrancan de cero en cada entreno nuevo.
 - `ejercicio` ausente/desconocido (salvo `HIIT`) o `fecha` inválida → `400`.
   Solo lectura (GET, sin CSRF). Paridad web (`GET /ejercicio/ultimo`) y móvil.
 
