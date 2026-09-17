@@ -148,13 +148,19 @@ uv run python scripts/verify_editor.py
 
 Rule (binding, see `AGENTS.md` §0.5): **one task = one branch = one worktree.**
 Never run two agents or two tasks in the same working directory.
+Worktrees always live **inside** the project, under `.tmp/` (sandbox maxima
+`AGENTS.md` §0: nothing outside the project tree — it prevails over any path
+example). `.tmp/` is gitignored and excluded from the gates (`ruff`
+`extend-exclude`, `pytest` `testpaths`, top-level globs in Tailwind/audits),
+so sibling WIP never pollutes `git status`, lint, tests or CSS builds.
 
 ### Create
 
 ```bash
 git status --short --branch   # must be clean first: commit or `git stash -u`
-git worktree add ../entrenamiento-<tarea> -b <tipo>/<nombre> <base>
-git worktree list             # verify
+mkdir -p .tmp
+git worktree add .tmp/entrenamiento-<tarea> -b <tipo>/<nombre> <base>
+git worktree list             # verify (all paths must stay under $PWD/.tmp/)
 ```
 
 - `<base>` is a stable commit or branch (e.g. `main`), never a half-done branch.
@@ -168,9 +174,9 @@ git worktree list             # verify
 each worktree sets up its own:
 
 ```bash
-cd ../entrenamiento-<tarea>
+cd .tmp/entrenamiento-<tarea>
 uv sync --locked                                   # own .venv
-cp ../entrenamiento/data/lifestyle.db data/ 2>/dev/null || uv run python scripts/import_google_sheets.py
+cp ../../data/lifestyle.db data/ 2>/dev/null || uv run python scripts/import_google_sheets.py
 ./scripts/start_server.sh                          # generates its own secrets
 uv run uvicorn app:app --host 127.0.0.1 --port 8001 --reload   # own port, never 8000
 ```
@@ -203,7 +209,7 @@ Notes:
 ### Clean up
 
 ```bash
-git worktree remove ../entrenamiento-<tarea>   # after the merge
+git worktree remove .tmp/entrenamiento-<tarea>   # after the merge (run from the main checkout)
 git worktree prune
 git branch -d <tipo>/<nombre>                  # delete branches already merged
 ```

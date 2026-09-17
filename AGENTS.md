@@ -10,9 +10,10 @@
 
 ## 0.5. Máxima de Git y Worktrees (obligatoria, permanente)
 
-1. **Una tarea = una rama = un worktree.** Cada agente o tarea trabaja en su propio
-   directorio (`git worktree`) con su propia rama. **Prohibido** que dos agentes o
-   dos tareas compartan el mismo directorio de trabajo.
+1. **Una tarea = una rama = un worktree dentro del proyecto.** Cada agente o tarea trabaja en su propio
+   directorio (`git worktree` en `.tmp/entrenamiento-<tarea>`, siempre dentro del proyecto, nunca fuera
+   de él — la máxima §0 prevalece sobre cualquier ejemplo de ruta en `docs/`) con su propia rama.
+   **Prohibido** que dos agentes o dos tareas compartan el mismo directorio de trabajo.
 2. **Prohibido empezar sobre un árbol sucio.** Antes de crear un worktree o cambiar
    de tarea: haz commit en su rama o `git stash -u`. Un worktree nuevo nace del HEAD,
    nunca arrastra cambios sin commitear.
@@ -27,7 +28,7 @@
    `git log --oneline -10`; stage solo los ficheros intencionados, nunca secretos;
    sincroniza con la base (rebase/merge) antes de integrar; revisa rama y diff antes
    de confirmar cambios (sin commits ni pushes automáticos); tras el merge elimina
-   el worktree (`git worktree remove`) y poda (`git worktree prune`), y borra las
+   el worktree (`git worktree remove .tmp/entrenamiento-<tarea>`) y poda (`git worktree prune`), y borra las
    ramas ya integradas.
 5. Esta máxima aplica a cualquier tarea, agente y herramienta, sin excepciones.
    Procedimiento operativo: `docs/operations/local-development.md` § "Parallel work".
