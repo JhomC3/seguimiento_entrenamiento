@@ -417,6 +417,9 @@ def test_api_plantilla_aplicar_preview_sin_escribir(tmp_path, monkeypatch):
     assert [s["ejercicio"] for s in data["sets"]] == ["Remo", "Press"]
     assert data["sets"][0]["kg"] == 60
     assert data["sets"][0]["set_orden"] == 1
+    # El descanso nunca se hereda en el preview (cronómetros de cero),
+    # aunque el historial lo tenga guardado.
+    assert all(s["descanso_seg"] is None for s in data["sets"])
     # Sin escribir: el día sigue intacto.
     got = _client().get(f"/api/v1/sesion?fecha={fecha}", headers=_h()).json()
     assert [s["ejercicio"] for s in got["sets"]] == ["Remo", "Press"]
@@ -1135,6 +1138,8 @@ def test_api_sugerencia_con_historial_y_descanso(tmp_path, monkeypatch):
     assert data["slot_dia"] == "MARTES"
     assert data["sets"][0]["kg"] == 60
     assert data["sets"][0]["fuente_fecha"] == _plus(mon, -4)
+    # El descanso nunca se hereda en la sugerencia (cronómetros de cero).
+    assert all(s["descanso_seg"] is None for s in data["sets"])
     # Tras hacer el martes, el miércoles de calendario descansa en la rueda.
     save_session(db, _plus(mon, 1), [{"ejercicio": "Remo", "kg": 62, "reps": 10, "rir": 2}])
     r = c.get(f"/api/v1/sugerencia?fecha={_plus(mon, 2)}", headers=_h())
@@ -1162,8 +1167,8 @@ def test_api_ejercicio_ultimo_posicional_y_auth(tmp_path, monkeypatch):
         _fecha(-3),
         [
             {"ejercicio": "Remo", "kg": 60, "reps": 10, "rir": 2},
-            {"ejercicio": "Press", "kg": 79, "reps": 8, "rir": 1.5},
-            {"ejercicio": "Press", "kg": 78, "reps": 8, "rir": 1.5},
+            {"ejercicio": "Press", "kg": 79, "reps": 8, "rir": 1.5, "descanso_seg": 45},
+            {"ejercicio": "Press", "kg": 78, "reps": 8, "rir": 1.5, "descanso_seg": 60},
         ],
     )
     r = c.get(f"/api/v1/ejercicio/ultimo?ejercicio=Press&fecha={hoy}", headers=_h())
@@ -1173,6 +1178,8 @@ def test_api_ejercicio_ultimo_posicional_y_auth(tmp_path, monkeypatch):
     assert data["ejercicio"] == "Press"
     assert [s["pos"] for s in data["series"]] == [1, 2]
     assert [s["kg"] for s in data["series"]] == [79, 78]
+    # El descanso nunca se hereda en el autofill (cronómetros de cero).
+    assert [s["descanso_seg"] for s in data["series"]] == [None, None]
     # Excluye el propio día y el futuro: con fecha del historial no ve nada posterior.
     r = c.get("/api/v1/ejercicio/ultimo?ejercicio=Press&fecha=2020-01-01", headers=_h())
     assert r.json()["series"] == []

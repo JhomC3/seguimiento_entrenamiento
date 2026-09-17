@@ -8,6 +8,9 @@ Reglas (decisión de producto):
 - Si el split pide más series de las hechas la última vez, se replica la
   última serie conocida; si hay más historial, se trunca. Sin historial,
   en blanco.
+- El descanso nunca se hereda: la sugerencia trae kg/reps/rir (y
+  velocidad/dificultad en HIIT) pero descanso_seg siempre vacío; los
+  cronómetros arrancan de cero en cada entreno nuevo.
 - La rueda avanza por cobertura de series (>= 2/3 de las series
   programadas): hizo espalda/pecho/tríceps pero faltó bíceps (3/4) → avanza;
   1/2 no avanza; 1/1 exige hacerlo. Descansar un día de descanso avanza;
@@ -262,7 +265,7 @@ def _build_due(
                     kg=r.get("kg"),
                     reps=r.get("reps"),
                     rir=r.get("rir"),
-                    descanso_seg=r.get("descanso_seg"),
+                    descanso_seg=None,
                     fuente_fecha=fuente,
                     velocidad_kmh=r.get("velocidad_kmh"),
                     dificultad=r.get("dificultad"),
@@ -334,7 +337,7 @@ def _repeat_fallback(db_path: str, fecha_db: str) -> Suggestion:
                 kg=r.get("kg"),
                 reps=r.get("reps"),
                 rir=r.get("rir"),
-                descanso_seg=r.get("descanso_seg"),
+                descanso_seg=None,
                 fuente_fecha=source,
                 velocidad_kmh=r.get("velocidad_kmh"),
                 dificultad=r.get("dificultad"),
