@@ -237,6 +237,9 @@ class TrainingRepository(
 
     suspend fun pendingCount(): Int = offline.pendingCount()
 
+    /** Ops en cola para la sesión de una fecha (precisión del feedback de guardado). */
+    suspend fun sessionPendingCount(fecha: String): Int = offline.pendingCountFor("sesion", fecha)
+
     suspend fun enqueueSessionSave(fecha: String, sets: List<TrainingSetDraft>) {
         val payload = JSONObject().put("fecha", fecha).put(
             "sets",
@@ -302,6 +305,7 @@ class TrainingRepository(
         token: String,
         onAcked: suspend (PendingWriteEntity) -> Unit = {},
         onNutritionFresh: suspend (fecha: String, day: NutritionDay?) -> Unit = { _, _ -> },
+        onDelivered: suspend (PendingWriteEntity) -> Unit = {},
     ): Int {
         drainAuthBlocked = false
         var delivered = 0
@@ -319,6 +323,7 @@ class TrainingRepository(
                 is TrainingResult.Ok -> {
                     offline.ack(pending.domain, pending.fecha)
                     onAcked(pending)
+                    onDelivered(pending)
                     delivered++
                     refreshAfterDrain(apiBase, token, pending, onNutritionFresh)
                 }

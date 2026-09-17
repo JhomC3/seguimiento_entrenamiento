@@ -59,6 +59,9 @@ interface OfflineDao {
     @Query("SELECT COUNT(*) FROM pending_writes")
     suspend fun pendingCount(): Int
 
+    @Query("SELECT COUNT(*) FROM pending_writes WHERE domain = :domain AND fecha = :fecha")
+    suspend fun pendingCountFor(domain: String, fecha: String): Int
+
     @Query("DELETE FROM pending_writes WHERE domain = :domain AND fecha = :fecha")
     suspend fun ack(domain: String, fecha: String)
 }

@@ -4,11 +4,13 @@ import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
+import android.view.animation.DecelerateInterpolator
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -23,6 +25,8 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -62,6 +66,13 @@ class TrainingDiaryActivity : ComponentActivity() {
     private val okButtons = mutableMapOf<String, Button>()
     private val cardBodies = mutableMapOf<String, LinearLayout>()
     private val shownPanels = mutableSetOf<String>()
+    // --- Feedback de "Guardar entrenamiento" ---
+    private var confirmJob: Job? = null
+    private var showingConfirm = false
+    // True entre el tap en guardar y su resultado: solo entonces el busy
+    // significa "guardando" (navegar también pone busy, pero es carga).
+    private var saveTapPending = false
+    private var lastFecha: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -90,13 +101,13 @@ class TrainingDiaryActivity : ComponentActivity() {
             addView(titleView, navParams())
             addView(nextButton)
         }
-        prevButton.setOnClickListener { vm.shiftDay(-1) }
-        nextButton.setOnClickListener { vm.shiftDay(1) }
+        prevButton.setOnClickListener { saveTapPending = false; vm.shiftDay(-1) }
+        nextButton.setOnClickListener { saveTapPending = false; vm.shiftDay(1) }
 
-        saveDayButton = primaryButton("Guardar entrenamiento")
-        saveDayButton.contentDescription = "Guardar entrenamiento: enviar al servidor ahora"
+        saveDayButton = primaryButton(SAVE_TEXT)
+        saveDayButton.contentDescription = SAVE_DESC
         saveDayButton.minHeight = (72 * resources.displayMetrics.density).toInt()
-        saveDayButton.setOnClickListener { vm.load(vm.state.value.fecha) }
+        saveDayButton.setOnClickListener { pressSaveDay() }
         resetDayButton = Button(this).apply {
             text = "Reiniciar entreno"
             asDanger()
@@ -180,11 +191,41 @@ class TrainingDiaryActivity : ComponentActivity() {
     private fun render(state: DiaryUiState) {
         val session = state.session
         titleView.text = weekdayTitle(state.fecha)
+        if (state.fecha != lastFecha) {
+            // Día distinto: cualquier espera de guardado anterior ya no aplica.
+            lastFecha = state.fecha
+            saveTapPending = false
+        }
         // Sin letrero de estado (decisión de producto): ni avisos verdes ni
         // errores; la cola offline sigue funcionando en silencio.
-        val busy = state.loading || state.saving
+        val busy = state.loading || state.saving || state.saveInFlight
         for (b in listOf(saveDayButton, resetDayButton, prevButton, nextButton)) {
             b.isEnabled = !busy
+        }
+        if (busy) {
+            // Guardando: cancela cualquier confirmación visible y fija el
+            // texto de progreso (mismo tamaño: sin layout shift). El busy de
+            // navegar/cargar inicial mantiene el texto base deshabilitado.
+            confirmJob?.cancel()
+            confirmJob = null
+            showingConfirm = false
+            if (saveTapPending) {
+                setSaveButtonBase(SAVE_PROGRESS_TEXT, SAVE_PROGRESS_DESC)
+            } else {
+                setSaveButtonBase(SAVE_TEXT, SAVE_DESC)
+            }
+        } else {
+            val event = state.saveEvent
+            if (event != null) {
+                // Consumo ANTES de anunciar: un solo disparo aunque el flujo
+                // re-emita o la pantalla rote.
+                saveTapPending = false
+                vm.consumeSaveEvent()
+                showSaveConfirm(event)
+            } else if (!showingConfirm) {
+                saveTapPending = false
+                setSaveButtonBase(SAVE_TEXT, SAVE_DESC)
+            }
         }
         // Al cambiar de día/sesión/preview, reagrupa. Comparación profunda
         // (no identidad): una recarga idéntica no reconstruye ni mueve scroll.
@@ -197,6 +238,61 @@ class TrainingDiaryActivity : ComponentActivity() {
             rowsBuiltForStructure = vm.structureVersion.value
         }
         updateEmptyView()
+    }
+
+    // --- Feedback de "Guardar entrenamiento" ------------------------------------
+    // Tres fases, sin cambiar el tamaño del botón: press (escala mínima +
+    // ripple del tema) → "Guardando…" (bloquea re-taps) → confirmación con
+    // el resultado REAL del drenado. Sin éxito no hay check.
+
+    private fun pressSaveDay() {
+        pressFeedback(saveDayButton)
+        saveTapPending = true
+        vm.saveDay()
+    }
+
+    private fun pressFeedback(button: Button) {
+        val animScale = runCatching {
+            Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+        }.getOrDefault(1f)
+        // Animaciones desactivadas en el sistema: solo queda el ripple.
+        if (animScale == 0f) return
+        button.animate().cancel()
+        button.animate().scaleX(PRESS_SCALE).scaleY(PRESS_SCALE).setDuration(PRESS_DOWN_MS)
+            .withEndAction {
+                button.animate().scaleX(1f).scaleY(1f).setDuration(PRESS_UP_MS)
+                    .setInterpolator(DecelerateInterpolator()).start()
+            }.start()
+    }
+
+    private fun setSaveButtonBase(text: String, desc: String) {
+        if (saveDayButton.text.toString() != text) saveDayButton.text = text
+        if (saveDayButton.contentDescription?.toString() != desc) {
+            saveDayButton.contentDescription = desc
+        }
+    }
+
+    private fun showSaveConfirm(event: SaveEvent) {
+        confirmJob?.cancel()
+        val text = when (event) {
+            is SaveEvent.Synced -> SAVE_CONFIRM_SYNCED
+            is SaveEvent.LocalOnly -> SAVE_CONFIRM_LOCAL
+        }
+        showingConfirm = true
+        saveDayButton.text = text
+        saveDayButton.contentDescription = text
+        // Mismo háptico que el ✓ por serie: éxito real, nunca en fallo.
+        saveDayButton.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+        if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+            saveDayButton.announceForAccessibility(text)
+        }
+        // Reversión atada al ciclo de vida (nunca handler suelto): rotar o
+        // navegar cancela el Job y la pantalla nueva pinta el estado base.
+        confirmJob = lifecycleScope.launch {
+            delay(SAVE_CONFIRM_MS)
+            showingConfirm = false
+            setSaveButtonBase(SAVE_TEXT, SAVE_DESC)
+        }
     }
 
     // --- Editor unificado: tarjetas ---------------------------------------------
@@ -618,6 +714,17 @@ class TrainingDiaryActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val SAVE_TEXT = "Guardar entrenamiento"
+        private const val SAVE_DESC = "Guardar entrenamiento del día"
+        private const val SAVE_PROGRESS_TEXT = "Guardando…"
+        private const val SAVE_PROGRESS_DESC = "Guardando entrenamiento del día"
+        private const val SAVE_CONFIRM_SYNCED = "✓ Sesión guardada"
+        private const val SAVE_CONFIRM_LOCAL = "✓ Guardada en el móvil"
+        private const val SAVE_CONFIRM_MS = 1500L
+        private const val PRESS_SCALE = 0.97f
+        private const val PRESS_DOWN_MS = 80L
+        private const val PRESS_UP_MS = 120L
+
         private fun navParams() = LinearLayout.LayoutParams(
             0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f,
         )

@@ -66,6 +66,14 @@ data class DiaryUiState(
     // --- B4: offline + dots ---
     val pending: Int = 0,
     val dots: Set<String> = emptySet(),
+    // --- Feedback de "Guardar entrenamiento" (un solo disparo) ---
+    // Solo nace del drenado real pedido por saveDay(); la Activity lo
+    // consume al mostrarlo (rotar no re-confirma). Null = sin novedad.
+    val saveEvent: SaveEvent? = null,
+    // Guardado en curso pedido por saveDay(): mantiene busy toda la red.
+    // Campo propio (no se reutiliza `saving`: lo usan deleteDay/undo con
+    // jobs independientes y un reset cruzado los reactivaría a medias).
+    val saveInFlight: Boolean = false,
     // --- Escritura nutricional en Health Connect (réplica eventual) ---
     // null = sin info; "HC ✓" / "HC …" / "HC sin permiso" / "HC error".
     val nutritionHc: String? = null,
@@ -333,15 +341,22 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
      * si el GET fresco difiere de la base del borrador, la web editó por
      * debajo → reemplazo silencioso (manda lo web, se suelta la op encolada).
      * Si coincide o no hay red, no se toca nada y el drenado sigue su curso.
+     * Además de si reemplazó, devuelve la foto fresca (para no refetchear al
+     * decidir si guardar reenvía o no).
      */
-    private suspend fun reconcileDay(apiBase: String, token: String, fecha: String) {
-        val local = runCatching { draftsDao().forFecha(fecha) }.getOrNull() ?: return
+    private data class ReconcileResult(val replaced: Boolean, val freshSets: List<TrainingSet>?)
+
+    private suspend fun reconcileDay(apiBase: String, token: String, fecha: String): ReconcileResult {
+        val local = runCatching { draftsDao().forFecha(fecha) }.getOrNull()
+            ?: return ReconcileResult(false, null)
         val fresh = repository.fetchSession(apiBase, token, fecha)
-        if (fresh !is TrainingResult.Ok) return
+        if (fresh !is TrainingResult.Ok) return ReconcileResult(false, null)
         val freshRows = fresh.value.sets.map {
             DraftRow("", it.ejercicio, numText(it.kg), numText(it.reps), numText(it.rir), numText(it.descansoSeg), numText(it.velocidadKmh), numText(it.dificultad))
         }
-        if (canonicalRowsHash(freshRows) == local.baseHash) return
+        if (canonicalRowsHash(freshRows) == local.baseHash) {
+            return ReconcileResult(false, fresh.value.sets)
+        }
         // La web trae algo más nuevo: suelta borrador + cola y quédate lo web.
         runCatching { draftsDao().clear(fecha) }
         runCatching { repository.dropPending("sesion", fecha) }
@@ -350,6 +365,7 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             draftBuffer = null
             _doneUuids.value = emptySet()
         }
+        return ReconcileResult(true, fresh.value.sets)
     }
 
     /** Reconstruye grupos+filas preservando UUIDs por índice. */
@@ -746,18 +762,40 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         launchLoad(fecha, null)
     }
 
+    /**
+     * "Guardar entrenamiento": mismo drenado + recarga que load(), pero pide
+     * confirmación ([saveEvent]) con el resultado real. Navegar/recargar
+     * nunca confirma. [isSave] viaja como parámetro del lanzamiento (nunca
+     * flag compartido): si un tap posterior cancela este job, su evento
+     * muere con él y no contamina la siguiente carga.
+     */
+    fun saveDay() {
+        launchLoad(_state.value.fecha, null, isSave = true)
+    }
+
+    /** Consume el evento de guardado tras mostrarlo (un solo disparo). */
+    fun consumeSaveEvent() {
+        if (_state.value.saveEvent != null) {
+            _state.value = _state.value.copy(saveEvent = null)
+        }
+    }
+
     fun setVista(vista: String) {
         if (vista != "entrenamiento" && vista != "alimentacion") return
         if (_state.value.vista == vista) return
         launchLoad(_state.value.fecha, vista)
     }
 
-    private fun launchLoad(fecha: String, vista: String?) {
+    private fun launchLoad(fecha: String, vista: String?, isSave: Boolean = false) {
         loadJob?.cancel()
         _state.value = _state.value.copy(
             fecha = fecha,
             vista = vista ?: _state.value.vista,
             loading = true,
+            saveInFlight = isSave,
+            // Un lanzamiento nuevo invalida cualquier confirmación pendiente:
+            // navegar antes de verla no la muestra en otro día.
+            saveEvent = null,
             error = null,
             notice = null,
         )
@@ -765,7 +803,7 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
             // Fase 1: pintar al instante desde el móvil (caché + libreta).
             paintLocal(fecha)
             // Fase 2: red en segundo plano (drena + refresca o falla en silencio).
-            loadInternal(fecha)
+            loadInternal(fecha, isSave)
         }
     }
 
@@ -842,22 +880,40 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         )
     }
 
-    private suspend fun loadInternal(fecha: String) {
+    private suspend fun loadInternal(fecha: String, isSave: Boolean = false) {
         val creds = withContext(Dispatchers.IO) { safeIo { credentials() } }
         if (creds == null) {
-            _state.value = _state.value.copy(loading = false, error = "Sin destino configurado (build release sin pairing).")
+            _state.value = _state.value.copy(
+                loading = false,
+                saveInFlight = false,
+                error = "Sin destino configurado (build release sin pairing).",
+            )
             return
         }
         val (apiBase2, token2) = creds
         // Si hay borrador y el servidor trae algo distinto de su base, la web
         // editó por debajo: reemplazo silencioso (manda lo web, sin avisos).
-        withContext(Dispatchers.IO) {
+        val reconcileResult = withContext(Dispatchers.IO) {
             ensureActive()
             reconcileDay(apiBase2, token2, fecha)
+        }
+        if (isSave && !reconcileResult.replaced) {
+            // Guardar guarda de verdad: encola el día visible ANTES de
+            // drenar (el botón antes solo vaciaba la cola, casi siempre ya
+            // vacía por el drenado oportunista). Sin cambios respecto al
+            // servidor se omite: evita backup+undo redundantes por tap.
+            val sets = currentDrafts().filter { !it.isBlank() }
+            if (sets.isNotEmpty() && !draftsMatchServer(sets, reconcileResult.freshSets)) {
+                withContext(Dispatchers.IO) {
+                    ensureActive()
+                    runCatching { repository.enqueueSessionSave(fecha, sets) }
+                }
+            }
         }
         // Drenar la cola offline (oportunista, como health_outbox). Cada op
         // entregada o descartada limpia su fila de borrador: ya es servidor.
         // El diario drenado publica en HC con el payload confirmado (nunca borrador).
+        var sessionDelivered = false
         val drained = withContext(Dispatchers.IO) {
             ensureActive()
             safeIo {
@@ -869,6 +925,11 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
                     onNutritionFresh = { drainedFecha, freshDay ->
                         publishNutritionAsync(drainedFecha, freshDay)
                     },
+                    onDelivered = { delivered ->
+                        if (delivered.domain == "sesion" && delivered.fecha == fecha) {
+                            sessionDelivered = true
+                        }
+                    },
                 )
             } ?: 0
         }
@@ -876,35 +937,12 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
         val pending = withContext(Dispatchers.IO) { safeIo { repository.pendingCount() } ?: 0 }
         if (_state.value.vista == "alimentacion") {
             loadNutritionInternal(fecha, creds)
+            _state.value = _state.value.copy(saveInFlight = false)
             return
         }
         val view = withContext(Dispatchers.IO) { repository.loadSession(apiBase2, token2, fecha) }
-        _state.value = _state.value.copy(
-            loading = false,
-            session = view.session,
-            stale = view.stale,
-            error = view.error,
-            pending = pending,
-            suggestion = null,
-            // Con red de vuelta, el aviso offline propio ya no pinta nada.
-            notice = if (view.error == null && offlineNoticeFor == fecha) null else _state.value.notice,
-        )
-        if (view.error == null) offlineNoticeFor = null
-        // 401 en el drenado: la cola sigue intacta; avisarlo pesa más que un
-        // error de lectura (que ya vendría en view.error si lo hubiera).
-        if (authBlocked && _state.value.error == null) {
-            _state.value = _state.value.copy(
-                error = "Sin autorización: revisa el pairing. Tus datos siguen en el móvil.",
-            )
-        }
-        // Día vacío sin error y sin libreta local: auto-relleno con la rueda
-        // (sin guardar). Con borrador nunca se sugiere (lo sombrearía).
-        if (view.error == null && (view.session == null || !view.session.hasData) &&
-            localRowCache?.second == null
-        ) {
-            maybeSuggest(fecha, creds)
-        }
         // Dots en segundo plano, best-effort: jamás bloquean el pintado.
+        // Se resuelven ANTES de la emisión final para no re-emitir después.
         val dots = withContext(Dispatchers.IO) {
             val vista = if (_state.value.vista == "alimentacion") "alimentacion" else "entrenamiento"
             when (val d = safeIo { repository.clientFechas(apiBase2, token2, vista) }) {
@@ -912,9 +950,59 @@ class TrainingDiaryViewModel(application: Application) : AndroidViewModel(applic
                 else -> _state.value.dots
             }
         }
-        _state.value = _state.value.copy(pending = pending, dots = dots)
-        if (drained > 0 && _state.value.notice == null && _state.value.error == null) {
-            _state.value = _state.value.copy(notice = "$drained cambio(s) enviados al servidor.")
+        val saveEvent = if (isSave) {
+            // Confirmación honesta del botón: solo la entrega real de la
+            // sesión de ESTA fecha confirma; el resto es silencio (el
+            // refresco ya muestra la verdad del servidor).
+            val sessionPendingAfter = withContext(Dispatchers.IO) {
+                safeIo { repository.sessionPendingCount(fecha) } ?: 0
+            }
+            resolveSaveEvent(
+                requested = true,
+                delivered = sessionDelivered,
+                sessionPendingAfter = sessionPendingAfter,
+                reconciled = reconcileResult.replaced,
+            )
+        } else {
+            null
+        }
+        // UNA sola emisión final: apaga busy y entrega sesión, dots, aviso y
+        // confirmación a la vez. Sin render intermedio en texto base (ese era
+        // el parpadeo) ni re-emisiones que duplicaran el check.
+        val offlineNotice = if (view.error == null && offlineNoticeFor == fecha) {
+            null
+        } else {
+            _state.value.notice
+        }
+        if (view.error == null) offlineNoticeFor = null
+        _state.value = _state.value.copy(
+            loading = false,
+            saveInFlight = false,
+            session = view.session,
+            stale = view.stale,
+            // 401 en el drenado: la cola sigue intacta; avisarlo pesa más que
+            // un error de lectura (que ya vendría en view.error si lo hubiera).
+            error = view.error
+                ?: if (authBlocked) "Sin autorización: revisa el pairing. Tus datos siguen en el móvil." else null,
+            pending = pending,
+            suggestion = null,
+            // Con red de vuelta, el aviso offline propio ya no pinta nada.
+            notice = if (drained > 0 && offlineNotice == null && view.error == null && !authBlocked) {
+                "$drained cambio(s) enviados al servidor."
+            } else {
+                offlineNotice
+            },
+            dots = dots,
+            saveEvent = saveEvent,
+        )
+        // Día vacío sin error y sin libreta local: auto-relleno con la rueda
+        // (sin guardar). Con borrador nunca se sugiere (lo sombrearía).
+        // No interfiere con el evento: con entrega el día ya no está vacío,
+        // y con LocalOnly hay borrador local.
+        if (view.error == null && (view.session == null || !view.session.hasData) &&
+            localRowCache?.second == null
+        ) {
+            maybeSuggest(fecha, creds)
         }
     }
 
