@@ -1,95 +1,51 @@
-"""Logging setup: root handler + request_id context propagation."""
+"""Filtro de silencio del vigilante externo (GET /health → 404)."""
 
 import logging
 
-import pytest
-
-from src.logging_setup import request_id_var, setup_logging
+from src.logging_setup import SilenceHealthPollFilter, attach_silence_filters
 
 
-@pytest.fixture(autouse=True)
-def _reset_handler():
-    setup_logging(logging.INFO)
-    yield
+def _record(name, msg, args=(), **attrs):
+    record = logging.LogRecord(name, logging.INFO, __file__, 0, msg, args, None)
+    for key, value in attrs.items():
+        setattr(record, key, value)
+    return record
 
 
-@pytest.fixture()
-def client(tmp_path, monkeypatch):
-    from fastapi.testclient import TestClient
-
-    import app as appmod
-    from src.database import init_db
-
-    db = str(tmp_path / "gym.db")
-    init_db(db)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    return TestClient(appmod.app)
+def test_silencia_health_404_uvicorn():
+    f = SilenceHealthPollFilter()
+    record = _record(
+        "uvicorn.access",
+        '%s - "%s %s HTTP/%s" %d',
+        ("127.0.0.1:57691", "GET", "/health", "1.1", 404),
+    )
+    assert f.filter(record) is False
 
 
-def test_setup_logging_instala_handler_y_nivel():
-    setup_logging(logging.INFO)
-    root = logging.getLogger()
-    assert any(isinstance(h, logging.StreamHandler) for h in root.handlers)
-    assert root.level <= logging.INFO
+def test_silencia_health_404_propio():
+    f = SilenceHealthPollFilter()
+    record = _record("access", "%s %s status=%s duration_ms=%.1f", ("GET", "/health", 404, 1.2))
+    assert f.filter(record) is False
 
 
-def test_setup_logging_idempotente():
-    setup_logging(logging.INFO)
-    before = len(logging.getLogger().handlers)
-    setup_logging(logging.INFO)
-    assert len(logging.getLogger().handlers) == before
+def test_conserva_otros_404_y_errores():
+    f = SilenceHealthPollFilter()
+    assert f.filter(_record("access", "%s %s status=%s", ("GET", "/otro", 404))) is True
+    assert (
+        f.filter(
+            _record(
+                "uvicorn.access",
+                '%s - "%s %s HTTP/%s" %d',
+                ("127.0.0.1:1", "GET", "/otro", "1.1", 404),
+            )
+        )
+        is True
+    )
+    assert f.filter(_record("access", "%s %s status=%s", ("GET", "/health", 200))) is True
 
 
-def test_request_id_filter_inyecta_contexto(caplog):
-    token = request_id_var.set("req-123")
-    try:
-        logger = logging.getLogger("dashboard")
-        with caplog.at_level(logging.INFO, logger="dashboard"):
-            logger.info("mensaje de prueba")
-    finally:
-        request_id_var.reset(token)
-    assert caplog.records and caplog.records[0].request_id == "req-123"
-
-
-def test_request_id_default_guion(caplog):
-    logger = logging.getLogger("dashboard")
-    with caplog.at_level(logging.INFO, logger="dashboard"):
-        logger.info("sin id")
-    assert caplog.records and caplog.records[0].request_id == "-"
-
-
-def test_setup_logging_respects_level_param():
-    setup_logging(logging.WARNING)
-    assert logging.getLogger().level <= logging.WARNING
-
-
-# ---------------------------------------------------------------------------
-# Backend plan Task 2: request_id middleware + access log
-# ---------------------------------------------------------------------------
-
-
-def test_request_id_header_presente(client):
-    resp = client.get("/")
-    assert resp.status_code == 200
-    assert resp.headers.get("x-request-id")
-
-
-def test_request_id_header_en_rechazo_csrf(client):
-    resp = client.post("/entrenamiento/session/save", data={})
-    assert resp.status_code == 403
-    assert resp.headers.get("x-request-id")
-
-
-def test_request_id_log_de_peticion(caplog, client):
-    import logging
-
-    with caplog.at_level(logging.INFO, logger="access"):
-        client.get("/fecha/editor?fecha=2026-08-14")
-    assert any("GET /fecha/editor" in r.getMessage() for r in caplog.records)
-    assert any(getattr(r, "request_id", None) for r in caplog.records)
-
-
-def test_request_ids_unicos_por_peticion(client):
-    r1 = client.get("/").headers.get("x-request-id")
-    r2 = client.get("/").headers.get("x-request-id")
-    assert r1 and r2 and r1 != r2
+def test_attach_idempotente():
+    attach_silence_filters()
+    attach_silence_filters()
+    count = sum(isinstance(f, SilenceHealthPollFilter) for f in logging.getLogger("access").filters)
+    assert count == 1

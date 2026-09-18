@@ -20,6 +20,36 @@ class RequestIdFilter(logging.Filter):
         return True
 
 
+class SilenceHealthPollFilter(logging.Filter):
+    """Suelta el ruido del vigilante externo (GET /health → 404).
+
+    Un proceso local con User-Agent opencode/* sondea GET /health cada 30 s
+    y esa ruta no existe (la nuestra es /healthz). Se excluye SOLO ese caso,
+    en los dos formatos de access log (el propio y el de uvicorn); el resto
+    de 404 siguen visibles (sondas y typos sí interesan en seguridad).
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # uvicorn 0.52 registra el access log como mensaje plano SIN extra:
+        # args=(client, método, path, versión_http, status). El nuestro
+        # (RequestIdMiddleware) usa args=(método, path, status, ...).
+        args = record.args
+        if isinstance(args, tuple):
+            if len(args) >= 5 and args[1] == "GET" and args[2] == "/health" and args[4] == 404:
+                return False
+            if len(args) >= 3 and args[0] == "GET" and args[1] == "/health" and args[2] == 404:
+                return False
+        return True
+
+
+def attach_silence_filters() -> None:
+    """El filtro una sola vez por logger (lifespan puede reejecutarse en tests)."""
+    for name in ("access", "uvicorn.access"):
+        logger = logging.getLogger(name)
+        if not any(isinstance(f, SilenceHealthPollFilter) for f in logger.filters):
+            logger.addFilter(SilenceHealthPollFilter())
+
+
 def setup_logging(level: int = logging.INFO) -> None:
     """Idempotent root handler with request_id in every record.
 
