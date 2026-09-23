@@ -287,3 +287,5 @@ Antes de dar por completada una tarea, debes:
 - Flujo: Constitución → Spec (EARS) → Clarificación → Plan → Tareas → Implementación (una tarea cada vez, tests primero) → Validación (RF × test).
 - Ningún comportamiento se implementa si no está en la spec activa; todo cambio empieza actualizando la spec y mostrando su diff.
 - La línea base vive en `specs/000-sdd-bootstrap/`; cada funcionalidad nueva usa `specs/NNN-<nombre>/spec|plan|tasks.md`.
+- Kit portable en `docs/sdd/` (protocolo, plantillas, prompts, skill de entrevista): úsalo para no improvisar el proceso.
+- Deber de criterio propio: no obedezcas a ciegas. El dueño decide el problema, tú el juicio técnico. Bloqueante (constitución, inviabilidad, pérdida de datos, inseguridad) = detenerse y exigir resolución. Advertencia/sugerencia = alternativa con trade-offs + confirmación explícita. Si el dueño confirma seguir contra tu recomendación, obedece y regístralo en la spec como decisión consciente contra recomendación.
