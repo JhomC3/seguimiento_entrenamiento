@@ -1,0 +1,59 @@
+{
+  "_doc": "Vectores congelados respiración B5.0. Fijan la simulación de rampa en Python (src/breathing_service.py) y Kotlin (BreathingEngine). Cambiar un valor exige actualizar ambas implementaciones y este archivo en el mismo lote.",
+  "rampa_lineal": {
+    "patron": {
+      "inhale_s": 4.0,
+      "hold_in_s": 2.0,
+      "exhale_s": 6.0,
+      "hold_out_s": 3.0,
+      "ramp_sec": 480,
+      "end_inhale_s": 6.0,
+      "end_hold_in_s": 2.0,
+      "end_exhale_s": 9.0,
+      "end_hold_out_s": 3.0
+    },
+    "duracion_real_sec": 600,
+    "ciclo_t0": 15.0,
+    "ciclo_t_ramp": 20.0,
+    "ciclos_completados": 33,
+    "bpm_medio": 3.4
+  },
+  "constante": {
+    "patron": {
+      "inhale_s": 4.0,
+      "hold_in_s": 0.0,
+      "exhale_s": 6.0,
+      "hold_out_s": 0.0,
+      "ramp_sec": null
+    },
+    "duracion_real_sec": 120,
+    "ciclos_completados": 12,
+    "bpm_medio": 6.0
+  },
+  "exacto_6_6": {
+    "_doc": "5 respiraciones/minuto exactas: el intervalo 6/0/6/0 se cumple al milisegundo (el REST es cola de fase, no tiempo añadido).",
+    "patron": {
+      "inhale_s": 6.0,
+      "hold_in_s": 0.0,
+      "exhale_s": 6.0,
+      "hold_out_s": 0.0,
+      "ramp_sec": null
+    },
+    "duracion_real_sec": 120,
+    "ciclos_completados": 10,
+    "bpm_medio": 5.0
+  },
+  "exacto_5_5": {
+    "_doc": "6 respiraciones/minuto exactas con 5/0/5/0.",
+    "patron": {
+      "inhale_s": 5.0,
+      "hold_in_s": 0.0,
+      "exhale_s": 5.0,
+      "hold_out_s": 0.0,
+      "ramp_sec": null
+    },
+    "duracion_real_sec": 120,
+    "ciclos_completados": 12,
+    "bpm_medio": 6.0
+  }
+}
