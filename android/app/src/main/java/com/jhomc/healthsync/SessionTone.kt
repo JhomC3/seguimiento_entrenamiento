@@ -12,7 +12,8 @@ import kotlin.math.sin
  * estado del sintetizador (legato, ruido rosa, tañidos) fluye continuo
  * DURANTE la generación del ciclo, así que las junturas entre buffers no
  * chascan por construcción. Cada fase sonora lleva sus fundidos incluidos
- * (~250 ms asentarse/retomar alrededor del silencio de cierre).
+ * (~400 ms asentarse/retomar alrededor del silencio de cierre: transición
+ * suave, duraciones exactas intactas).
  *
  * El llamante (servicio) escribe los buffers por trozos siguiendo el reloj
  * de pared; pausar = dejar de escribir + vaciar el altavoz (instantáneo).
@@ -34,9 +35,9 @@ class SessionTone(
         /** Tasa de este aparato (la nativa lo deja mudo: no tocar). */
         const val SAMPLE_RATE = 22050
         /** Fundido de salida hacia el REST de cierre (la pausa se "asienta"). */
-        const val REST_FADE_OUT_MS = 250.0
+        const val REST_FADE_OUT_MS = 400.0
         /** Fundido de entrada desde el REST (la fase "retoma", no aparece). */
-        const val REST_FADE_IN_MS = 250.0
+        const val REST_FADE_IN_MS = 400.0
         /** Ataque global de sesión (nadie quiere un chasquido al empezar). */
         const val SESSION_ATTACK_MS = 2000L
         /** Ahogo del tañido anterior al entrar fase (cuenco): nota nueva corta. */
