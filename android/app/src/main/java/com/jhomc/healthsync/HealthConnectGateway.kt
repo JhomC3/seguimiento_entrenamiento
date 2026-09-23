@@ -5,7 +5,9 @@ import androidx.activity.result.contract.ActivityResultContract
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.feature.ExperimentalMindfulnessSessionApi
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
+import androidx.health.connect.client.records.MindfulnessSessionRecord
 import androidx.health.connect.client.records.NutritionRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.StepsRecord
@@ -56,6 +58,12 @@ interface HealthConnectGateway {
     suspend fun insertNutrition(records: List<NutritionRecord>): List<String>
     suspend fun deleteNutritionByClientIds(clientRecordIds: List<String>)
     suspend fun deleteNutritionByTime(start: Instant, end: Instant)
+
+    // Escritura de meditaciones (respiración completada -> MindfulnessSession).
+    // Idem: upsert por clientRecordId, solo WRITE sobre lo propio. El tipo es
+    // experimental en el SDK 1.1.0 (opt-in explícito).
+    @OptIn(ExperimentalMindfulnessSessionApi::class)
+    suspend fun insertMindfulness(records: List<MindfulnessSessionRecord>): List<String>
 }
 
 data class ProviderDetail(
@@ -161,6 +169,12 @@ class RealHealthConnectGateway(context: Context) : HealthConnectGateway {
         PermissionController.createRequestPermissionResultContract()
 
     override suspend fun insertNutrition(records: List<NutritionRecord>): List<String> {
+        if (records.isEmpty()) return emptyList()
+        return client.insertRecords(records).recordIdsList
+    }
+
+    @OptIn(ExperimentalMindfulnessSessionApi::class)
+    override suspend fun insertMindfulness(records: List<MindfulnessSessionRecord>): List<String> {
         if (records.isEmpty()) return emptyList()
         return client.insertRecords(records).recordIdsList
     }

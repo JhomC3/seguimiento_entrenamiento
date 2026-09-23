@@ -48,6 +48,25 @@ class ManifestContractTest {
     }
 
     @Test
+    fun manifest_declares_breathing_activity_and_service() {
+        val content = manifest.readText()
+        assertTrue("falta BreathingActivity", content.contains(".BreathingActivity"))
+        assertTrue("falta BreathingService", content.contains(".BreathingService"))
+        assertTrue(
+            "el pacer necesita mediaPlayback en background",
+            content.contains("android:foregroundServiceType=\"mediaPlayback\""),
+        )
+        assertTrue(
+            "el cue de fase usa Vibrator (permiso normal, hay que declararlo)",
+            content.contains("android.permission.VIBRATE"),
+        )
+        assertTrue(
+            "las meditaciones se escriben en Health Connect",
+            content.contains("android.permission.health.WRITE_MINDFULNESS"),
+        )
+    }
+
+    @Test
     fun manifest_declares_nutrition_write() {
         val content = manifest.readText()
         assertTrue(

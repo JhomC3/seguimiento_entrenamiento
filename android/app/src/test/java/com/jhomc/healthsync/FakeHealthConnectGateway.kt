@@ -3,6 +3,7 @@ package com.jhomc.healthsync
 import android.os.RemoteException
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.records.MindfulnessSessionRecord
 import androidx.health.connect.client.records.NutritionRecord
 import androidx.health.connect.client.response.ChangesResponse
 import androidx.health.connect.client.records.Record
@@ -10,6 +11,7 @@ import androidx.health.connect.client.response.ReadRecordsResponse
 import java.time.Instant
 import kotlin.reflect.KClass
 
+@OptIn(androidx.health.connect.client.feature.ExperimentalMindfulnessSessionApi::class)
 class FakeHealthConnectGateway : HealthConnectGateway {
 
     var sdk = HealthConnectClient.SDK_AVAILABLE
@@ -174,6 +176,8 @@ class FakeHealthConnectGateway : HealthConnectGateway {
 
     // --- Escritura nutricional (para NutritionPublisher) ---
     val insertedNutrition = mutableListOf<NutritionRecord>()
+    val insertedMindfulness = mutableListOf<MindfulnessSessionRecord>()
+    var failInsertMindfulness = false
     val deletedClientIds = mutableListOf<String>()
     var failInsertNutrition = false
     var failDeleteNutrition = false
@@ -181,6 +185,13 @@ class FakeHealthConnectGateway : HealthConnectGateway {
     override suspend fun insertNutrition(records: List<NutritionRecord>): List<String> {
         if (failInsertNutrition) throw RemoteException("insert failed")
         insertedNutrition += records
+        return records.map { "hc-${it.metadata.clientRecordId}" }
+    }
+
+    @OptIn(androidx.health.connect.client.feature.ExperimentalMindfulnessSessionApi::class)
+    override suspend fun insertMindfulness(records: List<MindfulnessSessionRecord>): List<String> {
+        if (failInsertMindfulness) throw RemoteException("insert failed")
+        insertedMindfulness += records
         return records.map { "hc-${it.metadata.clientRecordId}" }
     }
 

@@ -1,6 +1,7 @@
 package com.jhomc.healthsync
 
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.feature.ExperimentalMindfulnessSessionApi
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.NutritionRecord
 
@@ -33,6 +34,15 @@ class HealthConnectManager(private val gateway: HealthConnectGateway) {
         HealthPermission.getWritePermission(NutritionRecord::class)
 
     fun nutritionWritePermissions(): Set<String> = setOf(nutritionWritePermission())
+
+    /** WRITE_MINDFULNESS vía SDK (meditaciones de respiración; bajo demanda). */
+    @OptIn(ExperimentalMindfulnessSessionApi::class)
+    fun mindfulnessWritePermission(): String =
+        HealthPermission.getWritePermission(
+            androidx.health.connect.client.records.MindfulnessSessionRecord::class,
+        )
+
+    fun mindfulnessWritePermissions(): Set<String> = setOf(mindfulnessWritePermission())
 
     /** Exposes the underlying gateway for cache invalidation after permission flows. */
     fun gateway(): HealthConnectGateway = gateway

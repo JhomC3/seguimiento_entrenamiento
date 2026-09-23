@@ -58,6 +58,83 @@ fun TextView.asStatus(text: String, kind: StatusKind) {
 
 enum class StatusKind { ERROR, SUCCESS, NOTICE }
 
+/** Botón del pacer: pastilla oscura con borde borgoña (como la referencia).
+ *  Guardar y Descartar comparten estilo; solo cambia el peso del texto. */
+fun Context.friendlyButton(text: String): Button =
+    Button(this).apply {
+        this.text = text
+        textSize = 16f
+        minHeight = (52 * resources.displayMetrics.density).toInt()
+        setTextColor(context.getColor(R.color.neutral_100))
+        background = pillBg(
+            fill = context.getColor(R.color.neutral_900),
+            stroke = context.getColor(R.color.burgundy_600),
+        )
+        asBreather(bold = true)
+    }
+
+/** Secundario del pacer: misma pastilla, texto normal. */
+fun Context.friendlyOutlineButton(text: String): Button =
+    Button(this).apply {
+        this.text = text
+        textSize = 16f
+        minHeight = (52 * resources.displayMetrics.density).toInt()
+        setTextColor(context.getColor(R.color.neutral_100))
+        background = pillBg(
+            fill = context.getColor(R.color.neutral_900),
+            stroke = context.getColor(R.color.burgundy_600),
+        )
+        asBreather(bold = false)
+    }
+
+/** Botón de texto del pacer (acción terciaria, mismo alto táctil). */
+fun Context.friendlyTextButton(text: String): Button =
+    Button(this).apply {
+        this.text = text
+        textSize = 15f
+        minHeight = (48 * resources.displayMetrics.density).toInt()
+        setTextColor(context.getColor(R.color.burgundy_400))
+        background = pillBg(fill = 0x00000000, stroke = 0x00000000)
+        asBreather()
+    }
+
+private fun pillBg(fill: Int, stroke: Int): android.graphics.drawable.Drawable {
+    val d = density()
+    return android.graphics.drawable.GradientDrawable().apply {
+        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+        cornerRadius = 26f * d
+        setColor(fill)
+        if (stroke != 0) setStroke((1.5f * d).toInt(), stroke)
+    }
+}
+
+private fun density(): Float = android.content.res.Resources.getSystem().displayMetrics.density
+
+private fun roundedBg(color: Int): android.graphics.drawable.Drawable {
+    val normal = android.graphics.drawable.GradientDrawable().apply {
+        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+        cornerRadius = 14f
+        setColor(color)
+    }
+    return normal
+}
+
+/** Tipografía del pacer (Comfortaa); si falla, la del sistema. */
+fun TextView.asBreather(bold: Boolean = false) {
+    runCatching {
+        typeface = resources.getFont(if (bold) R.font.comfortaa_bold else R.font.comfortaa)
+    }
+    if (bold) paint.isFakeBoldText = true
+}
+
+fun Button.asBreather(bold: Boolean = false) {
+    runCatching {
+        typeface = resources.getFont(if (bold) R.font.comfortaa_bold else R.font.comfortaa)
+    }
+    if (bold) paint.isFakeBoldText = true
+    minHeight = (48 * resources.displayMetrics.density).toInt()
+}
+
 /** AutoComplete no hereda editTextStyle del tema: mismos valores que Cell.Input. */
 fun AutoCompleteTextView.asCellInput() {
     setBackgroundColor(context.getColor(R.color.overlay_row))

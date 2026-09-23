@@ -19,6 +19,8 @@ import com.jhomc.healthsync.data.MIGRATION_8_9
 import com.jhomc.healthsync.data.MIGRATION_9_10
 import com.jhomc.healthsync.data.MIGRATION_10_11
 import com.jhomc.healthsync.data.MIGRATION_11_12
+import com.jhomc.healthsync.data.MIGRATION_12_13
+import com.jhomc.healthsync.data.MIGRATION_13_14
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -229,7 +231,7 @@ class HealthDatabaseMigrationTest {
     }
 
     @Test
-    fun `full chain v9 to v12 converges every known lineage`() {
+    fun `full chain v9 to v14 converges every known lineage`() {
         // Prueba el camino REAL del teléfono: una BD generada por Room (como
         // todas las v9/v10 en uso) degradada al PEOR linaje conocido —
         // tabla nutrition_publish (rama de nutrición, v10 divergente),
@@ -239,8 +241,8 @@ class HealthDatabaseMigrationTest {
         // Room valida TODAS las tablas al migrar: en verde, cualquier
         // teléfono abre.
         val context = ApplicationProvider.getApplicationContext<Context>()
-        context.deleteDatabase("migration-chain-v9-v12.db")
-        Room.databaseBuilder(context, HealthDatabase::class.java, "migration-chain-v9-v12.db")
+        context.deleteDatabase("migration-chain-v9-v14.db")
+        Room.databaseBuilder(context, HealthDatabase::class.java, "migration-chain-v9-v14.db")
             .allowMainThreadQueries()
             .build()
             .apply {
@@ -250,8 +252,8 @@ class HealthDatabaseMigrationTest {
             }
         val raw = FrameworkSQLiteOpenHelperFactory().create(
             SupportSQLiteOpenHelper.Configuration.builder(context)
-                .name("migration-chain-v9-v12.db")
-                .callback(object : SupportSQLiteOpenHelper.Callback(12) {
+                .name("migration-chain-v9-v14.db")
+                .callback(object : SupportSQLiteOpenHelper.Callback(14) {
                     override fun onCreate(db: SupportSQLiteDatabase) {}
                     override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
                 })
@@ -297,12 +299,13 @@ class HealthDatabaseMigrationTest {
         )
         raw.close()
 
-        // Apertura real como en producción: migra 9→10→11→12 y valida identidad.
-        val db = Room.databaseBuilder(context, HealthDatabase::class.java, "migration-chain-v9-v12.db")
+        // Apertura real como en producción: migra 9→…→14 y valida identidad.
+        val db = Room.databaseBuilder(context, HealthDatabase::class.java, "migration-chain-v9-v14.db")
             .addMigrations(
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
                 MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
-                MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
+                MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
+                MIGRATION_13_14,
             )
             .allowMainThreadQueries()
             .build()
@@ -333,9 +336,25 @@ class HealthDatabaseMigrationTest {
                 assertEquals("Press", it.getString(0))
                 assertEquals(80.0, it.getDouble(1), 0.001)
             }
+            // v14: presets retirados, sesiones operativas.
+            runBlocking {
+                db.query(SimpleSQLiteQuery("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='breathing_presets'")).use {
+                    assertTrue(it.moveToFirst())
+                    assertEquals(0, it.getInt(0))
+                }
+                db.breathingDao().putSession(
+                    com.jhomc.healthsync.data.BreathingSessionEntity(
+                        clientSessionId = "u-chain", fecha = "2026-09-13", startMs = 1L,
+                        endMs = 121_000L, tzOffsetMin = 0, plannedS = 120, realS = 120,
+                        patternJson = "{}", ciclos = 12, bpm = 6.0, completada = true,
+                        createdAtMs = 1L,
+                    ),
+                )
+                assertEquals(1, db.breathingDao().sessionsFor("2026-09-13").size)
+            }
         } finally {
             db.close()
-            context.deleteDatabase("migration-chain-v9-v12.db")
+            context.deleteDatabase("migration-chain-v9-v14.db")
         }
     }
 

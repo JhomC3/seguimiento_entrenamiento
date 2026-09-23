@@ -57,6 +57,21 @@ class RecordTypesTest {
     }
 
     @Test
+    @OptIn(androidx.health.connect.client.feature.ExperimentalMindfulnessSessionApi::class)
+    fun `mindfulness write permission resolves via SDK`() {
+        val perm = androidx.health.connect.client.permission.HealthPermission.getWritePermission(
+            androidx.health.connect.client.records.MindfulnessSessionRecord::class,
+        )
+        assertTrue(perm.contains("MINDFULNESS"))
+    }
+
+    @Test
+    fun `mindfulness stays out of the read catalog (write-only)`() {
+        assertTrue(RecordTypes.byTypeName("MINDFULNESS_SESSION") == null)
+        assertTrue(RecordTypes.all.none { it.recordClass.simpleName?.contains("Mindfulness") == true })
+    }
+
+    @Test
     fun `catalog excludes irrelevant and sensitive types`() {
         val names = RecordTypes.all.map { it.typeName }.toSet()
         for (excluded in listOf(
