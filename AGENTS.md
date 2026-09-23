@@ -280,3 +280,10 @@ Antes de dar por completada una tarea, debes:
    uv lock && uv sync --locked
    ```
    (`requirements.txt` se conserva solo como export de compatibilidad.)
+
+## 9. SDD (Spec-Driven Development)
+
+- Lee `docs/constitution.md` y la spec activa en `specs/` antes de tocar código.
+- Flujo: Constitución → Spec (EARS) → Clarificación → Plan → Tareas → Implementación (una tarea cada vez, tests primero) → Validación (RF × test).
+- Ningún comportamiento se implementa si no está en la spec activa; todo cambio empieza actualizando la spec y mostrando su diff.
+- La línea base vive en `specs/000-sdd-bootstrap/`; cada funcionalidad nueva usa `specs/NNN-<nombre>/spec|plan|tasks.md`.
