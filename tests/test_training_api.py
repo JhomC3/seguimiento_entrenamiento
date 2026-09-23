@@ -65,6 +65,10 @@ def test_api_503_cuando_no_hay_token(tmp_path, monkeypatch):
     assert c.get("/api/v1/ejercicio/ultimo?ejercicio=Press", headers=_h("x")).status_code == 503
     assert c.post("/api/v1/sesion", json={}, headers=_h("x")).status_code == 503
     assert c.delete("/api/v1/sesion?fecha=2026-09-07", headers=_h("x")).status_code == 503
+    assert c.post("/api/v1/respiracion/sesion", json={}, headers=_h("x")).status_code == 503
+    assert (
+        c.get("/api/v1/respiracion/sesiones?fecha=2026-09-07", headers=_h("x")).status_code == 503
+    )
 
 
 def test_api_401_token_ausente_o_incorrecto(tmp_path, monkeypatch):
@@ -342,6 +346,9 @@ def test_api_lan_permite_solo_rutas_api_y_sync(monkeypatch):
         ("POST", "/api/v1/cardio/anotacion"),
         ("GET", "/api/v1/fechas"),
         ("POST", "/sync/health-connect"),
+        ("POST", "/api/v1/respiracion/sesion"),
+        ("GET", "/api/v1/respiracion/sesiones"),
+        ("DELETE", "/api/v1/respiracion/sesion"),
     ):
         assert _run_lan(_lan_scope(method=method, path=path)) == 200
     # Todo lo demás remoto sigue 403: dashboard, htmx, prefijos y métodos cruzados.
@@ -363,6 +370,9 @@ def test_api_lan_permite_solo_rutas_api_y_sync(monkeypatch):
         ("GET", "/api/v1/sesion/extra"),
         ("POST", "/api/v1/sesion/extra"),
         ("POST", "/api/v1/plantilla/1/aplicar"),
+        ("GET", "/api/v1/respiracion/sesion"),
+        ("POST", "/api/v1/respiracion/sesiones"),
+        ("GET", "/api/v1/respiracion/sesion/extra"),
     ):
         assert _run_lan(_lan_scope(method=method, path=path)) == 403
 

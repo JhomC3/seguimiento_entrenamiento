@@ -56,6 +56,7 @@ CSRF_EXEMPT_PATHS: frozenset = frozenset(
         "/api/v1/plantilla-comida/guardar",
         "/api/v1/plantilla-comida/aplicar",
         "/api/v1/cardio/anotacion",
+        "/api/v1/respiracion/sesion",
     }
 )
 

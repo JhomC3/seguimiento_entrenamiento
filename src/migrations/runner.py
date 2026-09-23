@@ -24,6 +24,7 @@ from src.migrations import (
     v018_nutrition_micro_targets,
     v019_extra_micros,
     v020_dri_ceros,
+    v021_breathing,
 )
 
 MIGRATIONS = [
@@ -46,6 +47,7 @@ MIGRATIONS = [
     v018_nutrition_micro_targets,
     v019_extra_micros,
     v020_dri_ceros,
+    v021_breathing,
 ]
 
 _CURRENT_VERSION = max(m.VERSION for m in MIGRATIONS)
@@ -65,6 +67,7 @@ _DOMAIN_TABLES = {
     "cardio_annotations",
     "training_splits",
     "training_split_items",
+    "breathing_sessions",
 }
 
 
