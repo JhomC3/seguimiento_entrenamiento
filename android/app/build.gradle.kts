@@ -26,10 +26,30 @@ android {
         // 9/0.4.4: marcado por altura + stream único + color fundido.
         // 10/0.4.5: ahogo por tañido (fin del transpuesto) + tono limpio.
         // 11/0.4.6: REST entre fases (silencio que extiende) + pull acotado.
+        // 12/0.4.24: pantalla solo dial + panel izquierdo (fuera xresp/xrpm).
+        // 13/0.4.25: glifo propio, TOP fijo 2 líneas, cero saltos, acordeón.
+        // 14/0.4.26: gesto global, TOP con título editable, filas glass, keep-on.
+        // 15/0.4.27: revisión fantasma (sin rellenos) + resumen corto.
+        // 16/0.4.28: barra glass mockup + rueda inline (fuera diálogos/panel).
+        // 17/0.4.29: popup editor, etiquetas al brillo, barra bajo glifo, fades 400ms.
+        // 18/0.4.30: Min, letras gruesas/números delgados, popup sin tarjeta,
+        // botones iguales apilados, blur 28, décimas peladas.
+        // 19/0.4.31: X/✓ en vez de Cancelar/Listo, blur 48, ruedas ×1.25.
+        // 20/0.4.32: glass doble blur + desaturado.
+        // 21/0.4.33: fila ✕|Libre|✓, dim fuerte (fondo negro: blur texturiza).
+        // 22/0.4.34: ✕ y ✓ mismo tamaño y grosor.
+        // 23/0.4.35: ✕/✓ dibujados, panel negro, acordeones libres, sin vibración.
+        // 24/0.4.36: fila apilada anterior + glifos al mismo tamaño (solo fuente).
+        // 25/0.4.37: fila horizontal intacta + glifos dibujados (corrección).
+        // 26/0.4.38: popup anterior + misma instancia de fuente (reversión).
+        // 27/0.4.39: misma fila en horizontal (solo posición).
+        // 28/0.4.40: fuente con ambos glifos (solo fuente).
+        // 29/0.4.41: Sonido directo, títulos 18sp bold, opciones 15sp dim.
+        // 30/0.4.42: fuera Libre (0:00 = Libre), revisión Descartar|Guardar idénticos.
         // Subir versionCode en cada build entregado: es la única forma de
         // distinguir APKs en Ajustes.
-        versionCode = 28
-        versionName = "0.4.23"
+        versionCode = 47
+        versionName = "0.4.42"
     }
 
     compileOptions {
@@ -132,6 +152,7 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
     implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.drawerlayout:drawerlayout:1.2.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.14.1")

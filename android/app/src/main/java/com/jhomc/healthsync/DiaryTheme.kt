@@ -58,32 +58,25 @@ fun TextView.asStatus(text: String, kind: StatusKind) {
 
 enum class StatusKind { ERROR, SUCCESS, NOTICE }
 
-/** Botón del pacer: pastilla oscura con borde borgoña (como la referencia).
- *  Guardar y Descartar comparten estilo; solo cambia el peso del texto. */
+/** Guardar del pacer: fantasma idéntico a Descartar (mismo todo). */
 fun Context.friendlyButton(text: String): Button =
     Button(this).apply {
         this.text = text
         textSize = 16f
         minHeight = (52 * resources.displayMetrics.density).toInt()
         setTextColor(context.getColor(R.color.neutral_100))
-        background = pillBg(
-            fill = context.getColor(R.color.neutral_900),
-            stroke = context.getColor(R.color.burgundy_600),
-        )
-        asBreather(bold = true)
+        background = glassBg(fill = 0x00000000, stroke = 0x00000000)
+        asBreather(bold = false)
     }
 
-/** Secundario del pacer: misma pastilla, texto normal. */
+/** Descartar del pacer: fantasma idéntico a Guardar (mismo todo). */
 fun Context.friendlyOutlineButton(text: String): Button =
     Button(this).apply {
         this.text = text
         textSize = 16f
         minHeight = (52 * resources.displayMetrics.density).toInt()
         setTextColor(context.getColor(R.color.neutral_100))
-        background = pillBg(
-            fill = context.getColor(R.color.neutral_900),
-            stroke = context.getColor(R.color.burgundy_600),
-        )
+        background = glassBg(fill = 0x00000000, stroke = 0x00000000)
         asBreather(bold = false)
     }
 
@@ -105,6 +98,17 @@ private fun pillBg(fill: Int, stroke: Int): android.graphics.drawable.Drawable {
         cornerRadius = 26f * d
         setColor(fill)
         if (stroke != 0) setStroke((1.5f * d).toInt(), stroke)
+    }
+}
+
+/** Fondo glass: esquinas 14dp, borde hairline opcional (0 = sin borde). */
+private fun glassBg(fill: Int, stroke: Int): android.graphics.drawable.Drawable {
+    val d = density()
+    return android.graphics.drawable.GradientDrawable().apply {
+        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+        cornerRadius = 14f * d
+        setColor(fill)
+        if (stroke != 0) setStroke(d.coerceAtLeast(1f).toInt(), stroke)
     }
 }
 

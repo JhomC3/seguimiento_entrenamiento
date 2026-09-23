@@ -5,14 +5,16 @@ import android.content.Context
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
 import android.widget.Button
-import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.NumberPicker
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.drawerlayout.widget.DrawerLayout
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.jhomc.healthsync.data.SecureTargetStore
@@ -21,24 +23,31 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Pestaña Respirar: el círculo ES el botón (toque = empezar/pausar/continuar,
- * mantener 1.5 s = terminar). Patrón y TIMER en chips (toque = editor
- * deslizante) y el resto tras el engranaje ⚙. Al terminar: revisión con
- * [Guardar sesión] o Descartar (nada se envía solo).
- * En marcha la configuración se oculta: solo círculo + stats.
+ * Pestaña Respirar: SOLO dial (arriba patrón+definido en dos líneas fijas,
+ * centro círculo, abajo estado/`Iniciar`). El círculo ES el botón (toque =
+ * empezar/pausar/continuar, mantener 1.5 s = terminar). Todo lo demás vive en
+ * el panel izquierdo en acordeones (cerrado por defecto; gesto de borde o
+ * glifo): patrón, duración, ajustes y planillas. Al terminar: revisión en
+ * overlay con [Guardar sesión] o Descartar. Regla dura: en marcha nada se
+ * mueve ni se oculta del flujo (solo el glifo pasa a INVISIBLE).
  */
 class BreathingActivity : ComponentActivity() {
 
     private lateinit var repo: BreathingRepository
     private lateinit var circle: BreathCircleView
-    private lateinit var root: LinearLayout
-    private lateinit var statsView: TextView
+    private lateinit var drawerLayout: DrawerLayout
+    private lateinit var contentFrame: android.widget.FrameLayout
+    private lateinit var content: LinearLayout
+    private lateinit var glyph: DrawerGlyphView
     private lateinit var phaseLabel: TextView
-    private lateinit var configContainer: LinearLayout
+    private lateinit var veil: View
     private lateinit var reviewCard: LinearLayout
     private lateinit var reviewSummary: TextView
-    private lateinit var durationChip: Button
-    private lateinit var plansRow: LinearLayout
+    private val timbreRowButtons = mutableMapOf<SoundStyle, Button>()
+    private lateinit var drawerPlans: LinearLayout
+    private lateinit var editorVeil: View
+    private lateinit var editorCard: LinearLayout
+    private var openBarKey: String? = null
     private var reviewSessionId: String? = null
     private var plans: List<BreathingPlans.Plan> = emptyList()
     private var lastStateClass: kotlin.reflect.KClass<out BreathRunState>? = null
@@ -62,7 +71,10 @@ class BreathingActivity : ComponentActivity() {
     private var vibration = false
     private var timbre = SoundStyle.AIRE
 
-    private val chipButtons = mutableMapOf<String, Button>()
+    private val barValueViews = mutableMapOf<String, TextView>()
+    private val accordionBodies = mutableMapOf<String, View>()
+    private val accordionChevrons = mutableMapOf<String, ChevronView>()
+    private val accordionSummaries = mutableMapOf<String, TextView>()
 
     private fun prefs() = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -78,42 +90,139 @@ class BreathingActivity : ComponentActivity() {
         }
         plans = BreathingPlans.load(prefs().getString(KEY_PLANS, "") ?: "")
 
-        root = LinearLayout(this).apply {
+        drawerLayout = DrawerLayout(this)
+
+        contentFrame = android.widget.FrameLayout(this).apply {
+            layoutParams = DrawerLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT,
+            )
+        }
+        // Barra de navegación: el contenido la respeta (el texto inferior
+        // nunca queda cortado); el drawer la gestiona solo.
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(contentFrame) { v, insets ->
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            v.setPadding(28, 20 + bars.top, 28, 28 + bars.bottom)
+            insets
+        }
+
+        content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT,
+            )
             setPadding(28, 20, 28, 28)
         }
 
-        statsView = TextView(this).apply {
-            gravity = Gravity.END
-            textSize = 16f
-            text = statsText(null)
-            asBreather()
+        val topRow = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
         }
-        root.addView(statsView)
+        // Glifo propio en esquina (dos líneas, la 2ª más corta).
+        glyph = DrawerGlyphView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                (48 * resources.displayMetrics.density).toInt(),
+                (48 * resources.displayMetrics.density).toInt(),
+            )
+            onTap = { drawerLayout.openDrawer(Gravity.START) }
+        }
+        topRow.addView(glyph)
+        // Barra glass del mockup: 5 columnas (Tiempo + 4 fases). Toque en
+        // columna = rueda inline ahí mismo (ancho completo, bajo la barra).
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = 20f * resources.displayMetrics.density
+                setColor(0xB3171717.toInt())
+                setStroke(
+                    resources.displayMetrics.density.coerceAtLeast(1f).toInt(),
+                    0x66404040.toInt(),
+                )
+            }
+            setPadding(
+                (16 * resources.displayMetrics.density).toInt(),
+                (12 * resources.displayMetrics.density).toInt(),
+                (16 * resources.displayMetrics.density).toInt(),
+                (12 * resources.displayMetrics.density).toInt(),
+            )
+        }
+        for ((key, label) in barColumnDefs()) {
+            bar.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                isClickable = true
+                isFocusable = true
+                contentDescription = "Editar $label"
+                addView(TextView(this@BreathingActivity).apply {
+                    text = label
+                    gravity = Gravity.CENTER
+                    textSize = 13f
+                    maxLines = 1
+                    includeFontPadding = false
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setTextColor(getColor(R.color.neutral_100))
+                    setPadding(0, 0, 0, (4 * resources.displayMetrics.density).toInt())
+                    asBreather(bold = true)
+                })
+                addView(TextView(this@BreathingActivity).apply {
+                    gravity = Gravity.CENTER
+                    textSize = 19f
+                    maxLines = 1
+                    includeFontPadding = false
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setTextColor(getColor(R.color.neutral_100))
+                    asBreather()
+                }.also { barValueViews[key] = it })
+                setOnClickListener { toggleBarEditor(key) }
+            })
+        }
+        topRow.addView(bar)
+        content.addView(topRow)
 
         circle = BreathCircleView(this).apply {
-            // Ocupa lo que sobre: sin hueco negro abajo en pantallas normales.
+            // Ocupa lo que sobre: la pantalla es solo dial.
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f,
             )
             onTap = { circleTap() }
             onHoldReset = { circleHold() }
         }
-        root.addView(circle)
+        content.addView(circle)
         phaseLabel = TextView(this).apply {
             gravity = Gravity.CENTER
             textSize = 28f
-            text = ""
+            maxLines = 1
+            includeFontPadding = false
+            text = "Iniciar"
+            setTextColor(getColor(R.color.neutral_100))
             asBreather(bold = true)
             setPadding(0, 12, 0, 12)
         }
-        root.addView(phaseLabel)
+        content.addView(phaseLabel)
+        contentFrame.addView(content)
 
-        reviewCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = LinearLayout.GONE
-            setPadding(0, 8, 0, 8)
+        // Revisión en overlay: no participa del flujo (el dial no se mueve).
+        veil = View(this).apply {
+            visibility = View.GONE
+            isClickable = true
+            isFocusable = true
+            setBackgroundColor(0xCC000000.toInt())
+            applyGlassBlur(this)
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            )
         }
+        contentFrame.addView(veil)
+
+        reviewCard = glassCard()
         reviewSummary = TextView(this).apply {
             gravity = Gravity.CENTER
             textSize = 17f
@@ -125,60 +234,71 @@ class BreathingActivity : ComponentActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
-        reviewRow.addView(friendlyButton("Guardar sesión").apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.2f)
-            setOnClickListener { saveReview() }
-        })
         reviewRow.addView(friendlyOutlineButton("Descartar").apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             setOnClickListener { discardReview() }
         })
-        reviewCard.addView(reviewRow)
-        root.addView(reviewCard)
-
-        configContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        configContainer.addView(patternChips())
-        val secondRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 16, 0, 0)
-        }
-        durationChip = Button(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.4f)
-            setOnClickListener { editDuration() }
-            asBreather()
-        }
-        secondRow.addView(durationChip)
-        secondRow.addView(Button(this).apply {
-            text = "⚙"
-            textSize = 22f
-            contentDescription = "Ajustes de respiración"
+        reviewRow.addView(friendlyButton("Guardar sesión").apply {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            asBreather()
-            setOnClickListener { showSettings() }
+            setOnClickListener { saveReview() }
         })
-        configContainer.addView(secondRow)
-        plansRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 12, 0, 0)
+        reviewCard.addView(reviewRow)
+        contentFrame.addView(reviewCard)
+
+        // Editor en popup: mismo glass que la revisión (el dial no se mueve).
+        // Velo glass: sobre fondo casi negro el blur apenas se nota (no hay
+        // nada que difuminar); el efecto lo da el dim fuerte + la textura.
+        editorVeil = View(this).apply {
+            visibility = View.GONE
+            isClickable = true
+            isFocusable = true
+            setBackgroundColor(0xCC000000.toInt())
+            applyGlassBlur(this)
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            )
+            setOnClickListener { collapseBarEditor() }
         }
-        configContainer.addView(
-            android.widget.HorizontalScrollView(this).apply {
-                isHorizontalScrollBarEnabled = false
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                )
-                addView(plansRow)
+        contentFrame.addView(editorVeil)
+        // Sin tarjeta ni bordes: ruedas flotando sobre el blur total.
+        editorCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(48, 32, 48, 32)
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER,
+            )
+        }
+        contentFrame.addView(editorCard)
+
+        drawerLayout.addView(contentFrame)
+        drawerLayout.addView(buildDrawer())
+        refreshBar()
+        refreshSonidoRows()
+
+        setContentView(drawerLayout)
+        // Pantalla siempre encendida en Respirar (flag de ventana: se libera
+        // solo al salir; el botón físico sigue bloqueando).
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Atrás cierra editor o panel antes que la pantalla.
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : androidx.activity.OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    if (editorCard.visibility == View.VISIBLE) {
+                        collapseBarEditor()
+                    } else if (drawerLayout.isDrawerOpen(Gravity.START)) {
+                        drawerLayout.closeDrawer(Gravity.START)
+                    } else {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                    }
+                }
             },
         )
-        root.addView(configContainer)
-        refreshDurationChip()
-        refreshPlansRow()
-
-        setContentView(ScrollView(this).apply {
-            isFillViewport = true
-            addView(root)
-        })
         observeRun()
         lifecycleScope.launch(Dispatchers.IO) {
             runCatching { repairOrphans() }
@@ -243,6 +363,61 @@ class BreathingActivity : ComponentActivity() {
         }
     }
 
+    // --- Gesto global del panel ----------------------------------------------------
+
+    internal enum class SwipeAction { OPEN, CLOSE }
+
+    private var swipeDownX = 0f
+    private var swipeDownY = 0f
+    private var swipeTracking = false
+
+    /**
+     * Deslizar horizontal abre/cierra el panel en cualquier zona (observa,
+     * nunca consume: delega siempre). La franja de sistema (~40dp) queda para
+     * el gesto nativo (borde + atrás). En marcha el candado de DrawerLayout
+     * ignora la apertura: sin checks redundantes.
+     */
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                swipeDownX = event.x
+                swipeDownY = event.y
+                swipeTracking = true
+            }
+            MotionEvent.ACTION_UP -> {
+                if (swipeTracking) {
+                    swipeTracking = false
+                    val d = resources.displayMetrics.density
+                    when (
+                        swipeAction(
+                            (event.x - swipeDownX) / d,
+                            (event.y - swipeDownY) / d,
+                            swipeDownX / d,
+                        )
+                    ) {
+                        SwipeAction.OPEN -> drawerLayout.openDrawer(Gravity.START)
+                        SwipeAction.CLOSE -> drawerLayout.closeDrawer(Gravity.START)
+                        null -> Unit
+                    }
+                }
+            }
+            MotionEvent.ACTION_CANCEL -> swipeTracking = false
+        }
+        return super.dispatchTouchEvent(event)
+    }
+
+    /** Decisión pura del gesto (testeable): dx/dy y origen en dp. */
+    internal fun swipeAction(dxDp: Float, dyDp: Float, downXDp: Float): SwipeAction? {
+        if (kotlin.math.abs(dxDp) <= 100 || kotlin.math.abs(dxDp) <= 2 * kotlin.math.abs(dyDp)) {
+            return null
+        }
+        return if (dxDp > 0) {
+            if (downXDp > 40) SwipeAction.OPEN else null
+        } else {
+            SwipeAction.CLOSE
+        }
+    }
+
     // --- Círculo-botón ------------------------------------------------------------
 
     private fun circleTap() {
@@ -265,8 +440,10 @@ class BreathingActivity : ComponentActivity() {
             toast("Revisa los tiempos (inhale/exhale 0.5–60 s).")
             return
         }
+        collapseBarEditor()
         saveDefault(pattern)
-        BreathingService.start(this, pattern, totalS, sound, vibration, timbre)
+        // Siempre con sonido, nunca vibración (orden del dueño).
+        BreathingService.start(this, pattern, totalS, true, false, timbre)
     }
 
     /** La última config ejecutada queda por defecto al volver. */
@@ -290,76 +467,179 @@ class BreathingActivity : ComponentActivity() {
         totalS = prefs.getInt(KEY_DURATION, totalS)
     }
 
-    // --- Chips -----------------------------------------------------------------------
+    // --- Panel izquierdo en acordeones (minimalista) --------------------------------
 
-    private fun patternChips(): LinearLayout {
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val defs = listOf(
-            Triple("inhale", "INHALE", { inhale }),
-            Triple("holdIn", "HOLD", { holdIn }),
-            Triple("exhale", "EXHALE", { exhale }),
-            Triple("holdOut", "HOLD", { holdOut }),
-        )
-        for ((key, label, get) in defs) {
-            row.addView(Button(this).apply {
-                text = chipText(label, get())
-                textSize = 18f
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                setOnClickListener { editChip(key, label) }
-                asBreather()
-                chipButtons[key] = this
-            })
+    /** Tarjeta glass (revisión y editor): mismo lenguaje, sin mover el flujo. */
+    private fun glassCard(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        visibility = View.GONE
+        background = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = 20f * resources.displayMetrics.density
+            setColor(0xB3171717.toInt())
+            setStroke(
+                resources.displayMetrics.density.coerceAtLeast(1f).toInt(),
+                0x669B1B30.toInt(),
+            )
         }
+        elevation = 8f * resources.displayMetrics.density
+        setPadding(48, 32, 48, 32)
+        layoutParams = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.CENTER,
+        )
+    }
+
+    /** Glass: doble blur + desaturado detrás del velo (API 31+); dim si no. */
+    private fun applyGlassBlur(v: View) {
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            val pass = android.graphics.RenderEffect.createBlurEffect(
+                25f, 25f, android.graphics.Shader.TileMode.CLAMP,
+            )
+            val frost = android.graphics.RenderEffect.createChainEffect(pass, pass)
+            val matrix = android.graphics.ColorMatrix().apply { setSaturation(0.6f) }
+            v.setRenderEffect(
+                android.graphics.RenderEffect.createChainEffect(
+                    android.graphics.RenderEffect.createColorFilterEffect(
+                        android.graphics.ColorMatrixColorFilter(matrix),
+                    ),
+                    frost,
+                ),
+            )
+        }
+    }
+
+    /** Fila minimalista: fondo transparente con ripple, texto a la izquierda. */
+    private fun drawerRow(text: String): Button = Button(this).apply {
+        this.text = text
+        textSize = 15f
+        gravity = Gravity.START or Gravity.CENTER_VERTICAL
+        minHeight = (48 * resources.displayMetrics.density).toInt()
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        )
+        val ripple = android.util.TypedValue().let { tv ->
+            theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+            getDrawable(tv.resourceId)
+        }
+        background = ripple
+        setTextColor(getColor(R.color.neutral_300))
+        asBreather()
+    }
+
+    /** Cabecera de acordeón: título + resumen + chevron. Toque = expandir. */
+    private fun accordionHeader(key: String, title: String, parent: LinearLayout): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = (56 * resources.displayMetrics.density).toInt()
+            isClickable = true
+            isFocusable = true
+            contentDescription = title
+        }
+        val texts = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        texts.addView(TextView(this).apply {
+            text = title.uppercase()
+            textSize = 18f
+            setLetterSpacing(0.08f)
+            setTextColor(getColor(R.color.neutral_100))
+            asBreather(bold = true)
+        })
+        texts.addView(TextView(this).apply {
+            textSize = 14f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(getColor(R.color.neutral_500))
+            asBreather()
+        }.also { accordionSummaries[key] = it })
+        row.addView(texts)
+        row.addView(ChevronView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                (32 * resources.displayMetrics.density).toInt(),
+                (32 * resources.displayMetrics.density).toInt(),
+            )
+        }.also { accordionChevrons[key] = it })
+        row.setOnClickListener { toggleAccordion(key) }
+        parent.addView(row)
+        parent.addView(View(this).apply {
+            setBackgroundColor(getColor(R.color.neutral_700))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (1 * resources.displayMetrics.density).toInt().coerceAtLeast(1),
+            )
+        })
         return row
     }
 
-    /** Hold en 0 muestra OFF (el editor permite ponerlo). */
-    private fun chipText(label: String, value: Double): String =
-        if (value == 0.0 && label == "HOLD") "$label\nOFF" else "$label\n${fmt(value)}s"
+    /** Cada acordeón abre/cierra por su cuenta (no colapsa a los demás). */
+    private fun toggleAccordion(key: String) {
+        val body = accordionBodies[key] ?: return
+        val open = body.visibility != View.VISIBLE
+        body.visibility = if (open) View.VISIBLE else View.GONE
+        accordionChevrons[key]?.expanded = open
+    }
 
-    private fun setValue(key: String, value: Double) {
-        when (key) {
-            "inhale" -> inhale = value
-            "holdIn" -> holdIn = value
-            "exhale" -> exhale = value
-            "holdOut" -> holdOut = value
+    /** Edición pre-sesión: en marcha las columnas no expanden. */
+    private fun sessionLive(): Boolean {
+        val s = BreathingService.state.value
+        return s is BreathRunState.Running || s is BreathRunState.Paused
+    }
+
+    private fun barColumnDefs(): List<Triple<String, String, String>> = listOf(
+        Triple("tiempo", "Min", "Editar Min"),
+        Triple("inhale", "Inhalar", "Editar Inhalar"),
+        Triple("holdIn", "Sostener", "Editar Sostener tras inhalar"),
+        Triple("exhale", "Exhalar", "Editar Exhalar"),
+        Triple("holdOut", "Sostener", "Editar Sostener tras exhalar"),
+    )
+
+    /** Una abierta cada vez; re-toque o Cancelar cierra. En marcha no expande (RF-5). */
+    internal fun toggleBarEditor(key: String) {
+        if (sessionLive()) return
+        if (openBarKey == key) {
+            collapseBarEditor()
+            return
         }
-        refreshChips()
-    }
-
-    private fun getValue(key: String): Double = when (key) {
-        "inhale" -> inhale
-        "holdIn" -> holdIn
-        "exhale" -> exhale
-        "holdOut" -> holdOut
-        else -> 0.0
-    }
-
-    private fun refreshChips() {
-        for ((key, button) in chipButtons) {
-            val label = button.text.split("\n").firstOrNull() ?: ""
-            button.text = chipText(label, getValue(key))
+        openBarKey = key
+        editorCard.removeAllViews()
+        editorCard.addView(if (key == "tiempo") durationEditor() else phaseEditor(key))
+        editorVeil.visibility = View.VISIBLE
+        editorCard.visibility = View.VISIBLE
+        for ((k, v) in barValueViews) {
+            v.setTextColor(getColor(if (k == key) R.color.burgundy_400 else R.color.neutral_100))
         }
     }
 
-    /** Editor deslizante: segundos (1 en 1) + décimas (0.1). La décima mínima
-     *  se ajusta sola (inhala/exhala no bajan de 0.5): los estados inválidos
-     *  no existen en vez de dar error. */
-    private fun editChip(key: String, label: String) {
+    internal fun collapseBarEditor() {
+        openBarKey = null
+        editorVeil.visibility = View.GONE
+        editorCard.visibility = View.GONE
+        editorCard.removeAllViews()
+        for ((_, v) in barValueViews) v.setTextColor(getColor(R.color.neutral_100))
+    }
+
+    /** Rueda inline de fase (misma validación que el diálogo retirado). */
+    private fun phaseEditor(key: String): View {
         val range = BreathingValidation.phaseRange(key)
         val secMin = range.start.toInt()
+        val desc = barColumnDefs().first { it.first == key }.third
         val secPicker = NumberPicker(this).apply {
             minValue = secMin
             maxValue = 60
             wrapSelectorWheel = false
-            contentDescription = "$label: segundos"
+            contentDescription = "$desc: segundos"
         }
         val tenthPicker = NumberPicker(this).apply {
             minValue = 0
             maxValue = 9
-            displayedValues = Array(10) { ".$it" }
+            displayedValues = Array(10) { "$it" }
             wrapSelectorWheel = false
-            contentDescription = "$label: décimas"
+            contentDescription = "$desc: décimas"
         }
         fun syncTenths() {
             val minTenths = if (secPicker.value == 0 && range.start > 0) {
@@ -377,51 +657,264 @@ class BreathingActivity : ComponentActivity() {
         tenthPicker.value = ((current * 10).toInt() % 10).coerceIn(0, 9)
         syncTenths()
         secPicker.setOnValueChangedListener { _, _, _ -> syncTenths() }
+        return inlineEditorWrap(listOf(secPicker, tenthPicker), "Revisa el valor.", onDone = {
+            BreathingValidation.phaseValue(key, secPicker.value, tenthPicker.value)?.let {
+                setValue(key, it)
+                collapseBarEditor()
+                true
+            } ?: false
+        })
+    }
+
+    /** Rueda inline de duración (misma validación que el diálogo retirado). */
+    private fun durationEditor(): View {
+        val minPicker = NumberPicker(this).apply {
+            minValue = 0
+            maxValue = 120
+            displayedValues = Array(121) { "${it}m" }
+            value = if (totalS > 0) (totalS / 60).coerceIn(0, 120) else 10
+            wrapSelectorWheel = false
+            contentDescription = "Duración: minutos"
+        }
+        val secPicker = NumberPicker(this).apply {
+            minValue = 0
+            maxValue = 59
+            displayedValues = Array(60) { "${it}s" }
+            value = if (totalS > 0) (totalS % 60) else 0
+            wrapSelectorWheel = false
+            contentDescription = "Duración: segundos"
+        }
+        val wrap = inlineEditorWrap(listOf(minPicker, secPicker), "Mínimo 30 s.", onDone = {
+            if (minPicker.value == 0 && secPicker.value == 0) {
+                totalS = -1
+                refreshBar()
+                collapseBarEditor()
+                toast("Libre (sin temporizador).")
+                true
+            } else {
+                val total = BreathingValidation.durationValue(minPicker.value, secPicker.value)
+                if (total == null) {
+                    false
+                } else {
+                    totalS = total
+                    refreshBar()
+                    collapseBarEditor()
+                    true
+                }
+            }
+        })
+        return wrap
+    }
+
+    /**
+     * Contenido del popup: ruedas + error + fila ✕|✓ (misma fuente).
+     * `onDone` aplica y dice si cierra.
+     */
+    private fun inlineEditorWrap(
+        pickers: List<NumberPicker>,
+        errorText: String,
+        onDone: () -> Boolean,
+    ): View {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(0, 8, 0, 8)
+        }
         val cols = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
-        cols.addView(secPicker)
-        cols.addView(tenthPicker)
-        AlertDialog.Builder(this)
-            .setTitle("$label (segundos · décimas)")
-            .setView(cols)
-            .setPositiveButton("Listo") { _, _ ->
-                BreathingValidation.phaseValue(key, secPicker.value, tenthPicker.value)?.let {
-                    setValue(key, it)
+        for (p in pickers) {
+            // Ruedas grandes y legibles sobre el blur.
+            p.scaleX = 1.25f
+            p.scaleY = 1.25f
+            p.setPadding(0, 16, 0, 16)
+            cols.addView(p)
+        }
+        box.addView(cols)
+        val error = TextView(this).apply {
+            tag = "bar-error"
+            gravity = Gravity.CENTER
+            setTextColor(getColor(R.color.danger_text))
+        }
+        box.addView(error)
+        // Fila horizontal (✕ izquierda, [Libre], ✓ derecha) en texto con la
+        // misma instancia de fuente. Solo cambia la posición.
+        val rowBtns = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val face = sharedGlyphFace()
+        fun glyphButton(text: String, description: String): Button =
+            Button(this).apply {
+                this.text = text
+                textSize = 26f
+                contentDescription = description
+                minHeight = (64 * resources.displayMetrics.density).toInt()
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                val ripple = android.util.TypedValue().let { tv ->
+                    theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+                    getDrawable(tv.resourceId)
                 }
+                background = ripple
+                setTextColor(getColor(R.color.neutral_100))
+                typeface = face
+                paint.isFakeBoldText = true
             }
-            .setNegativeButton("Cancelar", null)
-            .show()
+        rowBtns.addView(glyphButton("✕", "Cancelar").apply {
+            setOnClickListener { collapseBarEditor() }
+        })
+        rowBtns.addView(glyphButton("✓", "Listo").apply {
+            setOnClickListener { if (!onDone()) error.text = errorText }
+        })
+        box.addView(rowBtns)
+        return box
     }
 
-    private fun durationLabel(): String = if (totalS > 0) "TIMER\n${totalS / 60}m ${totalS % 60}s" else "TIMER\nLibre"
+    /**
+     * Fuente compartida de ✕/✓: la que traiga AMBOS glifos (misma fuente
+     * garantizada también en el render, no solo en el objeto).
+     */
+    private fun sharedGlyphFace(): android.graphics.Typeface {
+        val comfortaa = runCatching { resources.getFont(R.font.comfortaa_bold) }.getOrNull()
+        val probe = android.graphics.Paint()
+        if (comfortaa != null) {
+            probe.typeface = comfortaa
+            if (runCatching { probe.hasGlyph("✕") && probe.hasGlyph("✓") }.getOrDefault(false)) {
+                return comfortaa
+            }
+        }
+        val roboto = android.graphics.Typeface.DEFAULT_BOLD
+        probe.typeface = roboto
+        if (runCatching { probe.hasGlyph("✕") && probe.hasGlyph("✓") }.getOrDefault(false)) {
+            return roboto
+        }
+        return comfortaa ?: roboto
+    }
 
-    private fun refreshDurationChip() {
-        durationChip.text = durationLabel()
-        durationChip.textSize = 18f
+    private fun accordionBody(key: String, parent: LinearLayout, open: Boolean): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = if (open) View.VISIBLE else View.GONE
+            setPadding(
+                (16 * resources.displayMetrics.density).toInt(), 0,
+                0, (8 * resources.displayMetrics.density).toInt(),
+            )
+            accordionBodies[key] = this
+            parent.addView(this)
+        }
+    }
+
+    /** Panel: acordeones Ajustes / Plantillas. Cerrado por defecto. */
+    private fun buildDrawer(): ScrollView {
+        val inner = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            // Negro puro (orden del dueño; fuera de tokens a propósito).
+            setBackgroundColor(0xFF000000.toInt())
+            setPadding(48, 32, 48, 32)
+        }
+        accordionHeader("sonido", "Sonido", inner)
+        accordionBody("sonido", inner, open = false).apply {
+            for (style in SoundStyle.entries) {
+                addView(drawerRow("").apply {
+                    setOnClickListener { selectTimbre(style) }
+                    timbreRowButtons[style] = this
+                })
+            }
+        }
+        accordionHeader("plantillas", "Plantillas", inner)
+        accordionBody("plantillas", inner, open = false).apply {
+            drawerPlans = LinearLayout(this@BreathingActivity).apply {
+                orientation = LinearLayout.VERTICAL
+            }
+            addView(drawerPlans)
+            addView(drawerRow("＋ Guardar actual").apply {
+                contentDescription = "Guardar planilla actual"
+                setOnClickListener { askPlanName() }
+            })
+        }
+        refreshPlansRow()
+        return ScrollView(this).apply {
+            isFillViewport = true
+            layoutParams = DrawerLayout.LayoutParams(
+                (300 * resources.displayMetrics.density).toInt(),
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                Gravity.START,
+            )
+            addView(inner)
+        }
+    }
+
+    private fun setValue(key: String, value: Double) {
+        when (key) {
+            "inhale" -> inhale = value
+            "holdIn" -> holdIn = value
+            "exhale" -> exhale = value
+            "holdOut" -> holdOut = value
+        }
+        refreshBar()
+    }
+
+    private fun getValue(key: String): Double = when (key) {
+        "inhale" -> inhale
+        "holdIn" -> holdIn
+        "exhale" -> exhale
+        "holdOut" -> holdOut
+        else -> 0.0
+    }
+
+    /** Barra del mockup: Tiempo `10 min`/`Libre`, fases en número. */
+    private fun refreshBar() {
+        barValueViews["tiempo"]?.text = fmtDur(totalS)
+        barValueViews["inhale"]?.text = fmt(inhale)
+        barValueViews["holdIn"]?.text = fmt(holdIn)
+        barValueViews["exhale"]?.text = fmt(exhale)
+        barValueViews["holdOut"]?.text = fmt(holdOut)
+    }
+
+    private fun fmtDur(total: Int): String {
+        if (total <= 0) return "Libre"
+        val m = total / 60
+        val s = total % 60
+        return if (s == 0) "$m" else "$m:${"%02d".format(s)}"
+    }
+
+    /** Timbres directos (sin diálogo): toque aplica al instante. */
+    private fun selectTimbre(style: SoundStyle) {
+        sound = true
+        vibration = false
+        timbre = style
+        prefs().edit()
+            .putBoolean(KEY_SOUND, true)
+            .putBoolean(KEY_VIBRATION, false)
+            .putString(KEY_TIMBRE, timbre.name)
+            .apply()
+        refreshSonidoRows()
+        toast("Sonido: ${timbre.label}.")
+    }
+
+    private fun refreshSonidoRows() {
+        for ((style, button) in timbreRowButtons) {
+            button.text = style.label
+            button.setTextColor(
+                getColor(if (style == timbre) R.color.burgundy_400 else R.color.neutral_300),
+            )
+        }
+        accordionSummaries["sonido"]?.text = timbre.label
     }
 
     // --- Planillas (prefs JSON, tope 8): toque = cargar, mantener = borrar ---
 
     private fun refreshPlansRow() {
-        plansRow.removeAllViews()
+        drawerPlans.removeAllViews()
         for (plan in plans) {
-            plansRow.addView(Button(this).apply {
-                text = plan.nombre
-                textSize = 15f
-                asBreather()
+            drawerPlans.addView(drawerRow(plan.nombre).apply {
                 setOnClickListener { applyPlan(plan) }
                 setOnLongClickListener { deletePlan(plan); true }
             })
         }
-        plansRow.addView(Button(this).apply {
-            text = "＋"
-            textSize = 18f
-            contentDescription = "Guardar planilla actual"
-            asBreather()
-            setOnClickListener { askPlanName() }
-        })
+        accordionSummaries["plantillas"]?.text =
+            if (plans.isEmpty()) "Sin guardar" else "${plans.size} guardada(s)"
     }
 
     private fun persistPlans() {
@@ -476,8 +969,8 @@ class BreathingActivity : ComponentActivity() {
         holdOut = plan.pattern.holdOutS
         totalS = plan.duracionS ?: -1
         timbre = plan.timbre
-        refreshChips()
-        refreshDurationChip()
+        refreshBar()
+        refreshSonidoRows()
         toast("Planilla «${plan.nombre}».")
     }
 
@@ -486,112 +979,6 @@ class BreathingActivity : ComponentActivity() {
         persistPlans()
         refreshPlansRow()
         toast("Planilla «${plan.nombre}» borrada.")
-    }
-
-    /** Duración editable: minutos + segundos + Libre, con error en el diálogo. */
-    private fun editDuration() {
-        val cols = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
-        val minPicker = NumberPicker(this).apply {
-            minValue = 0
-            maxValue = 120
-            displayedValues = Array(121) { "${it}m" }
-            value = if (totalS > 0) (totalS / 60).coerceIn(0, 120) else 10
-            wrapSelectorWheel = false
-            contentDescription = "Duración: minutos"
-        }
-        val secPicker = NumberPicker(this).apply {
-            minValue = 0
-            maxValue = 59
-            displayedValues = Array(60) { "${it}s" }
-            value = if (totalS > 0) (totalS % 60) else 0
-            wrapSelectorWheel = false
-            contentDescription = "Duración: segundos"
-        }
-        cols.addView(minPicker)
-        cols.addView(secPicker)
-        val error = TextView(this).apply {
-            gravity = Gravity.CENTER
-            setTextColor(getColor(R.color.danger_text))
-        }
-        val wrap = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(cols)
-            addView(error)
-        }
-        val dlg = AlertDialog.Builder(this)
-            .setTitle("Duración")
-            .setView(wrap)
-            .setPositiveButton("Listo", null)
-            .setNeutralButton("Libre") { _, _ ->
-                totalS = -1
-                refreshDurationChip()
-            }
-            .setNegativeButton("Cancelar", null)
-            .create()
-        dlg.setOnShowListener {
-            dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val total = BreathingValidation.durationValue(minPicker.value, secPicker.value)
-                if (total == null) {
-                    error.text = "Mínimo 30 s (o Libre)."
-                } else {
-                    totalS = total
-                    refreshDurationChip()
-                    dlg.dismiss()
-                }
-            }
-        }
-        dlg.show()
-    }
-
-    // --- Ajustes ⚙ ----------------------------------------------------------------------
-
-    private fun showSettings() {
-        val body = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(48, 24, 48, 0)
-        }
-        body.addView(TextView(this).apply { text = "Sonido"; textSize = 16f })
-        val styleNames = SoundStyle.entries.map { it.label }.toTypedArray()
-        var stylePos = SoundStyle.entries.indexOf(timbre).coerceAtLeast(0)
-        body.addView(TextView(this).apply { id = STYLE_VIEW_ID })
-        val soundBox = CheckBox(this).apply {
-            text = "Sonido"
-            textSize = 16f
-            isChecked = sound
-        }
-        body.addView(soundBox)
-        val vibrationBox = CheckBox(this).apply {
-            text = "Vibración"
-            textSize = 16f
-            isChecked = vibration
-        }
-        body.addView(vibrationBox)
-        val dlg = AlertDialog.Builder(this)
-            .setTitle("Ajustes")
-            .setView(body)
-            .setSingleChoiceItems(styleNames, stylePos) { _, which ->
-                stylePos = which
-                body.findViewById<TextView>(STYLE_VIEW_ID)?.text =
-                    "Estilo: ${SoundStyle.entries[which].label}"
-            }
-            .setPositiveButton("Guardar") { _, _ ->
-                sound = soundBox.isChecked
-                vibration = vibrationBox.isChecked
-                timbre = SoundStyle.entries[stylePos]
-                prefs().edit()
-                    .putBoolean(KEY_SOUND, sound)
-                    .putBoolean(KEY_VIBRATION, vibration)
-                    .putString(KEY_TIMBRE, timbre.name)
-                    .apply()
-                toast("Ajustes guardados (sonido: ${timbre.label}).")
-            }
-            .setNegativeButton("Cerrar", null)
-            .create()
-        dlg.show()
-        body.findViewById<TextView>(STYLE_VIEW_ID)?.text = "Estilo: ${timbre.label}"
     }
 
     // --- Patrón ---------------------------------------------------------------------
@@ -615,20 +1002,24 @@ class BreathingActivity : ComponentActivity() {
                     if (state::class != lastStateClass) {
                         lastStateClass = state::class
                         android.transition.TransitionManager.beginDelayedTransition(
-                            root,
+                            content,
                             android.transition.Fade().apply { duration = 250 },
                         )
                     }
-                    keepScreen(state !is BreathRunState.Idle)
+                    // Cero saltos: el flujo (TOP, dial, etiqueta) nunca cambia
+                    // de visibilidad ni de texto por tick; solo el círculo y
+                    // la fase se actualizan, y la revisión va en overlay.
                     when (state) {
                         is BreathRunState.Idle -> {
                             circle.mode = BreathCircleView.Mode.IDLE
                             circle.reset()
-                            phaseLabel.text = ""
-                            statsView.text = statsText(null)
+                            phaseLabel.text = "Iniciar"
+                            refreshBar()
+                            veil.visibility = View.GONE
                             reviewCard.visibility = LinearLayout.GONE
                             reviewSessionId = null
-                            configContainer.visibility = LinearLayout.VISIBLE
+                            glyph.visibility = View.VISIBLE
+                            setDrawerEnabled(true)
                         }
                         is BreathRunState.Running -> {
                             circle.mode = BreathCircleView.Mode.RUNNING
@@ -639,24 +1030,32 @@ class BreathingActivity : ComponentActivity() {
                             } else {
                                 phaseLabel.text = state.nextPhase.label
                             }
-                            statsView.text = statsText(state)
+                            veil.visibility = View.GONE
                             reviewCard.visibility = LinearLayout.GONE
-                            configContainer.visibility = LinearLayout.GONE
+                            // INVISIBLE (no GONE): reserva el sitio, nada se mueve.
+                            glyph.visibility = View.INVISIBLE
+                            setDrawerEnabled(false)
                         }
                         is BreathRunState.Paused -> {
                             circle.mode = BreathCircleView.Mode.PAUSED
                             circle.setStage(state.phase, state.fraction)
-                            phaseLabel.text = "Paused"
-                            configContainer.visibility = LinearLayout.GONE
+                            phaseLabel.text = "Pausa"
+                            glyph.visibility = View.INVISIBLE
+                            setDrawerEnabled(false)
                         }
                         is BreathRunState.Finished -> {
                             circle.mode = BreathCircleView.Mode.IDLE
                             circle.reset()
-                            phaseLabel.text = ""
+                            // Espacio (nunca vacío): la altura no colapsa.
+                            phaseLabel.text = " "
+                            refreshBar()
                             reviewSessionId = state.clientSessionId
                             reviewSummary.text =
-                                "Sesión: ${state.ciclos} resp · ${"%.1f".format(state.minutos)} min · ${state.resumen}s"
+                                "${state.ciclos} resp · ${"%.1f".format(state.minutos)} min"
+                            veil.visibility = View.VISIBLE
                             reviewCard.visibility = LinearLayout.VISIBLE
+                            glyph.visibility = View.VISIBLE
+                            setDrawerEnabled(true)
                         }
                     }
                 }
@@ -664,22 +1063,15 @@ class BreathingActivity : ComponentActivity() {
         }
     }
 
-    /** Pantalla encendida solo mientras la sesión vive (Idle la libera). */
-    private fun keepScreen(on: Boolean) {
-        if (on) {
-            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        } else {
-            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
-    }
-
-    private fun statsText(state: BreathRunState.Running?): String {
-        if (state == null) return "--:-- · 0 resp · -- rpm"
-        val clockMs = if (state.totalRemainingMs < 0) state.elapsedMs else state.totalRemainingMs
-        val mm = (clockMs / 60_000).toInt()
-        val ss = ((clockMs % 60_000) / 1000).toInt()
-        val bpm = if (state.avgBpm > 0) "%.1f".format(state.avgBpm) else "--"
-        return "%02d:%02d · %d resp · %s rpm".format(mm, ss, state.cycle, bpm)
+    /** Panel bloqueado en marcha (gesto y glifo muertos); libre en reposo. */
+    private fun setDrawerEnabled(enabled: Boolean) {
+        drawerLayout.setDrawerLockMode(
+            if (enabled) {
+                DrawerLayout.LOCK_MODE_UNLOCKED
+            } else {
+                DrawerLayout.LOCK_MODE_LOCKED_CLOSED
+            },
+        )
     }
 
     // --- Revisión: guardar o descartar --------------------------------------------------
@@ -845,6 +1237,5 @@ class BreathingActivity : ComponentActivity() {
         const val KEY_PLANS = "planillas"
         const val KEY_HC_DENIED = "hc_denied"
         const val KEY_REPAIRED = "reparadas"
-        const val STYLE_VIEW_ID = 0x7e0001
     }
 }
