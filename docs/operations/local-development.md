@@ -7,6 +7,7 @@ Requirements: Python 3.11+, [`uv`](https://docs.astral.sh/uv/).
 ```bash
 uv sync --locked        # creates .venv from the locked resolution (Python 3.11)
 uv run playwright install chromium   # browser binaries for e2e tests (one time)
+git config core.hooksPath .githooks  # pre-commit hooks versionados (gate de atomicidad)
 ```
 
 `uv sync --locked` fails if `uv.lock` is missing or stale — CI enforces the same.

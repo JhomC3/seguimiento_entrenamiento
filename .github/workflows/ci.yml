@@ -34,6 +34,8 @@ jobs:
         run: uv run ruff format --check .
       - name: Lint
         run: uv run ruff check .
+      - name: Atomicity gate (max 800 code lines per file)
+        run: uv run python scripts/check_file_size.py --base origin/dev
       - name: Type check
         run: uv run mypy app.py src tests
 

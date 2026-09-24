@@ -57,7 +57,7 @@ Mantén, optimiza y extiende el dashboard de progresión de gimnasio (FastAPI + 
 | UI (templates/JS/CSS) | `templates/`, `static/js/app.js`, `static/css/components.css` + §7 |
 | Tests | `tests/` (unitarias, integración, `e2e/` Playwright) |
 | Operación local | `docs/operations/local-development.md` |
-| SDD (proceso) | `docs/constitution.md`, `docs/sdd/SDD_BOOTSTRAP.md`, `specs/` |
+| SDD (proceso) | `docs/constitution.md`, `../sdd-kit/SDD_BOOTSTRAP.md`, `specs/` |
 
 ## 4. Datos (trampas, no el schema completo)
 
@@ -88,6 +88,7 @@ Detalle: `docs/architecture/backend-standards.md`. Innegociables: `transaction(.
 ## 6. Codificación (esencia)
 
 - Type hints siempre; nunca `except:` genérico (en `app.py`, auxiliares de lectura devuelven valores seguros).
+- Atómico: ningún archivo supera 800 líneas de código (aviso a 500); el gate `scripts/check_file_size.py` lo exige.
 - Parser (`src/parser.py`): hoja `ciclo_16` iterativa; vacíos → `None`/`NaN` → `NULL`.
 - Métricas (`src/metrics_engine.py`): `RM = kg * (1 + 0.0333 * (reps + 1 + rir))`, relativo vs promedio RM de semana 1.
 - SQL siempre parametrizado (`?`).
@@ -109,6 +110,7 @@ Detalle: `docs/architecture/backend-standards.md`. Innegociables: `transaction(.
   uv run python scripts/check_module_coverage.py src/charts.py src/metrics_engine.py --min 90
   uv run ruff format --check . && uv run ruff check .
   uv run mypy app.py src tests
+  uv run python scripts/check_file_size.py --base HEAD  # atomicidad: 800 bloqueo, 500 aviso
   ```
   (Una vez por máquina: `uv run playwright install chromium`.)
 - Cambios visuales: `./scripts/build_css.sh` + arranque único `./scripts/start_server.sh` (puerto 8000, genera secretos). Dependencias nuevas: `uv lock && uv sync --locked`.

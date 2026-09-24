@@ -3,7 +3,7 @@
 Principios innegociables. Toda spec, plan y tarea debe cumplirlos. Detalle vinculante en `docs/architecture/backend-standards.md` y `docs/architecture/web-standards.md`.
 
 1. **La spec manda**: ningún comportamiento se implementa si no está en la spec activa; todo cambio empieza actualizando la spec.
-2. **Monolito modular**: handlers delgados → servicios de dominio tipados → `src/database.py` (único SQL); prohibido lógica de negocio en `app.py`.
+2. **Monolito modular y atómico**: handlers delgados → servicios de dominio tipados → `src/database.py` (único SQL); prohibido lógica de negocio en `app.py`. Módulos atómicos (≤500 líneas de código, el gate lo exige).
 3. **Datos seguros**: escritura multi-fila en `transaction(...)`, constraints en migración versionada, backup pre-mutación + undo (máx. 10).
 4. **El servidor decide**: validación en el borde y recálculo en servidor (RM, nutrientes); dominio → 400 seguro, inesperado → 500 genérico + `logger.exception`.
 5. **Server-first y seguro**: HTML + htmx, tokens visuales como única verdad, WCAG AA, CSP estática, CSRF + Origin, secretos nunca en cliente ni en git.
