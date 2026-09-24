@@ -4,3 +4,7 @@
 # El CI es el gate real (--no-verify salta este hook).
 set -euo pipefail
 uv run python scripts/check_file_size.py --base HEAD
+# Hint (avisa, no bloquea): manifiestos de dependencias tocados → considera /skills.
+if git diff --cached --name-only | grep -qE '^(pyproject\.toml|package(-lock)?\.json|requirements.*\.txt|.*\.gradle(\.kts)?|go\.mod|Cargo\.toml)$'; then
+  echo "AVISO: cambiaron dependencias: considera /skills para revisar skills." >&2
+fi
