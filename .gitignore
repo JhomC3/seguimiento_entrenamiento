@@ -52,8 +52,15 @@ node_modules/
 .agents/
 .claude/
 .opencode/node_modules/
-.opencode/skills/
+.opencode/skills/*
 skills-lock.json
+# SDD: skills propias versionadas (spec 004); las de terceros siguen ignoradas
+!.opencode/skills/plan-evaluator/
+!.opencode/skills/architecture-reviewer/
+!.opencode/skills/security-audit/
+!.opencode/skills/debug-detective/
+!.opencode/skills/researcher/
+!.opencode/skills/spec-generator/
 
 # Artefactos locales de Lighthouse CI
 .lighthouseci/
