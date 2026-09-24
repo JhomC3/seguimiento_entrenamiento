@@ -1,0 +1,31 @@
+{
+  "files": {
+    "SDD_BOOTSTRAP.md": "696515ef72926872810f9e0f759899740ddb38d71e496f7f4ee3fa1d622bf287",
+    "VERSION": "d915cc95d6ca8f47ae297713ed46d4e5c5d99ddd29fc3c61e263bdf305f2b5b0",
+    "agents/explorer.md": "66931d998e08ff59f0c81b73f03dd4546400da2186ff0cd16ca8ceea20281c37",
+    "agents/reviewer.md": "fb0335c64391ad8df80db20e1428bf02191541477ae42ede2fe57835b652a518",
+    "agents/security.md": "cb08d3529dd4d254b6a258208b192ac2b47dac38bcbe4366f876e42c15cbdc0e",
+    "commands/analyze.md": "3277695a7b30d4ffa3837c95422f97d9de6a96dcf9636b06dd3edb10429b81cc",
+    "commands/cambio.md": "877ea5f1c50fc86743ad275b0ef47484ae9554f60f70dc11d87939be1d96f23f",
+    "commands/clarify.md": "2e6ed4969c4631687a9f0c82bc469b7d9eb7545a5b07ba8509d50269261d5537",
+    "commands/constitution.md": "475658166e76b0a20deda7369d75a46bbd683c85f2c8885612ac931079c8aa0a",
+    "commands/implement.md": "09d4afeb49c530f8ecfff17489ee1f12dbb590be619a4c177c378efbaa2a5db8",
+    "commands/plan.md": "406845224b7a30632f1316fde1dfa617aa25a596bf3a1b2f10236d4b279aae68",
+    "commands/specify.md": "b2d1d5c5217dbf144ad99a376a133c0540e5e19f99226086172c03cbf88f8b4f",
+    "commands/tasks.md": "ae1ed5235321aa999126b0379b654188f10713fac120c3100e6ce7d603d9ae4e",
+    "install.sh": "9ccae0094e3e2265c53caae73a66826276e91dc8eea035b4719f34822afe1972",
+    "prompts.md": "fca39ba3e79381162094dc9b3309b154e77fc3dce5ad3cb62b7ea9ea4b7f948b",
+    "skills/architecture-reviewer/SKILL.md": "699b13b2c9e94b098ee6f7e57123b708fbd1c1d80c2224656dc8299d40363113",
+    "skills/debug-detective/SKILL.md": "823867de9d6027074833ebba4147b2206779ef0ea48358f3269860fba9959d7c",
+    "skills/plan-evaluator/SKILL.md": "5dd716c67bc599511d6e78545f84d2648694d255dfca1865146c89f74bfcbc6a",
+    "skills/researcher/SKILL.md": "77661e25d18efbcf8109fe3fa22e9598a1dc3b10a5036ecd676c874cdaaa4fd8",
+    "skills/security-audit/SKILL.md": "61c5c11b3ed4711e08d2ecd28bfadbcc06f78bda4c8cdeceefe51231cbcae325",
+    "skills/spec-generator/SKILL.md": "af0a5a476a641871df0ba3c2d95f5021b2a43804c26f33d0ac5bdd740a9f53d3",
+    "templates/AGENTS.md": "bcdefacb769062d9aad65e1adb584c73aa6b9045259facd7b82e726c55222b78",
+    "templates/constitution.md": "0b95b44516807ca909f53c6f3e1f8d4cf12963437112ed88ada262059fc41fea",
+    "templates/plan.md": "cb69665771c32da3a0e7d822509edaf5fed34c40a93dd5bc2708ca72a7fee33d",
+    "templates/spec.md": "b17222da48329a7ea647642af5bb35487118e7ff08bc20c753c8949a19ed54dc",
+    "templates/tasks.md": "4f09721ef426ee560e06bc07df28a47797934da54afa73d08239c8a444507673"
+  },
+  "version": "0.3.0"
+}
