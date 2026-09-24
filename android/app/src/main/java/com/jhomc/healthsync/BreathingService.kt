@@ -369,16 +369,7 @@ class BreathingService : Service() {
         }
         val row = dao.sessionById(id)
         val minutos = ((row?.realS ?: 0) / 60.0).let { kotlin.math.round(it * 10) / 10.0 }
-        // Espejo en Health Connect (solo completadas; nunca bloquea el guardado).
-        if (finished.completed) {
-            runCatching {
-                val gw = RealHealthConnectGateway(this@BreathingService)
-                MindfulnessWriter(gw, HealthConnectManager(gw))
-                    .write(finished, row?.ciclos ?: 0, minutos)
-            }.onFailure {
-                android.util.Log.w("Breathing", "meditación HC omitida: ${it.message}")
-            }
-        }
+        // Sin espejo HC aquí: solo "Guardar sesión" envía (la Activity).
         _state.value = BreathRunState.Finished(
             clientSessionId = id,
             ciclos = row?.ciclos ?: 0,

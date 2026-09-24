@@ -272,6 +272,56 @@ class BreathingActivityTest {
     }
 
     @Test
+    fun `ultima sesion persiste patron y minutos al reabrir`() {
+        prefs().edit()
+            .putString(
+                BreathingActivity.KEY_PATTERN,
+                JSONObject().put("inhale_s", 6.0).put("hold_in_s", 0.0)
+                    .put("exhale_s", 6.0).put("hold_out_s", 0.0).toString(),
+            )
+            .putInt(BreathingActivity.KEY_DURATION, 300)
+            .commit()
+        launch()
+        assertEquals("6", colValue("inhale"))
+        assertEquals("0", colValue("holdIn"))
+        assertEquals("6", colValue("exhale"))
+        assertEquals("5", colValue("tiempo"))
+    }
+
+    @Test
+    fun `editar y arrancar guarda para la proxima apertura`() {
+        launch()
+        tapColumn("inhale")
+        ofType<NumberPicker>().first { it.contentDescription == "Editar Inhalar: segundos" }.value = 6
+        row("✓").performClick()
+        idleMain()
+        tapColumn("tiempo")
+        ofType<NumberPicker>().first { it.contentDescription == "Duración: minutos" }.value = 5
+        ofType<NumberPicker>().first { it.contentDescription == "Duración: segundos" }.value = 0
+        row("✓").performClick()
+        idleMain()
+        circle().performClick() // arranca: persiste lo último
+        idleMain()
+        controller.destroy()
+        launch()
+        assertEquals("6", colValue("inhale"))
+        assertEquals("5", colValue("tiempo"))
+    }
+
+    @Test
+    fun `editar sin arrancar persiste igual al reabrir`() {
+        launch()
+        tapColumn("exhale")
+        ofType<NumberPicker>().first { it.contentDescription == "Editar Exhalar: segundos" }.value = 5
+        row("✓").performClick()
+        idleMain()
+        controller.destroy()
+        launch()
+        assertEquals("5", colValue("exhale"))
+        assertEquals("10", colValue("tiempo"))
+    }
+
+    @Test
     fun `glifo en esquina abre el panel`() {
         launch()
         assertEquals("Abrir ajustes", glyph().contentDescription.toString())
@@ -562,15 +612,45 @@ class BreathingActivityTest {
         awaitToast("Sesión descartada")
         awaitUi { BreathingService.state.value is BreathRunState.Idle }
         assertNull(dao.sessionById("uuid-descarte"))
-        // Una op por sesión (PK client_session_id, "lo último gana"): el SAVE
-        // se reemplaza por el DELETE → total neto sin cambios. Nada salió del
-        // móvil (sin servidor aquí).
-        assertEquals(base, dao.pendingCount())
+        // La SAVE nunca salió: se retira sin enviar (ni SAVE ni DELETE).
+        assertEquals(base - 1, dao.pendingCount())
+        assertNull(dao.pendingAll().firstOrNull { it.clientSessionId == "uuid-descarte" })
+        assertEquals(View.GONE, reviewCard().visibility)
+    }
+
+    @Test
+    fun `descartar entregada encola delete la no enviada no`() = kotlinx.coroutines.runBlocking {
+        launch()
+        val dao = HealthDatabaseBuilder.get(activity).breathingDao()
+        val repo = BreathingRepository(dao)
+        mirrorRow(repo, "uuid-nueva", completed = true)
+        repo.deleteSession("uuid-nueva")
+        assertNull(dao.pendingAll().firstOrNull { it.clientSessionId == "uuid-nueva" })
+        mirrorRow(repo, "uuid-vieja", completed = true)
+        dao.markDelivered("uuid-vieja", 1, 5.0)
+        dao.ack("uuid-vieja")
+        repo.deleteSession("uuid-vieja")
         assertEquals(
             "DELETE",
-            dao.pendingAll().first { it.clientSessionId == "uuid-descarte" }.op,
+            dao.pendingAll().first { it.clientSessionId == "uuid-vieja" }.op,
         )
-        assertEquals(View.GONE, reviewCard().visibility)
+    }
+
+    @Test
+    fun `abrir no envia nada solo guardar drena`() = kotlinx.coroutines.runBlocking {
+        launch()
+        val dao = HealthDatabaseBuilder.get(activity).breathingDao()
+        mirrorRow(BreathingRepository(dao), "uuid-quieta", completed = true)
+        val base = BreathingRepository(dao).pendingCount()
+        assertTrue(base > 0)
+        controller.destroy()
+        launch()
+        idleMain()
+        Thread.sleep(300)
+        idleMain()
+        // Reabrir no drena: la cola sigue intacta.
+        val dao2 = HealthDatabaseBuilder.get(activity).breathingDao()
+        assertEquals(base, BreathingRepository(dao2).pendingCount())
     }
 
     // --- Espejo HC: reintento diferido -------------------------------------------------
@@ -755,13 +835,27 @@ class BreathingActivityTest {
         row("＋").performClick()
         idleMain()
         val dlg = latestDialog()
+        val save = dialogViews(dlg).filterIsInstance<Button>().first { it.text == "Guardar" }
+        val cancel = dialogViews(dlg).filterIsInstance<Button>().first { it.text == "Cancelar" }
+        // Cancelar|Guardar: mismo peso, gap, 15sp sin mayúsculas, diálogo amplio.
+        val rowBtns = save.parent as ViewGroup
+        assertTrue(rowBtns.indexOfChild(cancel) < rowBtns.indexOfChild(save))
+        val density = activity.resources.displayMetrics.scaledDensity
+        assertEquals(15f, save.textSize / density, 0.5f)
+        assertEquals(15f, cancel.textSize / density, 0.5f)
+        assertFalse(save.isAllCaps)
+        assertFalse(cancel.isAllCaps)
+        assertTrue((cancel.layoutParams as ViewGroup.MarginLayoutParams).marginEnd > 0)
+        assertTrue((dlg.window?.attributes?.width ?: 0) > 0)
         val input = dialogViews(dlg).filterIsInstance<EditText>().first()
-        dlg.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        // Campo con estilo y botones idénticos a revisión.
+        assertNotNull(input.background)
+        save.performClick()
         idleMain()
         assertTrue("el nombre vacío no cierra", dlg.isShowing)
         assertNotNull(input.error)
         input.setText("mis 21 min")
-        dlg.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        save.performClick()
         awaitToast("Planilla «mis 21 min» guardada.")
         assertNotNull(ofType<Button>().firstOrNull { it.text.toString() == "mis 21 min" })
     }

@@ -46,10 +46,13 @@ android {
         // 28/0.4.40: fuente con ambos glifos (solo fuente).
         // 29/0.4.41: Sonido directo, títulos 18sp bold, opciones 15sp dim.
         // 30/0.4.42: fuera Libre (0:00 = Libre), revisión Descartar|Guardar idénticos.
+        // 31/0.4.43: solo Guardar envía (sin espejo/drenado/permiso previos).
+        // 32/0.4.44: popup Guardar planilla con aire.
+        // 33/0.4.45: popup legible (Cancelar|Guardar, 15sp, sin allCaps, 90%).
         // Subir versionCode en cada build entregado: es la única forma de
         // distinguir APKs en Ajustes.
-        versionCode = 47
-        versionName = "0.4.42"
+        versionCode = 50
+        versionName = "0.4.45"
     }
 
     compileOptions {

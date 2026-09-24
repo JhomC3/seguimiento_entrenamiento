@@ -300,13 +300,10 @@ class BreathingActivity : ComponentActivity() {
             },
         )
         observeRun()
+        // Solo repara huérfanas en local: abrir no envía nada (RF-8).
         lifecycleScope.launch(Dispatchers.IO) {
             runCatching { repairOrphans() }
-            drain(silent = true)
         }
-        // Permiso HC justo-a-tiempo al entrar (una vez por creación): las
-        // sesiones terminadas ya nacen con permiso y el espejo no lo pide tarde.
-        if (savedInstanceState == null) ensureHcPermission()
     }
 
     private val mindfulnessPermission =
@@ -687,6 +684,7 @@ class BreathingActivity : ComponentActivity() {
         val wrap = inlineEditorWrap(listOf(minPicker, secPicker), "Mínimo 30 s.", onDone = {
             if (minPicker.value == 0 && secPicker.value == 0) {
                 totalS = -1
+                persistDefaults()
                 refreshBar()
                 collapseBarEditor()
                 toast("Libre (sin temporizador).")
@@ -697,6 +695,7 @@ class BreathingActivity : ComponentActivity() {
                     false
                 } else {
                     totalS = total
+                    persistDefaults()
                     refreshBar()
                     collapseBarEditor()
                     true
@@ -852,7 +851,13 @@ class BreathingActivity : ComponentActivity() {
             "exhale" -> exhale = value
             "holdOut" -> holdOut = value
         }
+        persistDefaults()
         refreshBar()
+    }
+
+    /** Cada cambio se persiste al instante (no solo al arrancar). */
+    private fun persistDefaults() {
+        currentPattern()?.let { saveDefault(it) }
     }
 
     private fun getValue(key: String): Double = when (key) {
@@ -932,34 +937,71 @@ class BreathingActivity : ComponentActivity() {
             toast("Revisa los tiempos antes de guardar.")
             return
         }
+        val d = resources.displayMetrics.density
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((24 * d).toInt(), (16 * d).toInt(), (24 * d).toInt(), (8 * d).toInt())
+        }
         val input = EditText(this).apply {
             hint = "Nombre (p. ej. 21 min)"
             inputType = InputType.TYPE_CLASS_TEXT
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Guardar planilla")
-            .setView(input)
-            .setPositiveButton("Guardar", null)
-            .setNegativeButton("Cancelar", null)
-            .create()
-            .apply {
-                setOnShowListener {
-                    getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                        val name = input.text.toString().trim()
-                        val next = BreathingPlans.add(plans, base.copy(nombre = name))
-                        if (next == null) {
-                            input.error = if (name.isEmpty()) "Pon un nombre." else "Tope de 8 planillas."
-                        } else {
-                            plans = next
-                            persistPlans()
-                            refreshPlansRow()
-                            toast("Planilla «$name» guardada.")
-                            dismiss()
-                        }
-                    }
-                }
-                show()
+            textSize = 16f
+            minHeight = (52 * d).toInt()
+            setPadding((16 * d).toInt(), 0, (16 * d).toInt(), 0)
+            setTextColor(getColor(R.color.neutral_100))
+            setHintTextColor(getColor(R.color.neutral_500))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = 12f * d
+                setColor(getColor(R.color.overlay_row))
             }
+            asBreather()
+        }
+        box.addView(input)
+        val rowBtns = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, (16 * d).toInt(), 0, 0)
+        }
+        var dlg: AlertDialog? = null
+        rowBtns.addView(friendlyOutlineButton("Cancelar").apply {
+            val p = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            p.marginEnd = (12 * resources.displayMetrics.density).toInt()
+            layoutParams = p
+            textSize = 15f
+            isAllCaps = false
+            setOnClickListener { dlg?.dismiss() }
+        })
+        rowBtns.addView(friendlyButton("Guardar").apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            textSize = 15f
+            isAllCaps = false
+            setOnClickListener {
+                val name = input.text.toString().trim()
+                val next = BreathingPlans.add(plans, base.copy(nombre = name))
+                if (next == null) {
+                    input.error = if (name.isEmpty()) "Pon un nombre." else "Tope de 8 planillas."
+                } else {
+                    plans = next
+                    persistPlans()
+                    refreshPlansRow()
+                    toast("Planilla «$name» guardada.")
+                    dlg?.dismiss()
+                }
+            }
+        })
+        box.addView(rowBtns)
+        dlg = AlertDialog.Builder(this)
+            .setTitle("Guardar planilla")
+            .setView(box)
+            .create()
+        dlg.show()
+        // Popup amplio: 90% del ancho (la medida real se ve en el APK).
+        dlg.window?.let { w ->
+            val lp = w.attributes
+            lp.width = (resources.displayMetrics.widthPixels * 0.9).toInt()
+            w.attributes = lp
+        }
     }
 
     private fun applyPlan(plan: BreathingPlans.Plan) {
@@ -969,6 +1011,7 @@ class BreathingActivity : ComponentActivity() {
         holdOut = plan.pattern.holdOutS
         totalS = plan.duracionS ?: -1
         timbre = plan.timbre
+        persistDefaults()
         refreshBar()
         refreshSonidoRows()
         toast("Planilla «${plan.nombre}».")
@@ -1159,8 +1202,7 @@ class BreathingActivity : ComponentActivity() {
         }
     }
 
-    /** Drenado oportunista y silencioso (cola pendiente, sin UI). */
-    /** Drenado oportunista: devuelve el mensaje para la UI (llamar con silent). */
+    /** Drenado solo desde Guardar (nunca al abrir): devuelve el mensaje. */
     private suspend fun drainOnce(): String {
         val creds = credentials() ?: return "Sin destino: abre el APK debug con token."
         return try {
@@ -1189,23 +1231,21 @@ class BreathingActivity : ComponentActivity() {
         return n
     }
 
-    private fun drain(silent: Boolean) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            val msg = drainOnce()
-            if (!silent) withContext(Dispatchers.Main) { toast(msg) }
-        }
-    }
-
     private suspend fun credentials(): Pair<String, String>? {
         val store = SecureTargetStore(this)
         // Self-seed como el diario: el destino embebido del debug vale sin
-        // pasar por la pantalla principal.
+        // pasar por la pantalla principal. Blindado: si el seed falla (p. ej.
+        // sin AndroidKeyStore), se avisa sin tumbar el guardado.
         val target = store.target() ?: run {
             val url = BuildConfig.DEFAULT_SYNC_URL
             val token = BuildConfig.DEFAULT_SYNC_TOKEN
             if (url.isEmpty() || token.isEmpty()) return null
-            store.saveTarget(url, "default")
-            store.saveToken(token)
+            runCatching {
+                store.saveTarget(url, "default")
+                store.saveToken(token)
+            }.onFailure {
+                android.util.Log.w("Breathing", "self-seed falló: ${it.message}")
+            }
             store.target() ?: return null
         }
         val token = store.token() ?: return null

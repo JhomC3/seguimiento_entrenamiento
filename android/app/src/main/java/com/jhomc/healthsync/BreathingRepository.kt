@@ -68,17 +68,25 @@ class BreathingRepository(
         return id
     }
 
-    /** Borra en local y encola el DELETE (idempotente en servidor). */
+    /**
+     * Borra en local. Si la SAVE nunca salió del móvil, retira la op sin
+     * enviar nada; solo encola DELETE si ya se había entregado (RF-8).
+     */
     suspend fun deleteSession(id: String) {
+        val delivered = dao.sessionById(id)?.delivered == true
         dao.deleteSession(id)
-        dao.enqueue(
-            BreathingPendingEntity(
-                clientSessionId = id,
-                op = "DELETE",
-                payloadJson = JSONObject().put("client_session_id", id).toString(),
-                createdAtMs = nowMs(),
-            ),
-        )
+        if (delivered) {
+            dao.enqueue(
+                BreathingPendingEntity(
+                    clientSessionId = id,
+                    op = "DELETE",
+                    payloadJson = JSONObject().put("client_session_id", id).toString(),
+                    createdAtMs = nowMs(),
+                ),
+            )
+        } else {
+            dao.ack(id)
+        }
     }
 
     /** Fila local para el espejo HC (null si ya no existe). */
