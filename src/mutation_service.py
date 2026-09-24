@@ -14,6 +14,7 @@ restore path never reads the `after` side.
 import json
 import logging
 
+from src.breathing_service import BreathingSessionInput, derive_fecha, simulate
 from src.database import (
     backup_db,
     delete_parametros_diarios,
@@ -29,6 +30,15 @@ from src.database import (
     save_parametros_diarios,
     snapshot_entrenos,
     snapshot_splits,
+)
+from src.database import (
+    delete_breathing_session as _delete_breathing_row,
+)
+from src.database import (
+    find_breathing_session as _find_breathing_row,
+)
+from src.database import (
+    insert_breathing_session as _insert_breathing_row,
 )
 from src.db_connection import read_connection, transaction
 from src.models import Session, SplitInput, Template, TemplateInput
@@ -314,3 +324,57 @@ def peek_undo(db_path: str) -> dict:
         fecha_iso = entry["snapshot"].get("fecha_iso", "")
         return {"kind": entry["kind"], "fecha_iso": fecha_iso}
     return {"kind": entry["kind"]}
+
+
+def save_breathing_session(db_path: str, session: BreathingSessionInput) -> dict:
+    """Persiste una sesión de respiración (B5.0, append-only idempotente).
+
+    Sin journal de undo (divergencia documentada en training-api-contract.md
+    §B5: el re-POST idempotente + DELETE idempotente es la red, como
+    POST /alimento/nuevo). Sí hay backup pre-escritura.
+    Devuelve {"row": dict, "saved": bool}: `saved=False` en re-POST.
+    """
+    existing = _find_breathing_row(db_path, session.client_session_id)
+    if existing is not None:
+        return {"row": existing, "saved": False}
+    backup_or_raise(db_path)
+    existing = _find_breathing_row(db_path, session.client_session_id)
+    if existing is not None:
+        return {"row": existing, "saved": False}
+    real_sec = round((session.end_epoch_ms - session.start_epoch_ms) / 1000)
+    ciclos, bpm = simulate(session.pattern, real_sec)
+    fecha = derive_fecha(session.start_epoch_ms, session.time_zone_offset_minutes)
+    _insert_breathing_row(
+        db_path,
+        {
+            "client_session_id": session.client_session_id,
+            "fecha": fecha,
+            "start_epoch_ms": session.start_epoch_ms,
+            "end_epoch_ms": session.end_epoch_ms,
+            "time_zone_offset_minutes": session.time_zone_offset_minutes,
+            "duracion_planeada_sec": session.duracion_planeada_sec,
+            "duracion_real_sec": real_sec,
+            "inhale_s": session.pattern.inhale_s,
+            "hold_in_s": session.pattern.hold_in_s,
+            "exhale_s": session.pattern.exhale_s,
+            "hold_out_s": session.pattern.hold_out_s,
+            "ramp_sec": session.pattern.ramp_sec,
+            "end_inhale_s": session.pattern.end_inhale_s,
+            "end_hold_in_s": session.pattern.end_hold_in_s,
+            "end_exhale_s": session.pattern.end_exhale_s,
+            "end_hold_out_s": session.pattern.end_hold_out_s,
+            "ciclos_completados": ciclos,
+            "bpm_medio": bpm,
+            "completada": 1 if session.completada else 0,
+            "origen": "android",
+        },
+    )
+    row = _find_breathing_row(db_path, session.client_session_id)
+    assert row is not None
+    return {"row": row, "saved": True}
+
+
+def delete_breathing_session(db_path: str, client_session_id: str) -> bool:
+    """Elimina una sesión por su UUID. Idempotente. Con backup previo."""
+    backup_or_raise(db_path)
+    return _delete_breathing_row(db_path, client_session_id) > 0

@@ -75,6 +75,14 @@ class MainActivity : ComponentActivity() {
             }
         })
 
+        // --- Respiración pautada B5.0 (pacer + presets + historial) ---
+        root.addView(Button(this).apply {
+            text = "Respiración"
+            setOnClickListener {
+                startActivity(android.content.Intent(this@MainActivity, BreathingActivity::class.java))
+            }
+        })
+
         setContentView(ScrollView(this).apply { addView(root) })
 
         permissionLauncher = registerForActivityResult(
@@ -105,6 +113,8 @@ class MainActivity : ComponentActivity() {
                 "También escribe en Health Connect las comidas de tu diario " +
                 "de alimentación (1 registro por alimento, con energía y " +
                 "nutrientes), para que Google Fit y otras apps puedan leerlas. " +
+                "Si activas la meditación en la pestaña Respiración, también " +
+                "escribe allí cada sesión completada (título, horas y patrón). " +
                 "Lo publicado en Health Connect queda visible para cualquier " +
                 "app con permiso de lectura de nutrición.\n\n" +
                 "Los datos se envían únicamente a tu servidor personal (por " +

@@ -237,8 +237,10 @@ interface HealthDao {
         EntrenoDraftEntity::class,
         WorkIntervalEntity::class,
         NutritionPublishEntity::class,
+        BreathingSessionEntity::class,
+        BreathingPendingEntity::class,
     ],
-    version = 12,
+    version = 14,
     exportSchema = false,
 )
 abstract class HealthDatabase : RoomDatabase() {
@@ -249,6 +251,7 @@ abstract class HealthDatabase : RoomDatabase() {
     abstract fun restDao(): RestDao
     abstract fun entrenoDraftDao(): EntrenoDraftDao
     abstract fun workDao(): WorkDao
+    abstract fun breathingDao(): BreathingDao
 }
 
 /** Tipos crudos retirados del catálogo. El SERVIDOR los sigue aceptando como

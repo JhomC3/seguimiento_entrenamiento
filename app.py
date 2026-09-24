@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.gzip import GZipMiddleware
 
 from config import CICLO_START, DB_PATH, HC_SYNC_TOKEN, MUSCLE_CATEGORIES
+from src.breathing_service import validate_session_payload
 from src.cardio_service import (
     CardioAnnotationInput,
     get_day_cardio,
@@ -41,6 +42,7 @@ from src.database import (
     find_plantilla_alimentacion_by_nombre,
     get_active_split_id,
     get_alimentos_catalog,
+    get_breathing_sessions_by_fecha,
     get_categories,
     get_dashboard_catalog,
     get_diario_by_fecha,
@@ -73,6 +75,7 @@ from src.models import (
     ValidationError,
 )
 from src.mutation_service import (
+    delete_breathing_session,
     delete_diary_with_undo_snapshot,
     delete_session,
     delete_split_with_undo_snapshot,
@@ -80,6 +83,7 @@ from src.mutation_service import (
     edit_template_with_undo_snapshot,
     peek_undo,
     reorder_templates_with_undo_snapshot,
+    save_breathing_session,
     save_diary_with_undo_snapshot,
     save_session_with_undo_snapshot,
     save_split_with_undo_snapshot,
@@ -1980,6 +1984,133 @@ def api_training_delete_sesion(request: Request, fecha: str = Query(default=""))
             "schema_version": TRAINING_API_SCHEMA_VERSION,
             "fecha": fecha.strip(),
             "deleted": True,
+        }
+    )
+
+
+def _api_breathing_row(row: dict) -> dict:
+    """Fila de breathing_sessions → objeto JSON de la API (métricas de servidor)."""
+    return {
+        "client_session_id": row.get("client_session_id"),
+        "fecha": row.get("fecha"),
+        "start_epoch_ms": row.get("start_epoch_ms"),
+        "end_epoch_ms": row.get("end_epoch_ms"),
+        "time_zone_offset_minutes": row.get("time_zone_offset_minutes"),
+        "duracion_planeada_sec": row.get("duracion_planeada_sec"),
+        "duracion_real_sec": row.get("duracion_real_sec"),
+        "patron": {
+            "inhale_s": row.get("inhale_s"),
+            "hold_in_s": row.get("hold_in_s"),
+            "exhale_s": row.get("exhale_s"),
+            "hold_out_s": row.get("hold_out_s"),
+            "ramp_sec": row.get("ramp_sec"),
+            "end_inhale_s": row.get("end_inhale_s"),
+            "end_hold_in_s": row.get("end_hold_in_s"),
+            "end_exhale_s": row.get("end_exhale_s"),
+            "end_hold_out_s": row.get("end_hold_out_s"),
+        },
+        "ciclos_completados": row.get("ciclos_completados"),
+        "bpm_medio": row.get("bpm_medio"),
+        "completada": bool(row.get("completada")),
+    }
+
+
+@app.post("/api/v1/respiracion/sesion")
+async def api_breathing_save_sesion(request: Request):
+    """Guarda una sesión de respiración (B5.0). Requiere X-Sync-Token.
+
+    Append-only idempotente por `client_session_id`: el re-POST del mismo
+    cuerpo devuelve los mismos valores con `saved: false` (el móvil puede
+    reintentar sin miedo a duplicar). Ciclos/BPM/fecha se recalculan en
+    servidor; lo que envíe el cliente se valida pero nunca se almacena.
+    """
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    raw_body = await request.body()
+    if len(raw_body) > MAX_BODY_BYTES:
+        return JSONResponse({"detail": "Lote excesivo"}, status_code=413)
+    try:
+        body = json.loads(raw_body)
+    except json.JSONDecodeError:
+        return JSONResponse({"detail": "Cuerpo JSON inválido."}, status_code=400)
+    try:
+        session_input = validate_session_payload(body)
+    except ValidationError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    try:
+        result = save_breathing_session(DB_PATH, session_input)
+    except Exception:
+        logging.getLogger("mutations").exception("API respiracion POST fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    row = result["row"]
+    return JSONResponse(
+        {
+            "schema_version": TRAINING_API_SCHEMA_VERSION,
+            "client_session_id": row["client_session_id"],
+            "fecha": row["fecha"],
+            "ciclos_completados": row["ciclos_completados"],
+            "bpm_medio": row["bpm_medio"],
+            "duracion_real_sec": row["duracion_real_sec"],
+            "saved": result["saved"],
+        }
+    )
+
+
+@app.get("/api/v1/respiracion/sesiones")
+def api_breathing_day(request: Request, fecha: str = Query(default="")):
+    """Sesiones de respiración de un día (ver historial). Requiere X-Sync-Token."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    if not fecha or not fecha.strip():
+        return JSONResponse({"detail": "Fecha requerida (YYYY-MM-DD)."}, status_code=400)
+    try:
+        fecha_db = fecha_to_db(parse_form_date(fecha.strip()))
+    except ValidationError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    try:
+        rows = get_breathing_sessions_by_fecha(DB_PATH, fecha_db)
+    except Exception:
+        logging.getLogger("dashboard").exception("API respiracion GET fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    sesiones = [_api_breathing_row(dict(r)) for r in rows]
+    return JSONResponse(
+        {
+            "schema_version": TRAINING_API_SCHEMA_VERSION,
+            "fecha": fecha_db,
+            "count": len(sesiones),
+            "sesiones": sesiones,
+            "minutos_totales": round(sum(s["duracion_real_sec"] for s in sesiones) / 60, 1),
+            "ciclos_totales": sum(s["ciclos_completados"] for s in sesiones),
+        }
+    )
+
+
+@app.delete("/api/v1/respiracion/sesion")
+def api_breathing_delete_sesion(request: Request, client_session_id: str = Query(default="")):
+    """Elimina una sesión por su UUID. Idempotente. Requiere X-Sync-Token."""
+    auth_error = _require_training_api_token(request)
+    if auth_error is not None:
+        return auth_error
+    if not client_session_id or not client_session_id.strip():
+        return JSONResponse({"detail": "client_session_id requerido."}, status_code=400)
+    try:
+        session_uuid = str(uuid.UUID(client_session_id.strip()))
+    except (ValueError, TypeError, AttributeError):
+        return JSONResponse(
+            {"detail": "El campo client_session_id debe ser un UUID."}, status_code=400
+        )
+    try:
+        deleted = delete_breathing_session(DB_PATH, session_uuid)
+    except Exception:
+        logging.getLogger("mutations").exception("API respiracion DELETE fallida")
+        return JSONResponse({"detail": "Error interno"}, status_code=500)
+    return JSONResponse(
+        {
+            "schema_version": TRAINING_API_SCHEMA_VERSION,
+            "client_session_id": session_uuid,
+            "deleted": deleted,
         }
     )
 

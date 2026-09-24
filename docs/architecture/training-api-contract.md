@@ -481,3 +481,61 @@ versión por cliente.
   `health_outbox`): en orden, el `400/401/404/409/413` descarta, el fallo de
   red conserva el resto; tras entregar se refresca la caché. La UI marca
   `●` en días con datos y avisa de pendientes; los borradores no se pierden.
+
+### B5: respiración pautada (sesiones del pacer móvil, sin undo)
+
+| Método | Path | Auth | Descripción |
+|---|---|---|---|
+| `POST` | `/api/v1/respiracion/sesion` | `X-Sync-Token` | Guarda sesión (append idempotente) |
+| `GET` | `/api/v1/respiracion/sesiones?fecha=` | `X-Sync-Token` | Sesiones del día + totales |
+| `DELETE` | `/api/v1/respiracion/sesion?client_session_id=` | `X-Sync-Token` | Elimina por UUID (idempotente) |
+
+```json
+// POST /api/v1/respiracion/sesion
+{
+  "client_session_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "start_epoch_ms": 1789282800000,
+  "end_epoch_ms": 1789282920000,
+  "time_zone_offset_minutes": 0,
+  "duracion_planeada_sec": 120,
+  "completada": true,
+  "patron": {
+    "inhale_s": 4.0, "hold_in_s": 0.0, "exhale_s": 6.0, "hold_out_s": 0.0,
+    "ramp_sec": null,
+    "end_inhale_s": null, "end_hold_in_s": null,
+    "end_exhale_s": null, "end_hold_out_s": null
+  }
+}
+// → 200 {"schema_version": 1, "client_session_id": "...", "fecha": "2026-09-13",
+//        "ciclos_completados": 12, "bpm_medio": 6.0,
+//        "duracion_real_sec": 120, "saved": true}
+```
+
+- Patrón de 4 fases fijas en segundos (`inhale/exhale` 0.5–60, `holds`
+  0–60); sin rampa (eliminada: `ramp_sec`/`end_*` entrantes se ignoran,
+  siempre NULL en DB). El móvil no encola sesiones de menos de 1 ciclo
+  (misma regla que el servidor) y el drenado informa rechazos en vez de
+  contarlos como entregas.
+  `duracion_planeada_sec` ausente = Timer Off (libre).
+- El servidor **recalcula** `ciclos_completados`, `bpm_medio` y `fecha`
+  (día de inicio; las sesiones que cruzan medianoche se atribuyen al día de
+  inicio). Campos desconocidos se ignoran.
+- Idempotencia por `client_session_id` (UUID): re-`POST` → mismos valores con
+  `"saved": false`. `DELETE` de UUID inexistente → `200 {"deleted": false}`.
+- Sin journal de undo (divergencia consciente, precedente
+  `POST /alimento/nuevo`): append-only + `DELETE` idempotente es la red; sí
+  hay backup pre-escritura. `GET` de día vacío → `200 {count: 0}` (no 404).
+- El móvil inserta un silencio de 300 ms como COLA de cada fase (marca el
+  cambio para oído y vista) con fundidos de ~250 ms a cada lado; las fases
+  conservan su tiempo de patrón exacto y el total del ciclo no se mueve.
+  El intervalo elegido se cumple al milisegundo (vectores `exacto_6_6` y
+  `exacto_5_5` en `breathing-vectors.json`): `ciclos_completados` del móvil
+  ≡ cálculo del servidor, sin ±1.
+- Fixtures: `fixture_breath_save` (POST 4/0/6/0 × 120 s → 12 ciclos, BPM 6.0),
+  `fixture_breath_replay` (re-POST → `saved: false`, `count` intacto),
+  `fixture_breath_ramp` (vector congelado → 33 ciclos, BPM 3.4),
+  `fixture_breath_exact_6_6` (POST 6/0/6/0 × 120 s → 10 ciclos, BPM 5.0),
+  `fixture_breath_validation` (UUID/fases/rampa inválidos → `400`, 0 filas),
+  `fixture_breath_delete` (DELETE × 2 → `true`/`false`).
+- B5.1 (fuera de este lote): presets en servidor, rango de fechas,
+  `hc_id` de reconciliación con `MINDFULNESS_SESSION`.

@@ -29,6 +29,7 @@ const val EXERCISE_LAST_API_PATH = "/api/v1/ejercicio/ultimo"
 const val CARDIO_API_DAY_PATH = "/api/v1/cardio"
 const val CARDIO_API_ANNOTATE_PATH = "/api/v1/cardio/anotacion"
 const val DATES_API_PATH = "/api/v1/fechas"
+const val BREATHING_SESSION_PATH = "/api/v1/respiracion/sesion"
 const val TRAINING_API_MAX_SETS = 100
 
 sealed class TrainingResult<out T> {
@@ -265,6 +266,55 @@ class TrainingApiClient(
             } ?: emptyList()
             TrainingResult.Ok(items)
         }.getOrElse { TrainingResult.ApiError(-1, "Cardio malformado del servidor.") }
+    }
+
+    // --- B5: respiración pautada --------------------------------------------------
+
+    fun saveBreathingSession(
+        apiBase: String,
+        token: String,
+        body: JSONObject,
+    ): TrainingResult<BreathingSaveResult> =
+        post("$apiBase$BREATHING_SESSION_PATH", token, body).let { raw ->
+            when (raw) {
+                is TrainingResult.Ok -> parseBreathingSave(raw.value)
+                is TrainingResult.ApiError -> raw
+                is TrainingResult.NetworkError -> raw
+            }
+        }
+
+    fun deleteBreathingSession(
+        apiBase: String,
+        token: String,
+        clientSessionId: String,
+    ): TrainingResult<Boolean> {
+        val url = "$apiBase$BREATHING_SESSION_PATH" +
+            "?client_session_id=${java.net.URLEncoder.encode(clientSessionId, "UTF-8")}"
+        return delete(url, token).let { raw ->
+            when (raw) {
+                is TrainingResult.Ok -> runCatching {
+                    TrainingResult.Ok(raw.value.getBoolean("deleted"))
+                }.getOrElse { TrainingResult.ApiError(-1, "Respuesta malformada del servidor.") }
+                is TrainingResult.ApiError -> raw
+                is TrainingResult.NetworkError -> raw
+            }
+        }
+    }
+
+    private fun parseBreathingSave(json: JSONObject): TrainingResult<BreathingSaveResult> {
+        return runCatching {
+            checkVersion(json)?.let { return it }
+            TrainingResult.Ok(
+                BreathingSaveResult(
+                    clientSessionId = json.getString("client_session_id"),
+                    fecha = json.getString("fecha"),
+                    ciclos = json.getInt("ciclos_completados"),
+                    bpm = json.getDouble("bpm_medio"),
+                    realS = json.getInt("duracion_real_sec"),
+                    saved = json.optBoolean("saved", true),
+                ),
+            )
+        }.getOrElse { TrainingResult.ApiError(-1, "Respiración malformada del servidor.") }
     }
 
     // --- B4: fechas con datos (dots) + reemisión de payloads encolados ---------

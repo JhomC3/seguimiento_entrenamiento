@@ -61,7 +61,7 @@ Mantén, optimiza y extiende el dashboard de progresión de gimnasio (FastAPI + 
 
 ## 4. Datos (trampas, no el schema completo)
 
-- El esquema vive en `src/migrations/` (v001..v020, **no existe `v004`**). Prohibido `ALTER TABLE` a mano; la app aplica pendientes al arrancar con backup previo.
+- El esquema vive en `src/migrations/` (v001..v021, **no existe `v004`**; v021 `breathing_sessions` del pacer móvil). Prohibido `ALTER TABLE` a mano; la app aplica pendientes al arrancar con backup previo.
 - `DB_PATH` vía `LIFESTYLE_DB_PATH` (`GYM_DB_PATH` es alias). `HC_SYNC_TOKEN`: env o `data/hc_sync_token` (gitignored, lo genera `scripts/start_server.sh`).
 - `origen`: `'google'` (imports, reemplazable) vs `'manual'` (UI). Los imports reemplazan solo `origen='google'` con backup previo.
 - Series HIIT: `velocidad_kmh`/`dificultad` solo en HIIT. Fechas siempre ISO `YYYY-MM-DD`.

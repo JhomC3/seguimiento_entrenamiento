@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Health Connect: permisos de lectura declarados (catálogo core + background) -->
@@ -29,6 +31,8 @@
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
     <!-- Escritura nutricional: publica el diario en Health Connect (1 registro por alimento) -->
     <uses-permission android:name="android.permission.health.WRITE_NUTRITION" />
+    <!-- Escritura de meditaciones: sesiones de respiración completadas -->
+    <uses-permission android:name="android.permission.health.WRITE_MINDFULNESS" />
 
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
@@ -71,6 +75,11 @@
             android:name=".TrainingDiaryActivity"
             android:exported="false" />
 
+        <!-- Respiración pautada B5.0: pacer + presets locales + historial. -->
+        <activity
+            android:name=".BreathingActivity"
+            android:exported="false" />
+
         <!-- Sincronización en primer plano: mantiene la app activa aunque la
              pantalla se apague, de modo que Health Connect siga aceptando
              lecturas (recomendación oficial para lecturas largas). -->
@@ -78,6 +87,12 @@
             android:name=".SyncService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- Pacer de respiración: cues audibles en background. -->
+        <service
+            android:name=".BreathingService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
     </application>
 
 </manifest>

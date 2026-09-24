@@ -56,6 +56,9 @@ ALLOWED_REMOTE_ROUTES: frozenset = frozenset(
         ("GET", "/api/v1/cardio"),
         ("POST", "/api/v1/cardio/anotacion"),
         ("GET", "/api/v1/fechas"),
+        ("POST", "/api/v1/respiracion/sesion"),
+        ("GET", "/api/v1/respiracion/sesiones"),
+        ("DELETE", "/api/v1/respiracion/sesion"),
     }
 )
 
