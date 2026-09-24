@@ -44,6 +44,13 @@ Dueño único, en el móvil, pestaña Respirar.
   `neutral_100`, opciones 15sp `neutral_300`), cero saltos en estados, glass
   de revisión (resumen corto; Descartar|Guardar idénticos en horizontal),
   keep-screen, gesto global, glifo. Sin resp/rpm.
+- RF-7: CUANDO el usuario cambie patrón, tiempo, timbre o planilla, EL
+  SISTEMA lo persistirá al instante; al reabrir mostrará lo último usado
+  (los valores iniciales del código solo valen la primera vez).
+- RF-8: NADA saldrá del móvil (servidor u Health Connect) sin "Guardar
+  sesión": terminar encola en local; abrir la app no drena ni pide permiso
+  HC; Descartar borra en local y, si la SAVE nunca salió, la retira sin
+  enviar (solo envía DELETE si ya se había entregado).
 
 ## Requisitos no funcionales
 
@@ -71,3 +78,9 @@ Dueño único, en el móvil, pestaña Respirar.
   títulos 18sp bold `neutral_100` sobre opciones 15sp `neutral_300`.
 - D14: botón Libre eliminado (nunca pedido); `0:00` = Libre con toast.
 - D15: revisión Descartar|Guardar idénticos en horizontal.
+- D16: solo Guardar envía (servicio sin espejo; sin drenado ni permiso HC al
+  abrir; Descartar retira lo no enviado).
+- D17: popup Guardar planilla con padding 24, campo estilo diario y botones
+  `friendly*` (error solo al fallar, sin altura reservada).
+- D18: Cancelar|Guardar (Cancelar primero), 15sp sin allCaps, gap 12dp,
+  popup al 90% del ancho (medida real en APK; en tests solo atributos).

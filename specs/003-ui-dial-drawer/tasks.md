@@ -1,6 +1,5 @@
-# Tareas 003 v8 — Fuera Libre, revisión idéntica
+# Tareas 003 v11 — Popup planilla legible
 
-- [x] T1: Spec v8 + diff (D14–D15). Sin código.
-- [x] T2: Fuera Libre + `0:00` = Libre con toast + tests.
-- [x] T3: Revisión Descartar|Guardar idénticos en horizontal + tests.
-- [x] T4: Puertas + APK 0.4.42 + validación con el dueño.
+- [x] T1: Spec v11 (D18). Sin código.
+- [x] T2: Cancelar|Guardar, 15sp sin allCaps, gap, 90% ancho + tests.
+- [x] T3: Puertas + APK 0.4.45 + validación con el dueño.
