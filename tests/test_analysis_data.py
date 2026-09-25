@@ -7,13 +7,26 @@ from datetime import datetime
 import pytest
 
 from src.analysis_data import (
+    daily_avg_cadence,
+    daily_avg_cycling_cadence,
     daily_avg_hr,
+    daily_avg_power,
+    daily_avg_speed,
+    daily_body_temp,
+    daily_calories_burned,
     daily_cardio_minutes,
+    daily_distance,
+    daily_elevation,
+    daily_floors,
     daily_hrv,
+    daily_hydration_ml,
     daily_kcal,
+    daily_respiratory_rate,
     daily_resting_hr,
     daily_sleep_hours,
+    daily_spo2,
     daily_steps,
+    daily_vo2max,
     daily_volume,
     daily_weight,
 )
@@ -60,18 +73,20 @@ def db(tmp_path):
     return db_path
 
 
-def _insert_hr(conn, record_type, value_json, start, end=None, deleted=None):
+def _insert_hr(conn, record_type, value_json, start, end=None, deleted=None, origin=None):
     value_json = json.dumps({"value": json.loads(value_json)})
     conn.execute(
         "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms, "
-        "last_modified_epoch_ms, payload_schema_version, value_json, received_at, updated_at, deleted_at) "
-        "VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)",
+        "last_modified_epoch_ms, data_origin_package, payload_schema_version, value_json, "
+        "received_at, updated_at, deleted_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)",
         (
             f"{record_type}-{start}-{conn.total_changes}",
             record_type,
             start,
             end or start,
             start,
+            origin,
             value_json,
             TZ,
             TZ,
@@ -236,3 +251,106 @@ def test_volume_suma_diaria(db):
     conn.close()
     df = daily_volume(db)
     assert df.iloc[0]["valor"] == 1180
+
+
+SAMSUNG = "com.sec.android.app.shealth"
+FITBIT = "com.fitbit.FitbitMobile"
+
+
+def test_dos_origenes_no_duplican_pasos_gana_mas_filas(db):
+    conn = sqlite3.connect(db)
+    _insert_hr(conn, "STEPS_H1", '{"count": 4000}', _ts("2026-08-10 09:00"), origin=SAMSUNG)
+    _insert_hr(conn, "STEPS_H1", '{"count": 3000}', _ts("2026-08-10 15:00"), origin=SAMSUNG)
+    _insert_hr(conn, "STEPS_H1", '{"count": 9999}', _ts("2026-08-10 12:00"), origin=FITBIT)
+    conn.commit()
+    conn.close()
+    df = daily_steps(db)
+    assert len(df) == 1
+    assert df.iloc[0]["valor"] == 7000  # Samsung (2 filas) gana a Fitbit (1 fila)
+
+
+def test_dos_origenes_fc_reposo_no_se_mezclan(db):
+    conn = sqlite3.connect(db)
+    _insert_hr(conn, "RESTING_HEART_RATE", '{"bpm": 60}', _ts("2026-08-10 07:00"), origin=SAMSUNG)
+    _insert_hr(conn, "RESTING_HEART_RATE", '{"bpm": 60}', _ts("2026-08-10 07:05"), origin=SAMSUNG)
+    _insert_hr(conn, "RESTING_HEART_RATE", '{"bpm": 80}', _ts("2026-08-10 07:00"), origin=FITBIT)
+    conn.commit()
+    conn.close()
+    df = daily_resting_hr(db)
+    assert df.iloc[0]["valor"] == pytest.approx(60.0)
+
+
+def test_empate_de_filas_gana_alfabetico(db):
+    conn = sqlite3.connect(db)
+    _insert_hr(conn, "WEIGHT", '{"kg": 70.0}', _ts("2026-08-10 07:00"), origin=SAMSUNG)
+    _insert_hr(conn, "WEIGHT", '{"kg": 99.0}', _ts("2026-08-10 07:00"), origin=FITBIT)
+    conn.commit()
+    conn.close()
+    df = daily_weight(db)
+    # 'com.fitbit...' < 'com.sec...' alfabéticamente.
+    assert df.iloc[0]["valor"] == pytest.approx(99.0)
+
+
+def test_capas_nuevas_valores(db):
+    conn = sqlite3.connect(db)
+    _insert_hr(conn, "RESPIRATORY_RATE", '{"breaths_per_minute": 14}', _ts("2026-08-10 07:00"))
+    _insert_hr(conn, "OXYGEN_SATURATION", '{"percentage": 97}', _ts("2026-08-10 07:00"))
+    _insert_hr(conn, "BODY_TEMPERATURE", '{"temperature_c": 36.6}', _ts("2026-08-10 07:00"))
+    _insert_hr(conn, "BASAL_BODY_TEMPERATURE", '{"temperature_c": 99.9}', _ts("2026-08-10 07:00"))
+    _insert_hr(conn, "VO2_MAX", '{"vo2_max_ml_kg_min": 42.0}', _ts("2026-08-10 07:00"))
+    _insert_hr(conn, "ELEVATION_GAINED", '{"meters": 120}', _ts("2026-08-10 07:00"))
+    _insert_hr(conn, "ELEVATION_GAINED", '{"meters": 30}', _ts("2026-08-10 08:00"))
+    _insert_hr(conn, "FLOORS_CLIMBED", '{"count": 5}', _ts("2026-08-10 07:00"))
+    _insert_hr(conn, "HYDRATION", '{"volume_ml": 500}', _ts("2026-08-10 07:00"))
+    _insert_hr(conn, "DISTANCE_H1", '{"meters": 1000}', _ts("2026-08-10 07:00"))
+    _insert_hr(conn, "TOTAL_CALORIES_H1", '{"energy_kcal": 90}', _ts("2026-08-10 07:00"))
+    _insert_hr(
+        conn,
+        "SPEED",
+        '{"samples": [{"time": 1, "meters_per_second": 2.0}, {"time": 2, "meters_per_second": 4.0}]}',
+        _ts("2026-08-10 07:00"),
+    )
+    _insert_hr(
+        conn,
+        "POWER",
+        '{"samples": [{"time": 1, "watts": 100}, {"time": 2, "watts": 200}]}',
+        _ts("2026-08-10 07:00"),
+    )
+    _insert_hr(
+        conn,
+        "STEPS_CADENCE",
+        '{"samples": [{"time": 1, "rpm": 80}, {"time": 2, "rpm": 90}]}',
+        _ts("2026-08-10 07:00"),
+    )
+    _insert_hr(
+        conn,
+        "CYCLING_PEDALING_CADENCE",
+        '{"samples": [{"time": 1, "rpm": 70}]}',
+        _ts("2026-08-10 07:00"),
+    )
+    conn.commit()
+    conn.close()
+    assert daily_respiratory_rate(db).iloc[0]["valor"] == pytest.approx(14.0)
+    assert daily_spo2(db).iloc[0]["valor"] == pytest.approx(97.0)
+    # La basal no contamina la corporal.
+    assert daily_body_temp(db).iloc[0]["valor"] == pytest.approx(36.6)
+    assert daily_vo2max(db).iloc[0]["valor"] == pytest.approx(42.0)
+    assert daily_elevation(db).iloc[0]["valor"] == pytest.approx(150.0)
+    assert daily_floors(db).iloc[0]["valor"] == 5
+    assert daily_hydration_ml(db).iloc[0]["valor"] == 500
+    assert daily_distance(db).iloc[0]["valor"] == pytest.approx(1000.0)
+    assert daily_calories_burned(db).iloc[0]["valor"] == pytest.approx(90.0)
+    assert daily_avg_speed(db).iloc[0]["valor"] == pytest.approx(3.0)
+    assert daily_avg_power(db).iloc[0]["valor"] == pytest.approx(150.0)
+    assert daily_avg_cadence(db).iloc[0]["valor"] == pytest.approx(85.0)
+    assert daily_avg_cycling_cadence(db).iloc[0]["valor"] == pytest.approx(70.0)
+
+
+def test_distancia_crudo_vs_h1_corte_por_origen(db):
+    conn = sqlite3.connect(db)
+    _insert_hr(conn, "DISTANCE", '{"meters": 5000}', _ts("2026-08-10 09:00"))
+    _insert_hr(conn, "DISTANCE_H1", '{"meters": 800}', _ts("2026-08-10 09:00"))
+    conn.commit()
+    conn.close()
+    df = daily_distance(db)
+    assert df.iloc[0]["valor"] == pytest.approx(800.0)
