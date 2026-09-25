@@ -22,7 +22,6 @@ ALLOWLIST = {
     "tests/test_database.py": 1294,
     "tests/test_charts.py": 1235,
     "tests/test_training_api.py": 1185,
-    "src/charts.py": 1154,
 }
 
 SCOPES = ("app.py", "src", "scripts", "tests")
