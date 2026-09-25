@@ -5,6 +5,7 @@ import re
 from fastapi.testclient import TestClient
 
 import app as appmod
+from src import web_context
 from src.database import get_split, init_db, insert_exercise
 from src.mutation_service import clear_undo_stack
 from src.security import get_csrf_secret, make_csrf_token
@@ -43,7 +44,7 @@ def _guardar(
 
 def test_splits_page_render(tmp_path, monkeypatch):
     db = _setup_db(tmp_path, ("Press", "Pectoral", "EMPUJE"), ("Curl", "Biceps", "TIRON"))
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/splits")
     assert r.status_code == 200
     # Página COMPLETA (extiende base.html): no puede ser un fragmento sin <head>.
@@ -67,7 +68,7 @@ def test_splits_page_render(tmp_path, monkeypatch):
 
 def test_splits_page_catalogo_agrupado_y_detalles(tmp_path, monkeypatch):
     db = _setup_db(tmp_path, ("Press", "Pectoral", "EMPUJE"), ("Curl", "Biceps", "TIRON"))
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/splits")
     assert r.status_code == 200
     assert (
@@ -84,7 +85,7 @@ def test_splits_page_catalogo_agrupado_y_detalles(tmp_path, monkeypatch):
 
 def test_splits_page_resumen_por_tarjeta_v4(tmp_path, monkeypatch):
     db = _setup_db(tmp_path, ("Press", "Pectoral", "EMPUJE"), ("Curl", "Biceps", "TIRON"))
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     _guardar(
         client, dias=("LUNES", "MARTES"), tipos=("ejercicio", "hiit"), ejercicios=("Press", "HIIT")
@@ -141,7 +142,7 @@ def test_splits_page_resumen_por_tarjeta_v4(tmp_path, monkeypatch):
 
 def test_splits_page_layout_y_editmode(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     # Sin split: layout de dos columnas, estado vacío.
     r = client.get("/splits")
@@ -168,7 +169,7 @@ def test_splits_page_layout_y_editmode(tmp_path, monkeypatch):
 
 def test_splits_page_con_abrir(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     _guardar(client)
     split_id = get_split(db, 1)["id"]
@@ -179,7 +180,7 @@ def test_splits_page_con_abrir(tmp_path, monkeypatch):
 
 def test_split_guardar_crea_con_oob(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     r = _guardar(client)
     assert r.status_code == 200
@@ -193,7 +194,7 @@ def test_split_guardar_crea_con_oob(tmp_path, monkeypatch):
 
 def test_split_nuevo_fragmento(tmp_path, monkeypatch):
     db = _setup_db(tmp_path, ("Press", "Pectoral", "EMPUJE"))
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/split/nuevo")
     assert r.status_code == 200
     # Item nuevo sin persistir, en modo edición, con board vacío de 7 días.
@@ -214,7 +215,7 @@ def test_split_nuevo_fragmento(tmp_path, monkeypatch):
 
 def test_split_guardar_mismo_nombre_actualiza(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     _guardar(client)
     r = _guardar(client, dias=("MARTES",), ejercicios=("Press",))
@@ -225,7 +226,7 @@ def test_split_guardar_mismo_nombre_actualiza(tmp_path, monkeypatch):
 
 def test_split_guardar_duplicado_por_nombre_rechazado(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     _guardar(client, nombre="A")
     _guardar(client, nombre="B")
@@ -236,7 +237,7 @@ def test_split_guardar_duplicado_por_nombre_rechazado(tmp_path, monkeypatch):
 
 def test_split_guardar_errores_dominio(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     r = _guardar(client, nombre="")
     assert r.status_code == 422  # Form(...) requerido: vacío es campo ausente
@@ -251,7 +252,7 @@ def test_split_guardar_errores_dominio(tmp_path, monkeypatch):
 
 def test_split_guardar_hiit(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     r = _guardar(
         client, dias=("LUNES", "MARTES"), tipos=("ejercicio", "hiit"), ejercicios=("Press", "HIIT")
@@ -264,7 +265,7 @@ def test_split_guardar_hiit(tmp_path, monkeypatch):
 
 def test_split_guardar_requiere_csrf(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = TestClient(appmod.app)
     r = client.post(
         "/split/guardar",
@@ -276,7 +277,7 @@ def test_split_guardar_requiere_csrf(tmp_path, monkeypatch):
 
 def test_split_eliminar(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     _guardar(client)
     assert get_split(db, 1) is not None
@@ -292,14 +293,14 @@ def test_split_eliminar(tmp_path, monkeypatch):
 def test_split_nuevo_sin_board_fragmento_viejo(tmp_path, monkeypatch):
     """La ruta GET /split/{id} fue retirada (los boards viven en la sección)."""
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/split/999")
     assert r.status_code == 404
 
 
 def test_splits_no_se_contaminan(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     _guardar(client, nombre="A", dias=("LUNES",), ejercicios=("Press",))
     _guardar(client, nombre="B", dias=("VIERNES",), ejercicios=("Press",))
@@ -311,7 +312,7 @@ def test_splits_no_se_contaminan(tmp_path, monkeypatch):
 
 def test_undo_split_restaura_lista(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     clear_undo_stack()
     client = _client()
     _guardar(client)
@@ -327,7 +328,7 @@ def test_undo_split_restaura_lista(tmp_path, monkeypatch):
 
 def test_undo_empty_no_rompe(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     clear_undo_stack()
     client = _client()
     r = client.post("/undo", data={"fecha": ""})
@@ -362,7 +363,7 @@ def test_split_activar_marca_unico_y_abre_primero(tmp_path, monkeypatch):
     from src.database import get_active_split_id, get_splits_summary
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     _guardar(client, nombre="A", dias=("LUNES",), ejercicios=("Press",))
     _guardar(client, nombre="B", dias=("VIERNES",), ejercicios=("Press",))
@@ -391,7 +392,7 @@ def test_split_activar_marca_unico_y_abre_primero(tmp_path, monkeypatch):
 
 def test_split_activar_abrir_override_y_errores(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     _guardar(client, nombre="A", dias=("LUNES",), ejercicios=("Press",))
     _guardar(client, nombre="B", dias=("VIERNES",), ejercicios=("Press",))
@@ -412,7 +413,7 @@ def test_split_activar_undo_restaura(tmp_path, monkeypatch):
     from src.database import get_active_split_id
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     clear_undo_stack()
     client = _client()
     _guardar(client, nombre="A", dias=("LUNES",), ejercicios=("Press",))
@@ -429,7 +430,7 @@ def test_split_eliminar_activo_deja_sin_activo(tmp_path, monkeypatch):
     from src.database import get_active_split_id
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     _guardar(client, nombre="A", dias=("LUNES",), ejercicios=("Press",))
     client.post("/split/activar/1")

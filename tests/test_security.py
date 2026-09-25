@@ -6,6 +6,7 @@ from fastapi import Request
 from fastapi.testclient import TestClient
 
 import app as appmod
+from src import web_context
 from src.security import get_csrf_secret, make_csrf_token
 
 
@@ -46,7 +47,7 @@ def client(tmp_path, monkeypatch):
     db = str(tmp_path / "gym.db")
     init_db(db)
     insert_exercise(db, "Press", "Pectoral", "EMPUJE")
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     return TestClient(appmod.app)
 
 

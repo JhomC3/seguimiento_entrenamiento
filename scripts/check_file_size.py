@@ -17,7 +17,6 @@ MAX_DEFAULT = 800
 HEADROOM = 1.05
 
 ALLOWLIST = {
-    "app.py": 2748,
     "tests/test_app.py": 2656,
     "tests/test_database.py": 1294,
     "tests/test_charts.py": 1235,

@@ -47,13 +47,13 @@ def test_bloqueo_nuevo(tmp_path: Path) -> None:
 
 
 def test_allowlist_con_holgura(tmp_path: Path) -> None:
-    make_tree(tmp_path, {"app.py": 2800})  # pineado 2748 +5% = 2885
+    make_tree(tmp_path, {"tests/test_app.py": 2700})  # pineado 2656 +5% = 2788
     r = run_gate(tmp_path, "--base", "HEAD")
     assert r.returncode == 0
 
 
 def test_allowlist_fuera_de_holgura(tmp_path: Path) -> None:
-    make_tree(tmp_path, {"app.py": 2900})
+    make_tree(tmp_path, {"tests/test_app.py": 2800})
     r = run_gate(tmp_path, "--base", "HEAD")
     assert r.returncode == 1
 

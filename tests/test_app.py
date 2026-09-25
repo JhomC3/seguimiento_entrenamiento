@@ -6,6 +6,7 @@ import sqlite3
 from fastapi.testclient import TestClient
 
 import app as appmod
+from src import http_shared, web_context
 from src.database import get_plantillas, get_sets_by_fecha, init_db, insert_exercise
 from src.mutation_service import clear_undo_stack, undo_stack_size
 from src.security import get_csrf_secret, make_csrf_token
@@ -30,7 +31,7 @@ def _fecha(delta: int = 0) -> str:
 def test_saved_today_is_readonly(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     save_session(db, _fecha(), [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get(f"/fecha/editor?fecha={_fecha()}")
     assert "pencil-btn off" in r.text
     assert 'duration-150 hidden"' in r.text
@@ -44,7 +45,7 @@ def test_saved_today_is_readonly(tmp_path, monkeypatch):
 def test_saved_future_is_readonly(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     save_session(db, _fecha(1), [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get(f"/fecha/editor?fecha={_fecha(1)}")
     assert "pencil-btn off" in r.text
     assert 'data-readonly="1"' in r.text
@@ -53,7 +54,7 @@ def test_saved_future_is_readonly(tmp_path, monkeypatch):
 
 def test_empty_future_is_editable(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get(f"/fecha/editor?fecha={_fecha(1)}")
     assert "pencil-btn on" in r.text
     assert "transition-opacity duration-150" in r.text
@@ -68,14 +69,14 @@ def test_empty_future_is_editable(tmp_path, monkeypatch):
 
 def test_empty_today_is_editable(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get(f"/fecha/editor?fecha={_fecha()}")
     assert "pencil-btn on" in r.text
 
 
 def test_empty_past_is_readonly_with_fallback_row(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get(f"/fecha/editor?fecha={_fecha(-2)}")
     assert "pencil-btn off" in r.text
     assert 'data-readonly="1"' in r.text
@@ -85,7 +86,7 @@ def test_empty_past_is_readonly_with_fallback_row(tmp_path, monkeypatch):
 
 def test_index_uses_stable_card(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     assert 'href="/diario"' in r.text
     assert "+ Registrar" not in r.text
@@ -102,7 +103,7 @@ def test_index_uses_stable_card(tmp_path, monkeypatch):
 
 def test_save_valid_returns_ok_marker(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/entrenamiento/session/save",
         data={
@@ -126,7 +127,7 @@ def test_save_valid_returns_ok_marker(tmp_path, monkeypatch):
 def test_save_descanso_acepta_decimales(tmp_path, monkeypatch):
     """El descanso acepta decimales (p. ej. lo medido por el móvil: 95.4)."""
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/entrenamiento/session/save",
         data={
@@ -148,7 +149,7 @@ def test_save_descanso_acepta_decimales(tmp_path, monkeypatch):
 def test_editor_descanso_step_decimal(tmp_path, monkeypatch):
     """El input Desc ya no exige múltiplos de 5 (step 0.1)."""
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get(f"/editor/popup?fecha={_fecha()}")
     assert 'name="descanso" type="number" step="0.1"' in r.text
 
@@ -156,7 +157,7 @@ def test_editor_descanso_step_decimal(tmp_path, monkeypatch):
 def test_save_mixto_hiit_rechaza(tmp_path, monkeypatch):
     """Separación estricta: HIIT no se combina con fuerza en la misma sesión."""
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/entrenamiento/session/save",
         data={
@@ -179,7 +180,7 @@ def test_editor_fuerza_oculta_vel_difc(tmp_path, monkeypatch):
     from src.training_service import TrainingSetInput, save_session
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     save_session(
         db, _fecha(), [TrainingSetInput(ejercicio="Press", kg="98.6", reps="7", rir="1.2")]
     )
@@ -195,7 +196,7 @@ def test_editor_hiit_oculta_peso_rm_y_usa_difc(tmp_path, monkeypatch):
     from src.training_service import TrainingSetInput, save_session
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     save_session(
         db,
         _fecha(),
@@ -215,7 +216,7 @@ def test_editor_hiit_oculta_peso_rm_y_usa_difc(tmp_path, monkeypatch):
 
 def test_save_invalid_returns_fail_marker(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/entrenamiento/session/save",
         data={
@@ -234,7 +235,7 @@ def test_save_invalid_returns_fail_marker(tmp_path, monkeypatch):
 
 def test_save_empty_rir_returns_fail_marker(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/entrenamiento/session/save",
         data={
@@ -251,7 +252,7 @@ def test_save_empty_rir_returns_fail_marker(tmp_path, monkeypatch):
 
 def test_save_zero_rir_succeeds(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/entrenamiento/session/save",
         data={
@@ -268,7 +269,7 @@ def test_save_zero_rir_succeeds(tmp_path, monkeypatch):
 def test_save_multiple_series_persiste(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     insert_exercise(db, "Curl", "Biceps", "EMPUJE")
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/entrenamiento/session/save",
         data={
@@ -293,7 +294,7 @@ def test_save_multiple_series_persiste(tmp_path, monkeypatch):
 def test_save_edita_sesion_existente_reemplaza(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     save_session(db, _fecha(), [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/entrenamiento/session/save",
         data={
@@ -313,7 +314,7 @@ def test_save_edita_sesion_existente_reemplaza(tmp_path, monkeypatch):
 
 def test_save_con_ejercicio_nuevo_desde_alta(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     r_alta = client.post(
         "/ejercicio/nuevo",
@@ -338,7 +339,7 @@ def test_save_con_ejercicio_nuevo_desde_alta(tmp_path, monkeypatch):
 
 def test_save_fecha_historica_persiste(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/entrenamiento/session/save",
         data={
@@ -358,7 +359,7 @@ def test_save_fecha_historica_persiste(tmp_path, monkeypatch):
 
 def test_plantillas_section_lives_in_popup(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/editor/popup?fecha=2026-08-12")
     assert 'id="plantillas-section"' in r.text
     assert "Aún no hay entrenos" not in r.text
@@ -368,7 +369,7 @@ def test_plantillas_section_lives_in_popup(tmp_path, monkeypatch):
 
 def test_plantilla_guardar_crea_y_oob(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/plantilla/guardar",
         data={
@@ -382,7 +383,7 @@ def test_plantilla_guardar_crea_y_oob(tmp_path, monkeypatch):
 
 def test_plantilla_guardar_mismo_nombre_actualiza(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "Mi Empuje", "ejercicio": ["Press"]})
     r = client.post("/plantilla/guardar", data={"nombre": "Mi Empuje", "ejercicio": ["Press"]})
@@ -391,7 +392,7 @@ def test_plantilla_guardar_mismo_nombre_actualiza(tmp_path, monkeypatch):
 
 def test_plantilla_guardar_sin_ejercicios_error(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post("/plantilla/guardar", data={"nombre": "Vacia", "ejercicio": []})
     assert "notice-error" in r.text
     assert "al menos un ejercicio" in r.text
@@ -399,7 +400,7 @@ def test_plantilla_guardar_sin_ejercicios_error(tmp_path, monkeypatch):
 
 def test_plantilla_eliminar(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "Mi Empuje", "ejercicio": ["Press"]})
     r = client.post("/plantilla/eliminar/1")
@@ -421,7 +422,7 @@ def test_plantilla_aplicar_rellena_por_ejercicio_sin_secuencia_exacta(tmp_path, 
         ],
     )
     save_session(db, _fecha(-2), [{"ejercicio": "Curl", "kg": 20, "reps": 12, "rir": 1}])
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "Mi Empuje", "ejercicio": ["Press", "Curl"]})
     r = client.get("/plantilla/aplicar/1", params={"fecha": _fecha()})
@@ -437,7 +438,7 @@ def test_plantilla_aplicar_rellena_por_ejercicio_sin_secuencia_exacta(tmp_path, 
 def test_plantilla_editar_renombra(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     insert_exercise(db, "Curl", "Biceps", "TIRON")
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "Mi Empuje", "ejercicio": ["Press"]})
     r = client.post(
@@ -449,7 +450,7 @@ def test_plantilla_editar_renombra(tmp_path, monkeypatch):
 
 def test_plantillas_view_editar_expande_formulario(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "Mi Empuje", "ejercicio": ["Press"]})
     r = client.get("/plantillas", params={"editar": 1})
@@ -459,7 +460,7 @@ def test_plantillas_view_editar_expande_formulario(tmp_path, monkeypatch):
 
 def test_plantilla_reordenar(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
     client.post("/plantilla/guardar", data={"nombre": "B", "ejercicio": ["Press"]})
@@ -472,7 +473,7 @@ def test_plantilla_reordenar(tmp_path, monkeypatch):
 def test_eliminar_sesion_vacia_el_dia(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     save_session(db, _fecha(), [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post("/entrenamiento/session/eliminar", data={"fecha": _fecha()})
     assert 'data-ok="1"' in r.text
     assert "Entreno eliminado" in r.text
@@ -482,7 +483,7 @@ def test_eliminar_sesion_vacia_el_dia(tmp_path, monkeypatch):
 
 def test_editor_botones_texto_en_panel_e_iconos_en_form(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get(f"/fecha/editor?fecha={_fecha()}")
     assert ">Guardar cambios</button>" in r.text
     assert ">Cancelar</button>" in r.text
@@ -494,7 +495,7 @@ def test_editor_botones_texto_en_panel_e_iconos_en_form(tmp_path, monkeypatch):
 
 def test_editor_usa_hooks_de_controles_compactos(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     html = _client().get(f"/fecha/editor?fecha={_fecha()}").text
 
     assert 'class="editor-header-actions' in html
@@ -504,7 +505,7 @@ def test_editor_usa_hooks_de_controles_compactos(tmp_path, monkeypatch):
 
 def test_undo_sesion_restaura_filas(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     clear_undo_stack()
     client = _client()
     client.post(
@@ -526,7 +527,7 @@ def test_undo_sesion_restaura_filas(tmp_path, monkeypatch):
 
 def test_undo_sesion_fecha_distinta_no_swapea_editor(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     clear_undo_stack()
     client = _client()
     client.post(
@@ -551,7 +552,7 @@ def test_undo_sesion_fecha_distinta_no_swapea_editor(tmp_path, monkeypatch):
 def test_undo_sesion_restaura_estado_previo(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     save_session(db, _fecha(), [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     clear_undo_stack()
     client = _client()
     client.post(
@@ -572,7 +573,7 @@ def test_undo_sesion_restaura_estado_previo(tmp_path, monkeypatch):
 
 def test_undo_entrenos_restaura_snapshot(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     clear_undo_stack()
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
@@ -587,7 +588,7 @@ def test_undo_entrenos_restaura_snapshot(tmp_path, monkeypatch):
 
 def test_undo_reorden_vuelve_al_orden_original(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     clear_undo_stack()
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
@@ -600,7 +601,7 @@ def test_undo_reorden_vuelve_al_orden_original(tmp_path, monkeypatch):
 
 def test_undo_pila_vacia_avisa(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     clear_undo_stack()
     r = _client().post("/undo")
     assert "Nada que deshacer" in r.text
@@ -608,7 +609,7 @@ def test_undo_pila_vacia_avisa(tmp_path, monkeypatch):
 
 def test_undo_pila_limitada_a_10(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     clear_undo_stack()
     client = _client()
     for i in range(12):
@@ -619,7 +620,7 @@ def test_undo_pila_limitada_a_10(tmp_path, monkeypatch):
 def test_entreno_guardado_con_papelera_cuando_hay_datos(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     save_session(db, _fecha(), [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get(f"/fecha/editor?fecha={_fecha()}")
     assert "delete-session-btn" in r.text
     assert 'delete-session-btn"\n                hidden' not in r.text
@@ -633,7 +634,7 @@ def test_entreno_guardado_con_papelera_cuando_hay_datos(tmp_path, monkeypatch):
 
 def test_index_references_static_assets(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     assert 'href="/static/css/app.css?v=' in r.text
     assert 'src="/static/js/app.js?v=' in r.text
@@ -641,7 +642,7 @@ def test_index_references_static_assets(tmp_path, monkeypatch):
 
 def test_static_css_served(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/static/css/app.css")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/css")
@@ -649,7 +650,7 @@ def test_static_css_served(tmp_path, monkeypatch):
 
 def test_static_js_served(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/static/js/app.js")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/javascript")
@@ -657,7 +658,7 @@ def test_static_js_served(tmp_path, monkeypatch):
 
 def test_app_css_imports_ordered(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/static/css/app.css")
     assert r.status_code == 200
     ordered = [
@@ -679,7 +680,7 @@ def test_app_css_imports_ordered(tmp_path, monkeypatch):
 
 def test_base_template_has_no_inline_style_block(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     assert "tailwind.config" not in r.text
     base_path = os.path.join(os.path.dirname(__file__), "..", "templates", "base.html")
@@ -692,7 +693,7 @@ def test_base_template_has_no_inline_style_block(tmp_path, monkeypatch):
 
 def test_base_template_loads_only_module_js(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     with open(os.path.join(os.path.dirname(__file__), "..", "templates", "base.html")) as f:
         source = f.read()
     assert "static_url('js/app.js')" in source
@@ -712,7 +713,7 @@ def test_base_template_cdn_scripts_pin_sri(tmp_path, monkeypatch):
     mantener el mismo contrato SRI en sus constantes.
     """
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     with open(os.path.join(os.path.dirname(__file__), "..", "templates", "base.html")) as f:
         source = f.read()
     scripts = re.findall(r'<script\s+src="https://[^"]+"[^>]*>', source)
@@ -732,7 +733,7 @@ def test_base_template_cdn_scripts_pin_sri(tmp_path, monkeypatch):
 
 def test_base_template_sin_cdn_tailwind(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     with open(os.path.join(os.path.dirname(__file__), "..", "templates", "base.html")) as f:
         source = f.read()
     assert "cdn.tailwindcss.com" not in source
@@ -741,7 +742,7 @@ def test_base_template_sin_cdn_tailwind(tmp_path, monkeypatch):
 
 def test_static_tailwind_css_served(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/static/css/tailwind.css")
     assert r.status_code == 200
     assert ".bg-matte-950" in r.text
@@ -749,7 +750,7 @@ def test_static_tailwind_css_served(tmp_path, monkeypatch):
 
 def test_index_uses_app_config_json(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     assert 'id="app-config" type="application/json"' in r.text
     assert "CATEGORIA_MAP" not in r.text
@@ -758,7 +759,7 @@ def test_index_uses_app_config_json(tmp_path, monkeypatch):
 
 def test_static_js_modules_served(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     for name in (
         "app.js",
         "state.js",
@@ -776,7 +777,7 @@ def test_static_js_modules_served(tmp_path, monkeypatch):
 
 def test_index_includes_global_partials_once(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     assert r.text.count('id="confirm-modal"') == 1
     assert r.text.count('id="notice-container"') == 1
@@ -786,7 +787,7 @@ def test_index_includes_global_partials_once(tmp_path, monkeypatch):
 
 def test_htmx_partial_has_single_document(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     for path in (
         f"/fecha/editor?fecha={_fecha()}",
         "/plantillas",
@@ -800,7 +801,7 @@ def test_htmx_partial_has_single_document(tmp_path, monkeypatch):
 
 def test_mutating_routes_return_200(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     clear_undo_stack()
     client = _client()
     r = client.post(
@@ -835,7 +836,7 @@ def test_mutating_routes_return_200(tmp_path, monkeypatch):
 
 def test_ejercicio_nuevo_oob_markers(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     r = client.post(
         "/ejercicio/nuevo",
@@ -857,7 +858,7 @@ def test_ejercicio_nuevo_oob_markers(tmp_path, monkeypatch):
 
 def test_ejercicio_nuevo_desde_splits_refresca_catalogo(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     # La página de splits trae el formulario bajo el catálogo.
     r = client.get("/splits")
@@ -878,7 +879,7 @@ def test_ejercicio_nuevo_desde_splits_refresca_catalogo(tmp_path, monkeypatch):
 
 def test_undo_entrenos_oob_plantillas(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     clear_undo_stack()
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
@@ -890,7 +891,7 @@ def test_undo_entrenos_oob_plantillas(tmp_path, monkeypatch):
 
 def test_domain_errors_return_400_with_notice(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     r = client.post(
         "/entrenamiento/session/save",
@@ -915,7 +916,7 @@ def test_domain_errors_return_400_with_notice(tmp_path, monkeypatch):
 
 def test_edit_duplicate_name_shows_inline_error(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
     client.post("/plantilla/guardar", data={"nombre": "B", "ejercicio": ["Press"]})
@@ -940,7 +941,7 @@ def _seed_session(db, fecha_iso=None):
 def test_delete_session_failure_returns_500_and_keeps_state(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     _seed_session(db)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     clear_undo_stack()
     monkeypatch.setattr("src.mutation_service.delete_session_by_fecha", _db_locked)
 
@@ -955,7 +956,7 @@ def test_delete_session_failure_returns_500_and_keeps_state(tmp_path, monkeypatc
 
 def test_delete_template_failure_returns_500_and_keeps_state(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     clear_undo_stack()
     _client().post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
     monkeypatch.setattr("src.mutation_service.delete_plantilla", _db_locked)
@@ -970,7 +971,7 @@ def test_delete_template_failure_returns_500_and_keeps_state(tmp_path, monkeypat
 
 def test_reorder_failure_returns_500_and_keeps_order(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     clear_undo_stack()
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
@@ -986,7 +987,7 @@ def test_reorder_failure_returns_500_and_keeps_order(tmp_path, monkeypatch):
 
 def test_undo_failure_returns_500_and_keeps_stack(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     clear_undo_stack()
     _client().post("/plantilla/guardar", data={"nombre": "A", "ejercicio": ["Press"]})
     monkeypatch.setattr("src.mutation_service.restore_entrenos", _db_locked)
@@ -1006,7 +1007,7 @@ def test_semana_primer_entreno_global(tmp_path, monkeypatch):
     from src.models import TrainingSetInput
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     save_session(db, "2026-08-03", [TrainingSetInput("Press", 90, 6, 1)])
     save_session(db, "2026-08-06", [TrainingSetInput("Press", 92, 6, 1)])
     save_session(db, "2026-07-29", [TrainingSetInput("Press", 88, 6, 1)])
@@ -1017,7 +1018,7 @@ def test_semana_primer_entreno_global(tmp_path, monkeypatch):
 
 def test_semana_primer_entreno_sin_datos(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/semana/primer-entreno?semana=99")
     assert r.json() == {"fecha": None}
 
@@ -1026,7 +1027,7 @@ def test_export_health_connect_csv_con_bom(tmp_path, monkeypatch):
     import codecs
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     resp = _client().get("/exportar/health-connect.csv")
     assert resp.status_code == 200
     assert resp.content.startswith(codecs.BOM_UTF8)
@@ -1036,7 +1037,7 @@ def test_undo_restaura_origen_google(tmp_path, monkeypatch):
     from src.db_connection import transaction
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     with transaction(db) as conn:
         conn.execute(
             "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir, origen) "
@@ -1055,7 +1056,7 @@ def test_undo_restaura_origen_google(tmp_path, monkeypatch):
 
 def test_sesiones_view_retirada(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     assert _client().get("/sesiones").status_code == 404
 
 
@@ -1063,7 +1064,7 @@ def test_index_sin_historial_de_sesiones(tmp_path, monkeypatch):
     from src.models import TrainingSetInput
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     save_session(db, "2026-08-06", [TrainingSetInput("Press", 90, 7, 1)])
     resp = _client().get("/")
     assert 'id="session-history"' not in resp.text
@@ -1071,7 +1072,7 @@ def test_index_sin_historial_de_sesiones(tmp_path, monkeypatch):
 
 def test_save_incluye_oob_history(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     resp = _client().post(
         "/entrenamiento/session/save",
         data={
@@ -1088,7 +1089,7 @@ def test_save_incluye_oob_history(tmp_path, monkeypatch):
 
 def test_undo_incluye_oob_history(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     client.post(
         "/entrenamiento/session/save",
@@ -1109,7 +1110,7 @@ def test_lifespan_warns_sin_csrf_secret(tmp_path, monkeypatch, caplog):
     import logging
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     monkeypatch.delenv("GYM_CSRF_SECRET", raising=False)
     with caplog.at_level(logging.WARNING), TestClient(appmod.app) as c:
         c.get("/")
@@ -1143,7 +1144,7 @@ def test_alimentacion_save_guarda_parametros_y_filas(tmp_path, monkeypatch):
     from src.database import get_diario_by_fecha, get_parametros_diarios
 
     db = _seed_nutrition(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/alimentacion/save",
         data={
@@ -1165,7 +1166,7 @@ def test_alimentacion_save_guarda_parametros_y_filas(tmp_path, monkeypatch):
 
 def test_alimentacion_editor_micros_no_editables_con_dri(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/alimentacion/save",
         data={
@@ -1188,21 +1189,21 @@ def test_alimentacion_editor_micros_no_editables_con_dri(tmp_path, monkeypatch):
 
 def test_index_app_config_tiene_ciclo_start(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     assert '"ciclo_start"' in r.text
 
 
 def test_index_app_config_tiene_alimento_map(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     assert '"alimento_map"' in r.text
 
 
 def test_index_renders_global_date_title_below_navigator(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     assert r.status_code == 200
     # La home ya no tiene navegador fijo: vive en el popup de registro.
@@ -1214,7 +1215,7 @@ def test_index_renders_global_date_title_below_navigator(tmp_path, monkeypatch):
 
 def test_panels_layout_title_left_controls_right(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/editor/popup?fecha=2025-04-24")
     assert r.status_code == 200
     # Título en caja (izquierda) + colapso (derecha) en los paneles (2 + cardio)
@@ -1236,7 +1237,7 @@ def test_panels_layout_title_left_controls_right(tmp_path, monkeypatch):
 
 def test_panel_titles_are_static(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/editor/popup?fecha=2025-04-24")
     assert r.status_code == 200
     # El editor de sesión tiene título estático "Entrenamiento" sin fecha
@@ -1250,7 +1251,7 @@ def test_panel_titles_are_static(tmp_path, monkeypatch):
 
 def test_index_renders_nutrition_panel_above_session_editor(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/editor/popup?fecha=2025-04-24")
     assert r.status_code == 200
     # Navegador arriba de todo, panel de nutrición antes del editor de sesión
@@ -1265,7 +1266,7 @@ def test_index_renders_nutrition_panel_above_session_editor(tmp_path, monkeypatc
 
 def test_nutrition_editor_tabla_esquema_23_columnas(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/alimentacion/editor?fecha=2025-04-24")
     assert r.status_code == 200
     for label in (
@@ -1300,7 +1301,7 @@ def test_nutrition_templates_routes(tmp_path, monkeypatch):
     from src.database import insert_plantilla_alimentacion
 
     db = _seed_nutrition(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
 
     # Guardar plantilla desde el día
     r = _client().post(
@@ -1337,14 +1338,14 @@ def test_nutrition_templates_routes(tmp_path, monkeypatch):
 
 def test_alimentacion_standalone_page_removed(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/alimentacion")
     assert r.status_code == 404
 
 
 def test_index_no_tiene_enlace_alimentacion(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     assert 'href="/alimentacion"' not in r.text
 
@@ -1373,7 +1374,7 @@ def test_alimentacion_editor_fragment(tmp_path, monkeypatch):
             }
         ],
     )
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/alimentacion/editor?fecha=2025-04-24")
     assert r.status_code == 200
     assert "Avena" in r.text
@@ -1389,7 +1390,7 @@ def test_alimentacion_save_computes_and_returns_oob(tmp_path, monkeypatch):
     from src.database import get_diario_by_fecha
 
     db = _seed_nutrition(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/alimentacion/save",
         data={"fecha": "2025-04-26", "alimento": ["Avena"], "cantidad": ["120"]},
@@ -1405,7 +1406,7 @@ def test_alimentacion_save_computes_and_returns_oob(tmp_path, monkeypatch):
 
 def test_alimentacion_save_unknown_food_is_400(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/alimentacion/save",
         data={"fecha": "2025-04-26", "alimento": ["No Existe"], "cantidad": ["100"]},
@@ -1438,7 +1439,7 @@ def test_alimentacion_save_edita_dia_existente(tmp_path, monkeypatch):
             }
         ],
     )
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/alimentacion/save",
         data={"fecha": "2025-04-26", "alimento": ["Avena"], "cantidad": ["150"]},
@@ -1471,7 +1472,7 @@ def test_alimentacion_save_multiple_alimentos(tmp_path, monkeypatch):
             "vitamina_a": 0.0,
         },
     )
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/alimentacion/save",
         data={
@@ -1510,7 +1511,7 @@ def test_alimentacion_eliminar(tmp_path, monkeypatch):
             }
         ],
     )
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post("/alimentacion/eliminar", data={"fecha": "2025-04-26"})
     assert r.status_code == 200
     assert get_diario_by_fecha(db, "2025-04-26") == []
@@ -1520,7 +1521,7 @@ def test_alimento_nuevo(tmp_path, monkeypatch):
     from src.database import find_alimento
 
     db = _seed_nutrition(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/alimento/nuevo",
         data={
@@ -1544,7 +1545,7 @@ def test_alimento_nuevo(tmp_path, monkeypatch):
 
 def test_alimentacion_save_requires_csrf(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = TestClient(appmod.app).post(
         "/alimentacion/save",
         data={"fecha": "2025-04-26", "alimento": ["Avena"], "cantidad": ["120"]},
@@ -1554,7 +1555,7 @@ def test_alimentacion_save_requires_csrf(tmp_path, monkeypatch):
 
 def test_alimento_nuevo_escapes_name_in_app_config_oob(tmp_path, monkeypatch):
     db = _seed_nutrition(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().post(
         "/alimento/nuevo",
         data={
@@ -1581,7 +1582,7 @@ def test_undo_alimentacion_refreshes_nutrition_editor(tmp_path, monkeypatch):
     from src.database import get_diario_by_fecha
 
     db = _seed_nutrition(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     clear_undo_stack()
     _client().post(
         "/alimentacion/save",
@@ -1635,8 +1636,8 @@ _SYNC_BODY = {
 
 def test_sync_endpoint_503_when_not_configured(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", "")
+    monkeypatch.setattr(web_context, "DB_PATH", db)
+    monkeypatch.setattr(http_shared, "HC_SYNC_TOKEN", "")
     r = _client().post(SYNC_URL, json=_SYNC_BODY, headers={"X-Sync-Token": "x"})
     assert r.status_code == 503
 
@@ -1659,24 +1660,24 @@ def test_sync_token_missing_file_returns_empty(tmp_path, monkeypatch):
 
 def test_sync_endpoint_401_with_wrong_token(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", "secret")
+    monkeypatch.setattr(web_context, "DB_PATH", db)
+    monkeypatch.setattr(http_shared, "HC_SYNC_TOKEN", "secret")
     r = _client().post(SYNC_URL, json=_SYNC_BODY, headers={"X-Sync-Token": "wrong"})
     assert r.status_code == 401
 
 
 def test_sync_endpoint_401_without_token(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", "secret")
+    monkeypatch.setattr(web_context, "DB_PATH", db)
+    monkeypatch.setattr(http_shared, "HC_SYNC_TOKEN", "secret")
     r = _client().post(SYNC_URL, json=_SYNC_BODY)
     assert r.status_code == 401
 
 
 def test_sync_endpoint_200_with_acks_and_persisted_rows(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", "secret")
+    monkeypatch.setattr(web_context, "DB_PATH", db)
+    monkeypatch.setattr(http_shared, "HC_SYNC_TOKEN", "secret")
     r = _client().post(SYNC_URL, json=_SYNC_BODY, headers={"X-Sync-Token": "secret"})
     assert r.status_code == 200
     data = r.json()
@@ -1694,8 +1695,8 @@ def test_sync_endpoint_200_with_acks_and_persisted_rows(tmp_path, monkeypatch):
 
 def test_sync_endpoint_400_with_invalid_payload(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", "secret")
+    monkeypatch.setattr(web_context, "DB_PATH", db)
+    monkeypatch.setattr(http_shared, "HC_SYNC_TOKEN", "secret")
     bad = {"schema_version": 1, "device_id": "x", "operations": [{"op": "ALIEN"}]}
     r = _client().post(SYNC_URL, json=bad, headers={"X-Sync-Token": "secret"})
     assert r.status_code == 400
@@ -1703,8 +1704,8 @@ def test_sync_endpoint_400_with_invalid_payload(tmp_path, monkeypatch):
 
 def test_sync_endpoint_double_post_is_idempotent(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", "secret")
+    monkeypatch.setattr(web_context, "DB_PATH", db)
+    monkeypatch.setattr(http_shared, "HC_SYNC_TOKEN", "secret")
     headers = {"X-Sync-Token": "secret"}
     first = _client().post(SYNC_URL, json=_SYNC_BODY, headers=headers)
     second = _client().post(SYNC_URL, json=_SYNC_BODY, headers=headers)
@@ -1718,8 +1719,8 @@ def test_sync_endpoint_double_post_is_idempotent(tmp_path, monkeypatch):
 
 def test_health_connect_csv_export_excludes_deleted(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", "secret")
+    monkeypatch.setattr(web_context, "DB_PATH", db)
+    monkeypatch.setattr(http_shared, "HC_SYNC_TOKEN", "secret")
     headers = {"X-Sync-Token": "secret"}
     body = dict(_SYNC_BODY)
     _client().post(SYNC_URL, json=body, headers=headers)
@@ -1740,7 +1741,7 @@ def test_health_connect_csv_export_excludes_deleted(tmp_path, monkeypatch):
 
 def test_editor_popup_renders_navegador_editores_cardio(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/editor/popup?fecha=2026-08-12")
     assert r.status_code == 200
     assert 'id="date-navigator"' in r.text
@@ -1758,7 +1759,7 @@ def test_cardio_day_fragment_refresca_por_fecha(tmp_path, monkeypatch):
     from datetime import UTC, datetime
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     conn = sqlite3.connect(db)
     ts = int(datetime(2026, 8, 12, 8, 0, tzinfo=UTC).timestamp() * 1000)
     conn.execute(
@@ -1785,7 +1786,7 @@ def test_cardio_annotation_oob_refresca_bloque(tmp_path, monkeypatch):
     from datetime import datetime
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     conn = sqlite3.connect(db)
     ts = int(
         datetime(2026, 8, 12, 8, 0, tzinfo=__import__("datetime").timezone.utc).timestamp() * 1000
@@ -1817,7 +1818,7 @@ def test_cardio_annotation_oob_refresca_bloque(tmp_path, monkeypatch):
 
 def test_nivel_cascada_grupo_musculo_ejercicio(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     # Fila de músculos (persistente)
     r = client.get("/nivel", params={"tipo": "musculo"})
@@ -1842,7 +1843,7 @@ def test_nivel_cascada_grupo_musculo_ejercicio(tmp_path, monkeypatch):
 
 def test_grafica_multi_traza_oob(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     from src.models import TrainingSetInput
     from src.training_service import save_session
 
@@ -1866,7 +1867,7 @@ def test_grafica_multi_traza_oob(tmp_path, monkeypatch):
 
 def test_nivel_foco_desconocido_no_rompe(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/nivel", params={"tipo": "grupo", "foco": "NoExiste"})
     assert r.status_code == 200
     assert 'id="cascade-row"' in r.text
@@ -1874,7 +1875,7 @@ def test_nivel_foco_desconocido_no_rompe(tmp_path, monkeypatch):
 
 def test_grafica_multimusculo_global_y_sin_fila_ejercicios(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     from src.models import TrainingSetInput
     from src.training_service import save_session
 
@@ -1903,7 +1904,7 @@ def _assert_grafica_ok(client, params):
 def test_grafica_granularidad_acepta_valores_validos(tmp_path, monkeypatch):
     """Contrato B1: /grafica acepta day|week|month y omite gran → day."""
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     from src.models import TrainingSetInput
     from src.training_service import save_session
 
@@ -1943,7 +1944,7 @@ def test_grafica_granularidad_day_y_week_axes_distintos(tmp_path, monkeypatch):
     """Regresión B2-R1: gran=day usa fechas reales y gran=week usa semanas;
     los ejes deben diferir. Falla si /grafica ignora gran y hardcodea week."""
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     from src.models import TrainingSetInput
     from src.training_service import save_session
 
@@ -1977,7 +1978,7 @@ def test_grafica_granularidad_day_no_dias_descanso_multisesion(tmp_path, monkeyp
     """Regresión B2-R1: gran=day agrega varias sesiones del mismo día en un solo
     punto y no incluye días de descanso intermedios."""
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     from src.models import TrainingSetInput
     from src.training_service import save_session
 
@@ -1996,7 +1997,7 @@ def test_grafica_granularidad_day_no_dias_descanso_multisesion(tmp_path, monkeyp
 def test_grafica_granularidad_invalida_error_seguro(tmp_path, monkeypatch):
     """Contrato B1: un valor inválido de gran devuelve 400 con aviso seguro."""
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     r = client.get("/grafica", params={"gran": "anual"})
     assert r.status_code == 400
@@ -2007,7 +2008,7 @@ def test_grafica_granularidad_invalida_error_seguro(tmp_path, monkeypatch):
 def test_nivel_acepta_granularidad_y_rechaza_invalida(tmp_path, monkeypatch):
     """Contrato B1: /nivel acepta el parámetro gran y rechaza inválidos."""
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     r = client.get("/nivel", params={"tipo": "musculo", "gran": "day"})
     assert r.status_code == 200
@@ -2046,7 +2047,7 @@ def test_index_renderiza_grafica_con_gran_de_url(tmp_path, monkeypatch):
     from src.training_service import save_session
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     save_session(db, _fecha(), [TrainingSetInput("Press", 80, 8, 1)])
     client = _client()
     for gran in ("day", "week", "month"):
@@ -2065,7 +2066,7 @@ def test_index_selector_y_grafica_sin_estados_contradictorios(tmp_path, monkeypa
     from src.training_service import save_session
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     save_session(db, _fecha(), [TrainingSetInput("Press", 80, 8, 1)])
     client = _client()
     for gran in ("day", "week", "month"):
@@ -2082,7 +2083,7 @@ def test_index_selector_y_grafica_sin_estados_contradictorios(tmp_path, monkeypa
 def test_index_gran_invalida_error_seguro(tmp_path, monkeypatch):
     """gran inválido en / devuelve 400 con aviso seguro (consistente con /grafica)."""
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/", params={"gran": "anual"})
     assert r.status_code == 400
     assert "Granularidad inválida" in r.text
@@ -2090,7 +2091,7 @@ def test_index_gran_invalida_error_seguro(tmp_path, monkeypatch):
 
 def test_cdn_scripts_are_deferred_and_no_eager_plotly(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     html = _client().get("/").text
     for src in ("htmx.org", "sortablejs"):
         import re as _re
@@ -2103,7 +2104,7 @@ def test_cdn_scripts_are_deferred_and_no_eager_plotly(tmp_path, monkeypatch):
 
 def test_index_has_favicon_link_and_file(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     html = client.get("/").text
     assert 'rel="icon"' in html
@@ -2117,7 +2118,7 @@ def test_index_has_favicon_link_and_file(tmp_path, monkeypatch):
 
 def test_status_regions_are_live_regions(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     home = client.get("/").text
     assert 'role="status" aria-live="polite" aria-atomic="true"' in home
@@ -2127,7 +2128,7 @@ def test_status_regions_are_live_regions(tmp_path, monkeypatch):
 
 def test_error_notices_are_alerts(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     from starlette.requests import Request
 
     from app import templates
@@ -2156,7 +2157,7 @@ def test_error_notices_are_alerts(tmp_path, monkeypatch):
 
 def test_data_tables_have_caption_and_scope(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     editor = _client().get("/fecha/editor?fecha=2026-08-14").text
     assert "<caption" in editor
     assert 'scope="col"' in editor
@@ -2189,7 +2190,7 @@ def test_save_oob_targets_existen_en_diario(tmp_path, monkeypatch):
             "vitamina_a": 0.0,
         },
     )
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
 
     diario = client.get("/diario?fecha=2026-08-14").text
@@ -2247,7 +2248,7 @@ def test_fragment_oob_rechaza_target_fuera_de_allow_list(tmp_path, monkeypatch):
 
 def test_session_inputs_have_accessible_names(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     editor = _client().get("/fecha/editor?fecha=2026-08-14").text
     for label in (
         "Peso, serie 1",
@@ -2261,7 +2262,7 @@ def test_session_inputs_have_accessible_names(tmp_path, monkeypatch):
 
 def test_rir_help_uses_aria_describedby(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     editor = _client().get("/fecha/editor?fecha=2026-08-14").text
     assert 'aria-describedby="rir-help-1"' in editor
     assert 'id="rir-help-1"' in editor
@@ -2271,7 +2272,7 @@ def test_nutrition_objetivo_consumido_above_data_rows_with_scope(tmp_path, monke
     """Objetivo/Consumido se renderizan ARRIBA de las filas (en el thead), con
     scope='row' en sus celdas de etiqueta y scope='col' en las cabeceras."""
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     frag = _client().get("/alimentacion/editor?fecha=2026-08-14").text
     objetivo = frag.index(">Objetivo<")
     consumido = frag.index(">Consumido<")
@@ -2286,7 +2287,7 @@ def test_nutrition_objetivo_consumido_above_data_rows_with_scope(tmp_path, monke
 
 def test_heading_outline_h1_to_h2(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     home = _client().get("/").text
     h1 = home.index("<h1")
     chart_h2 = home.index('<h2 class="unified-chart-title">')
@@ -2296,7 +2297,7 @@ def test_heading_outline_h1_to_h2(tmp_path, monkeypatch):
 
 def test_dashboard_routes_registration_to_diario(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     home = _client().get("/").text
     assert '<dialog id="confirm-modal"' in home
     assert 'href="/diario"' in home
@@ -2305,7 +2306,7 @@ def test_dashboard_routes_registration_to_diario(tmp_path, monkeypatch):
 
 def test_legacy_registration_query_redirects_to_diario(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     response = _client().get("/?registro=2026-09-02", follow_redirects=False)
     assert response.status_code == 303
     assert response.headers["location"] == "/diario?fecha=2026-09-02"
@@ -2313,7 +2314,7 @@ def test_legacy_registration_query_redirects_to_diario(tmp_path, monkeypatch):
 
 def test_legacy_registro_route_redirects_to_diario(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     response = _client().get(
         "/registro?fecha=2026-09-02&vista=alimentacion", follow_redirects=False
     )
@@ -2328,7 +2329,7 @@ def test_legacy_registro_route_redirects_to_diario(tmp_path, monkeypatch):
 
 def test_legacy_routes_removed_return_404(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     for path in ("/select", "/grupo/reset?grupo=Pectoral", "/ejercicio?ejercicio=Press"):
         assert client.get(path).status_code == 404, path
@@ -2342,7 +2343,7 @@ def test_legacy_routes_removed_return_404(tmp_path, monkeypatch):
 
 def test_nivel_and_grafica_still_live(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     assert client.get("/nivel?tipo=global").status_code == 200
     assert client.get("/nivel?tipo=musculo&foco=Pectoral").status_code == 200
@@ -2351,7 +2352,7 @@ def test_nivel_and_grafica_still_live(tmp_path, monkeypatch):
 
 def test_index_serves_initial_muscles_noscript_and_seo(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     home = _client().get("/").text
     # Catálogo de músculos renderizado server-side.
     assert 'id="dashboard-catalog"' in home
@@ -2372,7 +2373,7 @@ def test_index_serves_initial_muscles_noscript_and_seo(tmp_path, monkeypatch):
 
 def test_healthz_ok(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     resp = _client().get("/healthz")
     assert resp.status_code == 200
     body = resp.json()
@@ -2384,7 +2385,7 @@ def test_healthz_db_caida_devuelve_503(tmp_path, monkeypatch):
     import src.db_connection as dbc
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
 
     def broken(_):
         raise OSError("db caída")
@@ -2404,7 +2405,7 @@ def test_session_save_lote_excesivo_devuelve_400(tmp_path, monkeypatch):
     from src.security import get_csrf_secret, make_csrf_token
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     client.headers.update({"X-CSRF-Token": make_csrf_token(get_csrf_secret())})
     ejercicios = ["Press"] * 150
@@ -2425,7 +2426,7 @@ def test_alimentacion_save_lote_excesivo_devuelve_400(tmp_path, monkeypatch):
     from src.security import get_csrf_secret, make_csrf_token
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     client.headers.update({"X-CSRF-Token": make_csrf_token(get_csrf_secret())})
     resp = client.post(
@@ -2443,7 +2444,7 @@ def test_nombre_demasiado_largo_devuelve_400(tmp_path, monkeypatch):
     from src.security import get_csrf_secret, make_csrf_token
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     client.headers.update({"X-CSRF-Token": make_csrf_token(get_csrf_secret())})
     resp = client.post(
@@ -2458,7 +2459,7 @@ def test_reordenar_lote_excesivo_devuelve_400(tmp_path, monkeypatch):
     from src.security import get_csrf_secret, make_csrf_token
 
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     client.headers.update({"X-CSRF-Token": make_csrf_token(get_csrf_secret())})
     resp = client.post("/plantilla/reordenar", data={"id": [str(i) for i in range(600)]})
@@ -2472,7 +2473,7 @@ def test_reordenar_lote_excesivo_devuelve_400(tmp_path, monkeypatch):
 
 def test_dashboard_catalog_renders_groups(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     assert 'id="dashboard-catalog"' in r.text
     assert "Pectoral" in r.text
@@ -2485,7 +2486,7 @@ def test_dashboard_catalog_multiple_groups(tmp_path, monkeypatch):
     insert_exercise(db, "Press", "Pectoral", "EMPUJE")
     insert_exercise(db, "Curl", "Biceps", "TIRON")
     insert_exercise(db, "Sentadilla", "Cuadriceps", "PIERNA")
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     assert "Pectoral" in r.text
     assert "Biceps" in r.text
@@ -2494,7 +2495,7 @@ def test_dashboard_catalog_multiple_groups(tmp_path, monkeypatch):
 
 def test_dashboard_catalog_uses_accessible_group_header(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     assert "<header" in r.text
     assert 'data-action="toggle-group"' in r.text
@@ -2506,7 +2507,7 @@ def test_dashboard_catalog_uses_accessible_group_header(tmp_path, monkeypatch):
 def test_dashboard_catalog_empty_db(tmp_path, monkeypatch):
     db = str(tmp_path / "gym.db")
     init_db(db)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     assert 'id="dashboard-catalog"' in r.text
     assert "No hay ejercicios registrados" not in r.text
@@ -2514,7 +2515,7 @@ def test_dashboard_catalog_empty_db(tmp_path, monkeypatch):
 
 def test_dashboard_catalog_no_info_button(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     assert 'data-action="show-exercise-info"' not in r.text
     assert 'aria-label="Información"' not in r.text
@@ -2522,7 +2523,7 @@ def test_dashboard_catalog_no_info_button(tmp_path, monkeypatch):
 
 def test_dashboard_catalog_no_redundant_role_button(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     # <button> elements must NOT have role="button" (redundant)
     import re
@@ -2536,7 +2537,7 @@ def test_dashboard_catalog_accessible_names(tmp_path, monkeypatch):
     init_db(db)
     insert_exercise(db, "Press Banca", "Pectoral", "EMPUJE")
     insert_exercise(db, "Curl Bíceps", "Biceps", "TIRON")
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     assert "Press Banca" in r.text
     assert "Curl Bíceps" in r.text
@@ -2550,7 +2551,7 @@ def test_dashboard_catalog_groups_exercises_separated(tmp_path, monkeypatch):
     init_db(db)
     insert_exercise(db, "Press", "Pectoral", "EMPUJE")
     insert_exercise(db, "Curl", "Pectoral", "EMPUJE")
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     # Summary contains group name; body contains exercise rows
     assert 'data-foco="Pectoral"' in r.text
@@ -2602,7 +2603,7 @@ def _seed_summary_db(tmp_path):
 
 def test_grafica_incluye_panel_oob(tmp_path, monkeypatch):
     db = _seed_summary_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/grafica", params={"musculos": ["Pectoral"], "gran": "week"})
     assert r.status_code == 200
     assert 'id="period-summary-wrap"' in r.text
@@ -2611,7 +2612,7 @@ def test_grafica_incluye_panel_oob(tmp_path, monkeypatch):
 
 def test_grafica_ventana_default_y_validacion(tmp_path, monkeypatch):
     db = _seed_summary_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     c = _client()
     # La ventana técnica por defecto es 8, pero ya no se expone como control.
     r = c.get("/grafica")
@@ -2708,14 +2709,14 @@ def test_panel_estados_empty_y_error(tmp_path, monkeypatch):
 def test_nivel_ejercicio_deprecado_sigue_vivo(tmp_path, monkeypatch):
     """Ruta /nivel?tipo=ejercicio&foco= se mantiene durante la deprecación."""
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/nivel", params={"tipo": "ejercicio", "foco": "Press"})
     assert r.status_code == 200
 
 
 def test_read_index_renderiza_panel_server_side(tmp_path, monkeypatch):
     db = _seed_summary_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/")
     assert r.status_code == 200
     body = r.text
@@ -2737,7 +2738,7 @@ def test_read_index_renderiza_panel_server_side(tmp_path, monkeypatch):
 
 def test_diario_serves_standalone_workspace(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/diario")
     assert r.status_code == 200
     body = r.text
@@ -2765,7 +2766,7 @@ def test_diario_serves_standalone_workspace(tmp_path, monkeypatch):
 
 def test_registro_remains_compatibility_alias(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/registro")
     assert r.status_code == 200
     assert 'id="daily-page"' in r.text
@@ -2773,7 +2774,7 @@ def test_registro_remains_compatibility_alias(tmp_path, monkeypatch):
 
 def test_diario_header_has_no_semana(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/diario")
     assert r.status_code == 200
     assert "Semana" not in r.text
@@ -2781,7 +2782,7 @@ def test_diario_header_has_no_semana(tmp_path, monkeypatch):
 
 def test_diario_carousel_uses_compact_format(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/diario")
     assert r.status_code == 200
     body = r.text
@@ -2799,7 +2800,7 @@ def test_diario_carousel_uses_compact_format(tmp_path, monkeypatch):
 
 def test_diario_vista_entrenamiento_by_default(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/diario")
     assert 'data-vista="entrenamiento"' in r.text
     assert 'id="daily-training-view" class="daily-view" role="tabpanel"' in r.text
@@ -2810,7 +2811,7 @@ def test_diario_vista_entrenamiento_by_default(tmp_path, monkeypatch):
 
 def test_diario_vista_alimentacion_activates_food_view(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/diario", params={"vista": "alimentacion"})
     assert r.status_code == 200
     assert 'data-vista="alimentacion"' in r.text
@@ -2822,7 +2823,7 @@ def test_diario_vista_alimentacion_activates_food_view(tmp_path, monkeypatch):
 
 def test_diario_legend_explica_puntos_por_vista(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     body_ent = _client().get("/diario", params={"vista": "entrenamiento"}).text
     assert 'id="navigator-legend"' in body_ent
     assert "tienen entrenamiento guardado" in body_ent
@@ -2832,7 +2833,7 @@ def test_diario_legend_explica_puntos_por_vista(tmp_path, monkeypatch):
 
 def test_diario_vista_invalida_vuelve_a_entrenamiento(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/diario", params={"vista": "basura"})
     assert r.status_code == 200
     assert 'data-vista="entrenamiento"' in r.text
@@ -2843,7 +2844,7 @@ def test_diario_vista_invalida_vuelve_a_entrenamiento(tmp_path, monkeypatch):
 
 def test_diario_navigator_fragment(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/diario/navigator", params={"fecha": _fecha()})
     assert r.status_code == 200
     assert r.text.count("<!DOCTYPE html>") == 0
@@ -2854,7 +2855,7 @@ def test_diario_navigator_fragment(tmp_path, monkeypatch):
 def test_export_csv_restored(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     save_session(db, _fecha(), [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/exportar/csv")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/csv")
@@ -2885,7 +2886,7 @@ def test_export_nutrition_csv_restored(tmp_path, monkeypatch):
             }
         ],
     )
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/alimentacion/exportar/csv")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/csv")
@@ -2907,7 +2908,7 @@ def test_diario_muestra_entrenamiento_historico(tmp_path, monkeypatch):
             {"ejercicio": "Press", "kg": 85, "reps": 6, "rir": 2},
         ],
     )
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/diario?fecha=2026-07-14")
     assert r.status_code == 200
     assert 'id="daily-date-title"' in r.text
@@ -2919,7 +2920,7 @@ def test_diario_muestra_entrenamiento_historico(tmp_path, monkeypatch):
 
 def test_diario_sin_letreros_de_estado_vacio(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/diario?fecha=2026-07-14")
     assert r.status_code == 200
     assert "No hay entrenamiento guardado para este día." not in r.text
@@ -2951,7 +2952,7 @@ def test_diario_muestra_alimentacion_historica(tmp_path, monkeypatch):
             }
         ],
     )
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/diario?fecha=2026-07-14&vista=alimentacion")
     assert r.status_code == 200
     assert 'value="Avena"' in r.text
@@ -2961,7 +2962,7 @@ def test_diario_muestra_alimentacion_historica(tmp_path, monkeypatch):
 
 def test_diario_sin_toolbar_de_entrenamiento(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     client.post("/plantilla/guardar", data={"nombre": "Torso", "ejercicio": ["Press"]})
     client.post("/plantilla/guardar", data={"nombre": "Jalon", "ejercicio": ["Curl"]})
@@ -2979,7 +2980,7 @@ def test_diario_sin_toolbar_de_entrenamiento(tmp_path, monkeypatch):
 
 def test_diario_plantillas_vacias_muestran_estado(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     r = _client().get("/diario")
     assert "Plantillas" in r.text
     assert "Plantillas · 0" not in r.text
@@ -3011,7 +3012,7 @@ def test_navigator_diario_incluye_fechas_de_alimentacion(tmp_path, monkeypatch):
             }
         ],
     )
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     body = _client().get("/diario/navigator?fecha=2026-07-14").text
     # 2026-07-14 está fuera de la ventana ±15 días de hoy (2026-09-02)… usamos
     # una fecha cercana: seleccionamos hoy y la fecha con alimento se siembra
@@ -3046,7 +3047,7 @@ def test_navigator_diario_punto_en_dia_de_alimentacion(tmp_path, monkeypatch):
             }
         ],
     )
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     body = _client().get("/diario/navigator", params={"fecha": iso, "vista": "alimentacion"}).text
     # El día con alimentación lleva punto en vista alimentación; la fecha está seleccionada.
     assert f'data-iso="{iso}"' in body
@@ -3066,7 +3067,7 @@ def test_navigator_diario_filtra_por_vista_entrenamiento(tmp_path, monkeypatch):
     iso = today.strftime("%Y-%m-%d")
     db = _setup_db(tmp_path)
     save_session(db, iso, [{"ejercicio": "Press", "kg": 80, "reps": 8, "rir": 1}])
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     body_ent = (
         _client().get("/diario/navigator", params={"fecha": iso, "vista": "entrenamiento"}).text
     )
@@ -3107,7 +3108,7 @@ def test_diario_page_filtra_puntos_por_vista(tmp_path, monkeypatch):
             }
         ],
     )
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     body_ali = _client().get("/diario", params={"fecha": iso, "vista": "alimentacion"}).text
     assert body_ali.count("date-dot") >= 1
     body_ent = _client().get("/diario", params={"fecha": iso, "vista": "entrenamiento"}).text
@@ -3141,7 +3142,7 @@ def test_navigator_dashboard_ignora_alimentacion(tmp_path, monkeypatch):
             }
         ],
     )
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     # El navigator del Dashboard vive en el popup heredado (variant dashboard):
     # formato con semana y sin puntos de alimentación.
     body = _client().get(f"/editor/popup?fecha={iso}").text
@@ -3152,7 +3153,7 @@ def test_navigator_dashboard_ignora_alimentacion(tmp_path, monkeypatch):
 
 def test_navegacion_compartida_en_tres_paginas(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     client = _client()
     home = client.get("/").text
     diario = client.get("/diario").text
@@ -3192,7 +3193,7 @@ def _last_monday():
 
 def test_sugerencia_banner_rutina_descanso_nada(tmp_path, monkeypatch):
     db = _sugerencia_split_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     c = _client()
     mon = _last_monday()
     tue = (datetime.date.fromisoformat(mon) + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
@@ -3215,7 +3216,7 @@ def test_sugerencia_banner_rutina_descanso_nada(tmp_path, monkeypatch):
 
 def test_sugerencia_banner_boton_y_aplicar(tmp_path, monkeypatch):
     db = _sugerencia_split_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     c = _client()
     mon = _last_monday()
     tue = (datetime.date.fromisoformat(mon) + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
@@ -3239,7 +3240,7 @@ def test_sugerencia_banner_boton_y_aplicar(tmp_path, monkeypatch):
 def test_sugerencia_aplicar_no_hereda_descanso(tmp_path, monkeypatch):
     """Con descanso guardado, la sugerencia aplicada trae Desc vacío (cero)."""
     db = _sugerencia_split_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     c = _client()
     mon = _last_monday()
     tue = (datetime.date.fromisoformat(mon) + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
@@ -3258,7 +3259,7 @@ def test_sugerencia_aplicar_no_hereda_descanso(tmp_path, monkeypatch):
 def test_ejercicio_ultimo_web_posicional(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
     insert_exercise(db, "Remo", "Espalda", "TIRON")
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     c = _client()
     save_session(
         db,
