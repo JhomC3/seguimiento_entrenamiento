@@ -72,18 +72,29 @@ def test_metrics_section_in_catalog(page, server):
     section = page.locator("#metrics-catalog")
     expect(section).to_be_attached()
     expect(section).to_contain_text("Salud")
-    # Salud va PRIMERO en el panel (antes que los músculos): sin scroll para verla.
+    # Salud va ABAJO del Catálogo, en tarjeta propia con altura fija
+    # (al abrir un acordeón sale scroll interno, no crece la tarjeta).
     order = page.evaluate(
         """() => {
             const sec = document.getElementById('metrics-catalog');
             const firstGroup = document.querySelector('#dashboard-catalog .db-group');
             if (!firstGroup) return 'sin-grupos';
-            return sec.compareDocumentPosition(firstGroup) & Node.DOCUMENT_POSITION_FOLLOWING
-                ? 'salud-primero'
-                : 'musculos-primero';
+            return sec.compareDocumentPosition(firstGroup) & Node.DOCUMENT_POSITION_PRECEDING
+                ? 'salud-abajo'
+                : 'salud-arriba';
         }"""
     )
-    assert order in ("salud-primero", "sin-grupos"), order
+    assert order in ("salud-abajo", "sin-grupos"), order
+    fixed = page.evaluate(
+        """() => {
+            const list = document.getElementById('metrics-catalog-list');
+            if (!list) return 'sin-lista';
+            const st = getComputedStyle(list);
+            return st.overflowY + '/' + st.maxHeight;
+        }"""
+    )
+    assert fixed.startswith(("auto", "scroll")), fixed
+    assert "none" not in fixed, fixed
     chips = page.locator("#metrics-catalog [data-metric]")
     expect(chips.first).to_be_attached()
     expect(

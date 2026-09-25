@@ -32,14 +32,6 @@
     <div class="dashboard-layout">
         <!-- Panel izquierdo: catálogo de músculos y ejercicios (sticky en desktop) -->
         <aside id="dashboard-catalog" class="dashboard-catalog-col">
-            <section id="metrics-catalog" class="panel panel-default metrics-panel" aria-label="Catálogo de métricas de salud">
-                <header class="metrics-panel-header">
-                    <h2 class="panel-title">Salud</h2>
-                </header>
-                <div id="metrics-catalog-list" class="metrics-catalog-list">
-                    {% include "partials/metrics_catalog.html" %}
-                </div>
-            </section>
             <section class="panel panel-default catalog-panel">
                 <header class="catalog-panel-header">
                     <h2 class="panel-title">Catálogo</h2>
@@ -63,6 +55,14 @@
                 </header>
                 <div id="dashboard-catalog-list" class="dashboard-catalog-list">
                     {% include "partials/dashboard_catalog.html" %}
+                </div>
+            </section>
+            <section id="metrics-catalog" class="panel panel-default metrics-panel" aria-label="Catálogo de métricas de salud">
+                <header class="metrics-panel-header">
+                    <h2 class="panel-title">Salud</h2>
+                </header>
+                <div id="metrics-catalog-list" class="metrics-catalog-list">
+                    {% include "partials/metrics_catalog.html" %}
                 </div>
             </section>
             <div class="catalog-rail" hidden>

@@ -1,13 +1,13 @@
-/* health-panels.css — tarjeta Salud separada en la columna izquierda.
-   Solo tokens, sin hex ni micro-tipografía. Espejo del comportamiento de
-   .catalog-panel (flex vertical + lista con scroll interno). */
+/* health-panels.css — tarjeta Salud separada, abajo del Catálogo.
+   Solo tokens, sin hex ni micro-tipografía. Altura fija: al abrir un
+   acordeón no crece la tarjeta, aparece scroll interno. */
 
 .metrics-panel {
     flex: 0 0 auto;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    margin-bottom: 12px;
+    margin-top: 12px;
 }
 
 .metrics-panel-header {
@@ -18,10 +18,11 @@
     margin-bottom: 10px;
 }
 
-.metrics-catalog-col .metrics-catalog-list {
-    flex: 1 1 auto;
+.dashboard-catalog-col .metrics-catalog-list {
+    flex: 0 1 auto;
     min-height: 0;
     overflow-y: auto;
+    max-height: 240px;
 }
 
 .dashboard-page.is-catalog-collapsed .metrics-panel {
@@ -29,7 +30,7 @@
 }
 
 @media (max-width: 1023px) {
-    .metrics-catalog-col .metrics-catalog-list {
+    .dashboard-catalog-col .metrics-catalog-list {
         max-height: 240px;
     }
 }
