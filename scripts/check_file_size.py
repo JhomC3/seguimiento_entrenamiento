@@ -23,7 +23,6 @@ ALLOWLIST = {
     "tests/test_charts.py": 1235,
     "tests/test_training_api.py": 1185,
     "src/charts.py": 1154,
-    "src/database.py": 976,
     "src/summary_service.py": 916,
 }
 

@@ -48,6 +48,7 @@ extend-exclude = [".tmp/"]
 "src/migrations/v006_iso_dates.py" = ["DTZ005", "DTZ007", "DTZ011"]
 "src/parser.py" = ["DTZ005", "DTZ007", "DTZ011"]
 "src/database.py" = ["DTZ005", "DTZ007", "DTZ011"]
+"src/db_*.py" = ["DTZ005", "DTZ007", "DTZ011"]
 # Naive local dates: the dashboard calendar contract (fechas d/m/yy).
 "src/dashboard_service.py" = ["DTZ005", "DTZ007", "DTZ011"]
 "src/suggestion_service.py" = ["DTZ005", "DTZ007", "DTZ011"]

@@ -1076,6 +1076,7 @@ def test_save_parametros_preserva_rowid(tmp_path):
 def test_get_plantillas_una_sola_consulta(tmp_path, monkeypatch):
     """Sin N+1: 1 query de plantillas + 1 de sets (≤2 ejecuciones)."""
     import src.database as dbmod
+    import src.db_training as trainmod
 
     db_path = str(tmp_path / "db.sqlite")
     init_db(db_path)
@@ -1105,9 +1106,9 @@ def test_get_plantillas_una_sola_consulta(tmp_path, monkeypatch):
         def __exit__(self, *exc):
             return self._cm.__exit__(*exc)
 
-    original = dbmod.read_connection
+    original = trainmod.read_connection
     monkeypatch.setattr(
-        dbmod,
+        trainmod,
         "read_connection",
         lambda path: CountingCM(original(path)),
     )
@@ -1120,6 +1121,7 @@ def test_get_plantillas_una_sola_consulta(tmp_path, monkeypatch):
 def test_get_plantillas_alimentacion_una_sola_consulta(tmp_path, monkeypatch):
     """Sin N+1: 1 query de plantillas + 1 de alimentos (≤2 ejecuciones)."""
     import src.database as dbmod
+    import src.db_nutrition as nutrimod
 
     db_path = str(tmp_path / "db.sqlite")
     init_db(db_path)
@@ -1149,9 +1151,9 @@ def test_get_plantillas_alimentacion_una_sola_consulta(tmp_path, monkeypatch):
         def __exit__(self, *exc):
             return self._cm.__exit__(*exc)
 
-    original = dbmod.read_connection
+    original = nutrimod.read_connection
     monkeypatch.setattr(
-        dbmod,
+        nutrimod,
         "read_connection",
         lambda path: CountingCM(original(path)),
     )
