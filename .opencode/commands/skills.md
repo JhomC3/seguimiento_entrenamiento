@@ -5,6 +5,9 @@ description: Rescan the stack, report missing skills, install kit ones after app
 Re-escanea el stack del proyecto y sincroniza sus skills. $ARGUMENTS puede
 traer una pista ("tras añadir tailwind", "revisa").
 
+0. Compara `VERSION` del kit contra `sdd-lock.json` del proyecto e informa
+   "kit X disponible, instalado Y" antes de seguir.
+
 1. Detecta manifiestos: `pyproject.toml`, `package.json`, `requirements*.txt`,
    `build.gradle*`, `*.gradle.kts`, `go.mod`, `Cargo.toml`. Lista librerías/frameworks.
 2. Compara contra skills instaladas (`.opencode/skills/`, `.agents/skills/`,
