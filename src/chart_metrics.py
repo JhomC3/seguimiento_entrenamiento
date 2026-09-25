@@ -60,8 +60,9 @@ def chart_metrics_index(
     for i, key in enumerate(keys):
         label, unit = METRIC_DISPLAY.get(key, (SERIES[key][0], SERIES[key][1]))
         # Tono suavizado sobre la paleta canónica (sin tocar los tokens): misma
-        # línea sólida 2.5 que rendimiento, pero al 70% para no chillar.
-        color = _hex_to_rgba(EXERCISE_PALETTE[i % len(EXERCISE_PALETTE)], 0.7)
+        # línea sólida 2.5 que rendimiento, al 50% para no chillar. Sin huecos:
+        # los tramos se conectan con los datos que hay (connectgaps).
+        color = _hex_to_rgba(EXERCISE_PALETTE[i % len(EXERCISE_PALETTE)], 0.5)
         raw = work[key].tolist()
         norm = normalize_01_100(work[key], already_01_100=(key == "recovery"))
         customdata = [
@@ -81,6 +82,7 @@ def chart_metrics_index(
                 name=label,
                 visible=key in selection,
                 meta=key,
+                connectgaps=True,
                 line={"color": color, "width": 2.5, "dash": "solid"},
                 customdata=customdata,
             )

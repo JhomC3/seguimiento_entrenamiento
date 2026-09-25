@@ -258,6 +258,8 @@ def test_chart_metrics_index_trazas():
     assert by_meta["steps"].line.dash == "solid"
     assert by_meta["steps"].line.color != by_meta["rhr"].line.color  # paleta en orden
     assert by_meta["steps"].line.color.startswith("rgba(")  # tono suavizado
+    assert by_meta["steps"].line.color.endswith(", 0.5)")
+    assert by_meta["steps"].connectgaps is True  # sin vacíos: conecta lo que hay
     assert not chart_metrics_index(pd.DataFrame(), "day", ("steps",)).data
 
 
