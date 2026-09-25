@@ -21,9 +21,3 @@ Detalle: `docs/operations/local-development.md`. Reglas del agente: `AGENTS.md`.
 | Contratos UI / sync / API móvil / seguridad | `docs/architecture/` |
 | Operación (release, migraciones, sync) | `docs/operations/` |
 | Kit SDD portable | `../sdd-kit/` |
-
-## Estado
-
-- Cola activa: `specs/` con veredicto pendiente (`ls specs/`).
-- Calidad: `pytest` + `ruff` + `mypy` en verde, cobertura ≥90 %.
-- Última verificación de este README: 2026-09-25.
