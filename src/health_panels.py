@@ -11,17 +11,11 @@ la sección Salud del panel izquierdo. ``granularity`` reagrupa day/week/month
 import pandas as pd
 
 from src.analysis_data import (
-    daily_avg_cadence,
-    daily_avg_cycling_cadence,
     daily_avg_hr,
-    daily_avg_power,
-    daily_avg_speed,
     daily_body_temp,
     daily_calories_burned,
     daily_cardio_minutes,
     daily_distance,
-    daily_elevation,
-    daily_floors,
     daily_hrv,
     daily_hydration_ml,
     daily_kcal,
@@ -47,8 +41,6 @@ SERIES = {
     "steps": ("Pasos", "pasos", daily_steps, "sum"),
     "cardio": ("Cardio", "min", daily_cardio_minutes, "sum"),
     "distance": ("Distancia", "m", daily_distance, "sum"),
-    "elevation": ("Desnivel", "m", daily_elevation, "sum"),
-    "floors": ("Pisos", "pisos", daily_floors, "sum"),
     "calories": ("Calorías", "kcal", daily_calories_burned, "sum"),
     "hydration": ("Hidratación", "ml", daily_hydration_ml, "sum"),
     "resp": ("Respiración", "rpm", daily_respiratory_rate, "mean"),
@@ -56,10 +48,6 @@ SERIES = {
     "temp": ("Temperatura", "°C", daily_body_temp, "mean"),
     "weight": ("Peso", "kg", daily_weight_unified, "mean"),
     "vo2max": ("VO₂ máx", "ml/kg/min", daily_vo2max, "mean"),
-    "speed": ("Velocidad", "m/s", daily_avg_speed, "mean"),
-    "power": ("Potencia", "W", daily_avg_power, "mean"),
-    "cadence": ("Cadencia", "ppm", daily_avg_cadence, "mean"),
-    "cycling": ("Cadencia bici", "ppm", daily_avg_cycling_cadence, "mean"),
     "avg_hr": ("FC media", "lpm", daily_avg_hr, "mean"),
     "kcal": ("Ingesta", "kcal", daily_kcal, "mean"),
 }
@@ -82,9 +70,8 @@ METRIC_DISPLAY = {
 
 METRIC_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Recuperación", ("recovery", "hrv", "rhr", "sleep")),
-    ("Actividad", ("steps", "cardio", "distance", "elevation", "floors", "calories")),
+    ("Actividad", ("steps", "cardio", "distance", "calories")),
     ("Vitales", ("resp", "spo2", "temp", "weight", "vo2max", "avg_hr", "hydration")),
-    ("Rendimiento", ("speed", "power", "cadence", "cycling")),
     ("Nutrición", ("kcal",)),
 )
 

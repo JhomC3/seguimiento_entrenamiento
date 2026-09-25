@@ -172,7 +172,6 @@ def test_build_metrics_catalog_disabled(db):
         "Recuperación",
         "Actividad",
         "Vitales",
-        "Rendimiento",
         "Nutrición",
     ]
 

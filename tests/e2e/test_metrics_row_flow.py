@@ -64,7 +64,7 @@ def test_metrics_section_in_catalog(page, server):
         page.locator('#metrics-catalog [data-metric][aria-pressed="true"]').first
     ).to_be_attached()
     # Series sin datos: deshabilitadas con aria-disabled, visibles en lista.
-    expect(page.locator('#metrics-catalog [data-metric="power"]').first).to_have_attribute(
+    expect(page.locator('#metrics-catalog [data-metric="vo2max"]').first).to_have_attribute(
         "aria-disabled", "true"
     )
 

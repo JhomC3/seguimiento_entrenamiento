@@ -257,38 +257,6 @@ def daily_vo2max(db_path: str) -> pd.DataFrame:
     )
 
 
-def daily_elevation(db_path: str) -> pd.DataFrame:
-    """Desnivel positivo acumulado por día (m)."""
-    return _daily_by_origin(
-        db_path,
-        f"""
-        SELECT {_local_date("start_epoch_ms")},
-               data_origin_package AS origen,
-               SUM(json_extract(value_json, '$.value.meters')) AS valor,
-               COUNT(*) AS n
-        FROM health_records
-        WHERE record_type = 'ELEVATION_GAINED' AND deleted_at IS NULL
-        GROUP BY fecha, origen
-        """,
-    )
-
-
-def daily_floors(db_path: str) -> pd.DataFrame:
-    """Pisos subidos por día."""
-    return _daily_by_origin(
-        db_path,
-        f"""
-        SELECT {_local_date("start_epoch_ms")},
-               data_origin_package AS origen,
-               SUM(json_extract(value_json, '$.value.count')) AS valor,
-               COUNT(*) AS n
-        FROM health_records
-        WHERE record_type = 'FLOORS_CLIMBED' AND deleted_at IS NULL
-        GROUP BY fecha, origen
-        """,
-    )
-
-
 def daily_hydration_ml(db_path: str) -> pd.DataFrame:
     """Hidratación registrada por día (ml)."""
     return _daily_by_origin(
@@ -303,43 +271,6 @@ def daily_hydration_ml(db_path: str) -> pd.DataFrame:
         GROUP BY fecha, origen
         """,
     )
-
-
-def _daily_series_avg(db_path: str, record_type: str, sample_key: str) -> pd.DataFrame:
-    """Promedio diario sobre los samples de un tipo SERIES (mismo patrón que
-    daily_avg_hr): SPEED (meters_per_second), POWER (watts), cadencias (rpm)."""
-    return _daily_by_origin(
-        db_path,
-        f"""
-        SELECT {_local_date("h.start_epoch_ms")},
-               h.data_origin_package AS origen,
-               AVG(json_extract(s.value, '$.{sample_key}')) AS valor,
-               COUNT(*) AS n
-        FROM health_records h, json_each(h.value_json, '$.value.samples') s
-        WHERE h.record_type = '{record_type}' AND h.deleted_at IS NULL
-        GROUP BY fecha, origen
-        """,
-    )
-
-
-def daily_avg_speed(db_path: str) -> pd.DataFrame:
-    """Velocidad media diaria (m/s) desde series SPEED."""
-    return _daily_series_avg(db_path, "SPEED", "meters_per_second")
-
-
-def daily_avg_power(db_path: str) -> pd.DataFrame:
-    """Potencia media diaria (W) desde series POWER."""
-    return _daily_series_avg(db_path, "POWER", "watts")
-
-
-def daily_avg_cadence(db_path: str) -> pd.DataFrame:
-    """Cadencia media diaria de pasos (rpm) desde STEPS_CADENCE."""
-    return _daily_series_avg(db_path, "STEPS_CADENCE", "rpm")
-
-
-def daily_avg_cycling_cadence(db_path: str) -> pd.DataFrame:
-    """Cadencia media diaria de pedaleo (rpm) desde CYCLING_PEDALING_CADENCE."""
-    return _daily_series_avg(db_path, "CYCLING_PEDALING_CADENCE", "rpm")
 
 
 def daily_weight_manual(db_path: str) -> pd.DataFrame:
