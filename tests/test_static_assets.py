@@ -25,10 +25,11 @@ def client(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
     import app as appmod
+    from src import web_context
 
     db_path = str(tmp_path / "gym.db")
     init_db(db_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db_path)
+    monkeypatch.setattr(web_context, "DB_PATH", db_path)
     return TestClient(appmod.app)
 
 

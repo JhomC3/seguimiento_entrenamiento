@@ -11,6 +11,7 @@ import sqlite3
 from fastapi.testclient import TestClient
 
 import app as appmod
+from src import health_sync_service, http_shared, web_context
 from src.database import init_db, insert_exercise
 
 SYNC_TOKEN = "secret-training-api"
@@ -31,8 +32,8 @@ def _setup_db(tmp_path):
 
 def _auth(monkeypatch, tmp_path, token=SYNC_TOKEN):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", token)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
+    monkeypatch.setattr(http_shared, "HC_SYNC_TOKEN", token)
     return db
 
 
@@ -56,8 +57,8 @@ def _sets():
 
 def test_api_503_cuando_no_hay_token(tmp_path, monkeypatch):
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", "")
+    monkeypatch.setattr(web_context, "DB_PATH", db)
+    monkeypatch.setattr(http_shared, "HC_SYNC_TOKEN", "")
     c = _client()
     assert c.get("/api/v1/sesion?fecha=2026-09-07", headers=_h("x")).status_code == 503
     assert c.get("/api/v1/ejercicios", headers=_h("x")).status_code == 503
@@ -973,11 +974,11 @@ def test_api_defensive_cuerpo_invalido_y_lote(tmp_path, monkeypatch):
         "/api/v1/undo",
     ]
     # 413 con cuerpo mínimo (límite temporal).
-    monkeypatch.setattr(appmod, "MAX_BODY_BYTES", 5)
+    monkeypatch.setattr(health_sync_service, "MAX_BODY_BYTES", 5)
     for path in posts:
         r = c.post(path, json={"fecha": _fecha()}, headers=_h())
         assert r.status_code == 413, path
-    monkeypatch.setattr(appmod, "MAX_BODY_BYTES", 1024 * 1024)
+    monkeypatch.setattr(health_sync_service, "MAX_BODY_BYTES", 1024 * 1024)
     # JSON roto y no-dict.
     for path in posts:
         r = c.post(path, content=b"{no json", headers={**_h(), "Content-Type": "application/json"})

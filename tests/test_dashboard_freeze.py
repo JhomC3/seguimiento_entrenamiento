@@ -8,6 +8,7 @@ debe revertirse o consultarse antes de seguir.
 from fastapi.testclient import TestClient
 
 import app as appmod
+from src import web_context
 from src.database import init_db, insert_exercise
 from src.security import get_csrf_secret, make_csrf_token
 
@@ -25,7 +26,7 @@ def _setup_db(tmp_path) -> str:
 
 def test_freeze_dashboard_header(tmp_path, monkeypatch) -> None:
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     body = _client().get("/").text
     assert '<header class="dashboard-header">' in body
     assert (
@@ -37,7 +38,7 @@ def test_freeze_dashboard_header(tmp_path, monkeypatch) -> None:
 
 def test_freeze_dashboard_layout_tres_columnas(tmp_path, monkeypatch) -> None:
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     body = _client().get("/").text
     assert 'class="dashboard-layout"' in body
     assert 'id="dashboard-catalog"' in body
@@ -51,7 +52,7 @@ def test_freeze_dashboard_layout_tres_columnas(tmp_path, monkeypatch) -> None:
 
 def test_freeze_dashboard_catalogo_db(tmp_path, monkeypatch) -> None:
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     body = _client().get("/").text
     assert 'id="dashboard-catalog-list"' in body
     assert "db-group" in body
@@ -63,7 +64,7 @@ def test_freeze_popup_variante_dashboard(tmp_path, monkeypatch) -> None:
     """El popup del Dashboard comparte fragmentos con el Diario: su variante
     no puede cambiar (formato con semana, dots solo de entreno)."""
     db = _setup_db(tmp_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
     body = _client().get("/editor/popup?fecha=2099-01-01").text
     assert 'id="date-navigator"' in body
     assert "Semana" in body

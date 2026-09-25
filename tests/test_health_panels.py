@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app as appmod
+from src import web_context
 from src.charts import chart_metrics_index
 from src.dashboard_service import chart_shell_html
 from src.database import init_db
@@ -207,7 +208,7 @@ def test_shell_metricas_slot():
 def test_index_metricas_seleccion(tmp_path, monkeypatch):
     db_path = str(tmp_path / "gym.db")
     init_db(db_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db_path)
+    monkeypatch.setattr(web_context, "DB_PATH", db_path)
     client = TestClient(appmod.app, headers={"X-CSRF-Token": make_csrf_token(get_csrf_secret())})
     body = client.get("/").text
     # Una sola gráfica (slot nutricional) + sección Salud en el panel izquierdo.
@@ -226,7 +227,7 @@ def test_index_metricas_seleccion(tmp_path, monkeypatch):
 def test_grafica_emite_metricas(tmp_path, monkeypatch):
     db_path = str(tmp_path / "gym.db")
     init_db(db_path)
-    monkeypatch.setattr(appmod, "DB_PATH", db_path)
+    monkeypatch.setattr(web_context, "DB_PATH", db_path)
     client = TestClient(appmod.app, headers={"X-CSRF-Token": make_csrf_token(get_csrf_secret())})
     body = client.get("/grafica", params={"gran": "day"}).text
     assert 'id="nutrition-trend-data"' in body

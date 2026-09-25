@@ -39,6 +39,11 @@ extend-exclude = [".tmp/"]
 # best-effort backup/delete that must never block the editor (S110);
 # naive local dates are the dashboard's calendar contract (DTZ*).
 "app.py" = ["B008", "BLE001", "S110", "DTZ005", "DTZ007", "DTZ011"]
+# Rutas y fragmentos (spec 009): mismo idioma FastAPI que app.py
+# (defaults Form/Query, safe-fallbacks con BLE001, fechas ingenuas).
+"src/routes/*.py" = ["B008", "BLE001", "DTZ011"]
+"src/ui_fragments.py" = ["B008", "BLE001", "DTZ011"]
+"src/http_shared.py" = ["B008", "BLE001", "DTZ011"]
 # Tests generate today-relative dates without tz on purpose.
 "tests/*" = ["DTZ005", "DTZ007", "DTZ011"]
 "tests/e2e/*" = ["DTZ005", "DTZ007", "DTZ011"]

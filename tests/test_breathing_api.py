@@ -12,6 +12,7 @@ import uuid
 from fastapi.testclient import TestClient
 
 import app as appmod
+from src import http_shared, web_context
 from src.database import init_db
 
 SYNC_TOKEN = "secret-breathing-api"
@@ -28,8 +29,8 @@ def _ms(y: int, m: int, d: int, hh: int = 7, mm: int = 0) -> int:
 def _auth(monkeypatch, tmp_path, token=SYNC_TOKEN):
     db = str(tmp_path / "breathing_api.db")
     init_db(db)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", token)
+    monkeypatch.setattr(web_context, "DB_PATH", db)
+    monkeypatch.setattr(http_shared, "HC_SYNC_TOKEN", token)
     return db
 
 
@@ -83,8 +84,8 @@ def test_migracion_v021_idempotente(tmp_path, monkeypatch):
 def test_breathing_503_sin_token(tmp_path, monkeypatch):
     db = str(tmp_path / "b.db")
     init_db(db)
-    monkeypatch.setattr(appmod, "DB_PATH", db)
-    monkeypatch.setattr(appmod, "HC_SYNC_TOKEN", "")
+    monkeypatch.setattr(web_context, "DB_PATH", db)
+    monkeypatch.setattr(http_shared, "HC_SYNC_TOKEN", "")
     c = _client()
     assert c.post("/api/v1/respiracion/sesion", json={}, headers=_h("x")).status_code == 503
     assert (
