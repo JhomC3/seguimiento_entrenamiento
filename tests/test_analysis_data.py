@@ -7,17 +7,11 @@ from datetime import datetime
 import pytest
 
 from src.analysis_data import (
-    daily_avg_cadence,
-    daily_avg_cycling_cadence,
     daily_avg_hr,
-    daily_avg_power,
-    daily_avg_speed,
     daily_body_temp,
     daily_calories_burned,
     daily_cardio_minutes,
     daily_distance,
-    daily_elevation,
-    daily_floors,
     daily_hrv,
     daily_hydration_ml,
     daily_kcal,
@@ -29,6 +23,7 @@ from src.analysis_data import (
     daily_vo2max,
     daily_volume,
     daily_weight,
+    daily_weight_unified,
 )
 
 TZ = "2026-08-10 12:00:00"
@@ -65,6 +60,12 @@ def db(tmp_path):
             fecha TEXT, set_orden INTEGER NOT NULL, ejercicio TEXT NOT NULL,
             reps REAL, kg REAL, rir REAL, descanso_seg REAL,
             origen TEXT NOT NULL DEFAULT 'google'
+        );
+        CREATE TABLE parametros_diarios (
+            fecha TEXT PRIMARY KEY, peso_kg REAL NOT NULL DEFAULT 70,
+            factor_proteina REAL NOT NULL DEFAULT 1.5,
+            factor_grasa REAL NOT NULL DEFAULT 1.1,
+            kcal_objetivo REAL NOT NULL DEFAULT 2300
         );
         """
     )
@@ -215,6 +216,30 @@ def test_weight_promedio_diario(db):
     assert df.iloc[0]["valor"] == pytest.approx(83.0)
 
 
+def test_weight_unified_manual_manda(db):
+    conn = sqlite3.connect(db)
+    _insert_hr(conn, "WEIGHT", '{"kg": 80.0}', _ts("2026-08-10 07:00"))
+    conn.execute("INSERT INTO parametros_diarios (fecha, peso_kg) VALUES ('2026-08-10', 75.0)")
+    conn.commit()
+    conn.close()
+    df = daily_weight_unified(db)
+    assert df.iloc[0]["valor"] == pytest.approx(75.0)
+
+
+def test_weight_unified_hc_respaldo_y_vacio(db):
+    conn = sqlite3.connect(db)
+    _insert_hr(conn, "WEIGHT", '{"kg": 80.0}', _ts("2026-08-10 07:00"))
+    conn.commit()
+    conn.close()
+    df = daily_weight_unified(db)
+    assert df.iloc[0]["valor"] == pytest.approx(80.0)
+    conn = sqlite3.connect(db)
+    conn.execute("DELETE FROM health_records")
+    conn.commit()
+    conn.close()
+    assert daily_weight_unified(db).empty
+
+
 def test_deleted_records_excluidas(db):
     conn = sqlite3.connect(db)
     _insert_hr(conn, "STEPS", '{"count": 5000}', _ts("2026-08-10 09:00"))
@@ -298,36 +323,9 @@ def test_capas_nuevas_valores(db):
     _insert_hr(conn, "BODY_TEMPERATURE", '{"temperature_c": 36.6}', _ts("2026-08-10 07:00"))
     _insert_hr(conn, "BASAL_BODY_TEMPERATURE", '{"temperature_c": 99.9}', _ts("2026-08-10 07:00"))
     _insert_hr(conn, "VO2_MAX", '{"vo2_max_ml_kg_min": 42.0}', _ts("2026-08-10 07:00"))
-    _insert_hr(conn, "ELEVATION_GAINED", '{"meters": 120}', _ts("2026-08-10 07:00"))
-    _insert_hr(conn, "ELEVATION_GAINED", '{"meters": 30}', _ts("2026-08-10 08:00"))
-    _insert_hr(conn, "FLOORS_CLIMBED", '{"count": 5}', _ts("2026-08-10 07:00"))
     _insert_hr(conn, "HYDRATION", '{"volume_ml": 500}', _ts("2026-08-10 07:00"))
     _insert_hr(conn, "DISTANCE_H1", '{"meters": 1000}', _ts("2026-08-10 07:00"))
     _insert_hr(conn, "TOTAL_CALORIES_H1", '{"energy_kcal": 90}', _ts("2026-08-10 07:00"))
-    _insert_hr(
-        conn,
-        "SPEED",
-        '{"samples": [{"time": 1, "meters_per_second": 2.0}, {"time": 2, "meters_per_second": 4.0}]}',
-        _ts("2026-08-10 07:00"),
-    )
-    _insert_hr(
-        conn,
-        "POWER",
-        '{"samples": [{"time": 1, "watts": 100}, {"time": 2, "watts": 200}]}',
-        _ts("2026-08-10 07:00"),
-    )
-    _insert_hr(
-        conn,
-        "STEPS_CADENCE",
-        '{"samples": [{"time": 1, "rpm": 80}, {"time": 2, "rpm": 90}]}',
-        _ts("2026-08-10 07:00"),
-    )
-    _insert_hr(
-        conn,
-        "CYCLING_PEDALING_CADENCE",
-        '{"samples": [{"time": 1, "rpm": 70}]}',
-        _ts("2026-08-10 07:00"),
-    )
     conn.commit()
     conn.close()
     assert daily_respiratory_rate(db).iloc[0]["valor"] == pytest.approx(14.0)
@@ -335,15 +333,9 @@ def test_capas_nuevas_valores(db):
     # La basal no contamina la corporal.
     assert daily_body_temp(db).iloc[0]["valor"] == pytest.approx(36.6)
     assert daily_vo2max(db).iloc[0]["valor"] == pytest.approx(42.0)
-    assert daily_elevation(db).iloc[0]["valor"] == pytest.approx(150.0)
-    assert daily_floors(db).iloc[0]["valor"] == 5
     assert daily_hydration_ml(db).iloc[0]["valor"] == 500
     assert daily_distance(db).iloc[0]["valor"] == pytest.approx(1000.0)
     assert daily_calories_burned(db).iloc[0]["valor"] == pytest.approx(90.0)
-    assert daily_avg_speed(db).iloc[0]["valor"] == pytest.approx(3.0)
-    assert daily_avg_power(db).iloc[0]["valor"] == pytest.approx(150.0)
-    assert daily_avg_cadence(db).iloc[0]["valor"] == pytest.approx(85.0)
-    assert daily_avg_cycling_cadence(db).iloc[0]["valor"] == pytest.approx(70.0)
 
 
 def test_distancia_crudo_vs_h1_corte_por_origen(db):

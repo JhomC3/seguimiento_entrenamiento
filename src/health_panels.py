@@ -11,17 +11,11 @@ la sección Salud del panel izquierdo. ``granularity`` reagrupa day/week/month
 import pandas as pd
 
 from src.analysis_data import (
-    daily_avg_cadence,
-    daily_avg_cycling_cadence,
     daily_avg_hr,
-    daily_avg_power,
-    daily_avg_speed,
     daily_body_temp,
     daily_calories_burned,
     daily_cardio_minutes,
     daily_distance,
-    daily_elevation,
-    daily_floors,
     daily_hrv,
     daily_hydration_ml,
     daily_kcal,
@@ -47,8 +41,6 @@ SERIES = {
     "steps": ("Pasos", "pasos", daily_steps, "sum"),
     "cardio": ("Cardio", "min", daily_cardio_minutes, "sum"),
     "distance": ("Distancia", "m", daily_distance, "sum"),
-    "elevation": ("Desnivel", "m", daily_elevation, "sum"),
-    "floors": ("Pisos", "pisos", daily_floors, "sum"),
     "calories": ("Calorías", "kcal", daily_calories_burned, "sum"),
     "hydration": ("Hidratación", "ml", daily_hydration_ml, "sum"),
     "resp": ("Respiración", "rpm", daily_respiratory_rate, "mean"),
@@ -56,10 +48,6 @@ SERIES = {
     "temp": ("Temperatura", "°C", daily_body_temp, "mean"),
     "weight": ("Peso", "kg", daily_weight_unified, "mean"),
     "vo2max": ("VO₂ máx", "ml/kg/min", daily_vo2max, "mean"),
-    "speed": ("Velocidad", "m/s", daily_avg_speed, "mean"),
-    "power": ("Potencia", "W", daily_avg_power, "mean"),
-    "cadence": ("Cadencia", "ppm", daily_avg_cadence, "mean"),
-    "cycling": ("Cadencia bici", "ppm", daily_avg_cycling_cadence, "mean"),
     "avg_hr": ("FC media", "lpm", daily_avg_hr, "mean"),
     "kcal": ("Ingesta", "kcal", daily_kcal, "mean"),
 }
@@ -77,25 +65,19 @@ def _validate_granularity(granularity: str) -> str:
 # SERIES; aquí solo los que necesitan desambiguación (quema vs ingesta).
 METRIC_DISPLAY = {
     "calories": ("Quema", "kcal"),
-    "kcal": ("Ingesta", "kcal"),
+    "kcal": ("Calorías consumidas", "kcal"),
 }
 
 METRIC_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Recuperación", ("recovery", "hrv", "rhr", "sleep")),
-    ("Actividad", ("steps", "cardio", "distance", "elevation", "floors", "calories")),
+    ("Actividad", ("steps", "cardio", "distance", "calories")),
     ("Vitales", ("resp", "spo2", "temp", "weight", "vo2max", "avg_hr", "hydration")),
-    ("Rendimiento", ("speed", "power", "cadence", "cycling")),
     ("Nutrición", ("kcal",)),
 )
 
 METRIC_ORDER: tuple[str, ...] = tuple(k for _, ks in METRIC_GROUPS for k in ks)
 
 DEFAULT_METRICS: tuple[str, ...] = (
-    "recovery",
-    "hrv",
-    "rhr",
-    "sleep",
-    "steps",
     "weight",
     "kcal",
 )
@@ -132,12 +114,18 @@ def normalize_01_100(values: pd.Series, already_01_100: bool = False) -> pd.Seri
     return ((v - lo) / (hi - lo) * 100.0).clip(lower=0.0, upper=100.0)
 
 
-def build_metrics_index(db_path: str, granularity: str = "day") -> pd.DataFrame:
-    """Ancho con valores CRUDOS por métrica (col. x ``fecha``|``periodo`` + una
-    columna por clave con datos). La normalización vive en la gráfica, no aquí.
+KCAL_MIN_PERIODS = 1
+PESO_MIN_PERIODS = 2
 
-    Reagrupación week/month: media uniforme de los valores diarios en TODAS
-    las series (el índice compara nivel típico diario). Días sin registro → NaN.
+
+def build_metrics_index(db_path: str, granularity: str = "day") -> pd.DataFrame:
+    """Ancho por métrica (col. x ``fecha``|``periodo`` + una columna por clave
+    con datos). La normalización vive en la gráfica, no aquí.
+
+    kcal y peso viajan como MEDIA MÓVIL de 7 días naturales (lógica de la
+    tendencia nutricional: kcal desde 1 dato, peso desde 2; la ventana ignora
+    NaN, así que un hueco arrastra la media disponible — nunca 0). Reagrupación week/month: media uniforme (el índice
+    compara nivel típico diario).
     """
     _validate_granularity(granularity)
     frames = []
@@ -151,11 +139,20 @@ def build_metrics_index(db_path: str, granularity: str = "day") -> pd.DataFrame:
     daily = pd.concat(frames, axis=1)
     daily["fecha_dt"] = pd.to_datetime(daily.index, format="%Y-%m-%d", errors="coerce")
     daily = daily.dropna(subset=["fecha_dt"]).sort_index()
-    daily = daily.reset_index().rename(columns={"index": "fecha"})
-    if "fecha" not in daily.columns:
-        daily = daily.rename(columns={daily.columns[0]: "fecha"})
+    if daily.empty:
+        return pd.DataFrame()
+    daily.index = pd.to_datetime(daily.index)
+    full_idx = pd.date_range(start=daily.index.min(), end=daily.index.max(), freq="D")
+    daily = daily.reindex(full_idx)
+    daily["fecha_dt"] = daily.index
+    if "kcal" in daily.columns:
+        daily["kcal"] = daily["kcal"].rolling(7, min_periods=KCAL_MIN_PERIODS).mean()
+    if "weight" in daily.columns:
+        daily["weight"] = daily["weight"].rolling(7, min_periods=PESO_MIN_PERIODS).mean()
+    daily = daily.reset_index(drop=True)
+    daily["fecha"] = daily["fecha_dt"].dt.strftime("%Y-%m-%d")
     if granularity == "day":
-        return daily
+        return daily[["fecha"] + [k for k in METRIC_ORDER if k in daily.columns] + ["fecha_dt"]]
     work = daily.copy()
     if granularity == "week":
         work["periodo"] = (

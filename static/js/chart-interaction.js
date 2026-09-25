@@ -804,7 +804,7 @@ export function renderNutritionTrend() {
     const dataEl = document.getElementById('nutrition-trend-data');
     if (!dataEl) return;
     // Mismo tooltip cristal que la principal; highlight desactivado: el clic
-    // no cambia (la nutricional es solo visualización).
+    // no cambia (la de métricas es solo visualización).
     renderPlotFromIds('nutrition-trend-data', 'nutrition-trend-plot', 'nutrition-trend-empty', {
         tooltip: true,
         highlight: false,

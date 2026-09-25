@@ -5,7 +5,13 @@ import plotly.graph_objects as go
 
 from src.chart_axis import _day_tick_subset, _initial_x_range, _range_for_axis
 from src.chart_data import get_exercise_raw_data
-from src.chart_format import EXERCISE_PALETTE, _month_tick_label, chart_color, tooltip_period_label
+from src.chart_format import (
+    EXERCISE_PALETTE,
+    _hex_to_rgba,
+    _month_tick_label,
+    chart_color,
+    tooltip_period_label,
+)
 
 
 def _tight_range(values: list[float], rel_pad: float, abs_min_pad: float) -> list | None:
@@ -53,7 +59,10 @@ def chart_metrics_index(
     fig = go.Figure()
     for i, key in enumerate(keys):
         label, unit = METRIC_DISPLAY.get(key, (SERIES[key][0], SERIES[key][1]))
-        color = EXERCISE_PALETTE[i % len(EXERCISE_PALETTE)]
+        # Tono suavizado sobre la paleta canónica (sin tocar los tokens): misma
+        # línea sólida 2.5 que rendimiento, al 50% para no chillar. Sin huecos:
+        # los tramos se conectan con los datos que hay (connectgaps).
+        color = _hex_to_rgba(EXERCISE_PALETTE[i % len(EXERCISE_PALETTE)], 0.5)
         raw = work[key].tolist()
         norm = normalize_01_100(work[key], already_01_100=(key == "recovery"))
         customdata = [
@@ -67,12 +76,14 @@ def chart_metrics_index(
             go.Scatter(
                 x=x_values,
                 y=[None if v is None or pd.isna(v) else float(v) for v in norm.tolist()],
-                mode="lines+markers",
+                # Espejo de la gráfica de rendimiento (_pfr_trace): líneas
+                # puras, sólidas 2.5, paleta en orden (sin marcadores).
+                mode="lines",
                 name=label,
                 visible=key in selection,
                 meta=key,
-                line={"color": color, "width": 2},
-                marker={"color": color, "size": 4},
+                connectgaps=True,
+                line={"color": color, "width": 2.5, "dash": "solid"},
                 customdata=customdata,
             )
         )
