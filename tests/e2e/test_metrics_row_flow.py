@@ -147,6 +147,43 @@ def test_metrics_toggle_visibility_roundtrip(page, server, server_db_path):
     )
 
 
+def test_sin_ping_pong_tras_gesto(page, server, server_db_path):
+    """Un solo gesto no genera actividad sostenida: el rango medido dos veces
+    con 2 s de diferencia es idéntico (con el anclaje ping-pong fallaba)."""
+    _require_plotly(page)
+    _seed_health(server_db_path)
+    conn = sqlite3.connect(str(server_db_path))
+    conn.execute(
+        "INSERT OR IGNORE INTO ejercicios (grupo_muscular, ejercicio) VALUES ('Pectoral', 'Press')"
+    )
+    conn.execute(
+        "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) "
+        "VALUES (1, 'LUNES', '2026-06-10', 1, 'Press', 8, 80, 2),"
+        "       (5, 'LUNES', '2026-07-10', 1, 'Press', 8, 90, 2),"
+        "       (10, 'LUNES', '2026-08-18', 1, 'Press', 8, 100, 2)"
+    )
+    conn.commit()
+    conn.close()
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.wait_for_function(
+        "() => document.getElementById('unified-chart-plot')._fullData"
+        " && document.getElementById('nutrition-trend-plot')._fullData"
+    )
+    page.evaluate(
+        """() => Plotly.relayout(document.getElementById('unified-chart-plot'),
+            {'xaxis.range[0]': '2026-07-01', 'xaxis.range[1]': '2026-07-10'})"""
+    )
+    page.wait_for_timeout(500)
+    snap = (
+        "() => document.getElementById('unified-chart-plot')._fullLayout.xaxis.range.join('|')"
+        " + '/' + document.getElementById('nutrition-trend-plot')._fullLayout.xaxis.range.join('|')"
+    )
+    first = page.evaluate(snap)
+    page.wait_for_timeout(2000)
+    assert page.evaluate(snap) == first
+
+
 def test_granularity_keeps_selection(page, server, server_db_path):
     _seed_health(server_db_path)
     page.goto(server)
@@ -178,53 +215,6 @@ def test_granularity_keeps_selection(page, server, server_db_path):
             }
         }""",
         timeout=10000,
-    )
-
-
-def test_axis_anchor_follows_pan(page, server, server_db_path):
-    _seed_health(server_db_path)
-    conn = sqlite3.connect(str(server_db_path))
-    conn.execute(
-        "INSERT OR IGNORE INTO ejercicios (grupo_muscular, ejercicio) VALUES ('Pectoral', 'Press')"
-    )
-    conn.execute(
-        "INSERT INTO training_sets (semana, dia, fecha, set_orden, ejercicio, reps, kg, rir) "
-        "VALUES (1, 'LUNES', '2026-06-10', 1, 'Press', 8, 80, 2),"
-        "       (5, 'LUNES', '2026-07-10', 1, 'Press', 8, 90, 2),"
-        "       (10, 'LUNES', '2026-08-18', 1, 'Press', 8, 100, 2)"
-    )
-    conn.commit()
-    conn.close()
-    page.goto(server)
-    page.wait_for_function("document.body.dataset.appReady === '1'")
-    _require_plotly(page)
-    page.wait_for_function(
-        "() => document.getElementById('unified-chart-plot')._fullData"
-        " && document.getElementById('nutrition-trend-plot')._fullData"
-    )
-    ranges = page.evaluate(
-        """() => {
-            const num = (id) => document.getElementById(id)._fullLayout.xaxis.range.map((v) => Date.parse(v));
-            const a = num('unified-chart-plot');
-            const b = num('nutrition-trend-plot');
-            return Math.abs(a[0] - b[0]) < 60000 && Math.abs(a[1] - b[1]) < 60000
-                ? 'aligned'
-                : ('MISALIGNED ' + a + ' vs ' + b);
-        }"""
-    )
-    assert ranges == "aligned", ranges
-    page.evaluate(
-        """() => Plotly.relayout(document.getElementById('unified-chart-plot'),
-            {'xaxis.range[0]': '2026-07-01', 'xaxis.range[1]': '2026-07-10'})"""
-    )
-    page.wait_for_function(
-        """() => {
-            const num = (id) => document.getElementById(id)._fullLayout.xaxis.range.map((v) => Date.parse(v));
-            const a = num('unified-chart-plot');
-            const b = num('nutrition-trend-plot');
-            return Math.abs(a[0] - b[0]) < 60000 && Math.abs(a[1] - b[1]) < 60000;
-        }""",
-        timeout=5000,
     )
 
 

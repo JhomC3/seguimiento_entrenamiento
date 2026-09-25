@@ -79,10 +79,8 @@ JS_INDIVIDUAL_MAX = 64 * 1024
 # (~+2.4K JS en total) → 225K.
 # Revisado 2026-09-18 (2): acordeón de grupos de métricas (paridad a11y con el
 # catálogo de ejercicios) → 226K.
-# Revisado 2026-09-25: anclaje temporal cliente (propagación fraccional +
-# first-paint, ~+7.6K) → 234K.
 JS_AGGREGATE_MAX = (
-    234 * 1024
+    226 * 1024
 )  # ~132K → 165K Fase 2 → ~185K TAREA 3 → ~198K remediación → ~201K HIIT → ~203K nutrición → ~205K tooltip → ~209K ctrlz-local → ~212K HIIT-estricto → ~215K autofill → ~216K splits-alta → ~217K auto-categoria → ~218K grupo-texto → ~223K combo-custom → ~224K micros-editables
 
 
