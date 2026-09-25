@@ -2,19 +2,31 @@ package com.jhomc.healthsync
 
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
+import androidx.health.connect.client.records.BasalBodyTemperatureRecord
 import androidx.health.connect.client.records.BasalMetabolicRateRecord
 import androidx.health.connect.client.records.BodyFatRecord
+import androidx.health.connect.client.records.BodyTemperatureRecord
 import androidx.health.connect.client.records.BodyWaterMassRecord
 import androidx.health.connect.client.records.BoneMassRecord
+import androidx.health.connect.client.records.CyclingPedalingCadenceRecord
 import androidx.health.connect.client.records.DistanceRecord
+import androidx.health.connect.client.records.ElevationGainedRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
+import androidx.health.connect.client.records.FloorsClimbedRecord
 import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
 import androidx.health.connect.client.records.HeightRecord
+import androidx.health.connect.client.records.HydrationRecord
 import androidx.health.connect.client.records.LeanBodyMassRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
+import androidx.health.connect.client.records.PowerRecord
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.RespiratoryRateRecord
 import androidx.health.connect.client.records.RestingHeartRateRecord
+import androidx.health.connect.client.records.SkinTemperatureRecord
 import androidx.health.connect.client.records.SleepSessionRecord
+import androidx.health.connect.client.records.SpeedRecord
+import androidx.health.connect.client.records.StepsCadenceRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.Vo2MaxRecord
@@ -61,11 +73,18 @@ object RecordTypes {
      * VO2 máx, saturación de oxígeno y tasa metabólica basal). Pasos, calorías
      * y distancia viajan como TOTALES HORARIOS (*_H1, ver HourlySumBucketizer):
      * su granularidad cruda no aporta al dashboard y saturaba el outbox.
-     * Excluidos a propósito (superficie del SDK 1.1.0 que no aporta al
-     * dashboard): elevación, velocidad, cadencias, potencia, pisos, empujes
-     * de silla, HRV, frecuencia respiratoria, temperaturas, hidratación,
-     * nutrición y todos los tipos sensibles/médicos (presión, glucosa, ciclo
-     * menstrual, ovulación, actividad sexual).
+     * Ampliación "salud máxima" (ciega): recuperación (HRV, respiratoria,
+     * temperaturas), cardio avanzado (velocidad, elevación, cadencias,
+     * potencia, pisos) e hidratación. Los SERIES/INTERVAL nuevos nacen con
+     * historial corto (4 días) y vía genérica —nunca `aggregated=true`
+     * (esa vía está hardcodeada a HeartRateRecord+HrBucketizer)— para no
+     * repetir la saturación del outbox que motivó los *_H1.
+     * Las cadencias reutilizan permisos ya concedidos (verificado en el
+     * bytecode del SDK 1.1.0: StepsCadence→READ_STEPS, Cycling→READ_EXERCISE).
+     * Excluidos a propósito: tipos sensibles/médicos (presión, glucosa, ciclo
+     * menstrual, ovulación, actividad sexual), nutrición de HC (el diario
+     * propio es fuente de verdad), empujes de silla y los crudos duplicados
+     * de clases *_H1 (byClass los etiquetaría mal).
      */
     val all: List<RecordTypeEntry> = listOf(
         // --- Núcleo (Samsung Health los escribe) ---
@@ -88,6 +107,22 @@ object RecordTypes {
         entry("VO2_MAX", Vo2MaxRecord::class, MappingFamily.INSTANT),
         entry("OXYGEN_SATURATION", OxygenSaturationRecord::class, MappingFamily.SERIES),
         entry("BASAL_METABOLIC_RATE", BasalMetabolicRateRecord::class, MappingFamily.INSTANT),
+
+        // --- Salud máxima: recuperación (instantáneos, bajo volumen) ---
+        entry("HEART_RATE_VARIABILITY_RMSSD", HeartRateVariabilityRmssdRecord::class, MappingFamily.INSTANT, core = true),
+        entry("RESPIRATORY_RATE", RespiratoryRateRecord::class, MappingFamily.INSTANT),
+        entry("BODY_TEMPERATURE", BodyTemperatureRecord::class, MappingFamily.INSTANT),
+        entry("BASAL_BODY_TEMPERATURE", BasalBodyTemperatureRecord::class, MappingFamily.INSTANT),
+
+        // --- Salud máxima: series/intervalos (vía genérica, historial corto) ---
+        entry("SKIN_TEMPERATURE", SkinTemperatureRecord::class, MappingFamily.SERIES, historyDays = 4),
+        entry("SPEED", SpeedRecord::class, MappingFamily.SERIES, historyDays = 4),
+        entry("ELEVATION_GAINED", ElevationGainedRecord::class, MappingFamily.INTERVAL, historyDays = 4),
+        entry("STEPS_CADENCE", StepsCadenceRecord::class, MappingFamily.SERIES, historyDays = 4),
+        entry("CYCLING_PEDALING_CADENCE", CyclingPedalingCadenceRecord::class, MappingFamily.SERIES, historyDays = 4),
+        entry("POWER", PowerRecord::class, MappingFamily.SERIES, historyDays = 4),
+        entry("FLOORS_CLIMBED", FloorsClimbedRecord::class, MappingFamily.INTERVAL, historyDays = 4),
+        entry("HYDRATION", HydrationRecord::class, MappingFamily.INTERVAL, historyDays = 4),
     )
 
     /**

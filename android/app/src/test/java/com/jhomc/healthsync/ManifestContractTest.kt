@@ -67,6 +67,25 @@ class ManifestContractTest {
     }
 
     @Test
+    fun manifest_declares_health_max_permissions() {
+        val content = manifest.readText()
+        for (permission in listOf(
+            "android.permission.health.READ_HEART_RATE_VARIABILITY",
+            "android.permission.health.READ_RESPIRATORY_RATE",
+            "android.permission.health.READ_SKIN_TEMPERATURE",
+            "android.permission.health.READ_BODY_TEMPERATURE",
+            "android.permission.health.READ_BASAL_BODY_TEMPERATURE",
+            "android.permission.health.READ_SPEED",
+            "android.permission.health.READ_ELEVATION_GAINED",
+            "android.permission.health.READ_POWER",
+            "android.permission.health.READ_FLOORS_CLIMBED",
+            "android.permission.health.READ_HYDRATION",
+        )) {
+            assertTrue("falta $permission en el manifest", content.contains(permission))
+        }
+    }
+
+    @Test
     fun manifest_declares_nutrition_write() {
         val content = manifest.readText()
         assertTrue(
