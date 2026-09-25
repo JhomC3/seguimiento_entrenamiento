@@ -61,6 +61,7 @@ skills-lock.json
 !.opencode/skills/debug-detective/
 !.opencode/skills/researcher/
 !.opencode/skills/spec-generator/
+!.opencode/skills/repo-auditor/
 
 # Artefactos locales de Lighthouse CI
 .lighthouseci/

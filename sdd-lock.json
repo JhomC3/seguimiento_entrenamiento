@@ -1,7 +1,8 @@
 {
   "files": {
+    "README.md": "c3b220d7fc2b1625c31e1e3af4591f1d79bbbf9f17e5a759193222d5517d2c0f",
     "SDD_BOOTSTRAP.md": "19165ee994ea527861461019fc6c0b041bb0d02155cbbfa66bfb579b222d4a3b",
-    "VERSION": "40b8eb4000a913a7791090535f291d3d369874162a89ef3c9e3d4e887a1b9e79",
+    "VERSION": "97a5d6e540a6120d09c39ddb667e0e8e2bac7fcc2ffef813b82e08fd60365bce",
     "agents/explorer.md": "66931d998e08ff59f0c81b73f03dd4546400da2186ff0cd16ca8ceea20281c37",
     "agents/reviewer.md": "fb0335c64391ad8df80db20e1428bf02191541477ae42ede2fe57835b652a518",
     "agents/security.md": "cb08d3529dd4d254b6a258208b192ac2b47dac38bcbe4366f876e42c15cbdc0e",
@@ -11,7 +12,7 @@
     "commands/constitution.md": "475658166e76b0a20deda7369d75a46bbd683c85f2c8885612ac931079c8aa0a",
     "commands/implement.md": "09d4afeb49c530f8ecfff17489ee1f12dbb590be619a4c177c378efbaa2a5db8",
     "commands/plan.md": "406845224b7a30632f1316fde1dfa617aa25a596bf3a1b2f10236d4b279aae68",
-    "commands/skills.md": "4a7d2e7cf2b6eb075aec4947e964134ed159f41c8f70951bc6c061a8d6e3db87",
+    "commands/skills.md": "872108f322c63a8419d620f05063cfe72ba2b88e25d0eff6ec17de3bff0ee306",
     "commands/specify.md": "b2d1d5c5217dbf144ad99a376a133c0540e5e19f99226086172c03cbf88f8b4f",
     "commands/tasks.md": "ae1ed5235321aa999126b0379b654188f10713fac120c3100e6ce7d603d9ae4e",
     "install.sh": "567651597cf71eadaa3a52ec5a11ba8cc18dd287e8f09e7b42f49bb7e7e2256e",
@@ -19,6 +20,7 @@
     "skills/architecture-reviewer/SKILL.md": "699b13b2c9e94b098ee6f7e57123b708fbd1c1d80c2224656dc8299d40363113",
     "skills/debug-detective/SKILL.md": "823867de9d6027074833ebba4147b2206779ef0ea48358f3269860fba9959d7c",
     "skills/plan-evaluator/SKILL.md": "5dd716c67bc599511d6e78545f84d2648694d255dfca1865146c89f74bfcbc6a",
+    "skills/repo-auditor/SKILL.md": "6978080c562da5236780d89df115aed1fd7408e8ef5a9f293392928433008320",
     "skills/researcher/SKILL.md": "77661e25d18efbcf8109fe3fa22e9598a1dc3b10a5036ecd676c874cdaaa4fd8",
     "skills/security-audit/SKILL.md": "61c5c11b3ed4711e08d2ecd28bfadbcc06f78bda4c8cdeceefe51231cbcae325",
     "skills/spec-generator/SKILL.md": "af0a5a476a641871df0ba3c2d95f5021b2a43804c26f33d0ac5bdd740a9f53d3",
@@ -28,5 +30,5 @@
     "templates/spec.md": "b17222da48329a7ea647642af5bb35487118e7ff08bc20c753c8949a19ed54dc",
     "templates/tasks.md": "6087d6928c181a0c243d0a68b67087e10d5b945dc9b411c4e7d310e2939c0ac9"
   },
-  "version": "0.4.0"
+  "version": "0.6.0"
 }
