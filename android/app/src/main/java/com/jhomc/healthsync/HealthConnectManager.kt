@@ -20,7 +20,7 @@ class HealthConnectManager(private val gateway: HealthConnectGateway) {
     suspend fun backgroundReadAvailable(): Boolean = gateway.backgroundReadAvailable()
 
     /**
-     * Permisos ESENCIALES: el catálogo completo (17 tipos) + lectura en
+     * Permisos ESENCIALES: el catálogo completo (29 tipos) + lectura en
      * segundo plano + historial + escritura nutricional. Un solo botón pide todo.
      */
     fun corePermissions(): Set<String> =

@@ -127,6 +127,24 @@
   trazas. Márgenes `l48 r20 t20 b28`; la estabilidad entre estados la dan
   márgenes/altura idénticos.
 
+### Métricas de salud (gráfica única + sección en catálogo)
+
+- La gráfica del slot de nutrition-trend ES la gráfica de métricas: índice 0–100
+  por serie (winsorización p1–p99; recovery solo clip; plana → 50), tooltip
+  cristal con valor real + unidad (customdata 2-pos `[etiqueta, "valor unidad"]`).
+  Reutiliza slot, ids (`nutrition-trend-*`) y canal OOB: cero churn visual.
+- Sin títulos de eje ni leyenda; un eje Y fijo 0–100 (las unidades viven en el
+  tooltip y el catálogo). Un fallo de construcción emite vacío, nunca 500.
+- `?metricas=<k1,k2>` filtra visibles (el resto viaja oculto para toggles sin
+  refetch); ausente/desconocido → defaults; vacío explícito → todo oculto.
+  La granularidad viaja en el `/grafica`
+  existente (las métricas ignoran filtros musculares).
+- Catálogo `#metrics-catalog` dentro del panel izquierdo (sección "Salud"):
+  chips multi-toggle (`aria-pressed`, series sin datos con `aria-disabled`
+  visible), visibilidad instantánea en cliente (`Plotly.restyle`), restore sin
+  refetch. Sin anclaje entre gráficas ni zoom por ejes (retirados a petición:
+  solo toggles + granularidad).
+
 ### `GET /semana/primer-entreno?semana=<n>`
 
 - JSON `{"fecha": "<iso>"|null}`: primera fecha de entrenamiento de la semana del ciclo.

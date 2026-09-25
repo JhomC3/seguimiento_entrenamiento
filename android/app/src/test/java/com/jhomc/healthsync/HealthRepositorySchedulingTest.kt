@@ -325,10 +325,14 @@ class HealthRepositorySchedulingTest {
             pacer = {},
             zoneId = utc,
         )
-        utcRepo.syncAuthorizedTypes()
+        utcRepo.syncAuthorizedTypes(force = true)
         val readsAfterBootstrap = gateway.readLog.size
 
         // 4 días después: solape de 3 días atrás + 4 hacia delante = 8 días.
+        // force=true: READ_STEPS autoriza STEPS_H1 y STEPS_CADENCE (el SDK 1.1.0
+        // mapea la cadencia al permiso de pasos); la cadencia genérica no suma
+        // lecturas diarias tras su bootstrap, así que la ventana agregada sigue
+        // siendo exactamente +8.
         val later = HealthRepository(
             db = db,
             gateway = gateway,
@@ -337,7 +341,7 @@ class HealthRepositorySchedulingTest {
             pacer = {},
             zoneId = utc,
         )
-        later.syncAuthorizedTypes()
+        later.syncAuthorizedTypes(force = true)
         assertEquals(readsAfterBootstrap + 8, gateway.readLog.size)
     }
 

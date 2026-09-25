@@ -23,7 +23,7 @@ from src.cardio_service import (
     upsert_cardio_annotation,
 )
 from src.charts import (
-    chart_nutrition_trends,
+    chart_metrics_index,
     chart_pfr_timeline,
     get_exercise_cohort_summary,
     get_exercise_raw_data,
@@ -648,6 +648,7 @@ def read_index(
     request: Request,
     gran: str = Query(default="day"),
     registro: str = Query(default=""),
+    metricas: str | None = Query(default=None),
 ):
     from datetime import date as _date
 
@@ -673,10 +674,19 @@ def read_index(
     # (misma técnica anti-parpadeo de la granularidad). El servicio devuelve
     # estado error/empty controlado; nunca propaga a HTTP.
     period_summary = build_period_summary(DB_PATH, [], [], granularity, 8)
-    from src.nutrition_trends import build_nutrition_trends
+    from src.health_panels import (
+        build_metrics_catalog,
+        build_metrics_index,
+        parse_metrics_param,
+    )
 
-    _nutrition_df = build_nutrition_trends(DB_PATH, granularity)
-    _nutrition_fig = chart_nutrition_trends(_nutrition_df, granularity)
+    # La gráfica de nutrición ES la gráfica de métricas (índice 0–100 con
+    # todas las series; valores reales en tooltip). Reutiliza slot, ids y
+    # canal OOB de nutrition-trend (cero churn de templates/CSS/JS).
+    _metrics_selection = parse_metrics_param(metricas)
+    _metrics_df = build_metrics_index(DB_PATH, granularity)
+    _metrics_fig = chart_metrics_index(_metrics_df, granularity, _metrics_selection)
+    _systemic_fig = chart_pfr_timeline(DB_PATH, "systemic", "", granularity=granularity)
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -691,12 +701,13 @@ def read_index(
             "cascade_row_html": _cascade_row_html(request, "musculo", ""),
             "systemic_chart_html": chart_shell_html(
                 "Rendimiento",
-                chart_pfr_timeline(DB_PATH, "systemic", "", granularity=granularity),
+                _systemic_fig,
             ),
+            "metrics_catalog": build_metrics_catalog(DB_PATH, _metrics_selection),
             "nutrition_trend_html": chart_shell_html(
-                "Nutrición",
-                _nutrition_fig,
-                empty_text="Sin datos de nutrición o peso",
+                "Métricas",
+                _metrics_fig,
+                empty_text="Sin datos de métricas",
                 prefix="nutrition-trend",
             ),
             "navigator_html": _navigator_html(request, fecha, granularity=granularity),
@@ -1700,18 +1711,18 @@ def grafica_view(
     ejercicios: list[str] = Query(default=[]),
     gran: str = Query(default="day"),
     ventana: int = Query(default=8),
+    metricas: str | None = Query(default=None),
 ):
-    """Gráfica + panel de resumen + tendencia nutricional en UNA sola respuesta.
+    """Gráfica + panel de resumen + métricas en UNA sola respuesta.
 
     Targets OOB exclusivos: unified-chart-header/data/empty +
     nutrition-trend-header/data/empty + period-summary-wrap.
     Gráfica y panel comparten exactamente la misma selección y granularidad;
-    la tendencia nutricional comparte la granularidad pero ignora la
-    selección muscular (serie global de kcal + peso). La ventana del panel es
+    las métricas comparten la granularidad e ignoran la
+    selección muscular (índice global 0–100 con todas las series). La ventana del panel es
     propia (4|8 semanas, default 8) e independiente de las ventanas visuales.
     """
     from src.charts import chart_selection
-    from src.nutrition_trends import build_nutrition_trends
     from src.summary_service import build_period_summary
 
     granularity = _validate_granularity(gran)
@@ -1738,29 +1749,32 @@ def grafica_view(
             + chart_empty_oob(True, empty_text)
         )
 
-    # Tendencia nutricional global (misma granularidad, sin filtros musculares).
+    # Métricas globales (misma granularidad, sin filtros musculares).
+    from src.health_panels import build_metrics_index, parse_metrics_param
+
+    _metrics_selection = parse_metrics_param(metricas)
     try:
-        nutrition_fig = chart_nutrition_trends(
-            build_nutrition_trends(DB_PATH, granularity), granularity
+        metrics_fig = chart_metrics_index(
+            build_metrics_index(DB_PATH, granularity), granularity, _metrics_selection
         )
     except Exception:
         import logging as _logging
 
-        _logging.getLogger("dashboard").exception("tendencia nutricional fallida")
-        nutrition_fig = None
-    if nutrition_fig is not None and hasattr(nutrition_fig, "data") and nutrition_fig.data:
+        _logging.getLogger("dashboard").exception("gráfica de métricas fallida")
+        metrics_fig = None
+    if metrics_fig is not None and hasattr(metrics_fig, "data") and metrics_fig.data:
         from src.dashboard_service import _json_for_inline as _inline
 
         content += (
-            nutrition_trend_header_oob()
-            + nutrition_trend_data_oob(_inline(nutrition_fig.to_json()))
+            nutrition_trend_header_oob("Métricas")
+            + nutrition_trend_data_oob(_inline(metrics_fig.to_json()))
             + nutrition_trend_empty_oob(False)
         )
     else:
         content += (
-            nutrition_trend_header_oob()
+            nutrition_trend_header_oob("Métricas")
             + nutrition_trend_data_oob("{}")
-            + nutrition_trend_empty_oob(True, "Sin datos de nutrición o peso")
+            + nutrition_trend_empty_oob(True, "Sin datos de métricas")
         )
 
     # El panel viaja en la MISMA respuesta: una petición actualiza ambos y el

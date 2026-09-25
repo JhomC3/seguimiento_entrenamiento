@@ -45,14 +45,18 @@ class RecordTypesTest {
     }
 
     @Test
-    fun `catalog is the essential seventeen types`() {
-        assertEquals(17, RecordTypes.all.size)
+    fun `catalog is the essential twenty-nine types`() {
+        assertEquals(29, RecordTypes.all.size)
         val names = RecordTypes.all.map { it.typeName }.toSet()
         for (essential in listOf(
             "STEPS_H1", "HEART_RATE", "SLEEP_SESSION", "EXERCISE_SESSION",
             "ACTIVE_CALORIES_H1", "TOTAL_CALORIES_H1", "RESTING_HEART_RATE",
             "WEIGHT", "HEIGHT", "BODY_FAT", "BONE_MASS", "BODY_WATER_MASS", "LEAN_BODY_MASS",
             "DISTANCE_H1", "VO2_MAX", "OXYGEN_SATURATION", "BASAL_METABOLIC_RATE",
+            "HEART_RATE_VARIABILITY_RMSSD", "RESPIRATORY_RATE", "SKIN_TEMPERATURE",
+            "BODY_TEMPERATURE", "BASAL_BODY_TEMPERATURE", "SPEED", "ELEVATION_GAINED",
+            "STEPS_CADENCE", "CYCLING_PEDALING_CADENCE", "POWER", "FLOORS_CLIMBED",
+            "HYDRATION",
         )) assertTrue("falta $essential", names.contains(essential))
     }
 
@@ -72,15 +76,14 @@ class RecordTypesTest {
     }
 
     @Test
-    fun `catalog excludes irrelevant and sensitive types`() {
+    fun `catalog excludes sensitive and duplicate types`() {
         val names = RecordTypes.all.map { it.typeName }.toSet()
         for (excluded in listOf(
-            "ELEVATION_GAINED", "SPEED", "STEPS_CADENCE", "CYCLING_PEDALING_CADENCE",
-            "POWER", "FLOORS_CLIMBED", "WHEELCHAIR_PUSHES", "HEART_RATE_VARIABILITY_RMSSD",
-            "RESPIRATORY_RATE", "SKIN_TEMPERATURE", "BODY_TEMPERATURE",
-            "BASAL_BODY_TEMPERATURE", "HYDRATION", "NUTRITION",
             "BLOOD_PRESSURE", "BLOOD_GLUCOSE", "CERVICAL_MUCUS", "MENSTRUATION_FLOW",
             "MENSTRUATION_PERIOD", "INTERMENSTRUAL_BLEEDING", "OVULATION_TEST", "SEXUAL_ACTIVITY",
+            "NUTRITION", "WHEELCHAIR_PUSHES",
+            // Crudos duplicados de clases *_H1 (byClass los etiquetaría mal).
+            "STEPS", "DISTANCE", "ACTIVE_CALORIES_BURNED", "TOTAL_CALORIES_BURNED",
         )) assertFalse("no debe existir $excluded", names.contains(excluded))
         assertTrue(
             "ningún tipo sensible en el catálogo",
