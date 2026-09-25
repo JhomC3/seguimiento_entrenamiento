@@ -10,7 +10,7 @@
 let selectedMuscles = new Set();
 let selectedExercises = new Set();
 
-import { getMetricsSelection, setMetricsSelection } from './chart-interaction.js';
+import { getMetricsSelection, resetAnchorRegime, setMetricsSelection } from './chart-interaction.js';
 
 // Métricas: la URL manda (pushState centralizado aquí).
 document.addEventListener('metrics:change', function () {
@@ -255,6 +255,7 @@ function changeGranularity(g) {
     clearHighlightAndDetails();
     setGranularity(g);
     cancelPending();
+    resetAnchorRegime();
     refreshChart();
     pushState(currentUrl());
 }

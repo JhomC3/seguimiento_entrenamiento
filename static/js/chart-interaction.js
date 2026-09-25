@@ -607,7 +607,7 @@ export function renderPlotFromIds(dataId, plotId, emptyId, opts) {
     const emptyEl = emptyId ? document.getElementById(emptyId) : null;
     const useTooltip = !opts || opts.tooltip !== false;
     const useHighlight = !opts || opts.highlight !== false;
-    if (!dataEl || !plotEl) return;
+    if (!dataEl || !plotEl) return Promise.resolve(false);
 
     let fig = null;
     try {
@@ -631,7 +631,7 @@ export function renderPlotFromIds(dataId, plotId, emptyId, opts) {
             closeAllDetails();
         }
         if (useTooltip) hideTooltip();
-        return;
+        return Promise.resolve(false);
     }
 
     // Nueva figura OOB: limpiar highlight previo (puntos ya no pertenecen)
@@ -645,7 +645,7 @@ export function renderPlotFromIds(dataId, plotId, emptyId, opts) {
     plotEl.hidden = false;
 
     // TradingView: zoom y pan exclusivamente horizontal.
-    loadPlotly()
+    return loadPlotly()
         .then(function (Plotly) {
             const layout = fig.layout || {};
             // The server-owned chart header carries the contextual title and
@@ -723,14 +723,26 @@ export function renderPlotFromIds(dataId, plotId, emptyId, opts) {
             bindHorizontalWheel(plotEl, Plotly);
             if (useHighlight) bindHighlight(plotEl);
             if (useTooltip) bindTooltip(plotEl, Plotly);
+            return true;
         })
         .catch(function (err) {
             showChartError(err && err.message ? err.message : 'Error al renderizar la gráfica.');
+            return false;
         });
 }
 
 export function renderUnifiedChart() {
-    renderPlotFromIds('unified-chart-data', 'unified-chart-plot', 'unified-chart-empty');
+    const p = renderPlotFromIds('unified-chart-data', 'unified-chart-plot', 'unified-chart-empty');
+    if (p && typeof p.then === 'function') {
+        p.then(function (ok) {
+            const plotEl = document.getElementById('unified-chart-plot');
+            if (!plotEl) return;
+            if (ok && window.Plotly) {
+                bindAxisAnchor(plotEl, 'nutrition-trend-plot', window.Plotly);
+            }
+            maybeAlignMetricsToUnified(window.Plotly);
+        });
+    }
 }
 
 // --- Catálogo de métricas ---
@@ -804,10 +816,194 @@ export function renderNutritionTrend() {
     const dataEl = document.getElementById('nutrition-trend-data');
     if (!dataEl) return;
     // Mismo tooltip cristal que la principal; highlight desactivado: el clic
-    // no cambia (la nutricional es solo visualización).
-    renderPlotFromIds('nutrition-trend-data', 'nutrition-trend-plot', 'nutrition-trend-empty', {
+    // no cambia (la de métricas es solo visualización).
+    const p = renderPlotFromIds('nutrition-trend-data', 'nutrition-trend-plot', 'nutrition-trend-empty', {
         tooltip: true,
         highlight: false,
+    });
+    if (p && typeof p.then === 'function') {
+        p.then(function (ok) {
+            const plotEl = document.getElementById('nutrition-trend-plot');
+            if (!plotEl) return;
+            if (ok && window.Plotly) {
+                bindAxisAnchor(plotEl, 'unified-chart-plot', window.Plotly);
+            }
+            maybeAlignMetricsToUnified(window.Plotly);
+        });
+    }
+}
+
+// --- Anclaje temporal métricas ↔ ejercicios (solo cliente) ---
+//
+// El servidor NUNCA fuerza rango en la figura de ejercicios (regresión
+// verificada: rompe la preservación uirevision del zoom manual). Alineado
+// first-paint + propagación de gestos, todo aquí. Eje Y siempre local.
+// "Agrupar" = granularidad (servidor, ambas vía /grafica) o zoom-in por gesto.
+
+let manualXRange = false; // rango X manual vigente (gesto real, no eco)
+const _anchorBound = new WeakSet();
+const _lastAppliedRange = new WeakMap(); // plotEl -> [r0, r1] eco a ignorar
+const _autoApplied = new WeakSet(); // plotEl con autorange propagado pendiente
+
+export function resetAnchorRegime() {
+    // Granularidad nueva = régimen nuevo (los OOB traen sus iniciales).
+    manualXRange = false;
+}
+
+function traceXKind(xs) {
+    const s0 = String(xs[0]);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s0)) return 'date';
+    if (/^\d{4}-\d{2}$/.test(s0)) return 'category';
+    return 'linear';
+}
+
+function xToNum(kind, v) {
+    if (kind === 'date') {
+        const n = Date.parse(String(v));
+        return Number.isFinite(n) ? n : Number(v);
+    }
+    return Number(v);
+}
+
+export function plotXDomain(plotEl) {
+    // Unión de todas las trazas con x: {kind, lo, hi, labels|null}. Pura.
+    let kind = null;
+    let labels = null;
+    let nums = [];
+    (plotEl._fullData || []).forEach(function (t) {
+        if (!Array.isArray(t.x) || !t.x.length) return;
+        const k = traceXKind(t.x);
+        if (!kind) {
+            kind = k;
+            if (k === 'category') labels = t.x.map(String);
+        }
+        if (k !== kind) return;
+        t.x.forEach(function (v) {
+            if (k === 'category') {
+                const i = labels.indexOf(String(v));
+                if (i >= 0) nums.push(i);
+            } else {
+                const n = xToNum(k, v);
+                if (Number.isFinite(n)) nums.push(n);
+            }
+        });
+    });
+    if (!kind || !nums.length) return null;
+    return { kind: kind, lo: Math.min.apply(null, nums), hi: Math.max.apply(null, nums), labels: labels };
+}
+
+export function currentXRange(plotEl) {
+    // Rango X actual en números de dominio (o índices si category), o null. Pura.
+    const dom = plotXDomain(plotEl);
+    if (!dom || !(dom.hi > dom.lo)) return null;
+    const layout = plotEl._fullLayout && plotEl._fullLayout.xaxis;
+    const r = layout && layout.range;
+    if (!Array.isArray(r) || r.length < 2) return [dom.lo, dom.hi];
+    if (dom.kind === 'category') {
+        const i0 = dom.labels.indexOf(String(r[0]));
+        const i1 = dom.labels.indexOf(String(r[1]));
+        if (i0 < 0 || i1 < 0) return [0, dom.labels.length - 1];
+        return [Math.min(i0, i1), Math.max(i0, i1)];
+    }
+    const n0 = xToNum(dom.kind, r[0]);
+    const n1 = xToNum(dom.kind, r[1]);
+    if (!Number.isFinite(n0) || !Number.isFinite(n1)) return [dom.lo, dom.hi];
+    return [Math.min(n0, n1), Math.max(n0, n1)];
+}
+
+export function fractionsOf(dom, r0, r1) {
+    // Fracciones [f0, f1] de un rango sobre su dominio. Pura.
+    return [(r0 - dom.lo) / (dom.hi - dom.lo), (r1 - dom.lo) / (dom.hi - dom.lo)];
+}
+
+function sameRange(a, b) {
+    if (!a || !b) return false;
+    return a.every(function (v, i) {
+        if (typeof v === 'number' && typeof b[i] === 'number') return Math.abs(v - b[i]) < 1e-9;
+        return String(v) === String(b[i]);
+    });
+}
+
+function applyXFractions(plotEl, Plotly, f0, f1) {
+    const dom = plotXDomain(plotEl);
+    if (!dom || !(dom.hi > dom.lo)) return false;
+    let r0;
+    let r1;
+    if (dom.kind === 'category') {
+        const n = dom.labels.length;
+        const i0 = Math.min(n - 1, Math.max(0, Math.round(f0 * (n - 1))));
+        const i1 = Math.min(n - 1, Math.max(0, Math.round(f1 * (n - 1))));
+        r0 = dom.labels[Math.min(i0, i1)];
+        r1 = dom.labels[Math.max(i0, i1)];
+    } else {
+        r0 = dom.lo + f0 * (dom.hi - dom.lo);
+        r1 = dom.lo + f1 * (dom.hi - dom.lo);
+    }
+    _lastAppliedRange.set(plotEl, [r0, r1]);
+    Plotly.relayout(plotEl, { 'xaxis.range[0]': r0, 'xaxis.range[1]': r1 });
+    return true;
+}
+
+function maybeAlignMetricsToUnified(Plotly) {
+    // Sin manual: métricas adopta la ventana de ejercicios. Con manual no se
+    // toca nada (uirevision lo conserva y la propagación en vivo ya alineó).
+    // No-op si alguna gráfica está vacía.
+    if (!Plotly || manualXRange) return;
+    const a = document.getElementById('unified-chart-plot');
+    const b = document.getElementById('nutrition-trend-plot');
+    if (!a || !b || !a._fullData || !b._fullData) return;
+    const ra = currentXRange(a);
+    const domA = plotXDomain(a);
+    if (!ra || !domA || !(domA.hi > domA.lo)) return;
+    const span = domA.hi - domA.lo;
+    applyXFractions(b, Plotly, (ra[0] - domA.lo) / span, (ra[1] - domA.lo) / span);
+}
+
+function anchorRelayout(plotEl, otherId, Plotly, e) {
+    const echo = _lastAppliedRange.get(plotEl);
+    if (echo) {
+        const cur = currentXRange(plotEl);
+        _lastAppliedRange.delete(plotEl);
+        if (sameRange(cur, echo)) return; // eco de nuestra propia propagación
+    }
+    if (_autoApplied.has(plotEl)) {
+        _autoApplied.delete(plotEl);
+        return; // eco de autorange propagado
+    }
+    const other = document.getElementById(otherId);
+    if (!other || !other._fullData) return;
+    if (e && e['xaxis.autorange'] === true) {
+        manualXRange = false;
+        _autoApplied.add(other);
+        Plotly.relayout(other, { 'xaxis.autorange': true });
+        return;
+    }
+    if (!e || e['xaxis.range[0]'] === undefined || e['xaxis.range[1]'] === undefined) return;
+    const dom = plotXDomain(plotEl);
+    if (!dom || !(dom.hi > dom.lo)) return;
+    let n0;
+    let n1;
+    if (dom.kind === 'category') {
+        const i0 = dom.labels.indexOf(String(e['xaxis.range[0]']));
+        const i1 = dom.labels.indexOf(String(e['xaxis.range[1]']));
+        if (i0 < 0 || i1 < 0) return;
+        n0 = Math.min(i0, i1);
+        n1 = Math.max(i0, i1);
+    } else {
+        n0 = xToNum(dom.kind, e['xaxis.range[0]']);
+        n1 = xToNum(dom.kind, e['xaxis.range[1]']);
+        if (!Number.isFinite(n0) || !Number.isFinite(n1)) return;
+    }
+    manualXRange = true;
+    const f = fractionsOf(dom, Math.min(n0, n1), Math.max(n0, n1));
+    applyXFractions(other, Plotly, f[0], f[1]);
+}
+
+function bindAxisAnchor(plotEl, otherId, Plotly) {
+    if (_anchorBound.has(plotEl)) return;
+    _anchorBound.add(plotEl);
+    plotEl.on('plotly_relayout', function (e) {
+        anchorRelayout(plotEl, otherId, Plotly, e || {});
     });
 }
 

@@ -150,12 +150,53 @@ def test_build_metrics_index(db):
     assert list(df["fecha"]) == ["2026-08-10", "2026-08-11"]
     assert df["steps"].tolist() == [5000, 6000]
     assert df["kcal"].iloc[0] == 350
-    assert df["weight"].iloc[0] == pytest.approx(80.0)
+    assert df["weight"].isna().iloc[0]  # un solo peso aislado queda en NaN (min_periods=2)
     week = build_metrics_index(db, "week")
     assert week["steps"].iloc[0] == pytest.approx(5500.0)  # media uniforme
     assert build_metrics_index(db, "month")["periodo"].tolist() == ["2026-08"]
     with pytest.raises(ValidationError):
         build_metrics_index(db, "quincena")
+
+
+def test_metrics_kcal_peso_ma7(db):
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO diario_alimentacion (fecha, orden, alimento, kcal, carbohidratos, fibra, "
+        "proteina, grasa, hierro, calcio, vitamina_c, vitamina_a) "
+        "VALUES ('2026-08-10', 1, 'Avena', 100, 0, 0, 0, 0, 0, 0, 0, 0),"
+        "       ('2026-08-11', 1, 'Avena', 200, 0, 0, 0, 0, 0, 0, 0, 0),"
+        "       ('2026-08-12', 1, 'Avena', 300, 0, 0, 0, 0, 0, 0, 0, 0)"
+    )
+    conn.execute(
+        "INSERT INTO parametros_diarios (fecha, peso_kg) VALUES "
+        "('2026-08-10', 70.0), ('2026-08-11', 72.0), ('2026-08-12', 74.0)"
+    )
+    conn.commit()
+    conn.close()
+    df = build_metrics_index(db, "day")
+    assert df["kcal"].tolist() == pytest.approx([100.0, 150.0, 200.0])
+    assert df["weight"].tolist()[0] != df["weight"].tolist()[0]  # NaN el primer día
+    assert df["weight"].tolist()[1:] == pytest.approx([71.0, 72.0])
+    week = build_metrics_index(db, "week")
+    assert week["kcal"].iloc[0] == pytest.approx(150.0)  # week promedia la MA
+
+
+def test_metrics_ma7_huecos_no_son_cero(db):
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO diario_alimentacion (fecha, orden, alimento, kcal, carbohidratos, fibra, "
+        "proteina, grasa, hierro, calcio, vitamina_c, vitamina_a) "
+        "VALUES ('2026-08-10', 1, 'Avena', 100, 0, 0, 0, 0, 0, 0, 0, 0),"
+        "       ('2026-08-12', 1, 'Avena', 300, 0, 0, 0, 0, 0, 0, 0, 0)"
+    )
+    conn.commit()
+    conn.close()
+    df = build_metrics_index(db, "day")
+    assert list(df["fecha"]) == ["2026-08-10", "2026-08-11", "2026-08-12"]
+    # La MA arrastra disponibles (precedente nutricional): día sin registro =
+    # media de lo disponible, nunca 0.
+    assert df["kcal"].iloc[1] == pytest.approx(100.0)
+    assert df["kcal"].iloc[2] == pytest.approx(200.0)  # media de [100, 300] (min_periods=1)
 
 
 def test_build_metrics_catalog_disabled(db):
@@ -167,13 +208,30 @@ def test_build_metrics_catalog_disabled(db):
     by_key = {m["key"]: m for g in catalog for m in g["metrics"]}
     assert by_key["steps"]["pressed"] and not by_key["steps"]["disabled"]
     assert not by_key["hrv"]["pressed"] and by_key["hrv"]["disabled"]
-    assert by_key["kcal"]["label"] == "Ingesta"
+    assert by_key["kcal"]["label"] == "Calorías consumidas"
     assert [g["group"] for g in catalog] == [
         "Recuperación",
         "Actividad",
         "Vitales",
         "Nutrición",
     ]
+
+
+def test_chart_metrics_index_vacio_y_sin_eje():
+    assert not chart_metrics_index(pd.DataFrame(), "day", ("steps",)).data
+    assert not chart_metrics_index(pd.DataFrame({"steps": [1.0]}), "day", ("steps",)).data
+    assert not chart_metrics_index(
+        pd.DataFrame({"fecha": ["2026-08-10"], "steps": [float("nan")]}), "day", ("steps",)
+    ).data
+
+
+def test_chart_metrics_index_month():
+    fechas = [f"2025-{m:02d}" for m in range(1, 13)] + ["2026-01"]
+    df = pd.DataFrame({"periodo": fechas, "steps": [float(100 + i) for i in range(13)]})
+    fig = chart_metrics_index(df, "month", ("steps",))
+    assert len(fig.data) == 1
+    assert fig.layout.xaxis.type == "category"
+    assert fig.layout.xaxis.range is not None  # 13 meses > ventana de 12
 
 
 def test_chart_metrics_index_trazas():
@@ -192,7 +250,30 @@ def test_chart_metrics_index_trazas():
     assert all(v <= 100 and v >= 0 for v in by_meta["steps"].y)
     assert len(by_meta["steps"].customdata[0]) == 2
     assert "pasos" in by_meta["steps"].customdata[0][1]
+    # Espejo de rendimiento: líneas puras, sólidas 2.5, paleta en orden.
+    assert by_meta["steps"].mode == "lines"
+    assert by_meta["steps"].line.width == 2.5
+    assert by_meta["steps"].line.dash == "solid"
+    assert by_meta["steps"].line.color != by_meta["rhr"].line.color  # paleta en orden
     assert not chart_metrics_index(pd.DataFrame(), "day", ("steps",)).data
+
+
+def test_chart_metrics_tooltip_muestra_ma(db):
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO diario_alimentacion (fecha, orden, alimento, kcal, carbohidratos, fibra, "
+        "proteina, grasa, hierro, calcio, vitamina_c, vitamina_a) "
+        "VALUES ('2026-08-10', 1, 'Avena', 100, 0, 0, 0, 0, 0, 0, 0, 0),"
+        "       ('2026-08-11', 1, 'Avena', 200, 0, 0, 0, 0, 0, 0, 0, 0)"
+    )
+    conn.commit()
+    conn.close()
+    df = build_metrics_index(db, "day")
+    fig = chart_metrics_index(df, "day", ("kcal",))
+    kcal = next(t for t in fig.data if t.meta == "kcal")
+    # El tooltip muestra la MA (lo que se ve), no el crudo.
+    assert "150.0 kcal" in kcal.customdata[1][1]
+    assert "Calorías consumidas" in kcal.name
 
 
 def test_shell_metricas_slot():

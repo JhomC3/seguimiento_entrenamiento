@@ -67,12 +67,13 @@ def chart_metrics_index(
             go.Scatter(
                 x=x_values,
                 y=[None if v is None or pd.isna(v) else float(v) for v in norm.tolist()],
-                mode="lines+markers",
+                # Espejo de la gráfica de rendimiento (_pfr_trace): líneas
+                # puras, sólidas 2.5, paleta en orden (sin marcadores).
+                mode="lines",
                 name=label,
                 visible=key in selection,
                 meta=key,
-                line={"color": color, "width": 2},
-                marker={"color": color, "size": 4},
+                line={"color": color, "width": 2.5, "dash": "solid"},
                 customdata=customdata,
             )
         )
