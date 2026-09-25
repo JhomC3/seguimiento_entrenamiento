@@ -41,6 +41,20 @@ def _seed_health(db_path, days=70):
                 payload,
             ),
         )
+    for d in range(10):
+        day_ts = int((base + timedelta(days=d)).timestamp() * 1000)
+        conn.execute(
+            "INSERT INTO health_records (hc_id, record_type, start_epoch_ms, end_epoch_ms,"
+            " last_modified_epoch_ms, payload_schema_version, value_json, device_id,"
+            " received_at, updated_at) VALUES (?, 'WEIGHT', ?, ?, ?, 1, ?, '', 'x', 'x')",
+            (
+                f"seed-w-{d}",
+                day_ts,
+                day_ts,
+                day_ts,
+                json.dumps({"value": {"kg": 70.0 + d * 0.1}}),
+            ),
+        )
     conn.commit()
     conn.close()
 
@@ -113,14 +127,14 @@ def test_metrics_toggle_visibility_roundtrip(page, server, server_db_path):
     page.wait_for_function("document.body.dataset.appReady === '1'")
     _require_plotly(page)
     page.locator(
-        '#metrics-catalog [data-action="toggle-metric-group"][data-mgroup="Actividad"]'
+        '#metrics-catalog [data-action="toggle-metric-group"][data-mgroup="Vitales"]'
     ).click()
-    chip = page.locator('#metrics-catalog [data-metric="steps"]').first
+    chip = page.locator('#metrics-catalog [data-metric="weight"]').first
     n_scatter = (
         "() => document.getElementById('nutrition-trend-plot')"
         ".querySelectorAll('.scatterlayer .trace').length"
     )
-    assert page.evaluate(n_scatter) >= 1
+    assert page.evaluate(n_scatter) >= 1  # peso MA7 prendido por defecto
     chip.click()
     page.wait_for_function(
         "() => document.getElementById('nutrition-trend-plot')"
@@ -140,6 +154,9 @@ def test_granularity_keeps_selection(page, server, server_db_path):
     page.locator(
         '#metrics-catalog [data-action="toggle-metric-group"][data-mgroup="Actividad"]'
     ).click()
+    # steps arranca apagado (defaults: peso + kcal): prender y apagar para
+    # dejarlo explícitamente fuera antes del cambio de granularidad.
+    page.locator('#metrics-catalog [data-metric="steps"]').first.click()
     page.locator('#metrics-catalog [data-metric="steps"]').first.click()
     with page.expect_request(
         lambda r: "/grafica" in r.url and "gran=week" in r.url and "metricas=" in r.url

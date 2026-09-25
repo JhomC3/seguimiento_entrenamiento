@@ -78,11 +78,6 @@ METRIC_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 METRIC_ORDER: tuple[str, ...] = tuple(k for _, ks in METRIC_GROUPS for k in ks)
 
 DEFAULT_METRICS: tuple[str, ...] = (
-    "recovery",
-    "hrv",
-    "rhr",
-    "sleep",
-    "steps",
     "weight",
     "kcal",
 )

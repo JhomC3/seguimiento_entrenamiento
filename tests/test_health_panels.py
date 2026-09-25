@@ -133,6 +133,8 @@ def test_parse_metrics_param():
     # Orden canónico aunque el query venga desordenado.
     assert parse_metrics_param("steps,sleep") == ("sleep", "steps")
     assert set(DEFAULT_METRICS) <= set(METRIC_ORDER)
+    # Defaults visibles: solo peso MA7 + calorías consumidas (decisión del dueño).
+    assert DEFAULT_METRICS == ("weight", "kcal")
 
 
 def test_build_metrics_index(db):
@@ -255,6 +257,7 @@ def test_chart_metrics_index_trazas():
     assert by_meta["steps"].line.width == 2.5
     assert by_meta["steps"].line.dash == "solid"
     assert by_meta["steps"].line.color != by_meta["rhr"].line.color  # paleta en orden
+    assert by_meta["steps"].line.color.startswith("rgba(")  # tono suavizado
     assert not chart_metrics_index(pd.DataFrame(), "day", ("steps",)).data
 
 
