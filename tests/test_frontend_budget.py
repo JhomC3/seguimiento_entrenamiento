@@ -38,6 +38,7 @@ CSS_INDIVIDUAL_MAX = 36 * 1024  # components.css ~35.8K tras combo custom
 # min-height del banner de sugerencia, Cantidad 92px sin spinners, ~+0.7K) → 99K.
 # Revisado 2026-09-17 (2): foco interior en celdas (anillo sin recorte) +
 # rotación de fingerprint v2/v3, ~+0.4K → 100K.
+# Revisado 2026-09-18: sección Salud en catálogo (solo separación visual, ~+0.3K) → 100K.
 CSS_AGGREGATE_MAX = (
     100 * 1024
 )  # ~60K → 84K tooltip → 86K Diario → 89K remediación → 90K sugerencia → 91K nutrición → 92K HIIT-estricto → 93K combo-custom → 95K nutri-scroll → 98K nutri-pill+sticky
@@ -74,8 +75,12 @@ JS_INDIVIDUAL_MAX = 64 * 1024
 # aria-busy + settle de navegación, ~+0.6K) → 225K.
 # Revisado 2026-09-17 (2): altura determinista en CSS, medición JS eliminada
 # (~-3.7K) → 222K.
+# Revisado 2026-09-18: catálogo de métricas con URL + tooltip 2-pos de salud
+# (~+2.4K JS en total) → 225K.
+# Revisado 2026-09-18 (2): acordeón de grupos de métricas (paridad a11y con el
+# catálogo de ejercicios) → 226K.
 JS_AGGREGATE_MAX = (
-    222 * 1024
+    226 * 1024
 )  # ~132K → 165K Fase 2 → ~185K TAREA 3 → ~198K remediación → ~201K HIIT → ~203K nutrición → ~205K tooltip → ~209K ctrlz-local → ~212K HIIT-estricto → ~215K autofill → ~216K splits-alta → ~217K auto-categoria → ~218K grupo-texto → ~223K combo-custom → ~224K micros-editables
 
 

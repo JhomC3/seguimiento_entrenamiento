@@ -4,7 +4,7 @@
 // section multiple times: initializers are idempotent and delegated listeners
 // are bound once on stable roots.
 
-import { initChartInteractions, renderNutritionTrend, renderUnifiedChart } from './chart-interaction.js';
+import { initChartInteractions, initMetricsCatalog, renderNutritionTrend, renderUnifiedChart } from './chart-interaction.js';
 import { initDateNavigation } from './date-navigation.js';
 import { initLevelCascade } from './level-cascade.js';
 import { initEditorActions, initEditorRowSortable, syncEditorFromContent } from './editor.js';
@@ -56,6 +56,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const isDiario = !!document.getElementById('daily-page');
     if (isDashboard) {
         initChartInteractions();
+        initMetricsCatalog();
         // La cascada restaura el estado de la URL ANTES del render inicial:
         // con selección en la URL, restoreFromURL ya pidió /grafica y SU
         // respuesta pinta la gráfica (renderizar aquí la figura sistémica

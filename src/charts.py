@@ -1201,113 +1201,68 @@ def _tight_range(values: list[float], rel_pad: float, abs_min_pad: float) -> lis
     return [lo - pad, hi + pad]
 
 
-def _nutrition_hover_rows(
-    work: pd.DataFrame, x_col: str, granularity: str
-) -> tuple[list[list[str]], list[list[str]]]:
-    """customdata 4-pos por traza para el tooltip cristal compartido.
+def chart_metrics_index(
+    df: pd.DataFrame,
+    granularity: str = "day",
+    selection: tuple[str, ...] = (),
+) -> go.Figure:
+    """Índice 0–100 de métricas (una traza por serie).
 
-    Contrato: [etiqueta, kcal_txt, peso_txt, traza]. La etiqueta usa el mismo
-    formato que la principal (``tooltip_period_label``; la semana se etiqueta
-    como su lunes en formato día). Ausencias → '—', nunca 0.
+    ``df`` es la salida de ``build_metrics_index`` (valores CRUDOS). Cada serie
+    se normaliza con ``normalize_01_100`` (recovery: clip); el tooltip lleva el
+    valor real + unidad (customdata 2-pos). ``selection`` marca visibles (el
+    resto viaja oculto para toggles instantáneos sin refetch).
+    Sin series con datos → ``go.Figure()``.
     """
-    label_gran = "day" if granularity in ("day", "week") else "month"
-    years = {str(v)[:4] for v in work[x_col].tolist()}
-    multi_year = len(years) > 1
-    kcal_rows: list[list[str]] = []
-    peso_rows: list[list[str]] = []
-    for _, r in work.iterrows():
-        label = tooltip_period_label(label_gran, r[x_col], multi_year)
-        kcal_v, peso_v = r.get("kcal_ma7"), r.get("peso_ma7")
-        kcal_txt = "—" if kcal_v is None or pd.isna(kcal_v) else f"{float(kcal_v):.0f}"
-        peso_txt = "—" if peso_v is None or pd.isna(peso_v) else f"{float(peso_v):.1f}"
-        kcal_rows.append([label, kcal_txt, peso_txt, "kcal"])
-        peso_rows.append([label, kcal_txt, peso_txt, "peso"])
-    return kcal_rows, peso_rows
+    from src.health_panels import METRIC_DISPLAY, METRIC_ORDER, SERIES, normalize_01_100
 
-
-def chart_nutrition_trends(df: pd.DataFrame, granularity: str = "day") -> go.Figure:
-    """Gráfica dual de medias móviles 7d: kcal (eje izq.) + peso kg (eje der.).
-
-    ``df`` es la salida de ``build_nutrition_trends`` (columnas ``fecha`` o
-    ``periodo`` + ``kcal_ma7``/``peso_ma7``). Vacía o sin ningún punto
-    suavizado → ``go.Figure()`` (el shell muestra el estado vacío).
-    Ambos ejes se ajustan a los datos visibles (sin base en 0).
-    """
-    if df.empty or "kcal_ma7" not in df.columns or "peso_ma7" not in df.columns:
+    if df.empty:
         return go.Figure()
     x_col = "fecha" if "fecha" in df.columns else "periodo"
     if x_col not in df.columns:
         return go.Figure()
-    work = df.dropna(subset=[x_col])
-    work = work[work["kcal_ma7"].notna() | work["peso_ma7"].notna()]
-    if work.empty:
+    keys = [k for k in METRIC_ORDER if k in df.columns and df[k].notna().any()]
+    if not keys:
         return go.Figure()
-
-    kcal_color = chart_color("primary")
-    peso_color = EXERCISE_PALETTE[0]
-    kcal_cd, peso_cd = _nutrition_hover_rows(work, x_col, granularity)
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=work[x_col],
-            y=work["kcal_ma7"],
-            mode="lines",
-            name="kcal",
-            line={"color": kcal_color, "width": 2.5, "dash": "solid"},
-            customdata=kcal_cd,
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=work[x_col],
-            y=work["peso_ma7"],
-            mode="lines",
-            name="peso",
-            yaxis="y2",
-            # Guía translúcida como las trazas secundarias del dashboard; el
-            # peso es estado continuo: une los puntos disponibles sin inventar
-            # intermedios (kcal conserva sus cortes: sin registro no hay dato).
-            line={"color": _hex_to_rgba(peso_color, 0.4), "width": 3.5, "dash": "solid"},
-            connectgaps=True,
-            customdata=peso_cd,
-        )
-    )
-
-    # El periodo semanal nutricional es un lunes ISO (fecha), no el número de
-    # semana del ciclo: los helpers de ventana operan en modo "day" para day y
-    # week (claves ISO ordenables) y en modo "month" para month (YYYY-MM).
-    axis_gran = "month" if granularity == "month" else "day"
+    work = df.dropna(subset=[x_col]).reset_index(drop=True)
     x_values = [str(v) for v in work[x_col].tolist()]
-    initial_range = _initial_x_range(work[x_col].tolist(), axis_gran)
-    kcal_visible = _y_visible_in_window(
-        work[x_col].tolist(), work["kcal_ma7"].tolist(), initial_range, axis_gran
-    )
-    kcal_visible = [float(v) for v in kcal_visible if v is not None and not pd.isna(v)]
-    peso_visible = _y_visible_in_window(
-        work[x_col].tolist(), work["peso_ma7"].tolist(), initial_range, axis_gran
-    )
-    peso_visible = [float(v) for v in peso_visible if v is not None and not pd.isna(v)]
+    years = {v[:4] for v in x_values}
+    multi_year = len(years) > 1
+    label_gran = "day" if granularity in ("day", "week") else "month"
 
-    kcal_range = _tight_range(kcal_visible, 0.15, 60.0)
-    peso_range = _tight_range(peso_visible, 0.2, 1.0)
-
-    # Los ticks se calculan sobre la ventana visible inicial (no sobre todo el
-    # histórico): con meses de registro, los ticks fuera de rango los ignora
-    # Plotly y el eje quedaba vacío o con auto-ticks de fecha completa.
-    if initial_range:
-        lo_k = _x_key(initial_range[0], axis_gran)
-        hi_k = _x_key(initial_range[1], axis_gran)
-        in_window = sorted({v for v in x_values if lo_k <= _x_key(v, axis_gran) <= hi_k})
-        tick_source = in_window or sorted(set(x_values))
-    else:
-        tick_source = sorted(set(x_values))
+    fig = go.Figure()
+    for i, key in enumerate(keys):
+        label, unit = METRIC_DISPLAY.get(key, (SERIES[key][0], SERIES[key][1]))
+        color = EXERCISE_PALETTE[i % len(EXERCISE_PALETTE)]
+        raw = work[key].tolist()
+        norm = normalize_01_100(work[key], already_01_100=(key == "recovery"))
+        customdata = [
+            [
+                tooltip_period_label(label_gran, x, multi_year),
+                "—" if v is None or pd.isna(v) else f"{float(v):.1f} {unit}",
+            ]
+            for x, v in zip(x_values, raw)
+        ]
+        fig.add_trace(
+            go.Scatter(
+                x=x_values,
+                y=[None if v is None or pd.isna(v) else float(v) for v in norm.tolist()],
+                mode="lines+markers",
+                name=label,
+                visible=key in selection,
+                meta=key,
+                line={"color": color, "width": 2},
+                marker={"color": color, "size": 4},
+                customdata=customdata,
+            )
+        )
+    axis_gran = "month" if granularity == "month" else "day"
     if granularity == "month":
-        tickvals, ticktext = tick_source, [_month_tick_label(v) for v in tick_source]
+        tickvals = sorted(set(x_values))
+        ticktext = [_month_tick_label(v) for v in tickvals]
     else:
-        # Day y week (lunes ISO) comparten etiquetas compactas de día.
-        tickvals, ticktext = _day_tick_subset(tick_source, max_ticks=8)
-    # Sin títulos de eje: la leyenda mapea color→serie y los ticks llevan
-    # unidad (kcal en miles, kg en decimal). Más área de trazado en 240px.
+        tickvals, ticktext = _day_tick_subset(sorted(set(x_values)), max_ticks=8)
+    initial_range = _initial_x_range(x_values, axis_gran)
     xaxis_cfg: dict = {
         "tickmode": "array",
         "tickvals": tickvals,
@@ -1318,38 +1273,23 @@ def chart_nutrition_trends(df: pd.DataFrame, granularity: str = "day") -> go.Fig
     xaxis_cfg["type"] = "category" if granularity == "month" else "date"
     if initial_range:
         xaxis_cfg["range"] = _range_for_axis(initial_range, axis_gran)
-
-    yaxis_cfg: dict = {
-        # Miles compactos ("2.74k"): 3 cifras para no duplicar etiquetas en
-        # rangos ajustados estrechos.
-        "tickformat": ".3s",
-        "showgrid": False,
-        "zeroline": False,
-        "tickfont": {"color": chart_color("axes")},
-    }
-    if kcal_range is not None:
-        yaxis_cfg["range"] = kcal_range
-    yaxis2_cfg: dict = {
-        "overlaying": "y",
-        "side": "right",
-        "showgrid": False,
-        "zeroline": False,
-        "tickfont": {"color": peso_color},
-    }
-    if peso_range is not None:
-        yaxis2_cfg["range"] = peso_range
-
     fig.update_layout(
         title={"text": "", "font": {"color": chart_color("hover.text"), "size": 14}},
         xaxis=xaxis_cfg,
-        yaxis=yaxis_cfg,
-        yaxis2=yaxis2_cfg,
+        yaxis={
+            "range": [-5, 105],
+            "tickmode": "array",
+            "tickvals": [0, 25, 50, 75, 100],
+            "showgrid": False,
+            "zeroline": False,
+            "tickfont": {"size": 10, "color": chart_color("axes")},
+        },
         plot_bgcolor=chart_color("background"),
         paper_bgcolor=chart_color("background"),
         font={"color": chart_color("axes")},
-        height=230,
-        margin={"l": 40, "r": 40, "t": 20, "b": 24},
-        hovermode="x unified",
+        height=250,
+        margin={"l": 40, "r": 16, "t": 20, "b": 30},
+        hovermode="closest",
         hoverlabel={
             "bgcolor": chart_color("hover.bg"),
             "font": {"color": chart_color("hover.text"), "size": 12},

@@ -10,6 +10,13 @@
 let selectedMuscles = new Set();
 let selectedExercises = new Set();
 
+import { getMetricsSelection, setMetricsSelection } from './chart-interaction.js';
+
+// Métricas: la URL manda (pushState centralizado aquí).
+document.addEventListener('metrics:change', function () {
+    pushState(currentUrl());
+});
+
 // Per-resource sequence counters for stale-response veto.
 const seqs = { chart: 0, detail: 0 };
 
@@ -67,6 +74,7 @@ function currentUrl() {
     params.append('musculos', [...selectedMuscles].sort().join(','));
     if (selectedExercises.size) params.append('ejercicios', [...selectedExercises].sort().join(','));
     params.set('gran', getGranularity());
+    params.set('metricas', getMetricsSelection().join(','));
     const q = params.toString();
     return q ? '?' + q : '/';
 }
@@ -114,6 +122,9 @@ function refreshChart() {
     [...selectedMuscles].sort().forEach((m) => params.append('musculos', m));
     [...selectedExercises].sort().forEach((e) => params.append('ejercicios', e));
     params.set('gran', getGranularity());
+    // Métricas: la selección viaja siempre (si no, /grafica la reinicia a
+    // defaults y los chips mienten). Vacía explícita = todo oculto.
+    params.set('metricas', getMetricsSelection().join(','));
     // Ventana técnica fija de la gráfica; el historial muestra todo el ciclo.
     params.set('ventana', '8');
     htmx.ajax('GET', '/grafica?' + params.toString(), {
@@ -208,6 +219,10 @@ function restoreFromURL() {
     selectedExercises = new Set(exercises);
     markMuscles();
     markExercises();
+    // Métricas: visibilidad sin refetch (los datos ya viajan todos). Sin
+    // parámetro se conserva el render del servidor (defaults).
+    const metricas = params.get('metricas');
+    if (metricas) setMetricsSelection(metricas.split(',').filter(Boolean), { pushUrl: false });
     if (muscles.length) {
         refreshChart();
     }

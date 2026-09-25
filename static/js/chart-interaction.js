@@ -1,5 +1,4 @@
-// chart-interaction.js — owns: unified chart rendering and day-click.
-// DOM owned: #unified-chart (reads #unified-chart-data JSON, renders into the
+// chart-interaction.js — owns: unified chart rendering and day-click.// DOM owned: #unified-chart (reads #unified-chart-data JSON, renders into the
 // persistent #unified-chart-plot node, toggles #unified-chart-empty visibility).
 // Public API: initChartInteractions, renderUnifiedChart.
 //
@@ -130,6 +129,18 @@ function extractNutritionValuesJS(customdata) {
     } catch (_) { return null; }
 }
 
+// Contrato salud (2 pos., aditivo): [etiqueta, "valor unidad"]. Una fila por
+// punto con el nombre de la traza como etiqueta (nunca inventa formato).
+function extractHealthValuesJS(customdata) {
+    if (!Array.isArray(customdata) || customdata.length !== 2) return null;
+    try {
+        return {
+            periodo: String(customdata[0]),
+            texto: String(customdata[1]),
+        };
+    } catch (_) { return null; }
+}
+
 function tooltipRowsFor(pt) {
     const vals = extractPointValuesJS(pt.customdata);
     if (vals && vals.trace === 'RIR') {
@@ -162,12 +173,18 @@ function tooltipRowsFor(pt) {
             rows: isPeso ? [['peso', nut.peso === '—' ? '—' : nut.peso + ' kg']] : [['kcal', nut.kcal]],
         };
     }
+    const health = extractHealthValuesJS(pt.customdata);
+    if (health) {
+        const name = (pt.data && pt.data.name) || 'Salud';
+        return { trace: name, single: true, rows: [[name, health.texto]] };
+    }
     return null;
 }
 
 function tooltipHeaderFor(points) {
     const first = points[0];
-    const vals = extractPointValuesJS(first.customdata) || extractNutritionValuesJS(first.customdata);
+    const vals = extractPointValuesJS(first.customdata) || extractNutritionValuesJS(first.customdata) ||
+        extractHealthValuesJS(first.customdata);
     return vals ? vals.periodo : String(first.x);
 }
 
@@ -714,6 +731,73 @@ export function renderPlotFromIds(dataId, plotId, emptyId, opts) {
 
 export function renderUnifiedChart() {
     renderPlotFromIds('unified-chart-data', 'unified-chart-plot', 'unified-chart-empty');
+}
+
+// --- Catálogo de métricas ---
+export function getMetricsSelection() {
+    return [...document.querySelectorAll('#metrics-catalog [data-metric][aria-pressed="true"]')]
+        .map(function (b) { return b.dataset.metric; });
+}
+
+function applyMetricsVisibility(keys) {
+    // El slot es el de nutrition-trend (ids reutilizados a propósito).
+    // OJO: Plotly.restyle reconstruye _fullData y las trazas pierden `meta`;
+    // el mapa key→índice se lee siempre de el.data (estable), nunca de _fullData.
+    const plotEl = document.getElementById('nutrition-trend-plot');
+    if (!plotEl || !plotEl._fullData || !window.Plotly) return;
+    const metas = plotEl.data.map(function (t) { return t.meta; });
+    window.Plotly.restyle(plotEl, {
+        visible: plotEl._fullData.map(function (_, i) { return keys.indexOf(metas[i]) >= 0; }),
+    });
+}
+
+export function setMetricsSelection(keys, opts) {
+    const pushUrl = !opts || opts.pushUrl !== false;
+    const chips = [...document.querySelectorAll('#metrics-catalog [data-metric]')];
+    const valid = chips.filter(function (b) { return b.getAttribute('aria-disabled') !== 'true'; })
+        .map(function (b) { return b.dataset.metric; });
+    const wanted = (keys || []).filter(function (k) { return valid.indexOf(k) >= 0; });
+    chips.forEach(function (b) {
+        if (b.getAttribute('aria-disabled') === 'true') return;
+        b.setAttribute('aria-pressed', String(wanted.indexOf(b.dataset.metric) >= 0));
+    });
+    applyMetricsVisibility(wanted);
+    if (pushUrl) {
+        document.dispatchEvent(new CustomEvent('metrics:change', { detail: { keys: wanted } }));
+    }
+}
+
+export function toggleMetric(key) {
+    const btn = document.querySelector('#metrics-catalog [data-metric="' + CSS.escape(key) + '"]');
+    if (!btn || btn.getAttribute('aria-disabled') === 'true') return;
+    const selected = getMetricsSelection();
+    const i = selected.indexOf(key);
+    if (i >= 0) selected.splice(i, 1);
+    else selected.push(key);
+    setMetricsSelection(selected);
+}
+
+export function initMetricsCatalog() {
+    document.addEventListener('click', function (e) {
+        const btn = e.target && e.target.closest ? e.target.closest('[data-action="toggle-metric"]') : null;
+        if (btn && btn.dataset.metric) {
+            toggleMetric(btn.dataset.metric);
+            return;
+        }
+        const grp = e.target && e.target.closest ? e.target.closest('[data-action="toggle-metric-group"]') : null;
+        if (grp) toggleMetricGroup(grp);
+    });
+}
+
+export function toggleMetricGroup(btn) {
+    const section = btn.closest ? btn.closest('section.db-group') : null;
+    const panel = section ? section.querySelector('.db-exercise-list') : null;
+    if (!panel) return;
+    const open = btn.getAttribute('aria-expanded') !== 'true';
+    btn.setAttribute('aria-expanded', String(open));
+    const label = btn.dataset.mgroup || 'grupo';
+    btn.setAttribute('aria-label', (open ? 'Contraer ' : 'Expandir ') + label);
+    panel.hidden = !open;
 }
 
 export function renderNutritionTrend() {

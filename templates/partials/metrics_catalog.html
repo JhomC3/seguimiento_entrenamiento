@@ -1,0 +1,42 @@
+{# metrics_catalog.html — Sección Salud dentro del catálogo izquierdo.
+   Espejo funcional de los ejercicios: grupos colapsables (como toggle-group)
+   + chips multi-toggle con aria-pressed; series sin datos marcadas
+   aria-disabled (informan cobertura, no se ocultan). La selección vive en
+   ?metricas= y la aplica el servidor en el render inicial; los toggles son
+   visibilidad instantánea en cliente (chart-interaction.js). La gráfica única
+   vive en el slot de nutrition-trend (índice 0–100, tooltip con valor real). #}
+{% if metrics_catalog %}
+<div class="flex flex-col gap-2">
+    {% for group in metrics_catalog %}
+    <section class="db-group" data-mgroup="{{ group.group }}">
+        <header class="db-summary">
+            <span class="db-group-name">{{ group.group }}</span>
+            <button
+                type="button"
+                class="db-group-toggle"
+                data-action="toggle-metric-group"
+                data-mgroup="{{ group.group }}"
+                aria-expanded="false"
+                aria-controls="db-metrics-{{ loop.index }}"
+                aria-label="Expandir {{ group.group }}"
+            ><span aria-hidden="true"></span></button>
+        </header>
+        <div id="db-metrics-{{ loop.index }}" class="db-exercise-list" hidden>
+            {% for metric in group.metrics %}
+            <button
+                type="button"
+                class="db-exercise-row"
+                data-metric="{{ metric.key }}"
+                data-action="toggle-metric"
+                aria-label="Alternar métrica {{ metric.label }}"
+                aria-pressed="{{ 'true' if metric.pressed else 'false' }}"
+                {% if metric.disabled %}aria-disabled="true"{% endif %}
+            >
+                <span class="db-exercise-name">{{ metric.label }}</span>
+            </button>
+            {% endfor %}
+        </div>
+    </section>
+    {% endfor %}
+</div>
+{% endif %}

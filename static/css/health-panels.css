@@ -1,0 +1,11 @@
+/* health-panels.css — sección Salud dentro del catálogo izquierdo del
+   dashboard. Solo tokens, sin hex ni micro-tipografía. La lista ya desplaza
+   por dentro (dashboard-catalog-list): aquí solo separación visual. */
+
+#metrics-catalog {
+    margin-top: 12px;
+}
+
+#metrics-catalog > .panel-title {
+    margin-bottom: 8px;
+}
