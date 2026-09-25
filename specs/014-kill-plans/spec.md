@@ -1,7 +1,7 @@
 # Spec 014 — Matar docs/plans/ + resto de mudanza
 
 Constitución: `docs/constitution.md` (principio 1).
-Numeración: 013 reservada a AEGEN diferida.
+Numeración: 013 reservada (diferida, fuera de este proyecto).
 
 ## Contexto y objetivo
 
