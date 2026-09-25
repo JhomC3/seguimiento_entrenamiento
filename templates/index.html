@@ -55,10 +55,14 @@
                 </header>
                 <div id="dashboard-catalog-list" class="dashboard-catalog-list">
                     {% include "partials/dashboard_catalog.html" %}
-                    <section id="metrics-catalog" aria-label="Catálogo de métricas de salud">
-                        <h2 class="panel-title">Salud</h2>
-                        {% include "partials/metrics_catalog.html" %}
-                    </section>
+                </div>
+            </section>
+            <section id="metrics-catalog" class="panel panel-default metrics-panel" aria-label="Catálogo de métricas de salud">
+                <header class="metrics-panel-header">
+                    <h2 class="panel-title">Salud</h2>
+                </header>
+                <div id="metrics-catalog-list" class="metrics-catalog-list">
+                    {% include "partials/metrics_catalog.html" %}
                 </div>
             </section>
             <div class="catalog-rail" hidden>

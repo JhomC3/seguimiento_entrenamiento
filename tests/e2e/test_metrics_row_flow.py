@@ -72,6 +72,29 @@ def test_metrics_section_in_catalog(page, server):
     section = page.locator("#metrics-catalog")
     expect(section).to_be_attached()
     expect(section).to_contain_text("Salud")
+    # Salud va ABAJO del Catálogo, en tarjeta propia con altura fija
+    # (al abrir un acordeón sale scroll interno, no crece la tarjeta).
+    order = page.evaluate(
+        """() => {
+            const sec = document.getElementById('metrics-catalog');
+            const firstGroup = document.querySelector('#dashboard-catalog .db-group');
+            if (!firstGroup) return 'sin-grupos';
+            return sec.compareDocumentPosition(firstGroup) & Node.DOCUMENT_POSITION_PRECEDING
+                ? 'salud-abajo'
+                : 'salud-arriba';
+        }"""
+    )
+    assert order in ("salud-abajo", "sin-grupos"), order
+    fixed = page.evaluate(
+        """() => {
+            const list = document.getElementById('metrics-catalog-list');
+            if (!list) return 'sin-lista';
+            const st = getComputedStyle(list);
+            return st.overflowY + '/' + st.maxHeight;
+        }"""
+    )
+    assert fixed.startswith(("auto", "scroll")), fixed
+    assert "none" not in fixed, fixed
     chips = page.locator("#metrics-catalog [data-metric]")
     expect(chips.first).to_be_attached()
     expect(
@@ -89,6 +112,29 @@ def test_metrics_single_chart_slot(page, server, server_db_path):
     page.wait_for_function("document.body.dataset.appReady === '1'")
     expect(page.locator("#nutrition-trend-header")).to_contain_text("Métricas")
     expect(page.locator("#nutrition-trend-empty")).to_be_hidden()
+
+
+def test_metrics_survives_muscle_selection(page, server, server_db_path):
+    _seed_health(server_db_path)
+    page.goto(server)
+    page.wait_for_function("document.body.dataset.appReady === '1'")
+    page.locator(
+        '#metrics-catalog [data-action="toggle-metric-group"][data-mgroup="Actividad"]'
+    ).click()
+    chip = page.locator('#metrics-catalog [data-metric="steps"]').first
+    before = chip.get_attribute("aria-pressed")
+    chip.click()
+    expect(chip).not_to_have_attribute("aria-pressed", before)
+    after_toggle = chip.get_attribute("aria-pressed")
+    group = page.locator('#dashboard-catalog .db-group[data-group="Pectoral"]')
+    group.locator('[data-action="toggle-group"]').click()
+    group.locator('[data-action="toggle-muscle"]').click()
+    page.wait_for_timeout(800)
+    expect(page.locator("#metrics-catalog")).to_be_attached()
+    expect(page.locator('#metrics-catalog [data-metric="steps"]').first).to_have_attribute(
+        "aria-pressed", after_toggle
+    )
+    expect(page.locator("#nutrition-trend-data")).not_to_be_empty()
 
 
 def test_metrics_toggle_updates_url(page, server, server_db_path):
