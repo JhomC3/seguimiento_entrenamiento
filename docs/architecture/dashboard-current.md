@@ -4,11 +4,9 @@
 **Última revisión:** 2026-08-27.
 **Fuente de implementación:** `templates/index.html`, `templates/partials/period_summary_panel.html`, `static/js/chart-interaction.js`, `static/js/level-cascade.js`, `src/charts.py`, `src/summary_service.py` y `app.py`.
 
-La prioridad de ejecución y el estado de los planes están en [`docs/plans/MASTER-PLAN.md`](../plans/MASTER-PLAN.md).
+La cola activa vive en las specs abiertas (`specs/NNN/` con veredicto pendiente); los planes viejos murieron en la spec 014 (git guarda la historia).
 
-Este documento describe el comportamiento que debe considerarse vigente. Los planes de
-`docs/plans/archive/` son históricos: explican decisiones anteriores y no son instrucciones
-de ejecución. Si este documento contradice un plan archivado, prevalece este documento.
+Este documento describe el comportamiento que debe considerarse vigente. Los planes viejos murieron en la spec 014 (git guarda la historia). Si un doc histórico contradice este documento, prevalece este documento.
 
 ## 1. Estructura de la pantalla
 

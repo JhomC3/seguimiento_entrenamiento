@@ -211,7 +211,7 @@ Si no se puede medir, no se puede operar:
 ## 10. Documentación y ADRs
 
 - Las decisiones de arquitectura se registran: `docs/architecture/*` (contratos y modelo
-  de seguridad), `docs/plans/*` (planes con justificación y archivo), `docs/operations/*`
+  de seguridad), `specs/NNN/*` (spec, plan y tareas con veredicto), `docs/operations/*`
   (runbooks: arranque, release, migraciones). Ante una decisión relevante sin registro,
   crear o actualizar el documento correspondiente en la misma iteración.
 - Contratos vigentes: `current-ui-contract.md` (DOM/htmx), `health-sync-contract.md`
